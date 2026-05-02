@@ -1,0 +1,34 @@
+#!/bin/bash
+#MISE description="Check for code duplication (threshold 50, with summary)"
+
+set -euo pipefail
+
+# Create temp files with proper extensions (works on both Linux and macOS)
+tmpdir=$(mktemp -d)
+config="$tmpdir/config.yaml"
+json_out="$tmpdir/output.json"
+
+cat > "$config" << 'YAML'
+version: "2"
+linters:
+  default: none
+  enable: [dupl]
+  settings:
+    dupl:
+      threshold: 50
+YAML
+
+# Run with JSON output for summary, text output for details
+golangci-lint run -c "$config" --new=false --max-issues-per-linter=0 --max-same-issues=0 \
+  --output.json.path="$json_out" --output.text.path=/dev/stderr ./... 2>&1 || true
+
+# Print summary grouped by file
+echo ""
+echo "=== Duplication Summary (by file) ==="
+if command -v jq &>/dev/null && [ -s "$json_out" ]; then
+  jq -r '.Issues // [] | group_by(.Pos.Filename) | map({file: (.[0].Pos.Filename | split("/") | .[-1]), count: length}) | sort_by(-.count) | .[] | "  " + (.count|tostring) + " " + .file' "$json_out" 2>/dev/null || echo "  (no issues)"
+else
+  echo "  (install jq for summary)"
+fi
+
+rm -rf "$tmpdir"

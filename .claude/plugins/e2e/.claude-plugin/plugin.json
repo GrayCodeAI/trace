@@ -1,0 +1,5 @@
+{
+  "name": "e2e",
+  "description": "E2E test triage, debugging, and fix implementation toolkit",
+  "version": "1.0.0"
+}
