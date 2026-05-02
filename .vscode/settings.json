@@ -1,0 +1,6 @@
+{
+  "gopls": {
+    "build.buildFlags": ["-tags=e2e,integration"]
+  },
+  "go.testTags": "e2e,integration"
+}

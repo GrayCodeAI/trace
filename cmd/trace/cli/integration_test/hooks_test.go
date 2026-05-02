@@ -1,0 +1,369 @@
+//go:build integration
+
+package integration
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/strategy"
+)
+
+func TestHookRunner_SimulateUserPromptSubmit(t *testing.T) {
+	t.Parallel()
+	env := NewRepoWithCommit(t)
+	// Create an untracked file to capture
+	env.WriteFile("newfile.txt", "content")
+
+	modelSessionID := "test-session-1"
+	err := env.SimulateUserPromptSubmit(modelSessionID)
+	if err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	// Verify pre-prompt state was captured (uses trace session ID with date prefix)
+	statePath := filepath.Join(env.RepoDir, ".trace", "tmp", "pre-prompt-"+modelSessionID+".json")
+	if _, err := os.Stat(statePath); os.IsNotExist(err) {
+		t.Error("pre-prompt state file should exist")
+	}
+}
+
+func TestHookRunner_SimulateStop(t *testing.T) {
+	t.Parallel()
+	env := NewRepoWithCommit(t)
+	// Create a session
+	session := env.NewSession()
+
+	// Simulate user prompt submit first
+	err := env.SimulateUserPromptSubmit(session.ID)
+	if err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	// Create a file (as if Claude Code wrote it)
+	env.WriteFile("created.txt", "created by claude")
+
+	// Create transcript
+	session.CreateTranscript("Create a file", []FileChange{
+		{Path: "created.txt", Content: "created by claude"},
+	})
+
+	// Simulate stop
+	err = env.SimulateStop(session.ID, session.TranscriptPath)
+	if err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	// Verify a commit was created (check git log)
+	hash := env.GetHeadHash()
+	if len(hash) != 40 {
+		t.Errorf("expected valid commit hash, got %s", hash)
+	}
+}
+
+// TestHookRunner_SimulateStop_AlreadyCommitted tests that the stop hook handles
+// the case where files were modified during the session but already committed
+// by the user before the hook runs. This should not fail.
+func TestHookRunner_SimulateStop_AlreadyCommitted(t *testing.T) {
+	t.Parallel()
+	env := NewRepoWithCommit(t)
+	// Create a session
+	session := env.NewSession()
+
+	// Simulate user prompt submit first (captures pre-prompt state)
+	err := env.SimulateUserPromptSubmit(session.ID)
+	if err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	// Create a file (as if Claude Code wrote it)
+	env.WriteFile("created.txt", "created by claude")
+
+	// USER COMMITS THE FILE BEFORE HOOK RUNS
+	// This simulates the scenario where user runs `git commit` manually
+	// or the changes are committed via another mechanism
+	env.GitAdd("created.txt")
+	env.GitCommit("User committed changes manually")
+
+	// Create transcript (still references the file as modified during session)
+	session.CreateTranscript("Create a file", []FileChange{
+		{Path: "created.txt", Content: "created by claude"},
+	})
+
+	// Simulate stop - this should NOT fail even though file is already committed
+	err = env.SimulateStop(session.ID, session.TranscriptPath)
+	if err != nil {
+		t.Fatalf("SimulateStop should handle already-committed files gracefully, got error: %v", err)
+	}
+}
+
+func TestSession_CreateTranscript(t *testing.T) {
+	t.Parallel()
+	env := NewRepoWithCommit(t)
+	session := env.NewSession()
+	transcriptPath := session.CreateTranscript("Test prompt", []FileChange{
+		{Path: "file1.txt", Content: "content1"},
+		{Path: "file2.txt", Content: "content2"},
+	})
+
+	// Verify transcript file exists
+	if _, err := os.Stat(transcriptPath); os.IsNotExist(err) {
+		t.Error("transcript file should exist")
+	}
+
+	// Verify session ID format
+	if session.ID != "test-session-1" {
+		t.Errorf("session ID = %s, want test-session-1", session.ID)
+	}
+}
+
+// TestHookRunner_SimulateStop_SubagentOnlyChanges tests that the stop hook correctly
+// creates a checkpoint when ONLY subagents (spawned via Task tool) modify files.
+// This is a regression test for ENT-297 where subagent file modifications were invisible
+// to checkpoint detection because ExtractModifiedFiles only looked at the main transcript.
+// The fix (ExtractAllModifiedFiles) also reads subagent transcript files.
+func TestHookRunner_SimulateStop_SubagentOnlyChanges(t *testing.T) {
+	t.Parallel()
+	env := NewRepoWithCommit(t)
+	// Create a session
+	session := env.NewSession()
+
+	// Simulate user prompt submit first (captures pre-prompt state)
+	err := env.SimulateUserPromptSubmit(session.ID)
+	if err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	// Create a file on disk (simulating what a subagent would write)
+	env.WriteFile("subagent_output.go", "package main\n\nfunc SubagentWork() {}\n")
+
+	// Build the main transcript manually. The main transcript contains ONLY
+	// a Task tool call (no Write/Edit). All file modifications happened in
+	// the subagent.
+	mainTranscript := NewTranscriptBuilder()
+	mainTranscript.AddUserMessage("Create a function in a new file")
+	mainTranscript.AddAssistantMessage("I'll delegate this to a subagent.")
+
+	// Add Task tool use
+	taskToolUseID := mainTranscript.AddTaskToolUse("", "Create the function")
+
+	// Add Task tool result with agentId
+	agentID := "sub123abc"
+	mainTranscript.AddTaskToolResult(taskToolUseID, agentID)
+
+	mainTranscript.AddAssistantMessage("The subagent completed the task.")
+
+	// Write the main transcript
+	if err := mainTranscript.WriteToFile(session.TranscriptPath); err != nil {
+		t.Fatalf("failed to write main transcript: %v", err)
+	}
+
+	// Create the subagent transcript file in the directory structure the Stop hook expects:
+	// <transcriptDir>/<modelSessionID>/subagents/agent-<agentID>.jsonl
+	transcriptDir := filepath.Dir(session.TranscriptPath)
+	subagentsDir := filepath.Join(transcriptDir, session.ID, "subagents")
+	subagentTranscriptPath := filepath.Join(subagentsDir, "agent-"+agentID+".jsonl")
+
+	// Build the subagent transcript with Write tool calls
+	subagentTranscript := NewTranscriptBuilder()
+	subagentTranscript.AddUserMessage("Create a function in a new file")
+	absFilePath := filepath.Join(env.RepoDir, "subagent_output.go")
+	toolID := subagentTranscript.AddToolUse("Write", absFilePath, "package main\n\nfunc SubagentWork() {}\n")
+	subagentTranscript.AddToolResult(toolID)
+	subagentTranscript.AddAssistantMessage("Done, I created the function.")
+
+	if err := subagentTranscript.WriteToFile(subagentTranscriptPath); err != nil {
+		t.Fatalf("failed to write subagent transcript: %v", err)
+	}
+
+	// Simulate stop - this should NOT error and should create a checkpoint
+	err = env.SimulateStop(session.ID, session.TranscriptPath)
+	if err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	// Verify checkpoint was created (manual-commit stores checkpoint data on the shadow branch)
+	shadowBranch := env.GetShadowBranchName()
+	if !env.BranchExists(shadowBranch) {
+		t.Errorf("shadow branch %s should exist after checkpoint", shadowBranch)
+	}
+
+	// Verify session state was updated with checkpoint count
+	state, stateErr := env.GetSessionState(session.ID)
+	if stateErr != nil {
+		t.Fatalf("failed to get session state: %v", stateErr)
+	}
+	if state == nil {
+		t.Fatal("session state should exist after checkpoint")
+	}
+	if state.StepCount == 0 {
+		t.Error("session state should have non-zero step count")
+	}
+}
+
+// TestHookRunner_SimulateStop_GitStatusMergesWithTranscript verifies that
+// handleLifecycleTurnEnd always consults git status and merges those files with
+// transcript-extracted files. This guards against a regression where someone makes
+// git status conditional on transcript parsing failing.
+//
+// Scenario:
+//   - Transcript references file A (via tool_use block)
+//   - File B is a tracked file modified on disk but NOT mentioned in transcript
+//   - After stop, FilesTouched must contain both A and B
+func TestHookRunner_SimulateStop_GitStatusMergesWithTranscript(t *testing.T) {
+	t.Parallel()
+	env := NewRepoWithCommit(t)
+
+	// Create a tracked file that we'll modify later (not mentioned in transcript).
+	// It must be committed first so git status reports it as "modified" (not "untracked").
+	env.WriteFile("tracked-only.txt", "original content")
+	env.GitAdd("tracked-only.txt")
+	env.GitCommit("add tracked file")
+
+	session := env.NewSession()
+
+	// Capture pre-prompt state
+	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	// Modify the tracked file on disk (git status will see this as modified)
+	env.WriteFile("tracked-only.txt", "modified content")
+
+	// Create a file that IS mentioned in the transcript
+	env.WriteFile("transcript-file.txt", "created by agent")
+
+	// Build transcript that only mentions transcript-file.txt
+	session.CreateTranscript("Create a file", []FileChange{
+		{Path: "transcript-file.txt", Content: "created by agent"},
+	})
+
+	// Simulate stop
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	// Verify FilesTouched contains BOTH files
+	state, err := env.GetSessionState(session.ID)
+	if err != nil {
+		t.Fatalf("failed to get session state: %v", err)
+	}
+	if state == nil {
+		t.Fatal("session state should exist after checkpoint")
+	}
+
+	filesTouched := make(map[string]bool)
+	for _, f := range state.FilesTouched {
+		filesTouched[f] = true
+	}
+
+	if !filesTouched["transcript-file.txt"] {
+		t.Errorf("FilesTouched should contain transcript-extracted file 'transcript-file.txt', got %v", state.FilesTouched)
+	}
+	if !filesTouched["tracked-only.txt"] {
+		t.Errorf("FilesTouched should contain git-status-detected file 'tracked-only.txt', got %v", state.FilesTouched)
+	}
+}
+
+// TestUserPromptSubmit_ReinstallsOverwrittenHooks verifies that EnsureSetup is called
+// during user-prompt-submit (start of turn) and reinstalls hooks that were overwritten
+// by third-party tools like lefthook. This ensures hooks are in place before any
+// mid-turn commits the agent might make.
+func TestUserPromptSubmit_ReinstallsOverwrittenHooks(t *testing.T) {
+	t.Parallel()
+	env := NewRepoWithCommit(t)
+	hooksDir := filepath.Join(env.RepoDir, ".git", "hooks")
+	hookNames := strategy.ManagedGitHookNames()
+
+	// Step 1: First user-prompt-submit installs hooks via EnsureSetup
+	session := env.NewSession()
+	err := env.SimulateUserPromptSubmit(session.ID)
+	if err != nil {
+		t.Fatalf("First SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	// Verify hooks are now installed
+	if !strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
+		t.Fatal("hooks should be installed after first SimulateUserPromptSubmit")
+	}
+
+	// Step 2: Overwrite hooks with third-party content (simulating lefthook, husky, etc.)
+	for _, hookName := range hookNames {
+		hookPath := filepath.Join(hooksDir, hookName)
+		thirdPartyContent := "#!/bin/sh\n# Third-party hook manager\necho 'Running third-party hook'\n"
+		if err := os.WriteFile(hookPath, []byte(thirdPartyContent), 0o755); err != nil {
+			t.Fatalf("failed to overwrite hook %s: %v", hookName, err)
+		}
+	}
+
+	// Step 3: Verify hooks are no longer Trace hooks
+	if strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
+		t.Fatal("hooks should NOT be detected as Trace hooks after overwrite")
+	}
+
+	// Step 4: Second user-prompt-submit should reinstall hooks
+	err = env.SimulateUserPromptSubmit(session.ID)
+	if err != nil {
+		t.Fatalf("Second SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	// Step 5: Verify hooks are reinstalled
+	if !strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
+		t.Error("hooks should be reinstalled after second SimulateUserPromptSubmit")
+	}
+
+	// Step 6: Verify the hooks chain to original hooks (backup should exist)
+	for _, hookName := range hookNames {
+		backupPath := filepath.Join(hooksDir, hookName+".pre-trace")
+		if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+			t.Errorf("backup hook %s.pre-trace should exist", hookName)
+		}
+	}
+}
+
+// TestUserPromptSubmit_ReinstallsDeletedHooks verifies that EnsureSetup reinstalls
+// hooks that were completely deleted by third-party tools.
+func TestUserPromptSubmit_ReinstallsDeletedHooks(t *testing.T) {
+	t.Parallel()
+	env := NewRepoWithCommit(t)
+	hooksDir := filepath.Join(env.RepoDir, ".git", "hooks")
+	hookNames := strategy.ManagedGitHookNames()
+
+	// Step 1: First user-prompt-submit installs hooks via EnsureSetup
+	session := env.NewSession()
+	err := env.SimulateUserPromptSubmit(session.ID)
+	if err != nil {
+		t.Fatalf("First SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	// Verify hooks are now installed
+	if !strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
+		t.Fatal("hooks should be installed after first SimulateUserPromptSubmit")
+	}
+
+	// Step 2: Delete all hooks (simulating aggressive third-party tool)
+	for _, hookName := range hookNames {
+		hookPath := filepath.Join(hooksDir, hookName)
+		if err := os.Remove(hookPath); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("failed to delete hook %s: %v", hookName, err)
+		}
+	}
+
+	// Step 3: Verify hooks are gone
+	if strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
+		t.Fatal("hooks should NOT be detected after deletion")
+	}
+
+	// Step 4: Second user-prompt-submit should reinstall hooks
+	err = env.SimulateUserPromptSubmit(session.ID)
+	if err != nil {
+		t.Fatalf("Second SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	// Step 5: Verify hooks are reinstalled
+	if !strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
+		t.Error("hooks should be reinstalled after second SimulateUserPromptSubmit")
+	}
+}

@@ -1,0 +1,11 @@
+#!/bin/bash
+#MISE description="Generate trace shell completions"
+#MISE quiet=true
+
+set -euo pipefail
+
+rm -rf completions
+mkdir completions
+for sh in bash zsh fish; do
+    go run ./cmd/trace/main.go completion "$sh" >"completions/trace.$sh"
+done

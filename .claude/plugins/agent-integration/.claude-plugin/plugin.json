@@ -1,0 +1,5 @@
+{
+  "name": "agent-integration",
+  "description": "Multi-phase toolkit for integrating a new AI coding agent with the Trace CLI",
+  "version": "1.0.0"
+}

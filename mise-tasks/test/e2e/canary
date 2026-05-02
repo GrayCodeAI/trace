@@ -1,0 +1,68 @@
+#!/bin/sh
+#MISE description="Run E2E canary tests with deterministic agents (no API calls)"
+#USAGE arg "[filter]" help="Test name filter (regex)" default=""
+
+set -eu
+
+# Build trace CLI
+mise run build
+export E2E_TRACE_BIN="$PWD/trace"
+
+# Build vogon binary
+go build -o vogon ./e2e/vogon
+E2E_PATH="$PWD:$PATH"
+
+if [ -z "${E2E_ARTIFACT_DIR:-}" ]; then
+  E2E_ARTIFACT_DIR="$PWD/e2e/artifacts/canary-$(date +%Y-%m-%dT%H-%M-%S)"
+fi
+export E2E_ARTIFACT_DIR
+mkdir -p "$E2E_ARTIFACT_DIR"
+echo "artifacts: $E2E_ARTIFACT_DIR"
+
+filter="${usage_filter:-}"
+vogon_rc=0
+rr_rc=0
+
+# --- vogon: runs all tests (built-in agent) ---
+echo "--- canary: vogon ---"
+PATH="$E2E_PATH" E2E_AGENT=vogon gotestsum --format dots \
+  --jsonfile "$E2E_ARTIFACT_DIR/test-events-vogon.json" -- \
+  -tags=e2e -count=1 -timeout=10m \
+  ${filter:+-run "$filter"} \
+  ./e2e/tests/... || vogon_rc=$?
+
+go run ./e2e/cmd/testreport -color \
+  -o "$E2E_ARTIFACT_DIR/report-vogon.txt" \
+  "$E2E_ARTIFACT_DIR/test-events-vogon.json"
+
+# --- roger-roger: external agent tests only (binaries from mise) ---
+echo "--- canary: roger-roger ---"
+
+# Preflight: ensure required roger-roger binaries are on PATH so tests don't silently skip
+if ! command -v roger-roger >/dev/null 2>&1; then
+  echo "error: roger-roger binary not found on PATH; install/configure it before running roger-roger canary tests." >&2
+  exit 1
+fi
+
+if ! command -v trace-agent-roger-roger >/dev/null 2>&1; then
+  echo "error: trace-agent-roger-roger binary not found on PATH; install/configure it before running roger-roger canary tests." >&2
+  exit 1
+fi
+
+rr_filter="${filter:-TestExternalAgent}"
+E2E_AGENT=roger-roger gotestsum --format dots \
+  --jsonfile "$E2E_ARTIFACT_DIR/test-events-roger-roger.json" -- \
+  -tags=e2e -count=1 -timeout=10m \
+  -run "$rr_filter" \
+  ./e2e/tests/... || rr_rc=$?
+
+go run ./e2e/cmd/testreport -color \
+  -o "$E2E_ARTIFACT_DIR/report-roger-roger.txt" \
+  "$E2E_ARTIFACT_DIR/test-events-roger-roger.json"
+
+echo ""
+cat "$E2E_ARTIFACT_DIR/trace-version.txt" 2>/dev/null
+echo "artifacts: $E2E_ARTIFACT_DIR"
+if [ "$vogon_rc" -ne 0 ] || [ "$rr_rc" -ne 0 ]; then
+  exit 1
+fi

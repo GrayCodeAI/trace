@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="Install binaries into ~/go/bin"
+
+set -eu
+
+export GOBIN=${GOPATH:-$HOME/go}/bin
+echo "NOTE: we're overriding \$GOBIN: $GOBIN" 1>&2
+
+TAG=$(git describe --tags --abbrev=0 || echo "v0.0.0")
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+VERSION="${TAG}-dev-${COMMIT}"
+
+go install -ldflags "-X github.com/GrayCodeAI/trace/cmd/trace/cli/versioninfo.Version=${VERSION} -X github.com/GrayCodeAI/trace/cmd/trace/cli/versioninfo.Commit=${COMMIT}" ./cmd/trace

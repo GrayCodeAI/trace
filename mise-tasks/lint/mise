@@ -1,0 +1,33 @@
+#!/bin/sh
+#MISE description="Check mise.toml for inline shell scripts that should be extracted"
+
+set -e
+
+# Check for multi-line run blocks (run = """ with content spanning 3+ lines)
+# These should be extracted to mise-tasks/ scripts
+
+awk '
+/^[ \t]*run = """/ || /^[ \t]*run = '\'''\'''\''/ {
+    in_block = 1
+    start_line = NR
+    lines = 0
+    next
+}
+in_block {
+    # Check for closing delimiter first (dont count it)
+    if (/^[ \t]*"""/ || /^[ \t]*'\'''\'''\''/) {
+        in_block = 0
+        if (lines >= 3) {
+            errors++
+            printf "mise.toml:%d: multi-line script (%d lines) should be extracted to mise-tasks/\n", start_line, lines
+        }
+        next
+    }
+    lines++
+}
+END {
+    if (errors > 0) {
+        exit 1
+    }
+}
+' mise.toml
