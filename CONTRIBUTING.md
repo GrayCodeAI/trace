@@ -105,7 +105,7 @@ Email [security@graycode.ai](mailto:security@graycode.ai) instead. See [SECURITY
 ## Community
 
 - [GitHub Issues](https://github.com/GrayCodeAI/trace/issues) — bugs & features
-- [Discord](https://discord.gg/jZJs3Tue4S) — questions & discussion
+- [Discord](https://discord.gg/ZESTkgxGF) — questions & discussion
 
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
 
