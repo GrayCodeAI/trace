@@ -4,8 +4,6 @@ go = { version = '1.26.2', postinstall = "go install github.com/go-delve/delve/c
 golangci-lint = '2.11.3'
 shellcheck = 'latest'
 tmux = 'latest'
-"go:github.com/GrayCodeAI/roger-roger/cmd/roger-roger" = 'latest'
-"go:github.com/GrayCodeAI/roger-roger/cmd/trace-agent-roger-roger" = 'latest'
 
 [tasks.fmt]
 description = "Run gofmt"
