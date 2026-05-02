@@ -1,108 +1,123 @@
 # Windows Support
 
-## Prerequisites
+Trace is fully supported on Windows 10+ with no external dependencies beyond Git.
 
-- **Windows 10 1809+** (required for ConPTY support in E2E tests)
-- **Git for Windows** — provides `git.exe` and bundled bash for git hooks
-- **Go 1.26+** — for building from source
-
-## Building
-
-Cross-compile from macOS/Linux:
-
-```bash
-mise run build:windows          # amd64
-mise run build:windows-arm64    # arm64
-```
-
-Or build natively on Windows:
-
-```bash
-go build -o trace.exe ./cmd/trace/
-```
+---
 
 ## Installation
 
-Copy `trace.exe` to a directory in your `PATH`. Git for Windows must be installed and available in `PATH`.
+### Scoop (recommended)
 
-## How It Works
+```powershell
+scoop bucket add trace https://github.com/GrayCodeAI/scoop-bucket.git
+scoop install trace
+```
 
-The CLI is pure Go with no CGO dependencies, so cross-compilation produces a fully static binary.
+### Go install
 
-### Git Hooks
+```powershell
+go install github.com/GrayCodeAI/trace/cmd/trace@latest
+```
 
-Git hooks use `#!/bin/sh` shebangs with POSIX shell syntax. Git for Windows executes hooks through its bundled MSYS2 bash, so they work as-is. No batch file wrappers are needed.
+### Build from source
 
-### Agent Hooks
+```powershell
+go build -o trace.exe ./cmd/trace/
+```
 
-Agent-specific hooks (Claude Code, Cursor, Gemini, OpenCode) are JSON configuration — the agents themselves handle execution. The hooks call `trace.exe` directly via `exec.Command`, not through a shell.
+Or cross-compile from macOS/Linux:
+
+```bash
+mise run build:windows        # amd64
+mise run build:windows-arm64  # arm64
+```
+
+---
+
+## Prerequisites
+
+- **Windows 10 1809+** (ConPTY support)
+- **Git for Windows** (provides `git.exe` + bundled bash for hooks)
+- **Go 1.26+** (for building from source)
+
+---
+
+## Usage
+
+All commands work identically to macOS/Linux:
+
+```powershell
+cd your-project
+trace enable
+trace status
+```
+
+---
+
+## How Hooks Work
+
+| Hook type | Mechanism |
+|---|---|
+| Git hooks | `#!/bin/sh` via Git for Windows MSYS2 bash |
+| Agent hooks | JSON config, agents call `trace.exe` directly |
+
+No batch file wrappers needed.
+
+---
 
 ## Testing
 
-### Unit + Integration Tests
+```powershell
+# Unit tests
+go test ./...
 
-```bash
-go test ./...                                          # unit tests
-go test -tags=integration ./cmd/trace/cli/integration_test/...  # integration tests
-go test -tags=integration -race ./...                  # all (CI equivalent)
-```
+# Integration tests
+go test -tags=integration ./cmd/trace/cli/integration_test/...
 
-### E2E Tests
-
-E2E tests require the agent binary (e.g., `claude`) to be installed and available in `PATH`.
-
-```bash
-# Set required env vars
+# E2E tests
 set E2E_TRACE_BIN=trace.exe
-set E2E_AGENT=claude-code        # or gemini-cli, opencode
-
-# Run all E2E tests
+set E2E_AGENT=claude-code
 go test -tags=e2e -count=1 -timeout=30m ./e2e/tests/...
-
-# Run a specific test
-go test -tags=e2e -count=1 -timeout=30m -run TestSingleSessionManualCommit ./e2e/tests/...
 ```
 
-The E2E test infrastructure uses native PTY (ConPTY on Windows, creack/pty on Unix) instead of tmux, so no tmux installation is needed.
+E2E uses native ConPTY — no tmux required.
+
+---
+
+## Platform Architecture
+
+| File | Purpose |
+|---|---|
+| `telemetry/detached_windows.go` | Process groups via `CREATE_NEW_PROCESS_GROUP` |
+| `integration_test/procattr_windows.go` | Test process detachment |
+| `e2e/agents/pty_session_windows.go` | Interactive sessions via ConPTY |
+
+### Cross-platform patterns
+
+- `os.Interrupt` only (no `SIGTERM`)
+- `filepath.FromSlash()` for git output paths
+- CRLF-safe parsing (`\r\n` -> `\n`)
+- `os.DevNull` instead of `/dev/null`
+- `runtime.GOOS` checks for pager selection
+
+---
 
 ## Known Limitations
 
-- **Interactive integration tests** that use PTY (`resume_interactive_test.go`) are skipped on Windows (guarded with `//go:build unix`).
-- **File permissions** (0o755, 0o644) are set but ignored by Windows — Windows uses ACLs instead.
-- **Symlinks** in E2E tests require Windows Developer Mode or admin privileges.
-- **OpenCode plugin** uses `Bun.spawnSync(["sh", "-c", ...])` which won't work on Windows unless Bun supports it. OpenCode Windows support is pending.
+- Interactive PTY tests skipped (guarded with `//go:build unix`)
+- File permissions (0o755) set but ignored by Windows ACLs
+- Symlinks require Developer Mode or admin
+- OpenCode plugin pending Windows Bun support
 
-## Smoke Test Checklist
+---
 
-After building, verify these work on a Windows machine:
+## Smoke Test
+
+After building, verify:
 
 1. `trace.exe version`
-2. `trace.exe enable` — in a git repo with an agent installed
-3. Start an agent session, make file changes
-4. `git add . && git commit -m "test"` — hooks should fire (prepare-commit-msg, post-commit)
-5. `trace.exe rewind --list` — should show checkpoint(s)
-6. `trace.exe explain` — pager should use `more` by default
-
-## Architecture Notes
-
-### Platform-Specific Files
-
-| File | Purpose |
-|------|---------|
-| `cmd/trace/cli/telemetry/detached_unix.go` | Telemetry subprocess via `Setpgid` |
-| `cmd/trace/cli/telemetry/detached_windows.go` | Telemetry subprocess via `CREATE_NEW_PROCESS_GROUP` |
-| `cmd/trace/cli/integration_test/procattr_unix.go` | Test process detachment via `Setsid` |
-| `cmd/trace/cli/integration_test/procattr_windows.go` | Test process detachment via `CREATE_NEW_PROCESS_GROUP` |
-| `e2e/agents/procattr_unix.go` | E2E process groups via `Setpgid` + `SIGKILL` |
-| `e2e/agents/procattr_windows.go` | E2E process groups via `CREATE_NEW_PROCESS_GROUP` |
-| `e2e/agents/pty_session_unix.go` | Interactive E2E sessions via `creack/pty` |
-| `e2e/agents/pty_session_windows.go` | Interactive E2E sessions via ConPTY |
-
-### Cross-Platform Patterns Used
-
-- `os.Interrupt` only (no `syscall.SIGTERM`) for signal handling
-- `filepath.FromSlash()` on git CLI output paths
-- `strings.ReplaceAll(s, "\r\n", "\n")` for CRLF-safe git output parsing
-- `os.DevNull` instead of hardcoded `/dev/null`
-- `runtime.GOOS == "windows"` for pager selection (`more` vs `less`)
-- Build-tagged `_unix.go` / `_windows.go` files for syscall differences
+2. `trace.exe enable` in a git repo
+3. Start agent session, make changes
+4. `git commit -m "test"` — hooks fire
+5. `trace checkpoint rewind` — shows checkpoints
+6. `trace checkpoint explain` — pager works
