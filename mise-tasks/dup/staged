@@ -1,0 +1,12 @@
+#!/bin/bash
+#MISE description="Check duplication in staged files only (threshold 75, same as CI)"
+
+set -euo pipefail
+
+# Get staged Go files, preserving paths with spaces using null delimiters throughout
+if ! git diff --cached --name-only -z --diff-filter=ACM | grep -z '\.go$' | grep -zq .; then
+  echo "No staged Go files to check"
+  exit 0
+fi
+echo "Checking staged files for duplication..."
+git diff --cached --name-only -z --diff-filter=ACM | grep -z '\.go$' | xargs -0 golangci-lint run --enable-only dupl --new=false --max-issues-per-linter=0 --max-same-issues=0

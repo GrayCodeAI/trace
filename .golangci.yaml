@@ -1,0 +1,158 @@
+version: "2"
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+linters:
+  default: standard
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - copyloopvar
+    - decorder
+    - durationcheck
+    - embeddedstructfieldcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - forbidigo
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gochecksumtype
+    - goconst
+    - gocritic
+    - gosec
+    - govet
+    - grouper
+    - iface
+    - importas
+    - inamedparam
+    - ineffassign
+    - intrange
+    - ireturn
+    - loggercheck
+    - maintidx
+    - makezero
+    - mirror
+    - misspell
+    - musttag
+    - nakedret
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - perfsprint
+    - promlinter
+    - protogetter
+    - reassign
+    - recvcheck
+    - revive
+    - sloglint
+    - spancheck
+    - staticcheck
+    - tagalign
+    - testableexamples
+    - testifylint
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - wrapcheck
+  settings:
+    gosec:
+      excludes:
+        - G204 # subprocess with variables is expected for git/opencode CLI wrappers
+        - G702 # command injection via taint - controlled CLI inputs
+        - G705 # XSS not applicable to CLI stderr output
+    dupl:
+      # Token threshold for duplication detection
+      # Lower = more sensitive (catches smaller duplicates)
+      # Default is 150. We use 75 for lint (blocks CI), `mise run dup` uses 50 (advisory)
+      threshold: 75
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: '^os\.Getwd$'
+          msg: "os.Getwd() breaks when running from subdirectories - use paths.RepoRoot() for git-relative paths"
+          pkg: '^os$'
+        - pattern: '^.*\.Reset$'
+          msg: "go-git Reset deletes .gitignored dirs - use HardResetWithProtection() from common.go"
+          pkg: 'github\.com/go-git/go-git'
+        - pattern: '^.*\.Checkout$'
+          msg: "go-git Checkout deletes .gitignored dirs - use CheckoutBranch() from git_operations.go"
+          pkg: 'github\.com/go-git/go-git'
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+    ireturn:
+      allow:
+        - anon
+        - error
+        - empty
+        - stdlib
+        - grpc.DialOption
+        - github.com/GrayCodeAI/trace/cmd/trace/cli/summarize.Generator
+        - github.com/GrayCodeAI/trace/cmd/trace/cli/agent\..+
+        - github.com/GrayCodeAI/trace/cmd/trace/cli/checkpoint.CommittedReader
+        - github.com/GrayCodeAI/trace/cmd/trace/cli/strategy.Strategy
+        - github.com/go-git/go-git/v6/x/plugin.Signer
+        - github.com/go-git/go-git/v6/plumbing/storer.ReferenceIter
+        - github.com/go-git/go-git/v6/plumbing.EncodedObject
+        - github.com/go-git/go-git/v6/storage.Storer
+        - github.com/go-git/go-git/v6/plumbing/storer.EncodedObjectIter
+        - github.com/GrayCodeAI/trace/e2e/agents.Session
+        - github.com/go-git/go-billy/v6.Filesystem
+        - golang.org/x/crypto/ssh/agent.Agent
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    sloglint:
+      attr-only: true
+    testifylint:
+      enable-all: true
+    unparam:
+      check-exported: true
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - wrapcheck
+          - forbidigo
+      - path: ^e2e/
+        linters:
+          - errcheck
+          - gochecknoinits
+          - goconst
+          - gosec
+          - noctx
+          - revive
+          - usetesting
+          - wrapcheck
+      - path: ^test/workloads/
+        linters:
+          - wrapcheck
+      - path: ^internal/sim/
+        linters:
+          - wrapcheck
+      - text: "`strat` is a misspelling"
+        linters:
+          - misspell

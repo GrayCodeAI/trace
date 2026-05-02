@@ -1,0 +1,92 @@
+name: Bug Report
+description: Report an error or unexpected behavior in the Trace CLI
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the form below.
+
+        Before submitting:
+        - Search [existing issues](https://github.com/GrayCodeAI/trace/issues) to avoid duplicates
+        - Try upgrading to the latest version (`trace version` to check)
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: |
+        A clear description of the bug. Include the full error message or
+        unexpected output. Please paste text rather than screenshots.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the behavior. Include exact commands.
+      placeholder: |
+        1. `trace enable`
+        2. Make some changes, then `trace checkpoint list`
+        3. See error: "..."
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Trace CLI version
+      description: "Run `trace version` and paste the output."
+      placeholder: "e.g., trace v0.1.0 (abc1234)"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      description: "Your operating system and architecture (see `uname -orsm`)."
+      placeholder: "e.g., macOS 15.2 arm64, Ubuntu 24.04 x86_64"
+    validations:
+      required: false
+
+  - type: input
+    id: agent
+    attributes:
+      label: Agent
+      description: Which AI coding agent were you using?
+      placeholder: "e.g., Claude Code, Gemini CLI"
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal
+      description: Which terminal emulator are you using?
+      placeholder: "e.g., iTerm2, Terminal.app, Ghostty, Alacritty, Windows Terminal, Warp"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / debug output
+      description: |
+        Relevant log output from `.trace/logs/`. If logs are long, use a
+        [GitHub Gist](https://gist.github.com/). Review output for sensitive
+        information before posting.
+      render: bash
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: |
+        Anything else that might help: Git version, shell (bash/zsh/fish),
+        whether running in a git worktree, tmux/SSH, etc.
+    validations:
+      required: false

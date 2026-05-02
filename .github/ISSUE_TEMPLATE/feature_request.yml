@@ -1,0 +1,55 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please search
+        [existing issues](https://github.com/GrayCodeAI/trace/issues?q=label%3Aenhancement)
+        before filing to avoid duplicates.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: |
+        What problem are you trying to solve? Focus on the end goal,
+        not the solution.
+      placeholder: |
+        Example: When working with multiple sessions, I need to ...
+        but currently there is no way to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Desired behavior
+      description: |
+        Show what the ideal experience would look like. Include example
+        commands, flags, or output if applicable.
+      placeholder: |
+        $ trace <command> --new-flag
+        Expected output...
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        If you have ideas on implementation, describe them here.
+        This is optional — we're equally interested in the problem.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Any workarounds you've tried or alternative approaches you've considered?
+    validations:
+      required: false
