@@ -1,344 +1,125 @@
-# Contributing to the Trace CLI
+# Contributing
 
-Thank you for your interest in contributing to Trace! We welcome contributions from everyone.
-
-Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
-
-> **New to Trace?** See the [README](README.md) for setup and usage documentation.
+Thanks for your interest in Trace! We welcome contributions of all kinds.
 
 ---
 
-## Before You Code: Discuss First
+## Before You Start
 
-The fastest way to get a contribution merged is to align with maintainers before writing code. Please **open an issue first** using our [issue templates](https://github.com/GrayCodeAI/trace/issues/new/choose) and wait for maintainer feedback before starting implementation.
+1. **Open an issue** describing your idea or the bug you found
+2. **Wait for maintainer feedback** — we may have context that saves you time
+3. **Get the green light**, then start coding
 
-### Contribution Workflow
-
-1. **Open an issue** describing the problem or feature
-2. **Wait for maintainer feedback** -- we may have relevant context or plans
-3. **Get approval** before starting implementation
-4. **Submit your PR** referencing the approved issue
-5. **Address all feedback** including automated Copilot comments
-6. **Maintainer review and merge**
+This avoids wasted effort on work that doesn't align with the project direction.
 
 ---
 
-## First-Time Contributors
+## Getting Started
 
-New to the project? Welcome! Here's how to get started:
+### Prerequisites
+
+- Go 1.26+
+- [mise](https://mise.jdx.dev/) — `curl https://mise.run | sh`
+
+### Setup
+
+```bash
+git clone https://github.com/GrayCodeAI/trace.git
+cd trace
+mise trust && mise install
+go mod download
+mise run build
+mise run test
+```
 
 ### Good First Issues
 
-We recommend starting with:
-- **Documentation improvements** - Fix typos, clarify explanations, add examples
-- **Test contributions** - Add test cases, improve coverage
-- **Small bug fixes** - Issues labeled `good-first-issue`
+Look for issues labeled `good-first-issue`. Great starting points:
+
+- Documentation improvements
+- Test coverage
+- Small bug fixes
 
 ---
 
-## Submitting Issues
+## Development Workflow
 
-All feature requests, bug reports, and general issues should be submitted through [GitHub Issues](https://github.com/GrayCodeAI/trace/issues). Please search for existing issues before opening a new one.
+```bash
+# Create a branch
+git checkout -b feature/your-feature
 
-For security-related issues, see the Security section below.
+# Make changes, then verify
+mise run fmt          # Format
+mise run lint         # Lint
+mise run test         # Test
+
+# Commit
+git commit -m "Add: description of your change"
+```
+
+### Code Style
+
+- Standard Go idioms
+- All errors handled explicitly
+- `gofmt` and `golangci-lint` must pass
+- See [CLAUDE.md](CLAUDE.md) for architecture patterns
+
+### Testing
+
+```bash
+mise run test              # Unit tests
+mise run test:integration  # Integration tests
+mise run test:ci           # Full CI suite
+```
+
+---
+
+## Pull Requests
+
+### Checklist
+
+- [ ] Related issue exists and is approved
+- [ ] `mise run lint` passes
+- [ ] `mise run test` passes
+- [ ] New code has tests
+- [ ] PR description explains *what* and *why*
+
+### Process
+
+1. Push your branch
+2. Open a PR against `main`
+3. Link the related issue
+4. Address review feedback
+5. Maintainer merges
 
 ---
 
 ## Security
 
-If you discover a security vulnerability, **do not report it through GitHub Issues**. Instead, please follow the instructions in our [SECURITY.md](SECURITY.md) file for responsible disclosure. All security reports are kept confidential as described in SECURITY.md.
+Found a vulnerability? **Do not** open a public issue.
 
----
-
-## Contributions & Communication
-
-Contributions and communications are expected to occur through:
-
-- [GitHub Issues](https://github.com/GrayCodeAI/trace/issues) - Bug reports and feature requests
-- [Discord](https://discord.gg/jZJs3Tue4S) - Questions, general conversation, and real-time support
-
-Please represent the project and community respectfully in all public and private interactions.
-
-
-## How to Contribute
-
-
-There are many ways to contribute:
-
-- **Feature requests** - Open a [GitHub Issue](https://github.com/GrayCodeAI/trace/issues) to discuss your idea
-- **Bug reports** - Report issues via [GitHub Issues](https://github.com/GrayCodeAI/trace/issues) (see [Reporting Bugs](#reporting-bugs))
-- **Code contributions** - Fix bugs, add features, improve tests
-- **Documentation** - Improve guides, fix typos, add examples
-- **Community** - Help others, answer questions, share knowledge
-
-
-## Reporting Bugs
-
-Good bug reports help us fix issues quickly. When reporting a bug, please include:
-
-### Required Information
-
-1. **Trace CLI version** - run `trace version`
-2. **Operating system**
-3. **Go version** - run `go version`
-
-### What to Include
-
-Please answer these questions in your bug report:
-
-1. **What did you do?** - Include the exact commands you ran
-2. **What did you expect to happen?**
-3. **What actually happened?** - Include the full error message or unexpected output
-4. **Can you reproduce it?** - Does it happen every time or intermittently?
-5. **Any additional context?** - Logs, screenshots, or related issues
-
----
-
-## Local Setup
-
-### Prerequisites
-
-- **Go 1.26.x** - Check with `go version`
-- **mise** - Task runner and version manager. Install with `curl https://mise.run | sh`
-
-### Clone and Install
-
-```bash
-# Clone the repository
-git clone https://github.com/GrayCodeAI/trace.git
-cd cli
-
-# Trust the mise configuration (required on first setup)
-mise trust
-
-# Install dependencies (mise will install the correct Go version)
-mise install
-
-# Download Go modules
-go mod download
-
-# Build the CLI
-mise run build
-
-# Verify setup by running tests
-mise run test
-```
-
-> See [CLAUDE.md](CLAUDE.md) for detailed architecture and development reference.
-
----
-
-## Making Changes
-
-1. **Create a branch** for your changes:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make your changes** - follow the [Code Style](#code-style) guidelines
-
-3. **Test your changes** - see [Testing](#testing)
-
-4. **Commit** with clear, descriptive messages:
-   ```bash
-   git commit -m "Add feature: description of what you added"
-   ```
-
----
-
-## Code Style
-
-Follow standard Go idioms and conventions. For detailed guidance, see the **Go Code Style** section in [CLAUDE.md](CLAUDE.md).
-
-### Key Points
-
-- **Error handling**: Handle all errors explicitly - don't leave them unchecked
-- **Formatting**: Code must pass `gofmt` (run `mise run fmt`)
-- **Linting**: Code must pass `golangci-lint` (run `mise run lint`)
-- **Naming**: Use meaningful, descriptive names following Go conventions
-
----
-
-## Testing
-
-> See [CLAUDE.md](CLAUDE.md) for complete testing documentation.
-
-```bash
-# Unit tests - always run before committing
-mise run test
-
-# Integration tests
-mise run test:integration
-
-# Full CI suite
-mise run test:ci
-```
-
-Integration tests use the `//go:build integration` build tag and are located in `cmd/trace/cli/integration_test/`.
-
----
-
-## Creating an Agent
-
-
-Trace supports two ways to create agents:
-
-### 1. Claude Code Agent Personas (Markdown)
-
-These are markdown files that define specialized behaviors for Claude Code (e.g., developer, reviewer, etc.).
-
-- **Location:** `.claude/agents/`
-- **Structure:**
-   ```markdown
-   ---
-   name: my-agent
-   description: What this agent does
-   model: opus
-   color: blue
-   ---
-
-   # Agent Name
-   You are a **[Role]** with expertise in [domain].
-
-   ## Core Principles
-   - Principle 1
-   - Principle 2
-
-   ## Process
-   1. Step 1
-   2. Step 2
-
-   ## Output Format
-   How to structure responses...
-   ```
-- **To invoke:** Create a matching command in `.claude/commands/` that spawns the agent via the Task tool.
-- **Examples:**
-   - `.claude/agents/dev.md` - TDD Developer
-   - `.claude/agents/reviewer.md` - Code Reviewer
-
-### 2. Coding Agent Integrations (Go)
-
-These are Go implementations that integrate Trace with different AI coding tools (Claude Code, Gemini CLI, OpenCode, Cursor, Factory AI Droid, Copilot CLI, etc.) using the Agent abstraction layer.
-
-- **Location:** `cmd/trace/cli/agent/`
-- **Steps:**
-   1. Implement the `Agent` interface in `agent/agent.go`
-   2. Register your agent in the agent registry
-   3. Add setup and hook configuration as needed
-   4. Ensure session and checkpoint tracking is handled per the abstraction
-- **Reference:** See [CLAUDE.md](CLAUDE.md) for architecture and code examples.
-
----
-
-**Which should I use?**
-
-- Use a persona markdown agent if you want to create a new role or workflow for Claude Code.
-- Use a coding agent integration if you want to add support for a new AI coding tool or extend agent capabilities in the CLI.
-
----
-
-## Submitting a Pull Request
-
-### Before You Submit
-
-- **Related issue exists and is approved** -- Your PR references an issue where a maintainer has acknowledged the approach. (Exceptions: documentation fixes, typo corrections, and `good-first-issue` items.)
-- **Linting passes** -- Run `mise run lint` (includes golangci-lint, gofmt, gomod, shellcheck)
-- **Tests pass** -- Run `mise run test` to verify your changes
-- **Tests included** -- New Go code and functionality should have accompanying tests
-- **Trace checkpoint trailers included** -- See [Using Trace While Contributing](#using-trace-while-contributing) below
-
-PRs that skip these steps are likely to be closed without merge.
-
-### Submitting
-
-1. **Push** your branch to your fork
-2. **Open a PR** against the `main` branch
-3. **Describe your changes** -- Link the related issue, summarize what changed and what testing you did
-4. **Address Copilot feedback** -- See [Responding to Automated Review](#responding-to-automated-review)
-5. **Wait for maintainer review**
-
----
-
-## Responding to Automated Review
-
-Co-pilot agent reviews every PR and provides feedback on code quality, potential bugs, and project conventions.
-
-**Read and respond to every Copilot comment.** PRs with unaddressed Copilot feedback will not move to maintainer review.
-
-- **Fixed** -- Push a commit addressing the issue.
-- **Disagree** -- Reply explaining your reasoning. The Copilot isn't always right.
-- **Question** -- Ask for clarification. We're happy to help.
-
-Addressing Copilot feedback upfront is the fastest path to maintainer review.
-
----
-
-## Using Trace While Contributing
-
-We use Trace on Trace. When contributing, install the Trace CLI and let it capture your coding sessions -- this gives us valuable dogfooding data and helps improve the tool.
-
-### Setup
-
-Install the latest version of the Trace CLI (see [installation docs](https://docs.trace.io/cli/installation)) and verify with `trace version`. Trace is already configured in this repository, so there's no need to run `trace enable`.
-
-### Checkpoint Trailers
-
-All commits should include `Trace-Checkpoint` trailers from your sessions. These are added automatically by the `prepare-commit-msg` hook when Trace is enabled. The trailers link your commits to session metadata on the `trace/checkpoints/v1` branch.
-
-### Sessions Branch
-
-When you push your PR branch, Trace can automatically push the `trace/checkpoints/v1` branch alongside it (if `push_sessions` is enabled in your settings). Include this in your PR so maintainers can review the session context behind your changes.
-
----
-
-## Troubleshooting
-
-### Common Setup Issues
-
-**`go mod download` fails with timeout**
-```bash
-# Try using direct mode
-GOPROXY=direct go mod download
-```
-
-**`mise install` fails**
-```bash
-# Ensure mise is properly installed
-curl https://mise.run | sh
-
-# Reload your shell
-source ~/.zshrc  # or ~/.bashrc
-```
-
-**Binary not updating after rebuild**
-```bash
-# Check which binary is being used
-which trace
-type -a trace
-
-# You may have multiple installations - update the correct path
-```
+Email [security@graycode.ai](mailto:security@graycode.ai) instead. See [SECURITY.md](SECURITY.md).
 
 ---
 
 ## Community
 
-Join the Trace community:
+- [GitHub Issues](https://github.com/GrayCodeAI/trace/issues) — bugs & features
+- [Discord](https://discord.gg/jZJs3Tue4S) — questions & discussion
 
-- **Discord** - [Join our server][discord] for discussions and support
-
-[discord]: https://discord.gg/jZJs3Tue4S
-
----
-
-## Additional Resources
-
-- [README](README.md) - Setup and usage documentation
-- [CLAUDE.md](CLAUDE.md) - Architecture and development reference (Claude Code)
-- [AGENTS.md](AGENTS.md) - Architecture and development reference (Gemini CLI, OpenCode, Cursor, Factory AI Droid, Copilot CLI)
-- [Code of Conduct](CODE_OF_CONDUCT.md) - Community guidelines
-- [Security Policy](SECURITY.md) - Reporting security vulnerabilities
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
 
 ---
 
-Thank you for contributing!
+## Resources
+
+| Document | Purpose |
+|---|---|
+| [README.md](README.md) | Setup & usage |
+| [CLAUDE.md](CLAUDE.md) | Architecture & internals |
+| [AGENTS.md](AGENTS.md) | Agent integration guide |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+
+---
+
+Thank you for helping make Trace better.
