@@ -13,10 +13,10 @@ require (
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/go-git/go-billy/v6 v6.0.0-20260328065524-593ae452e14d
 	github.com/go-git/go-git/v6 v6.0.0-alpha.2
-	github.com/go-git/x/plugin/objectsigner/auto v0.0.0-20260330134459-33df49246da9
+	github.com/go-git/x/plugin/objectsigner/auto v0.1.0
 	github.com/google/uuid v1.6.0
 	github.com/muesli/termenv v0.16.0
-	github.com/posthog/posthog-go v1.12.1
+	github.com/posthog/posthog-go v1.12.4
 	github.com/sergi/go-diff v1.4.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
