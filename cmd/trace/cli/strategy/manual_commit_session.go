@@ -3,11 +3,13 @@ package strategy
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent/types"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/checkpoint/id"
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/session"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/versioninfo"
@@ -91,8 +93,12 @@ func (s *ManualCommitStrategy) listAllSessionStates(ctx context.Context) ([]*Ses
 		refName := plumbing.NewBranchReferenceName(shadowBranch)
 		if _, err := repo.Reference(refName, true); err != nil {
 			if !state.Phase.IsActive() && state.LastCheckpointID.IsEmpty() {
-				//nolint:errcheck,gosec // G104: Cleanup is best-effort, shouldn't fail the list operation
-				store.Clear(ctx, state.SessionID)
+				if clearErr := store.Clear(ctx, state.SessionID); clearErr != nil {
+					logging.Warn(ctx, "failed to clear orphaned session state",
+						slog.String("session_id", state.SessionID),
+						slog.Any("error", clearErr),
+					)
+				}
 				continue
 			}
 		}

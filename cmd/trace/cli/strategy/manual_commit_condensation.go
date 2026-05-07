@@ -1037,7 +1037,13 @@ func (s *ManualCommitStrategy) extractSessionData(ctx context.Context, repo *git
 
 	// Calculate token usage from the extracted transcript portion
 	if len(data.Transcript) > 0 {
-		data.TokenUsage = agent.CalculateTokenUsage(ctx, ag, data.Transcript, checkpointTranscriptStart, "") //TODO: why do we not use here subagents dir?
+		// Derive subagents directory from the live transcript path when available.
+		// Pattern: <transcriptDir>/<sessionID>/subagents (same as manual_commit_hooks.go)
+		var subagentsDir string
+		if liveTranscriptPath != "" {
+			subagentsDir = filepath.Join(filepath.Dir(liveTranscriptPath), sessionID, "subagents")
+		}
+		data.TokenUsage = agent.CalculateTokenUsage(ctx, ag, data.Transcript, checkpointTranscriptStart, subagentsDir)
 	}
 
 	return data, nil
@@ -1075,7 +1081,13 @@ func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(ctx context.
 
 	// Calculate token usage from the extracted transcript portion
 	if len(data.Transcript) > 0 {
-		data.TokenUsage = agent.CalculateTokenUsage(ctx, ag, data.Transcript, state.CheckpointTranscriptStart, "") //TODO: why do we not use here subagents dir?
+		// Derive subagents directory from the transcript path when available.
+		// Pattern: <transcriptDir>/<sessionID>/subagents (same as manual_commit_hooks.go)
+		var subagentsDir string
+		if state.TranscriptPath != "" {
+			subagentsDir = filepath.Join(filepath.Dir(state.TranscriptPath), state.SessionID, "subagents")
+		}
+		data.TokenUsage = agent.CalculateTokenUsage(ctx, ag, data.Transcript, state.CheckpointTranscriptStart, subagentsDir)
 	}
 
 	return data, nil

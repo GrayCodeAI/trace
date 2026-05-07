@@ -622,7 +622,7 @@ func TestRenderSearchStatic(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	styles := statusStyles{colorEnabled: false, width: 100}
+	styles := statusStyles{colorEnabled: false, width: 200}
 	renderSearchStatic(&buf, testResults(), "auth", 2, styles)
 	output := buf.String()
 

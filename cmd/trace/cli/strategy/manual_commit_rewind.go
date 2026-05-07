@@ -356,14 +356,17 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 
 	// Build set of files tracked in HEAD
 	trackedFiles := make(map[string]bool)
-	//nolint:errcheck // Error is not critical for rewind
-	_ = headTree.Files().ForEach(func(f *object.File) error {
+	if iterErr := headTree.Files().ForEach(func(f *object.File) error {
 		if err := ctx.Err(); err != nil {
 			return err //nolint:wrapcheck // Propagating context cancellation
 		}
 		trackedFiles[f.Name] = true
 		return nil
-	})
+	}); iterErr != nil {
+		logging.Debug(ctx, "HEAD tree iteration error during rewind",
+			slog.Any("error", iterErr),
+		)
+	}
 
 	// Get repository root to walk from there
 	repoRoot, err := paths.WorktreeRoot(ctx)

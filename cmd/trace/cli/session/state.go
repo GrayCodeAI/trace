@@ -375,6 +375,16 @@ func (s *StateStore) Load(ctx context.Context, sessionID string) (*State, error)
 		return nil, fmt.Errorf("failed to read session state: %w", err)
 	}
 
+	// Validate JSON before unmarshal to provide clearer error for truncated/corrupt files.
+	if !json.Valid(data) {
+		logCtx := logging.WithComponent(ctx, "session")
+		logging.Warn(logCtx, "session state file contains invalid JSON (possibly truncated)",
+			slog.String("session_id", sessionID),
+			slog.Int("bytes", len(data)),
+		)
+		return nil, fmt.Errorf("session state file is invalid JSON (possibly truncated, %d bytes)", len(data))
+	}
+
 	var state State
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
