@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // PIICategory identifies a category of personally identifiable information.
@@ -54,12 +55,18 @@ type piiPattern struct {
 var (
 	piiConfig   *PIIConfig
 	piiConfigMu sync.RWMutex
+	piiUsed     atomic.Bool
 )
 
 // ConfigurePII sets the global PII redaction configuration.
 // Pre-compiles patterns so the hot path (String → detectPII) does no compilation.
 // Call once at startup after loading settings. Thread-safe.
+// Warns if called after PII redaction has already been used (patterns may have been
+// applied with the old configuration).
 func ConfigurePII(cfg PIIConfig) {
+	if piiUsed.Load() {
+		slog.Warn("ConfigurePII called after PII redaction already in use; new config may not apply to prior calls")
+	}
 	piiConfigMu.Lock()
 	defer piiConfigMu.Unlock()
 	cfgCopy := cfg
@@ -148,6 +155,7 @@ func detectPII(cfg *PIIConfig, s string) []taggedRegion {
 	if cfg == nil || !cfg.Enabled {
 		return nil
 	}
+	piiUsed.Store(true)
 
 	patterns := cfg.patterns
 	if patterns == nil {

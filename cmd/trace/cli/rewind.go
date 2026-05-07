@@ -47,6 +47,7 @@ func newRewindCmd() *cobra.Command {
 	var toFlag string
 	var logsOnlyFlag bool
 	var resetFlag bool
+	var dryRunFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "rewind",
@@ -80,6 +81,9 @@ your agent's context.`,
 			if listFlag {
 				return runRewindList(ctx, w)
 			}
+			if dryRunFlag {
+				return runRewindDryRun(ctx, w, toFlag)
+			}
 			if toFlag != "" {
 				return runRewindToWithOptions(ctx, w, errW, toFlag, logsOnlyFlag, resetFlag)
 			}
@@ -91,6 +95,7 @@ your agent's context.`,
 	cmd.Flags().StringVar(&toFlag, "to", "", "Rewind to specific commit ID (non-interactive)")
 	cmd.Flags().BoolVar(&logsOnlyFlag, "logs-only", false, "Only restore logs, don't modify working directory (for logs-only points)")
 	cmd.Flags().BoolVar(&resetFlag, "reset", false, "Reset branch to commit (destructive, for logs-only points)")
+	cmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Print what would be restored without actually doing it")
 
 	return cmd
 }
@@ -352,6 +357,41 @@ func runRewindInteractive(ctx context.Context, w, errW io.Writer) error { //noli
 	}
 
 	fmt.Fprintf(w, "✓ Rewound to %s. %s\n", shortID, agent.FormatResumeCommand(sessionID))
+	return nil
+}
+
+func runRewindDryRun(ctx context.Context, w io.Writer, commitID string) error {
+	start := GetStrategy(ctx)
+
+	points, err := start.GetRewindPoints(ctx, 50)
+	if err != nil {
+		return fmt.Errorf("failed to find rewind points: %w", err)
+	}
+
+	if commitID == "" && len(points) > 0 {
+		commitID = points[0].ID
+	}
+
+	var target *strategy.RewindPoint
+	for i := range points {
+		if points[i].ID == commitID {
+			target = &points[i]
+			break
+		}
+	}
+	if target == nil {
+		return fmt.Errorf("rewind point %q not found", commitID)
+	}
+
+	fmt.Fprintf(w, "[dry-run] Would rewind to checkpoint:\n")
+	fmt.Fprintf(w, "  ID:      %s\n", target.ID)
+	fmt.Fprintf(w, "  Date:    %s\n", target.Date.Format(time.RFC3339))
+	fmt.Fprintf(w, "  Message: %s\n", target.Message)
+	if target.SessionPrompt != "" {
+		fmt.Fprintf(w, "  Prompt:  %s\n", target.SessionPrompt)
+	}
+	fmt.Fprintf(w, "  Logs-only: %v\n", target.IsLogsOnly)
+	fmt.Fprintf(w, "\nNo changes were made.\n")
 	return nil
 }
 
