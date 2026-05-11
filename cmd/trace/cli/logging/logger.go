@@ -284,9 +284,9 @@ func log(ctx context.Context, level slog.Level, msg string, attrs ...any) {
 	// Add caller-provided attributes
 	allAttrs = append(allAttrs, attrs...)
 
-	// Pass nil context to slog as we've already extracted context values as attributes.
-	// slog handlers are expected to handle nil context gracefully.
-	l.Log(nil, level, msg, allAttrs...) //nolint:staticcheck // nil context is intentional - we extract values as attributes
+	// Pass context.TODO() to slog as we've already extracted context values as attributes.
+	// slog handlers are expected to handle empty context gracefully.
+	l.Log(context.TODO(), level, msg, allAttrs...)
 }
 
 // attrsFromContext extracts logging attributes from a context.
