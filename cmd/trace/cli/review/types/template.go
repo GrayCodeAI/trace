@@ -55,7 +55,7 @@ func (t *ReviewerTemplate) Name() string { return t.AgentName }
 // with a typed error is friendlier than a downstream nil deref — and it
 // keeps Start from panicking inside a multi-agent fan-out (CU8) where one
 // misconfigured template would otherwise kill the whole run.
-func (t *ReviewerTemplate) Start(ctx context.Context, cfg RunConfig) (Process, error) {
+func (t *ReviewerTemplate) Start(ctx context.Context, cfg RunConfig) (Process, error) { //nolint:ireturn // required by AgentReviewer interface
 	if t.AgentName == "" {
 		return nil, fmt.Errorf("ReviewerTemplate.Start: %w (empty AgentName)", ErrTemplateMisconfigured)
 	}

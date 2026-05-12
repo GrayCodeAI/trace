@@ -118,7 +118,7 @@ func logProviderResolutionOutput(ctx context.Context, buf *bytes.Buffer) {
 // copilot-cli). This lives in the cli package to avoid the import cycle:
 //
 //	review/cmd.go → claudecode/codex/geminicli → review
-func launchableReviewerFor(agentName string) reviewtypes.AgentReviewer {
+func launchableReviewerFor(agentName string) reviewtypes.AgentReviewer { //nolint:ireturn // returns concrete types behind reviewtypes.AgentReviewer interface
 	switch agentName {
 	case string(agent.AgentNameClaudeCode):
 		return claudecode.NewReviewer()
