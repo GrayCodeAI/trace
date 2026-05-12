@@ -12,6 +12,8 @@ import (
 // returned release closes the file (which drops the flock). Callers must call
 // release exactly once. The lock file persists between runs — that's fine,
 // flock state is held by the file descriptor, not the inode on disk.
+//
+//nolint:unused // platform-specific implementation; will be called once state locking is wired in
 func acquireStateFileLock(path string) (release func(), err error) {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // path built from validated session ID
 	if err != nil {

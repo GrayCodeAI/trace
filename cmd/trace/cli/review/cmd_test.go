@@ -369,7 +369,7 @@ type stubDispatchReviewer struct {
 }
 
 func (r *stubDispatchReviewer) Name() string { return r.name }
-func (r *stubDispatchReviewer) Start(context.Context, reviewtypes.RunConfig) (reviewtypes.Process, error) {
+func (r *stubDispatchReviewer) Start(context.Context, reviewtypes.RunConfig) (reviewtypes.Process, error) { //nolint:ireturn // test stub implementing reviewtypes.AgentReviewer
 	return &stubDispatchProcess{}, nil
 }
 
@@ -396,7 +396,7 @@ type captureRunConfigReviewer struct {
 }
 
 func (r *captureRunConfigReviewer) Name() string { return r.name }
-func (r *captureRunConfigReviewer) Start(_ context.Context, cfg reviewtypes.RunConfig) (reviewtypes.Process, error) {
+func (r *captureRunConfigReviewer) Start(_ context.Context, cfg reviewtypes.RunConfig) (reviewtypes.Process, error) { //nolint:ireturn // test stub implementing reviewtypes.AgentReviewer
 	r.called = true
 	r.got = cfg
 	return &stubDispatchProcess{}, nil

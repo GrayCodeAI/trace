@@ -8,7 +8,7 @@ import (
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
 
-	// Register agents so AgentForTranscriptPath can resolve them.
+	// Register agents so agent.ForTranscriptPath can resolve them.
 	_ "github.com/GrayCodeAI/trace/cmd/trace/cli/agent/claudecode"
 	_ "github.com/GrayCodeAI/trace/cmd/trace/cli/agent/cursor"
 

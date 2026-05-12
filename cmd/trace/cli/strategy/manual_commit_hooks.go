@@ -2974,7 +2974,7 @@ func (s *ManualCommitStrategy) carryForwardToNewShadowBranch(
 // session ID.
 func resolveSessionAgentType(ctx context.Context, sessionID string, callerAgentType types.AgentType, transcriptPath string) types.AgentType {
 	if repoRoot, err := paths.WorktreeRoot(ctx); err == nil && transcriptPath != "" {
-		if owner, ok := agent.AgentForTranscriptPath(transcriptPath, repoRoot); ok {
+		if owner, ok := agent.ForTranscriptPath(transcriptPath, repoRoot); ok {
 			return owner.Type()
 		}
 	}
@@ -2995,7 +2995,7 @@ func correctSessionAgentType(ctx context.Context, currentType types.AgentType, t
 	if err != nil {
 		return currentType, false
 	}
-	owner, ok := agent.AgentForTranscriptPath(transcriptPath, repoRoot)
+	owner, ok := agent.ForTranscriptPath(transcriptPath, repoRoot)
 	if !ok {
 		return currentType, false
 	}
