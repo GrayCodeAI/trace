@@ -91,7 +91,7 @@ func printNoTrailerMessage(w io.Writer, repo *git.Repository, hash plumbing.Hash
 	rows := []explainRow{
 		{Label: "commit", Value: abbreviateCommitHash(repo, hash)},
 		{Label: "reason", Value: "no Trace-Checkpoint trailer"},
-		{Label: "hint", Value: "this commit was not created during an Trace session,"},
+		{Label: "hint", Value: "this commit was not created during a Trace session,"},
 		{Label: "", Value: "or the trailer was removed"},
 	}
 	fmt.Fprint(w, styles.renderFailure("No associated Trace checkpoint", rows))
@@ -225,6 +225,10 @@ func newExplainCmd() *cobra.Command {
 	var generateFlag bool
 	var forceFlag bool
 	var searchAllFlag bool
+	var jsonFlag bool
+	var transcriptFlag bool
+	sessionIndex := -1
+	listLimit := 0 // 0 means "use default (branchCheckpointsLimit)"
 
 	cmd := &cobra.Command{
 		Use:   "explain [checkpoint-id | commit-sha]",
@@ -250,6 +254,20 @@ Output verbosity levels (when explaining a specific item):
   --short          Summary only (ID, session, timestamp, tokens, intent)
   --full           Parsed full transcript (all prompts/responses from trace session)
   --raw-transcript Raw transcript file (JSONL format)
+
+Machine-readable export modes (additive surface for external consumers):
+  --json           Metadata-only JSON. Lists checkpoints when no target is given;
+                   emits a single checkpoint envelope when a target is supplied.
+                   Transcript bytes are NEVER embedded in the JSON envelope.
+  --transcript     Stream the normalized compact transcript bytes (JSONL on
+                   /main) to stdout for the selected session. Pair with
+                   --raw-transcript for the per-agent raw transcript instead.
+  --session-index  Pick a session within a multi-session checkpoint (0-based).
+                   Defaults to the latest session. Only meaningful with
+                   --transcript or --raw-transcript.
+  --limit          Cap the number of checkpoints returned by the list view.
+                   Defaults to 100. When the cap is hit, a stderr note
+                   says how many were skipped. Only meaningful with --json.
 
 Summary generation:
   --generate    Generate an AI summary for the checkpoint
@@ -307,6 +325,44 @@ Note: --session filters the list view; the positional arg, --commit, and --check
 			if rawTranscriptFlag && !hasCheckpointTarget {
 				return errors.New("--raw-transcript requires a checkpoint ID or commit SHA (positional), --checkpoint/-c, or --commit flag")
 			}
+			if transcriptFlag && !hasCheckpointTarget {
+				return errors.New("--transcript requires a checkpoint ID or commit SHA (positional), --checkpoint/-c, or --commit flag")
+			}
+			if cmd.Flags().Changed("session-index") {
+				if !transcriptFlag && !rawTranscriptFlag {
+					return errors.New("--session-index only applies with --transcript or --raw-transcript")
+				}
+				if sessionIndex < 0 {
+					return errors.New("--session-index must be non-negative")
+				}
+			}
+			if cmd.Flags().Changed("limit") {
+				if !jsonFlag {
+					return errors.New("--limit only applies with --json")
+				}
+				if listLimit <= 0 {
+					return errors.New("--limit must be positive")
+				}
+			}
+
+			// Export modes — emit machine-readable output and skip the prose pipeline.
+			// --raw-transcript also routes here when --session-index is explicit; the
+			// legacy raw-transcript path (with spinner + prefetch) handles the default
+			// case where the caller wants the latest session.
+			rawWithSessionIndex := rawTranscriptFlag && cmd.Flags().Changed("session-index")
+			if jsonFlag || transcriptFlag || rawWithSessionIndex {
+				return runExplainExport(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), explainExportOptions{
+					sessionFilter:  sessionFlag,
+					commitRef:      commitFlag,
+					checkpointFlag: checkpointFlag,
+					target:         positional,
+					json:           jsonFlag,
+					transcript:     transcriptFlag,
+					rawTranscript:  rawTranscriptFlag,
+					sessionIndex:   sessionIndex,
+					listLimit:      listLimit,
+				})
+			}
 
 			// Convert short flag to verbose (verbose = !short)
 			verbose := !shortFlag
@@ -324,11 +380,18 @@ Note: --session filters the list view; the positional arg, --commit, and --check
 	cmd.Flags().BoolVar(&generateFlag, "generate", false, "Generate an AI summary for the checkpoint")
 	cmd.Flags().BoolVar(&forceFlag, "force", false, "Regenerate summary even if one already exists (requires --generate)")
 	cmd.Flags().BoolVar(&searchAllFlag, "search-all", false, "Search all commits (no branch/depth limit, may be slow)")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output metadata as JSON (no transcript bytes)")
+	cmd.Flags().BoolVar(&transcriptFlag, "transcript", false, "Stream compact normalized transcript bytes to stdout (pair with --raw-transcript for the per-agent raw transcript)")
+	cmd.Flags().IntVar(&sessionIndex, "session-index", -1, "Session index within a multi-session checkpoint (0-based, defaults to latest)")
+	cmd.Flags().IntVar(&listLimit, "limit", 0, "Cap the list view at N checkpoints (default: 100). Only meaningful with --json.")
 
-	// Make --short, --full, and --raw-transcript mutually exclusive
-	cmd.MarkFlagsMutuallyExclusive("short", "full", "raw-transcript")
+	// Verbosity / transcript output modes are mutually exclusive
+	cmd.MarkFlagsMutuallyExclusive("short", "full", "raw-transcript", "transcript", "json")
 	// --generate and --raw-transcript are incompatible (summary would be generated but not shown)
 	cmd.MarkFlagsMutuallyExclusive("generate", "raw-transcript")
+	// --generate is a write op; export modes are reader-only
+	cmd.MarkFlagsMutuallyExclusive("generate", "json")
+	cmd.MarkFlagsMutuallyExclusive("generate", "transcript")
 
 	return cmd
 }
@@ -502,40 +565,8 @@ func runExplainCheckpointWithLookup(ctx context.Context, w, errW io.Writer, chec
 		return lookupErr
 	}
 
-	// Collect all matching checkpoint IDs to detect ambiguity
-	var matches []id.CheckpointID
-	for _, info := range lookup.committed {
-		if strings.HasPrefix(info.CheckpointID.String(), checkpointIDPrefix) {
-			matches = append(matches, info.CheckpointID)
-		}
-	}
-
-	// If not found locally, fetch metadata from remote and retry. Reuses
-	// resume's getMetadataTree / getV2MetadataTree helpers — they already
-	// implement the checkpoint_remote → treeless origin → full origin chain
-	// and return a fresh repo handle (which we discard; the post-fetch
-	// rebuild via newExplainCheckpointLookup opens its own).
-	if len(matches) == 0 {
-		stop := startSpinner(errW, "Fetching checkpoint metadata from remote")
-		_, _, v1Err := getMetadataTree(ctx)
-		v2OK := false
-		if lookup.preferCheckpointsV2 {
-			if _, _, v2Err := getV2MetadataTree(ctx); v2Err == nil {
-				v2OK = true
-			}
-		}
-		stop("")
-		if v1Err == nil || v2OK {
-			if freshLookup, freshErr := newExplainCheckpointLookup(ctx); freshErr == nil {
-				lookup = freshLookup
-				for _, info := range lookup.committed {
-					if strings.HasPrefix(info.CheckpointID.String(), checkpointIDPrefix) {
-						matches = append(matches, info.CheckpointID)
-					}
-				}
-			}
-		}
-	}
+	// Match the prefix locally; on miss, fetch from remote and retry once.
+	matches, lookup := matchCheckpointPrefixWithRemoteFallback(ctx, errW, lookup, checkpointIDPrefix)
 
 	var fullCheckpointID id.CheckpointID
 	switch len(matches) {
@@ -575,7 +606,7 @@ func runExplainCheckpointWithLookup(ctx context.Context, w, errW io.Writer, chec
 		return NewSilentError(fmt.Errorf("%w: %s matches %d checkpoints", errAmbiguousCommitPrefix, checkpointIDPrefix, len(matches)))
 	}
 
-	// One spinner covers the trace data-loading pipeline: prefetch's
+	// One spinner covers the entire data-loading pipeline: prefetch's
 	// missing-blob analysis (which spawns one cat-file -e per blob and
 	// can take seconds on a deep checkpoint subtree), the prefetch fetch
 	// itself, ResolveCommittedReader's metadata read, session content
@@ -632,7 +663,7 @@ func runExplainCheckpointWithLookup(ctx context.Context, w, errW io.Writer, chec
 	associatedCommits, _ := getAssociatedCommits(ctx, lookup.repo, fullCheckpointID, searchAll) //nolint:errcheck // Best-effort
 
 	// Derive author from the first associated commit (the user who made the commit).
-	// Fall back to GetCheckpointAuthor (walks trace/checkpoints/v1) for checkpoints
+	// Fall back to GetCheckpointAuthor (walks entire/checkpoints/v1) for checkpoints
 	// not reachable from the current branch.
 	var author checkpoint.Author
 	if len(associatedCommits) > 0 {
@@ -1037,7 +1068,7 @@ func maybeCompactExternalTranscriptForSummary(ctx context.Context, scopedTranscr
 		return scopedTranscript
 	}
 
-	tmpFile, err := os.CreateTemp("", "trace-summary-transcript-*.jsonl")
+	tmpFile, err := os.CreateTemp("", "entire-summary-transcript-*.jsonl")
 	if err != nil {
 		logging.Debug(ctx, "external summary compaction unavailable",
 			slog.String("agent", string(agentType)),
@@ -1880,7 +1911,7 @@ func buildFilesMarkdown(files []string) string {
 }
 
 // buildSummaryMarkdown renders a checkpoint AI summary into the brand
-// markdown shape used by trace's TTY renderer. The output is also the
+// markdown shape used by entire's TTY renderer. The output is also the
 // source of truth for non-TTY callers, which write it verbatim.
 func buildSummaryMarkdown(s *checkpoint.Summary) string {
 	if s == nil {
@@ -2074,7 +2105,7 @@ func walkFirstParentCommits(ctx context.Context, repo *git.Repository, from plum
 // Behavior:
 //   - On feature branches: only show checkpoints unique to this branch (not in main)
 //   - On default branch (main/master): show all checkpoints in history (up to limit)
-//   - Includes both committed checkpoints (trace/checkpoints/v1) and temporary checkpoints (shadow branches)
+//   - Includes both committed checkpoints (entire/checkpoints/v1) and temporary checkpoints (shadow branches)
 func getBranchCheckpoints(ctx context.Context, repo *git.Repository, limit int) ([]strategy.RewindPoint, error) {
 	// Warn (once per process) if metadata branches are disconnected
 	strategy.WarnIfMetadataDisconnected()
@@ -2297,8 +2328,8 @@ func convertTemporaryCheckpoint(repo *git.Repository, tc checkpoint.TemporaryChe
 		return nil
 	}
 
-	// Read session prompt from the shadow branch commit's tree (not from trace/checkpoints/v1)
-	// Temporary checkpoints store their metadata in the shadow branch, not in trace/checkpoints/v1
+	// Read session prompt from the shadow branch commit's tree (not from entire/checkpoints/v1)
+	// Temporary checkpoints store their metadata in the shadow branch, not in entire/checkpoints/v1
 	var sessionPrompt string
 	shadowTree, treeErr := shadowCommit.Tree()
 	if treeErr == nil {
@@ -2553,6 +2584,7 @@ func upsertEnv(env []string, key, value string) []string {
 	return result
 }
 
+// removeEnvKey returns env with every entry for key dropped. Useful when a
 // outputWithPager outputs content through a pager if stdout is a terminal and content is long.
 func outputWithPager(w io.Writer, content string) {
 	// Check if we're writing to stdout and it's a terminal

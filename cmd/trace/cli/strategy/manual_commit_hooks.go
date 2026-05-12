@@ -2163,6 +2163,9 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 		return fmt.Errorf("failed to open git repository: %w", err)
 	}
 
+	// Resolve which agent actually owns this session.
+	resolvedAgentType := resolveSessionAgentType(ctx, sessionID, agentType, transcriptPath)
+
 	// Check if session already exists
 	state, err := s.loadSessionState(ctx, sessionID)
 	if err != nil {
@@ -2184,9 +2187,17 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 		}
 		state.TurnID = turnID.String()
 
-		// Set AgentType from hook context if not yet set
-		if state.AgentType == "" && agentType != "" {
-			state.AgentType = agentType
+		// Update AgentType when it isn't set yet, or when the transcript path
+		// proves we're a different agent than the one stored.
+		if state.AgentType == "" && resolvedAgentType != "" {
+			state.AgentType = resolvedAgentType
+		} else if corrected, changed := correctSessionAgentType(ctx, state.AgentType, transcriptPath); changed {
+			logging.Info(logging.WithComponent(ctx, "hooks"), "corrected session agent type from transcript path",
+				slog.String("session_id", sessionID),
+				slog.String("from", string(state.AgentType)),
+				slog.String("to", string(corrected)),
+				slog.String("transcript_path", transcriptPath))
+			state.AgentType = corrected
 		}
 
 		// Update ModelName if provided (model can change between turns)
@@ -2256,7 +2267,7 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 	// Continue below to properly initialize it
 
 	// Initialize new session
-	state, err = s.initializeSession(ctx, repo, sessionID, agentType, transcriptPath, userPrompt, model)
+	state, err = s.initializeSession(ctx, repo, sessionID, resolvedAgentType, transcriptPath, userPrompt, model)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session: %w", err)
 	}
@@ -2955,4 +2966,41 @@ func (s *ManualCommitStrategy) carryForwardToNewShadowBranch(
 		slog.Int64("write_carry_forward_shadow_ms", duration.Milliseconds()),
 		slog.Int("remaining_files", len(remainingFiles)),
 	)
+}
+
+// resolveSessionAgentType picks the most reliable identifier for which agent
+// owns a session, given the agent whose hook is firing right now (callerAgentType),
+// an optional transcript path, and the SessionStart hint stored under the
+// session ID.
+func resolveSessionAgentType(ctx context.Context, sessionID string, callerAgentType types.AgentType, transcriptPath string) types.AgentType {
+	if repoRoot, err := paths.WorktreeRoot(ctx); err == nil && transcriptPath != "" {
+		if owner, ok := agent.AgentForTranscriptPath(transcriptPath, repoRoot); ok {
+			return owner.Type()
+		}
+	}
+	if hint := LoadAgentTypeHint(ctx, sessionID); hint != "" && hint != agent.AgentTypeUnknown {
+		return hint
+	}
+	return callerAgentType
+}
+
+// correctSessionAgentType returns the agent type that owns transcriptPath when
+// it disagrees with currentType. Returns (currentType, false) if there's no
+// disagreement or no transcript signal.
+func correctSessionAgentType(ctx context.Context, currentType types.AgentType, transcriptPath string) (types.AgentType, bool) {
+	if transcriptPath == "" {
+		return currentType, false
+	}
+	repoRoot, err := paths.WorktreeRoot(ctx)
+	if err != nil {
+		return currentType, false
+	}
+	owner, ok := agent.AgentForTranscriptPath(transcriptPath, repoRoot)
+	if !ok {
+		return currentType, false
+	}
+	if owner.Type() == currentType {
+		return currentType, false
+	}
+	return owner.Type(), true
 }

@@ -75,6 +75,32 @@ external_agents in settings. Run 'trace agent list' to see the full list.`,
 	return cmd
 }
 
+// attachOptions carries optional flags for runAttach. Force is the original
+// flag; Review opts the attach into recording the session as an
+// agent_review in the checkpoint metadata.
+type attachOptions struct {
+	Force bool
+	// Review, when true, tags the attached session as a review.
+	Review bool
+	// ReviewSkillsOverride, when non-empty, declares which review skills were run.
+	ReviewSkillsOverride []string
+	// ReviewPromptOverride, when non-empty, is recorded instead of the
+	// transcript's first user prompt.
+	ReviewPromptOverride string
+}
+
+// runAttachSurfaceReviewErrors wraps runAttach and converts errors from review
+// attaches into silent errors (already printed to stderr) for clean UX.
+func runAttachSurfaceReviewErrors(cmd *cobra.Command, sessionID string, agentName types.AgentName, opts attachOptions) error {
+	err := runAttach(cmd.Context(), cmd.OutOrStdout(), sessionID, agentName, opts.Force)
+	if err != nil && opts.Review {
+		cmd.SilenceUsage = true
+		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+		return NewSilentError(err)
+	}
+	return err
+}
+
 func runAttach(ctx context.Context, w io.Writer, sessionID string, agentName types.AgentName, force bool) error {
 	// Initialize structured logger so logging.Warn/Info write to .trace/logs/ not stderr.
 	if err := logging.Init(ctx, sessionID); err != nil {

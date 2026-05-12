@@ -109,6 +109,40 @@ func TrackCommandDetached(cmd *cobra.Command, agent string, isTraceEnabled bool,
 	}
 }
 
+// TrackPluginDetached tracks a plugin invocation by spawning a detached subprocess.
+// This returns immediately without blocking the CLI.
+func TrackPluginDetached(pluginName string, isTraceEnabled bool, version string) {
+	if os.Getenv("TRACE_TELEMETRY_OPTOUT") != "" {
+		return
+	}
+
+	payload := BuildPluginEventPayload(pluginName, isTraceEnabled, version)
+	if payload == nil {
+		return
+	}
+
+	if payloadJSON, err := json.Marshal(payload); err == nil {
+		spawnDetachedAnalytics(string(payloadJSON))
+	}
+}
+
+// BuildPluginEventPayload creates a telemetry payload for a plugin invocation.
+func BuildPluginEventPayload(pluginName string, isTraceEnabled bool, version string) *EventPayload {
+	if pluginName == "" {
+		return nil
+	}
+	return &EventPayload{
+		Event: "plugin_invocation",
+		Properties: map[string]interface{}{
+			"plugin_name":    pluginName,
+			"trace_enabled":  isTraceEnabled,
+			"cli_version":    version,
+			"$lib":           "trace-cli",
+			"$lib_version":   version,
+		},
+	}
+}
+
 // SendEvent processes an event payload in the detached subprocess.
 // This is called by the hidden __send_analytics command.
 func SendEvent(payloadJSON string) {

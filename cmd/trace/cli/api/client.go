@@ -62,6 +62,33 @@ func (c *Client) Get(ctx context.Context, path string) (*http.Response, error) {
 	return c.do(ctx, http.MethodGet, path, nil)
 }
 
+// GetStream sends an authenticated GET request with optional extra headers.
+// Unlike Get, it does not limit response body size — the caller owns the
+// response and must close it.
+func (c *Client) GetStream(ctx context.Context, path string, headers http.Header) (*http.Response, error) {
+	endpoint, err := ResolveURLFromBase(c.baseURL, path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve URL %s: %w", path, err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	for key, vals := range headers {
+		for _, v := range vals {
+			req.Header.Add(key, v)
+		}
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", path, err)
+	}
+	return resp, nil
+}
+
 // Post sends an authenticated POST request with a JSON body to the given API-relative path.
 func (c *Client) Post(ctx context.Context, path string, body any) (*http.Response, error) {
 	var reader io.Reader

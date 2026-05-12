@@ -132,11 +132,19 @@ func discoverAndRegister(ctx context.Context) {
 }
 
 // stripExeExt removes Windows executable extensions (.exe, .bat, .cmd) from a
+// StripExeExt strips Windows executable extensions (.exe, .bat, .cmd, .com) from a
+// file name so that the agent name derived from the binary matches on all platforms.
+// On Unix this is effectively a no-op because binaries have no extension.
+func StripExeExt(name string) string {
+	return stripExeExt(name)
+}
+
+// stripExeExt strips Windows executable extensions (.exe, .bat, .cmd) from a
 // file name so that the agent name derived from the binary matches on all platforms.
 // On Unix this is effectively a no-op because binaries have no extension.
 func stripExeExt(name string) string {
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".exe", ".bat", ".cmd":
+	case ".exe", ".bat", ".cmd", ".com":
 		return strings.TrimSuffix(name, filepath.Ext(name))
 	}
 	return name

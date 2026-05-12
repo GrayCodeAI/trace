@@ -133,6 +133,8 @@ github.com/go-git/x/plugin/objectsigner/auto v0.0.0-20260330134459-33df49246da9 
 github.com/go-git/x/plugin/objectsigner/auto v0.0.0-20260330134459-33df49246da9/go.mod h1:iP2cXPyXc//9v9THS3y/MLi0jnt7vEqwUDj11qQfFPg=
 github.com/go-git/x/plugin/objectsigner/gpg v0.1.0 h1:NEGVSOD+LPnus6j4iNkAZaHVTc4DNY223y1/I2Jq2yI=
 github.com/go-git/x/plugin/objectsigner/gpg v0.1.0/go.mod h1:1iosWq3OOqZxtNrwDHtcjicswuaOT45J5GMFyCk80wc=
+github.com/go-git/x/plugin/objectsigner/program v0.0.0-20260509055934-990a63433b45 h1:9HmkDRECQ7yGwcQ35x+0HhQp/JBKLkC9Cozr/z3gs4Q=
+github.com/go-git/x/plugin/objectsigner/program v0.0.0-20260509055934-990a63433b45/go.mod h1:qqkRcAeBDQLDJTBiN/s4k4Xj6eFBP+2cdoZDzsld0b0=
 github.com/go-git/x/plugin/objectsigner/ssh v0.1.0 h1:lAeeDgc1oxsMMvVUed6ssrqJnD97UR1K/dXIDdeg1Yc=
 github.com/go-git/x/plugin/objectsigner/ssh v0.1.0/go.mod h1:6BvpZj9Yry1ZFNw4N5OZDc+7M1T8oyrZilLNFg2aTsM=
 github.com/go-sprout/sprout v1.0.3 h1:LLuz0D3aYazgbVTOwCVuMor3LOUVYinipXRIdjA/D+I=

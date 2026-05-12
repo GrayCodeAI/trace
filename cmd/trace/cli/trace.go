@@ -61,7 +61,7 @@ func parseTraceEntry(line string) *traceEntry {
 	entry := &traceEntry{}
 
 	// Best-effort field extraction: missing or mistyped fields keep their
-	// zero values rather than discarding the trace entry.
+	// zero values rather than discarding the entire entry.
 	if opRaw, ok := raw["op"]; ok {
 		_ = json.Unmarshal(opRaw, &entry.Op) //nolint:errcheck // best-effort
 	}
