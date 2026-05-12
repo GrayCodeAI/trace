@@ -2,12 +2,15 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent/types"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/jsonutil"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
@@ -286,4 +289,92 @@ func ClearSessionState(ctx context.Context, sessionID string) error {
 	}
 
 	return nil
+}
+
+// StoreAgentTypeHint writes the agent type hint for a session using
+// first-writer-wins semantics. Returns (true, nil) when this call won the race.
+func StoreAgentTypeHint(ctx context.Context, sessionID string, agentType types.AgentType) (created bool, err error) {
+	if vErr := validation.ValidateSessionID(sessionID); vErr != nil {
+		return false, fmt.Errorf("invalid session ID: %w", vErr)
+	}
+	if agentType == "" || agentType == agent.AgentTypeUnknown {
+		return false, nil
+	}
+
+	stateDir, sErr := getSessionStateDir(ctx)
+	if sErr != nil {
+		return false, fmt.Errorf("failed to get session state directory: %w", sErr)
+	}
+	if mErr := os.MkdirAll(stateDir, 0o750); mErr != nil {
+		return false, fmt.Errorf("failed to create session state directory: %w", mErr)
+	}
+
+	hintFile := filepath.Join(stateDir, sessionID+".agent")
+	f, oErr := os.OpenFile(hintFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // hintFile path is built from validated sessionID
+	if oErr != nil {
+		if errors.Is(oErr, os.ErrExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to create agent hint file: %w", oErr)
+	}
+	defer f.Close()
+	if _, wErr := f.WriteString(string(agentType)); wErr != nil {
+		return false, fmt.Errorf("failed to write agent hint file: %w", wErr)
+	}
+	return true, nil
+}
+
+// ClaimSessionStartBanner records that the SessionStart banner has been emitted
+// for a session. First-writer-wins semantics.
+func ClaimSessionStartBanner(ctx context.Context, sessionID string) (claimed bool, err error) {
+	if vErr := validation.ValidateSessionID(sessionID); vErr != nil {
+		return false, fmt.Errorf("invalid session ID: %w", vErr)
+	}
+
+	stateDir, sErr := getSessionStateDir(ctx)
+	if sErr != nil {
+		return false, fmt.Errorf("failed to get session state directory: %w", sErr)
+	}
+	if mErr := os.MkdirAll(stateDir, 0o750); mErr != nil {
+		return false, fmt.Errorf("failed to create session state directory: %w", mErr)
+	}
+
+	markerFile := filepath.Join(stateDir, sessionID+".banner")
+	f, oErr := os.OpenFile(markerFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // markerFile path is built from validated sessionID
+	if oErr != nil {
+		if errors.Is(oErr, os.ErrExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to create banner marker file: %w", oErr)
+	}
+	_ = f.Close()
+	return true, nil
+}
+
+// LoadAgentTypeHint reads the .agent hint file for a session, returning
+// the agent type that first claimed ownership via SessionStart.
+func LoadAgentTypeHint(ctx context.Context, sessionID string) types.AgentType {
+	if err := validation.ValidateSessionID(sessionID); err != nil {
+		return ""
+	}
+
+	stateDir, err := getSessionStateDir(ctx)
+	if err != nil {
+		logging.Warn(logging.WithComponent(ctx, "session"), "failed to resolve state dir for agent hint",
+			slog.String("session_id", sessionID),
+			slog.Any("error", err))
+		return ""
+	}
+
+	hintPath := filepath.Join(stateDir, sessionID+".agent")
+	data, err := os.ReadFile(hintPath) //nolint:gosec // sessionID is validated above
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logging.Warn(logging.WithComponent(ctx, "session"), "failed to read agent hint file",
+				slog.String("path", hintPath),
+				slog.Any("error", err))
+		}
+		return ""
+	}
+	return types.AgentType(strings.TrimSpace(string(data)))
 }

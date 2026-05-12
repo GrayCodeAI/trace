@@ -455,6 +455,12 @@ type CommittedMetadata struct {
 	// but they share the same TurnID for future aggregation/deduplication.
 	TurnID string `json:"turn_id,omitempty"`
 
+	// Kind tags the session purpose (e.g., "agent_review"). Empty for normal sessions.
+	Kind string `json:"kind,omitempty"`
+
+	// ReviewSkills is the snapshot of configured review skills at session start.
+	ReviewSkills []string `json:"review_skills,omitempty"`
+
 	// Task checkpoint fields (only populated for task checkpoints)
 	IsTask    bool   `json:"is_task,omitempty"`
 	ToolUseID string `json:"tool_use_id,omitempty"`
@@ -532,6 +538,11 @@ type CheckpointSummary struct {
 	Sessions            []SessionFilePaths  `json:"sessions"`
 	TokenUsage          *agent.TokenUsage   `json:"token_usage,omitempty"`
 	CombinedAttribution *InitialAttribution `json:"combined_attribution,omitempty"`
+
+	// HasReview is the umbrella "any review happened" flag: true when at least
+	// one session in this checkpoint has Kind.IsReview(). Summary-level so
+	// queries can check the flag without scanning all session metadata.
+	HasReview bool `json:"has_review,omitempty"`
 }
 
 // SessionMetrics contains hook-provided session metrics from agents that report

@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
+	cliReview "github.com/GrayCodeAI/trace/cmd/trace/cli/review"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/telemetry"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/versioncheck"
@@ -97,6 +98,10 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newDispatchCmd())
 	cmd.AddCommand(newActivityCmd())
+	cmd.AddCommand(newLabsCmd())            // 'labs' (experimental workflow discovery)
+	cmd.AddCommand(newPluginGroupCmd())     // 'plugin' (managed install/list/remove)
+	cmd.AddCommand(cliReview.NewCommand(buildReviewDeps(newReviewAttachCmd()))) // hidden during maturation; runs configured review skills
+	cmd.AddCommand(newRecapCmd())
 
 	// Hidden top-level shortcuts. Functional but print a deprecation hint.
 	cmd.AddCommand(hideAsAlias(newRewindCmd(), "trace checkpoint rewind"))

@@ -113,6 +113,13 @@ func handleLifecycleSessionStart(ctx context.Context, ag agent.Agent, event *age
 	}
 	hookResponseSpan.End()
 
+	// Store agent type hint — first writer wins. Subsequent agents
+	// firing SessionStart for the same session ID are no-ops.
+	if _, hintErr := strategy.StoreAgentTypeHint(ctx, event.SessionID, ag.Type()); hintErr != nil {
+		logging.Warn(logCtx, "failed to store agent hint on session start",
+			slog.String("error", hintErr.Error()))
+	}
+
 	// Store model hint if the agent provided model info on SessionStart
 	if event.Model != "" {
 		if err := strategy.StoreModelHint(ctx, event.SessionID, event.Model); err != nil {

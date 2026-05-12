@@ -71,6 +71,7 @@ require (
 	github.com/gitleaks/go-gitdiff v0.9.1 // indirect
 	github.com/go-git/gcfg/v2 v2.0.2 // indirect
 	github.com/go-git/x/plugin/objectsigner/gpg v0.1.0 // indirect
+	github.com/go-git/x/plugin/objectsigner/program v0.0.0-20260509055934-990a63433b45 // indirect
 	github.com/go-git/x/plugin/objectsigner/ssh v0.1.0 // indirect
 	github.com/go-sprout/sprout v1.0.3 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect

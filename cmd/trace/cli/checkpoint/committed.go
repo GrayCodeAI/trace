@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -36,12 +35,8 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
-	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/utils/binary"
-	"github.com/go-git/go-git/v6/x/plugin"
-	"github.com/go-git/x/plugin/objectsigner/auto"
-	sshagent "golang.org/x/crypto/ssh/agent"
 )
 
 // errStopIteration is used to stop commit iteration early in GetCheckpointAuthor.
@@ -53,13 +48,6 @@ var errStopIteration = errors.New("stop iteration")
 // unwrapped function.
 var chunkTranscript = agent.ChunkTranscript
 
-var (
-	objectSignerLoader = loadObjectSigner
-	scopeName          = map[config.Scope]string{
-		config.GlobalScope: "global",
-		config.SystemScope: "system",
-	}
-)
 
 // WriteCommitted writes a committed checkpoint to the trace/checkpoints/v1 branch.
 // Checkpoints are stored at sharded paths: <id[:2]>/<id[2:]>/
@@ -1879,91 +1867,6 @@ func SignCommitBestEffort(ctx context.Context, commit *object.Commit) {
 	commit.Signature = string(sig)
 }
 
-func loadObjectSigner(ctx context.Context) (plugin.Signer, bool) {
-	cfgSource, err := plugin.Get(plugin.ConfigLoader())
-	if err != nil {
-		// No config loader registered; signing not possible.
-		return nil, false
-	}
-
-	sysCfg := loadScopedConfig(cfgSource, config.SystemScope)
-	globalCfg := loadScopedConfig(cfgSource, config.GlobalScope)
-
-	// Merge system then global so that global settings take precedence.
-	merged := config.Merge(sysCfg, globalCfg)
-
-	if !merged.Commit.GpgSign.IsTrue() {
-		return nil, false
-	}
-
-	// Custom gpg.ssh.program values use an external signer flow that go-git
-	// cannot invoke, so fall back to unsigned checkpoint commits.
-	if auto.Format(merged.GPG.Format) == auto.FormatSSH && hasCustomSSHSignProgram(merged.Raw) {
-		logging.Debug(ctx, "skipping native SSH commit signing: custom gpg.ssh.program is configured")
-		return nil, false
-	}
-
-	signer, err := auto.FromConfig(auto.Config{
-		SigningKey: merged.User.SigningKey,
-		Format:     auto.Format(merged.GPG.Format),
-		SSHAgent:   connectSSHAgent(ctx),
-	})
-	if err != nil {
-		logging.Debug(ctx, "failed to create object signer", "error", err.Error())
-		return nil, false
-	}
-
-	return signer, true
-}
-
-// connectSSHAgent connects to the SSH agent via SSH_AUTH_SOCK.
-// Returns nil if the agent is unavailable.
-func connectSSHAgent(ctx context.Context) sshagent.Agent {
-	sock := os.Getenv("SSH_AUTH_SOCK")
-	if sock == "" {
-		return nil
-	}
-
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "unix", sock)
-	if err != nil {
-		return nil
-	}
-
-	return sshagent.NewClient(conn)
-}
-
-// hasCustomSSHSignProgram checks whether gpg.ssh.program is set to a
-// non-default value in the raw config. The git default is "ssh-keygen",
-// which works with go-git's native SSH agent signing. Custom programs use
-// a separate signing mechanism that go-git cannot invoke.
-func hasCustomSSHSignProgram(raw *format.Config) bool {
-	if raw == nil {
-		return false
-	}
-
-	program := raw.Section("gpg").Subsection("ssh").Option("program")
-
-	return program != "" && program != "ssh-keygen"
-}
-
-func loadScopedConfig(source plugin.ConfigSource, scope config.Scope) *config.Config {
-	name := scopeName[scope]
-
-	storer, err := source.Load(scope)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to load %s git config: %v\n", name, err)
-		return config.NewConfig()
-	}
-
-	cfg, err := storer.Config()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to parse %s git config: %v\n", name, err)
-		return config.NewConfig()
-	}
-
-	return cfg
-}
 
 // readTranscriptFromTree reads a transcript from a git tree, handling both chunked and non-chunked formats.
 // It checks for chunk files first (.001, .002, etc.), then falls back to the base file.

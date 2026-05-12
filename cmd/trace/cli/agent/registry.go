@@ -3,7 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent/types"
@@ -98,6 +101,51 @@ func Detect(ctx context.Context) (Agent, error) {
 	return detected[0], nil
 }
 
+// AgentForTranscriptPath returns the registered agent whose session directory
+// contains transcriptPath. Returns (nil, false) if no agent matches.
+func AgentForTranscriptPath(transcriptPath, repoPath string) (Agent, bool) {
+	if transcriptPath == "" {
+		return nil, false
+	}
+	abs, err := filepath.Abs(transcriptPath)
+	if err != nil {
+		abs = transcriptPath
+	}
+	for _, name := range List() {
+		ag, err := Get(name)
+		if err != nil {
+			continue
+		}
+		dir, err := ag.GetSessionDir(repoPath)
+		if err != nil || dir == "" {
+			continue
+		}
+		dirAbs, err := filepath.Abs(dir)
+		if err != nil {
+			dirAbs = dir
+		}
+		if pathHasDirPrefix(abs, dirAbs) {
+			return ag, true
+		}
+	}
+	return nil, false
+}
+
+// pathHasDirPrefix reports whether path is contained within dir (or equals it).
+func pathHasDirPrefix(path, dir string) bool {
+	if runtime.GOOS == "windows" {
+		path = strings.ToLower(path)
+		dir = strings.ToLower(dir)
+	}
+	if path == dir {
+		return true
+	}
+	if !strings.HasSuffix(dir, string(filepath.Separator)) {
+		dir += string(filepath.Separator)
+	}
+	return strings.HasPrefix(path, dir)
+}
+
 // Agent name constants (registry keys)
 const (
 	AgentNameClaudeCode     types.AgentName = "claude-code"
@@ -107,6 +155,7 @@ const (
 	AgentNameFactoryAIDroid types.AgentName = "factoryai-droid"
 	AgentNameGemini         types.AgentName = "gemini"
 	AgentNameOpenCode       types.AgentName = "opencode"
+	AgentNamePi             types.AgentName = "pi"
 )
 
 // Agent type constants (type identifiers stored in metadata/trailers)
@@ -118,6 +167,7 @@ const (
 	AgentTypeFactoryAIDroid types.AgentType = "Factory AI Droid"
 	AgentTypeGemini         types.AgentType = "Gemini CLI"
 	AgentTypeOpenCode       types.AgentType = "OpenCode"
+	AgentTypePi             types.AgentType = "Pi"
 	AgentTypeUnknown        types.AgentType = "Unknown"
 )
 
@@ -198,6 +248,18 @@ func AllProtectedFiles() []string {
 	}
 	slices.Sort(files)
 	return files
+}
+
+// LauncherFor returns the Launcher implementation for the given agent name,
+// or ok=false if the agent does not support subprocess launching. Callers
+// should tell the user to start the agent manually in that case.
+func LauncherFor(name types.AgentName) (Launcher, bool) {
+	a, err := Get(name)
+	if err != nil {
+		return nil, false
+	}
+	l, ok := a.(Launcher)
+	return l, ok
 }
 
 // Default returns the default agent.
