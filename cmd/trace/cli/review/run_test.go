@@ -17,7 +17,7 @@ type stubReviewer struct {
 }
 
 func (s *stubReviewer) Name() string { return s.name }
-func (s *stubReviewer) Start(_ context.Context, _ reviewtypes.RunConfig) (reviewtypes.Process, error) { //nolint:ireturn // test stub implementing reviewtypes.AgentReviewer
+func (s *stubReviewer) Start(_ context.Context, _ reviewtypes.RunConfig) (reviewtypes.Process, error) {
 	if s.startErr != nil {
 		return nil, s.startErr
 	}
@@ -159,7 +159,7 @@ type funcReviewer struct {
 }
 
 func (r *funcReviewer) Name() string { return r.name }
-func (r *funcReviewer) Start(_ context.Context, _ reviewtypes.RunConfig) (reviewtypes.Process, error) { //nolint:ireturn // test stub implementing reviewtypes.AgentReviewer
+func (r *funcReviewer) Start(_ context.Context, _ reviewtypes.RunConfig) (reviewtypes.Process, error) {
 	return r.process, nil
 }
 
