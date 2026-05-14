@@ -123,7 +123,7 @@ func RenderTimeline(t *Timeline, width int) string {
 
 	// Duration summary
 	if t.Duration > 0 {
-		out.WriteString(fmt.Sprintf("  Duration: %s\n", FormatDuration(t.Duration)))
+		fmt.Fprintf(&out, "  Duration: %s\n", FormatDuration(t.Duration))
 	}
 
 	return out.String()
