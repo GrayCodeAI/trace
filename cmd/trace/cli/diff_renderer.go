@@ -75,8 +75,7 @@ func (r *DiffRenderer) RenderDiff(diff string) string {
 	var contextBlock []string
 	inHunk := false
 
-	for i := range len(lines) {
-		line := lines[i]
+	for i, line := range lines {
 
 		// Diff header lines
 		if strings.HasPrefix(line, "diff ") || strings.HasPrefix(line, "index ") {
@@ -517,12 +516,11 @@ func renderChangeBar(adds, dels, width int, theme Theme) string {
 // parseHunkHeader extracts start line numbers from a unified diff hunk header.
 // Format: @@ -old,count +new,count @@
 func parseHunkHeader(line string) (oldStart, newStart int) {
-	// Match @@ -N,M +N,M @@ or @@ -N +N @@
 	re := regexp.MustCompile(`@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 	matches := re.FindStringSubmatch(line)
 	if len(matches) >= 3 {
-		_, _ = fmt.Sscanf(matches[1], "%d", &oldStart)
-		_, _ = fmt.Sscanf(matches[2], "%d", &newStart)
+		oldStart, _ = strconv.Atoi(matches[1])
+		newStart, _ = strconv.Atoi(matches[2])
 	}
 	return
 }
