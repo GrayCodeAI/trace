@@ -1,0 +1,40 @@
+# Default: normalize line endings to LF on commit, leave the working copy alone.
+* text=auto eol=lf
+
+# Explicitly LF for source, scripts, and config — never CRLF.
+*.go     text eol=lf
+*.md     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.json   text eol=lf
+*.toml   text eol=lf
+*.sh     text eol=lf
+Makefile text eol=lf
+
+# Windows-only files keep CRLF (matches WINDOWS.md guidance).
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+
+# Binary files — never diffed, never EOL-normalized.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.zip    binary
+*.tar    binary
+*.tar.gz binary
+*.gz     binary
+*.pdf    binary
+
+# Generated files — collapse in PR diffs (GitHub linguist hint).
+go.sum                          linguist-generated=true
+.opencode/package-lock.json     linguist-generated=true
+.opencode/bun.lock              linguist-generated=true
+
+# Documentation — exclude from language stats.
+docs/**         linguist-documentation=true
+AGENTS.md       linguist-documentation=true
+CLAUDE.md       linguist-documentation=true
+WINDOWS.md      linguist-documentation=true
