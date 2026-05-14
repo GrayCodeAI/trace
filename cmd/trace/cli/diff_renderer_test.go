@@ -75,7 +75,7 @@ func TestDiffRenderer_RenderDiff_ContextCollapse(t *testing.T) {
 	lines = append(lines, "--- a/file.txt")
 	lines = append(lines, "+++ b/file.txt")
 	lines = append(lines, "@@ -1,12 +1,12 @@")
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		lines = append(lines, " unchanged line")
 	}
 	lines = append(lines, "-deleted")
@@ -279,12 +279,12 @@ func TestParseHunkHeader(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Parallel()
-			old, new := parseHunkHeader(tt.input)
+			old, newVal := parseHunkHeader(tt.input)
 			if old != tt.wantOld {
 				t.Errorf("oldStart = %d, want %d", old, tt.wantOld)
 			}
-			if new != tt.wantNew {
-				t.Errorf("newStart = %d, want %d", new, tt.wantNew)
+			if newVal != tt.wantNew {
+				t.Errorf("newStart = %d, want %d", newVal, tt.wantNew)
 			}
 		})
 	}

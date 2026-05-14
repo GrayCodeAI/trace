@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -74,7 +75,7 @@ func (r *DiffRenderer) RenderDiff(diff string) string {
 	var contextBlock []string
 	inHunk := false
 
-	for i := 0; i < len(lines); i++ {
+	for i := range len(lines) {
 		line := lines[i]
 
 		// Diff header lines
@@ -165,7 +166,7 @@ func (r *DiffRenderer) flushContext(out *strings.Builder, block *[]string, oldSt
 		oldNum := oldStart - len(lines)
 		newNum := newStart - len(lines)
 
-		for j := 0; j < showBefore; j++ {
+		for j := range showBefore {
 			gutter := r.formatGutter(oldNum+j, newNum+j)
 			out.WriteString(gutter + r.Theme.Context + lines[j] + r.Theme.Reset + "\n")
 		}
@@ -193,9 +194,9 @@ func (r *DiffRenderer) flushContext(out *strings.Builder, block *[]string, oldSt
 }
 
 // formatGutter formats the line number gutter. Arguments can be int or string.
-func (r *DiffRenderer) formatGutter(old, new interface{}) string {
+func (r *DiffRenderer) formatGutter(old, newVal interface{}) string {
 	oldStr := formatGutterNum(old)
-	newStr := formatGutterNum(new)
+	newStr := formatGutterNum(newVal)
 	return fmt.Sprintf("%s%4s %4s │%s ", r.Theme.LineNumber, oldStr, newStr, r.Theme.Reset)
 }
 
@@ -205,7 +206,7 @@ func formatGutterNum(v interface{}) string {
 		if n <= 0 {
 			return ""
 		}
-		return fmt.Sprintf("%d", n)
+		return strconv.Itoa(n)
 	case string:
 		return n
 	default:
@@ -296,11 +297,12 @@ func computeLCS(a, b []string) []string {
 	}
 	for i := 1; i <= m; i++ {
 		for j := 1; j <= n; j++ {
-			if a[i-1] == b[j-1] {
+			switch {
+			case a[i-1] == b[j-1]:
 				dp[i][j] = dp[i-1][j-1] + 1
-			} else if dp[i-1][j] >= dp[i][j-1] {
+			case dp[i-1][j] >= dp[i][j-1]:
 				dp[i][j] = dp[i-1][j]
-			} else {
+			default:
 				dp[i][j] = dp[i][j-1]
 			}
 		}
@@ -311,14 +313,15 @@ func computeLCS(a, b []string) []string {
 	idx := dp[m][n] - 1
 	i, j := m, n
 	for i > 0 && j > 0 {
-		if a[i-1] == b[j-1] {
+		switch {
+		case a[i-1] == b[j-1]:
 			result[idx] = a[i-1]
 			idx--
 			i--
 			j--
-		} else if dp[i-1][j] >= dp[i][j-1] {
+		case dp[i-1][j] >= dp[i][j-1]:
 			i--
-		} else {
+		default:
 			j--
 		}
 	}
@@ -358,7 +361,8 @@ func (r *DiffRenderer) RenderSideBySide(diff string, width int) string {
 			continue
 		}
 
-		if strings.HasPrefix(line, "-") {
+		switch {
+		case strings.HasPrefix(line, "-"):
 			content := truncateStr(line[1:], sideWidth-6)
 			leftNum := fmt.Sprintf("%4d", oldLine)
 			left := r.Theme.LineNumber + leftNum + r.Theme.Reset + " " +
@@ -366,7 +370,7 @@ func (r *DiffRenderer) RenderSideBySide(diff string, width int) string {
 			right := strings.Repeat(" ", sideWidth)
 			out.WriteString(left + " │ " + right + "\n")
 			oldLine++
-		} else if strings.HasPrefix(line, "+") {
+		case strings.HasPrefix(line, "+"):
 			content := truncateStr(line[1:], sideWidth-6)
 			left := strings.Repeat(" ", sideWidth)
 			rightNum := fmt.Sprintf("%4d", newLine)
@@ -374,7 +378,7 @@ func (r *DiffRenderer) RenderSideBySide(diff string, width int) string {
 				r.Theme.Addition + padRight(content, sideWidth-5) + r.Theme.Reset
 			out.WriteString(left + " │ " + right + "\n")
 			newLine++
-		} else {
+		default:
 			// Context line
 			content := line
 			if len(content) > 0 && content[0] == ' ' {
@@ -416,7 +420,8 @@ func (r *DiffRenderer) RenderSummary(diffs []string) string {
 		var adds, dels int
 
 		for _, line := range lines {
-			if strings.HasPrefix(line, "+++ b/") {
+			switch {
+			case strings.HasPrefix(line, "+++ b/"):
 				if currentFile != "" {
 					stats = append(stats, fileStat{currentFile, adds, dels})
 					totalAdd += adds
@@ -425,7 +430,7 @@ func (r *DiffRenderer) RenderSummary(diffs []string) string {
 				currentFile = line[6:]
 				adds = 0
 				dels = 0
-			} else if strings.HasPrefix(line, "+++ ") && !strings.HasPrefix(line, "+++ a/") {
+			case strings.HasPrefix(line, "+++ ") && !strings.HasPrefix(line, "+++ a/"):
 				if currentFile != "" {
 					stats = append(stats, fileStat{currentFile, adds, dels})
 					totalAdd += adds
@@ -434,9 +439,9 @@ func (r *DiffRenderer) RenderSummary(diffs []string) string {
 				currentFile = strings.TrimPrefix(line, "+++ ")
 				adds = 0
 				dels = 0
-			} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") && currentFile != "" {
+			case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") && currentFile != "":
 				adds++
-			} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") && currentFile != "" {
+			case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") && currentFile != "":
 				dels++
 			}
 		}
@@ -466,20 +471,20 @@ func (r *DiffRenderer) RenderSummary(diffs []string) string {
 			path = "..." + path[len(path)-maxPath+3:]
 		}
 		bar := renderChangeBar(s.additions, s.deletions, 20, r.Theme)
-		out.WriteString(fmt.Sprintf(" %s%-*s%s %s%+4d%s %s%+4d%s %s\n",
+		fmt.Fprintf(&out, " %s%-*s%s %s%+4d%s %s%+4d%s %s\n",
 			r.Theme.FilePath, maxPath, path, r.Theme.Reset,
 			r.Theme.StatAdd, s.additions, r.Theme.Reset,
 			r.Theme.StatDel, -s.deletions, r.Theme.Reset,
 			bar,
-		))
+		)
 	}
 
 	// Summary line
-	out.WriteString(fmt.Sprintf("\n %s%d files changed%s, %s%d insertions(+)%s, %s%d deletions(-)%s\n",
+	fmt.Fprintf(&out, "\n %s%d files changed%s, %s%d insertions(+)%s, %s%d deletions(-)%s\n",
 		r.Theme.Bold, len(stats), r.Theme.Reset,
 		r.Theme.StatAdd, totalAdd, r.Theme.Reset,
 		r.Theme.StatDel, totalDel, r.Theme.Reset,
-	))
+	)
 
 	return out.String()
 }
@@ -516,8 +521,8 @@ func parseHunkHeader(line string) (oldStart, newStart int) {
 	re := regexp.MustCompile(`@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 	matches := re.FindStringSubmatch(line)
 	if len(matches) >= 3 {
-		fmt.Sscanf(matches[1], "%d", &oldStart)
-		fmt.Sscanf(matches[2], "%d", &newStart)
+		_, _ = fmt.Sscanf(matches[1], "%d", &oldStart)
+		_, _ = fmt.Sscanf(matches[2], "%d", &newStart)
 	}
 	return
 }
