@@ -76,7 +76,6 @@ func (r *DiffRenderer) RenderDiff(diff string) string {
 	inHunk := false
 
 	for i, line := range lines {
-
 		// Diff header lines
 		if strings.HasPrefix(line, "diff ") || strings.HasPrefix(line, "index ") {
 			r.flushContext(&out, &contextBlock, oldLine, newLine)
@@ -519,8 +518,8 @@ func parseHunkHeader(line string) (oldStart, newStart int) {
 	re := regexp.MustCompile(`@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 	matches := re.FindStringSubmatch(line)
 	if len(matches) >= 3 {
-		oldStart, _ = strconv.Atoi(matches[1])
-		newStart, _ = strconv.Atoi(matches[2])
+		oldStart, _ = strconv.Atoi(matches[1]) //nolint:errcheck // regex guarantees digits
+		newStart, _ = strconv.Atoi(matches[2]) //nolint:errcheck // regex guarantees digits
 	}
 	return
 }
