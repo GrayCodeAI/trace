@@ -108,7 +108,7 @@ func (m reviewTUIModel) Init() tea.Cmd {
 }
 
 // Update handles all incoming messages.
-func (m reviewTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m reviewTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:ireturn
 	switch msg := msg.(type) {
 	case agentEventMsg:
 		return m.handleAgentEvent(msg)
@@ -166,7 +166,7 @@ func (m reviewTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // handleAgentEvent processes an agentEventMsg, updating the relevant row.
-func (m reviewTUIModel) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
+func (m reviewTUIModel) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) { //nolint:ireturn
 	idx, ok := m.rowIdx[msg.agent]
 	if !ok {
 		return m, nil
@@ -229,7 +229,7 @@ func (m reviewTUIModel) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd)
 }
 
 // handleKey processes keyboard input.
-func (m reviewTUIModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m reviewTUIModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) { //nolint:ireturn
 	// Any key after finished dismisses.
 	if m.finished {
 		return m, tea.Quit

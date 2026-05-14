@@ -724,7 +724,7 @@ type perAgentConfiguredReviewer struct {
 }
 
 func (r *perAgentConfiguredReviewer) Name() string { return r.inner.Name() }
-func (r *perAgentConfiguredReviewer) Start(ctx context.Context, _ reviewtypes.RunConfig) (reviewtypes.Process, error) {
+func (r *perAgentConfiguredReviewer) Start(ctx context.Context, _ reviewtypes.RunConfig) (reviewtypes.Process, error) { //nolint:ireturn
 	return r.inner.Start(ctx, r.cfg) //nolint:wrapcheck // transparent adapter; callers see inner's error type directly
 }
 
