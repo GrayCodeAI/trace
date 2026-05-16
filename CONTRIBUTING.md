@@ -1,125 +1,114 @@
-# Contributing
+# Contributing to trace
 
-Thanks for your interest in Trace! We welcome contributions of all kinds.
+Thanks for your interest! This guide covers the conventions used across the
+hawk-eco. The eco-wide standards (versioning, release tooling, repo layout)
+are defined in <https://github.com/GrayCodeAI/hawk/blob/main/VERSIONING.md>.
 
----
+## Quick start
 
-## Before You Start
+1. Fork the repo and create a feature branch off `main`:
+   ```bash
+   git checkout -b feat/short-description
+   ```
+2. Make your changes in small, focused commits.
+3. Run the full local check before pushing:
+   ```bash
+   make ci
+   ```
+4. Open a pull request. CI will re-run the same checks plus security
+   scanning, race-detector tests, and (where applicable) integration tests.
 
-1. **Open an issue** describing your idea or the bug you found
-2. **Wait for maintainer feedback** — we may have context that saves you time
-3. **Get the green light**, then start coding
+## Build & test
 
-This avoids wasted effort on work that doesn't align with the project direction.
+This repo uses the standardised hawk-eco Makefile targets. Run `make help`
+for the full list. The most common targets:
 
----
+| Target              | What it does                                     |
+| ------------------- | ------------------------------------------------ |
+| `make build`        | Build the binary / verify the library compiles  |
+| `make test`         | Run unit tests                                   |
+| `make test-race`    | Run unit tests with the race detector            |
+| `make cover`        | Generate a coverage report                       |
+| `make lint`         | Run the linter (`golangci-lint` / `ruff`)        |
+| `make fmt`          | Format source files                              |
+| `make vet`          | Run `go vet` / `mypy`                            |
+| `make security`     | Run `govulncheck` / `pip-audit`                  |
+| `make ci`           | Run everything CI runs (the gate before pushing) |
 
-## Getting Started
+## Commit message convention
 
-### Prerequisites
+We use [Conventional Commits](https://www.conventionalcommits.org/). This
+isn't cosmetic — release-please reads commit messages to bump the `VERSION`
+file and generate the CHANGELOG, so getting them right matters.
 
-- Go 1.26+
-- [mise](https://mise.jdx.dev/) — `curl https://mise.run | sh`
+```
+<type>(<optional scope>): <short summary>
 
-### Setup
+<optional body>
 
-```bash
-git clone https://github.com/GrayCodeAI/trace.git
-cd trace
-mise trust && mise install
-go mod download
-mise run build
-mise run test
+<optional footer(s)>
 ```
 
-### Good First Issues
+**Types:**
 
-Look for issues labeled `good-first-issue`. Great starting points:
+- `feat:` — a new feature (triggers a minor version bump)
+- `fix:` — a bug fix (triggers a patch version bump)
+- `perf:` — performance improvement
+- `refactor:` — code restructure with no behaviour change
+- `docs:` — documentation only
+- `test:` — adding or fixing tests
+- `build:` — build system or dependencies
+- `ci:` — CI configuration
+- `chore:` — anything else (no release effect)
+- `revert:` — reverts a previous commit
 
-- Documentation improvements
-- Test coverage
-- Small bug fixes
+**Breaking changes:** add `!` after the type/scope or include `BREAKING
+CHANGE:` in the footer. This triggers a major version bump.
 
----
+Examples:
 
-## Development Workflow
-
-```bash
-# Create a branch
-git checkout -b feature/your-feature
-
-# Make changes, then verify
-mise run fmt          # Format
-mise run lint         # Lint
-mise run test         # Test
-
-# Commit
-git commit -m "Add: description of your change"
+```
+feat(client): add streaming retry with exponential backoff
+fix: handle empty response body in chat handler
+refactor!: rename ClientV1 to Client (BREAKING CHANGE)
 ```
 
-### Code Style
+## Pull request checklist
 
-- Standard Go idioms
-- All errors handled explicitly
-- `gofmt` and `golangci-lint` must pass
-- See [CLAUDE.md](CLAUDE.md) for architecture patterns
+Before requesting review:
 
-### Testing
+- [ ] `make ci` passes locally.
+- [ ] New behaviour has tests; bug fixes have a regression test.
+- [ ] `CHANGELOG.md` entries are **not** edited manually — release-please
+      generates them from your commit messages.
+- [ ] The `VERSION` file is **not** edited manually — release-please bumps
+      it on release.
+- [ ] Public API changes have updated doc comments.
+- [ ] No secrets, API keys, or PII in code, comments, tests, or fixtures.
 
-```bash
-mise run test              # Unit tests
-mise run test:integration  # Integration tests
-mise run test:ci           # Full CI suite
-```
+## Code review etiquette
 
----
+- Reviewers focus on correctness, design, and tests; formatting is
+  enforced by tooling, not humans.
+- Authors respond to every comment (resolved, addressed, or politely
+  declined with rationale) — no silent dismissals.
+- Squash-merge by default; the PR title becomes the commit (so it must
+  be a valid Conventional Commit message).
+- One approving review from a CODEOWNERS-listed reviewer is required.
 
-## Pull Requests
+## Reporting bugs
 
-### Checklist
+Open an issue using the bug-report template. Include the `trace`
+version (`trace --version` for binaries, `trace.Version` for
+libraries — see this repo's `VERSION` file), reproduction steps, expected
+behaviour, and actual behaviour.
 
-- [ ] Related issue exists and is approved
-- [ ] `mise run lint` passes
-- [ ] `mise run test` passes
-- [ ] New code has tests
-- [ ] PR description explains *what* and *why*
+## Reporting security issues
 
-### Process
+**Do not open a public issue.** See [SECURITY.md](./SECURITY.md) for
+private reporting channels.
 
-1. Push your branch
-2. Open a PR against `main`
-3. Link the related issue
-4. Address review feedback
-5. Maintainer merges
+## License
 
----
-
-## Security
-
-Found a vulnerability? **Do not** open a public issue.
-
-Email [security@graycode.ai](mailto:security@graycode.ai) instead. See [SECURITY.md](SECURITY.md).
-
----
-
-## Community
-
-- [GitHub Issues](https://github.com/GrayCodeAI/trace/issues) — bugs & features
-- [Discord](https://discord.gg/ZESTkgxGF) — questions & discussion
-
-Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
-
----
-
-## Resources
-
-| Document | Purpose |
-|---|---|
-| [README.md](README.md) | Setup & usage |
-| [CLAUDE.md](CLAUDE.md) | Architecture & internals |
-| [AGENTS.md](AGENTS.md) | Agent integration guide |
-| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
-
----
-
-Thank you for helping make Trace better.
+By contributing, you agree that your contributions will be licensed under
+the same license as this repo (see [LICENSE](./LICENSE)).
