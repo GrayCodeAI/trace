@@ -336,7 +336,8 @@ func (g *GeminiCLIAgent) ChunkTranscript(ctx context.Context, content []byte, ma
 		// Marshal message to get its size
 		msgBytes, err := json.Marshal(msg)
 		if err != nil {
-			logging.Warn(ctx, "failed to marshal Gemini message during chunking",
+			logging.Warn(
+				ctx, "failed to marshal Gemini message during chunking",
 				slog.Int("message_index", i),
 				slog.String("error", err.Error()),
 			)

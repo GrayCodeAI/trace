@@ -304,7 +304,8 @@ func ApplyTransition(ctx context.Context, state *State, result TransitionResult,
 	for i, a := range result.Actions {
 		actionStrs[i] = a.String()
 	}
-	logging.Debug(logCtx, "ApplyTransition",
+	logging.Debug(
+		logCtx, "ApplyTransition",
 		slog.String("session_id", state.SessionID),
 		slog.String("old_phase", string(state.Phase)),
 		slog.String("new_phase", string(result.NewPhase)),

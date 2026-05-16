@@ -22,7 +22,7 @@ type CopilotCLI struct{}
 
 func (c *CopilotCLI) Name() string               { return "copilot-cli" }
 func (c *CopilotCLI) Binary() string             { return "copilot" }
-func (c *CopilotCLI) TraceAgent() string        { return "copilot-cli" }
+func (c *CopilotCLI) TraceAgent() string         { return "copilot-cli" }
 func (c *CopilotCLI) PromptPattern() string      { return `❯` }
 func (c *CopilotCLI) TimeoutMultiplier() float64 { return 1.5 }
 

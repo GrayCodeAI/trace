@@ -300,8 +300,8 @@ func ListCheckpoints(ctx context.Context) ([]CheckpointInfo, error) {
 }
 
 const (
-	traceGitignore    = ".trace/.gitignore"
-	traceDir          = ".trace"
+	traceGitignore     = ".trace/.gitignore"
+	traceDir           = ".trace"
 	gitDir             = ".git"
 	shadowBranchPrefix = "trace/"
 )
@@ -416,7 +416,8 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 				// Local has real data and differs from remote — if disconnected
 				// (no common ancestor), reconciliation happens at pre-push time
 				// or via 'trace doctor'. Read paths warn but do not auto-fix.
-				logging.Debug(context.Background(), "metadata branch differs from remote, reconciliation deferred to read/write time",
+				logging.Debug(
+					context.Background(), "metadata branch differs from remote, reconciliation deferred to read/write time",
 					"local_hash", localRef.Hash().String()[:7],
 					"remote_hash", remoteRef.Hash().String()[:7],
 				)
@@ -645,7 +646,8 @@ func decodeCheckpointInfo(
 				sessionMetadataPath := normalizePath(sessionPaths.Metadata)
 				sessionMeta, sErr := decodeSessionMetadataLite(tree, sessionMetadataPath)
 				if sErr != nil {
-					logging.Debug(context.Background(), "decodeCheckpointInfo: session metadata decode failed",
+					logging.Debug(
+						context.Background(), "decodeCheckpointInfo: session metadata decode failed",
 						slog.Int("session_index", i),
 						slog.String("metadata_path", sessionMetadataPath),
 						slog.String("checkpoint_path", checkpointPath),
@@ -1756,7 +1758,8 @@ func prepareTranscriptForState(ctx context.Context, state *SessionState) {
 	}
 	ag, err := agent.GetByAgentType(state.AgentType)
 	if err != nil {
-		logging.Debug(ctx, "prepareTranscriptForState: unknown agent type",
+		logging.Debug(
+			ctx, "prepareTranscriptForState: unknown agent type",
 			slog.String("session_id", state.SessionID),
 			slog.String("agent_type", string(state.AgentType)),
 			slog.Any("error", err),

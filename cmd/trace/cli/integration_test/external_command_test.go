@@ -296,7 +296,8 @@ func TestExternalCommand_EnvFiltered_CredentialsDropped(t *testing.T) {
 	pluginDir, envFile := writeEnvDumpPlugin(t)
 
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "envfilter")
-	cmd.Env = append(pathWith(pluginDir),
+	cmd.Env = append(
+		pathWith(pluginDir),
 		"GITHUB_TOKEN=must-not-leak",
 		"AWS_ACCESS_KEY_ID=must-not-leak",
 		"NO_COLOR=1",
@@ -333,7 +334,8 @@ func TestExternalCommand_EnvFiltered_OverrideWildcard(t *testing.T) {
 	pluginDir, envFile := writeEnvDumpPlugin(t)
 
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "envfilter")
-	cmd.Env = append(pathWith(pluginDir),
+	cmd.Env = append(
+		pathWith(pluginDir),
 		"TRACE_PLUGIN_ENV=AWS_*",
 		"AWS_PROFILE=dev",
 		"AWS_REGION=us-east-1",

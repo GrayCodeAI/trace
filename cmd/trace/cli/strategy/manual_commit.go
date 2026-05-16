@@ -83,7 +83,8 @@ func (s *ManualCommitStrategy) getV2CheckpointStore(ctx context.Context) (*check
 		}
 		v2URL, err := remote.FetchURL(ctx)
 		if err != nil {
-			logging.Debug(ctx, "manual-commit: using origin for v2 store fetch remote",
+			logging.Debug(
+				ctx, "manual-commit: using origin for v2 store fetch remote",
 				"error", err.Error(),
 			)
 		}

@@ -67,7 +67,8 @@ func filesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowBr
 		var err error
 		headTree, err = headCommit.Tree()
 		if err != nil {
-			logging.Debug(logCtx, "filesOverlapWithContent: failed to get HEAD tree, falling back to filename check",
+			logging.Debug(
+				logCtx, "filesOverlapWithContent: failed to get HEAD tree, falling back to filename check",
 				slog.String("error", err.Error()),
 			)
 			return len(filesTouched) > 0
@@ -79,7 +80,8 @@ func filesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowBr
 		refName := plumbing.NewBranchReferenceName(shadowBranchName)
 		shadowRef, err := repo.Reference(refName, true)
 		if err != nil {
-			logging.Debug(logCtx, "filesOverlapWithContent: shadow branch not found, falling back to filename check",
+			logging.Debug(
+				logCtx, "filesOverlapWithContent: shadow branch not found, falling back to filename check",
 				slog.String("branch", shadowBranchName),
 				slog.String("error", err.Error()),
 			)
@@ -88,7 +90,8 @@ func filesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowBr
 
 		shadowCommit, err := repo.CommitObject(shadowRef.Hash())
 		if err != nil {
-			logging.Debug(logCtx, "filesOverlapWithContent: failed to get shadow commit, falling back to filename check",
+			logging.Debug(
+				logCtx, "filesOverlapWithContent: failed to get shadow commit, falling back to filename check",
 				slog.String("error", err.Error()),
 			)
 			return len(filesTouched) > 0
@@ -96,7 +99,8 @@ func filesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowBr
 
 		shadowTree, err = shadowCommit.Tree()
 		if err != nil {
-			logging.Debug(logCtx, "filesOverlapWithContent: failed to get shadow tree, falling back to filename check",
+			logging.Debug(
+				logCtx, "filesOverlapWithContent: failed to get shadow tree, falling back to filename check",
 				slog.String("error", err.Error()),
 			)
 			return len(filesTouched) > 0
@@ -125,7 +129,8 @@ func filesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowBr
 			if parentTree != nil {
 				if _, parentErr := parentTree.File(filePath); parentErr == nil {
 					// File existed in parent but not in HEAD - this is a deletion
-					logging.Debug(logCtx, "filesOverlapWithContent: deleted file counts as overlap",
+					logging.Debug(
+						logCtx, "filesOverlapWithContent: deleted file counts as overlap",
 						slog.String("file", filePath),
 					)
 					return true
@@ -145,7 +150,8 @@ func filesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowBr
 
 		// Modified files always count as overlap (user edited session's work)
 		if isModified {
-			logging.Debug(logCtx, "filesOverlapWithContent: modified file counts as overlap",
+			logging.Debug(
+				logCtx, "filesOverlapWithContent: modified file counts as overlap",
 				slog.String("file", filePath),
 			)
 			return true
@@ -155,7 +161,8 @@ func filesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowBr
 		shadowFile, err := shadowTree.File(filePath)
 		if err != nil {
 			// File not in shadow branch - this shouldn't happen but skip it
-			logging.Debug(logCtx, "filesOverlapWithContent: file in filesTouched but not in shadow branch",
+			logging.Debug(
+				logCtx, "filesOverlapWithContent: file in filesTouched but not in shadow branch",
 				slog.String("file", filePath),
 			)
 			continue
@@ -163,21 +170,24 @@ func filesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowBr
 
 		// Compare by hash (blob hash) - exact content match required for new files
 		if headFile.Hash == shadowFile.Hash {
-			logging.Debug(logCtx, "filesOverlapWithContent: new file content match found",
+			logging.Debug(
+				logCtx, "filesOverlapWithContent: new file content match found",
 				slog.String("file", filePath),
 				slog.String("hash", headFile.Hash.String()),
 			)
 			return true
 		}
 
-		logging.Debug(logCtx, "filesOverlapWithContent: new file content mismatch (may be reverted & replaced)",
+		logging.Debug(
+			logCtx, "filesOverlapWithContent: new file content mismatch (may be reverted & replaced)",
 			slog.String("file", filePath),
 			slog.String("head_hash", headFile.Hash.String()),
 			slog.String("shadow_hash", shadowFile.Hash.String()),
 		)
 	}
 
-	logging.Debug(logCtx, "filesOverlapWithContent: no overlapping files found",
+	logging.Debug(
+		logCtx, "filesOverlapWithContent: no overlapping files found",
 		slog.Int("files_checked", len(filesTouched)),
 	)
 	return false
@@ -203,21 +213,24 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 	// Get HEAD tree to determine if files are being modified or newly created
 	head, err := repo.Head()
 	if err != nil {
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get HEAD, falling back to filename check",
+		logging.Debug(
+			logCtx, "stagedFilesOverlapWithContent: failed to get HEAD, falling back to filename check",
 			slog.String("error", err.Error()),
 		)
 		return hasOverlappingFiles(stagedFiles, filesTouched)
 	}
 	headCommit, err := repo.CommitObject(head.Hash())
 	if err != nil {
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get HEAD commit, falling back to filename check",
+		logging.Debug(
+			logCtx, "stagedFilesOverlapWithContent: failed to get HEAD commit, falling back to filename check",
 			slog.String("error", err.Error()),
 		)
 		return hasOverlappingFiles(stagedFiles, filesTouched)
 	}
 	headTree, err := headCommit.Tree()
 	if err != nil {
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get HEAD tree, falling back to filename check",
+		logging.Debug(
+			logCtx, "stagedFilesOverlapWithContent: failed to get HEAD tree, falling back to filename check",
 			slog.String("error", err.Error()),
 		)
 		return hasOverlappingFiles(stagedFiles, filesTouched)
@@ -226,7 +239,8 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 	// Get the git index to access staged file hashes
 	idx, err := repo.Storer.Index()
 	if err != nil {
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get index, falling back to filename check",
+		logging.Debug(
+			logCtx, "stagedFilesOverlapWithContent: failed to get index, falling back to filename check",
 			slog.String("error", err.Error()),
 		)
 		return hasOverlappingFiles(stagedFiles, filesTouched)
@@ -241,7 +255,8 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 	// Check each staged file
 	for _, stagedPath := range stagedFiles {
 		if !touchedSet[stagedPath] {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: staged file not in files_touched, skipping",
+			logging.Debug(
+				logCtx, "stagedFilesOverlapWithContent: staged file not in files_touched, skipping",
 				slog.String("staged_file", stagedPath),
 			)
 			continue // Not in filesTouched, skip
@@ -255,7 +270,8 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 		// This includes deletions - if file exists in HEAD and is being deleted,
 		// that's the agent's work being committed.
 		if isModified {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: modified file counts as overlap",
+			logging.Debug(
+				logCtx, "stagedFilesOverlapWithContent: modified file counts as overlap",
 				slog.String("file", stagedPath),
 			)
 			return true
@@ -272,7 +288,8 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 		if err != nil {
 			// File not in shadow branch - can't verify content overlap.
 			// Don't assume overlap just because it's in filesTouched.
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: file not in shadow tree, skipping",
+			logging.Debug(
+				logCtx, "stagedFilesOverlapWithContent: file not in shadow tree, skipping",
 				slog.String("file", stagedPath),
 			)
 			continue
@@ -280,7 +297,8 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 
 		// Compare hashes - exact match means file is unchanged
 		if stagedHash == shadowFile.Hash {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: new file content match found",
+			logging.Debug(
+				logCtx, "stagedFilesOverlapWithContent: new file content match found",
 				slog.String("file", stagedPath),
 				slog.String("hash", stagedHash.String()),
 			)
@@ -292,7 +310,8 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 		// "reverted and replaced" (user wrote completely different content).
 		shadowContent, shadowErr := shadowFile.Contents()
 		if shadowErr != nil {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to read shadow content",
+			logging.Debug(
+				logCtx, "stagedFilesOverlapWithContent: failed to read shadow content",
 				slog.String("file", stagedPath),
 				slog.String("error", shadowErr.Error()),
 			)
@@ -302,7 +321,8 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 		// Read staged content from object store
 		stagedBlob, blobErr := repo.BlobObject(stagedHash)
 		if blobErr != nil {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to read staged blob",
+			logging.Debug(
+				logCtx, "stagedFilesOverlapWithContent: failed to read staged blob",
 				slog.String("file", stagedPath),
 				slog.String("error", blobErr.Error()),
 			)
@@ -310,7 +330,8 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 		}
 		stagedReader, readerErr := stagedBlob.Reader()
 		if readerErr != nil {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get staged reader",
+			logging.Debug(
+				logCtx, "stagedFilesOverlapWithContent: failed to get staged reader",
 				slog.String("file", stagedPath),
 				slog.String("error", readerErr.Error()),
 			)
@@ -319,7 +340,8 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 		stagedBytes, readErr := io.ReadAll(stagedReader)
 		_ = stagedReader.Close() // Best effort close
 		if readErr != nil {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to read staged content",
+			logging.Debug(
+				logCtx, "stagedFilesOverlapWithContent: failed to read staged content",
 				slog.String("file", stagedPath),
 				slog.String("error", readErr.Error()),
 			)
@@ -329,20 +351,23 @@ func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, sh
 
 		// Check for significant content overlap
 		if hasSignificantContentOverlap(stagedContent, shadowContent) {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: new file has partial overlap (partial staging)",
+			logging.Debug(
+				logCtx, "stagedFilesOverlapWithContent: new file has partial overlap (partial staging)",
 				slog.String("file", stagedPath),
 			)
 			return true
 		}
 
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: new file has no significant overlap (reverted & replaced)",
+		logging.Debug(
+			logCtx, "stagedFilesOverlapWithContent: new file has no significant overlap (reverted & replaced)",
 			slog.String("file", stagedPath),
 			slog.String("staged_hash", stagedHash.String()),
 			slog.String("shadow_hash", shadowFile.Hash.String()),
 		)
 	}
 
-	logging.Debug(logCtx, "stagedFilesOverlapWithContent: no overlapping files found",
+	logging.Debug(
+		logCtx, "stagedFilesOverlapWithContent: no overlapping files found",
 		slog.Int("staged_files", len(stagedFiles)),
 		slog.Int("files_touched", len(filesTouched)),
 		slog.Any("staged_paths", truncateStringSlice(stagedFiles, 10)),
@@ -402,7 +427,8 @@ func filesWithRemainingAgentChanges(
 		var err error
 		commitTree, err = headCommit.Tree()
 		if err != nil {
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: failed to get commit tree, falling back to file subtraction",
+			logging.Debug(
+				logCtx, "filesWithRemainingAgentChanges: failed to get commit tree, falling back to file subtraction",
 				slog.String("error", err.Error()),
 			)
 			return subtractFilesByName(ctx, filesTouched, committedFiles)
@@ -414,7 +440,8 @@ func filesWithRemainingAgentChanges(
 		refName := plumbing.NewBranchReferenceName(shadowBranchName)
 		shadowRef, err := repo.Reference(refName, true)
 		if err != nil {
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: shadow branch not found, falling back to file subtraction",
+			logging.Debug(
+				logCtx, "filesWithRemainingAgentChanges: shadow branch not found, falling back to file subtraction",
 				slog.String("branch", shadowBranchName),
 				slog.String("error", err.Error()),
 			)
@@ -423,7 +450,8 @@ func filesWithRemainingAgentChanges(
 
 		shadowCommit, err := repo.CommitObject(shadowRef.Hash())
 		if err != nil {
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: failed to get shadow commit, falling back to file subtraction",
+			logging.Debug(
+				logCtx, "filesWithRemainingAgentChanges: failed to get shadow commit, falling back to file subtraction",
 				slog.String("error", err.Error()),
 			)
 			return subtractFilesByName(ctx, filesTouched, committedFiles)
@@ -431,7 +459,8 @@ func filesWithRemainingAgentChanges(
 
 		shadowTree, err = shadowCommit.Tree()
 		if err != nil {
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: failed to get shadow tree, falling back to file subtraction",
+			logging.Debug(
+				logCtx, "filesWithRemainingAgentChanges: failed to get shadow tree, falling back to file subtraction",
 				slog.String("error", err.Error()),
 			)
 			return subtractFilesByName(ctx, filesTouched, committedFiles)
@@ -458,7 +487,8 @@ func filesWithRemainingAgentChanges(
 		// Without this check, phantom paths cause infinite carry-forward loops.
 		shadowFile, err := shadowTree.File(filePath)
 		if err != nil {
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: file not in shadow tree, skipping",
+			logging.Debug(
+				logCtx, "filesWithRemainingAgentChanges: file not in shadow tree, skipping",
 				slog.String("file", filePath),
 			)
 			continue
@@ -467,7 +497,8 @@ func filesWithRemainingAgentChanges(
 		// File wasn't committed at all — it has remaining changes
 		if _, wasCommitted := committedFiles[filePath]; !wasCommitted {
 			remaining = append(remaining, filePath)
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: file not committed, keeping",
+			logging.Debug(
+				logCtx, "filesWithRemainingAgentChanges: file not committed, keeping",
 				slog.String("file", filePath),
 			)
 			continue
@@ -477,14 +508,16 @@ func filesWithRemainingAgentChanges(
 		if err != nil {
 			// File not in commit tree (deleted?) - keep it if it's in shadow
 			remaining = append(remaining, filePath)
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: file not in commit tree but in shadow, keeping",
+			logging.Debug(
+				logCtx, "filesWithRemainingAgentChanges: file not in commit tree but in shadow, keeping",
 				slog.String("file", filePath),
 			)
 			continue
 		}
 
 		if commitFile.Hash == shadowFile.Hash {
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: content fully committed",
+			logging.Debug(
+				logCtx, "filesWithRemainingAgentChanges: content fully committed",
 				slog.String("file", filePath),
 			)
 			continue
@@ -494,7 +527,8 @@ func filesWithRemainingAgentChanges(
 		// still has changes — if clean, the user intentionally replaced the content
 		// and there's nothing left to carry forward.
 		if worktreeRoot != "" && workingTreeMatchesCommit(worktreeRoot, filePath, commitFile.Hash) {
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: content differs from shadow but working tree is clean, skipping",
+			logging.Debug(
+				logCtx, "filesWithRemainingAgentChanges: content differs from shadow but working tree is clean, skipping",
 				slog.String("file", filePath),
 				slog.String("commit_hash", commitFile.Hash.String()[:7]),
 				slog.String("shadow_hash", shadowFile.Hash.String()[:7]),
@@ -503,14 +537,16 @@ func filesWithRemainingAgentChanges(
 		}
 
 		remaining = append(remaining, filePath)
-		logging.Debug(logCtx, "filesWithRemainingAgentChanges: content mismatch with dirty working tree, keeping for carry-forward",
+		logging.Debug(
+			logCtx, "filesWithRemainingAgentChanges: content mismatch with dirty working tree, keeping for carry-forward",
 			slog.String("file", filePath),
 			slog.String("commit_hash", commitFile.Hash.String()[:7]),
 			slog.String("shadow_hash", shadowFile.Hash.String()[:7]),
 		)
 	}
 
-	logging.Debug(logCtx, "filesWithRemainingAgentChanges: result",
+	logging.Debug(
+		logCtx, "filesWithRemainingAgentChanges: result",
 		slog.Int("files_touched", len(filesTouched)),
 		slog.Int("committed_files", len(committedFiles)),
 		slog.Int("remaining_files", len(remaining)),
@@ -542,7 +578,8 @@ func workingTreeMatchesCommit(worktreeRoot, filePath string, commitHash plumbing
 // This is a fallback when content-aware comparison isn't possible.
 func subtractFilesByName(ctx context.Context, filesTouched []string, committedFiles map[string]struct{}) []string {
 	logCtx := logging.WithComponent(ctx, "checkpoint")
-	logging.Debug(logCtx, "subtractFilesByName: ",
+	logging.Debug(
+		logCtx, "subtractFilesByName: ",
 		slog.Any("filesTouched", filesTouched),
 		slog.Any("committedFiles", committedFiles),
 	)

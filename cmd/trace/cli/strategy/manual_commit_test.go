@@ -4659,8 +4659,8 @@ func TestCommittedFilesExcludingMetadata(t *testing.T) {
 	input := map[string]struct{}{
 		"docs/blue.md":          {},
 		"docs/red.md":           {},
-		".trace/settings.json": {},
-		".trace/.gitignore":    {},
+		".trace/settings.json":  {},
+		".trace/.gitignore":     {},
 		".claude/settings.json": {},
 	}
 

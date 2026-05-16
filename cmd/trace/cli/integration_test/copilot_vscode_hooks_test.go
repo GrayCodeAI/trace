@@ -301,7 +301,8 @@ func resolveHookCommandWithBinary(command, binaryPath string) string {
 	}
 
 	if strings.Contains(command, "command -v trace") && strings.Contains(command, "exec trace ") {
-		resolved := strings.Replace(command,
+		resolved := strings.Replace(
+			command,
 			"command -v trace >/dev/null 2>&1",
 			"test -x "+testBinary,
 			1,

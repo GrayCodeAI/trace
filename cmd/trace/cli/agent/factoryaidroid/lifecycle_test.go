@@ -59,7 +59,6 @@ func TestParseHookEvent_TurnStart_IncludesModel(t *testing.T) {
 	input := `{"session_id": "sess-m", "transcript_path": "/tmp/t.jsonl", "prompt": "hi", "model": "gpt-4o"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameUserPromptSubmit, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +74,6 @@ func TestParseHookEvent_TurnStart_EmptyModel(t *testing.T) {
 	input := `{"session_id": "sess-nm", "transcript_path": "/tmp/t.jsonl", "prompt": "hi"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameUserPromptSubmit, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

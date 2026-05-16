@@ -125,7 +125,8 @@ func parsePushRefResults(ctx context.Context, output string, refs []plumbing.Ref
 	if pushErr != nil {
 		fallbackErr = classifyPushFailure(ctx, output, pushErr)
 		if len(parsed) > 0 && len(parsed) < len(refs) {
-			logging.Debug(ctx, "push-v2: incomplete push porcelain output",
+			logging.Debug(
+				ctx, "push-v2: incomplete push porcelain output",
 				slog.Int("parsed_refs", len(parsed)),
 				slog.Int("expected_refs", len(refs)),
 				slog.String("error", pushErr.Error()),
@@ -400,7 +401,8 @@ func handleRotationConflict(ctx context.Context, target, fetchTarget string, rep
 		if updatedEntry, updateErr := updateGenerationTimestamps(repo, genEntry.Hash, localCommit.Committer.When.UTC()); updateErr == nil {
 			entries[paths.GenerationFileName] = updatedEntry
 		} else {
-			logging.Warn(ctx, "rotation recovery: failed to update generation timestamps, using stale values",
+			logging.Warn(
+				ctx, "rotation recovery: failed to update generation timestamps, using stale values",
 				slog.String("error", updateErr.Error()),
 			)
 		}

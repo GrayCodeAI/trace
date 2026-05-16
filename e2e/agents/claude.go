@@ -38,7 +38,7 @@ type Claude struct{}
 
 func (c *Claude) Name() string               { return "claude-code" }
 func (c *Claude) Binary() string             { return "claude" }
-func (c *Claude) TraceAgent() string        { return "claude-code" }
+func (c *Claude) TraceAgent() string         { return "claude-code" }
 func (c *Claude) PromptPattern() string      { return `❯` }
 func (c *Claude) TimeoutMultiplier() float64 { return 1.0 }
 
@@ -94,7 +94,8 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 	}
 	defer func() { _ = os.RemoveAll(configDir) }()
 
-	env := append(cleanEnv(),
+	env := append(
+		cleanEnv(),
 		"ACCESSIBLE=1",
 
 		// See https://code.claude.com/docs/en/settings - without this setting Claude was going off and
