@@ -31,7 +31,6 @@ func TestExplain_NoCurrentSession(t *testing.T) {
 	env := NewFeatureBranchEnv(t)
 	// Without any flags, explain shows the branch view (not an error)
 	output, err := env.RunCLIWithError("checkpoint", "explain")
-
 	if err != nil {
 		t.Errorf("expected success for branch view, got error: %v, output: %s", err, output)
 		return
@@ -52,7 +51,6 @@ func TestExplain_SessionFilter(t *testing.T) {
 	// --session now filters the list view instead of showing session details
 	// A nonexistent session ID should show an empty list, not an error
 	output, err := env.RunCLIWithError("checkpoint", "explain", "--session", "nonexistent-session-id")
-
 	if err != nil {
 		t.Errorf("expected success (empty list) for session filter, got error: %v, output: %s", err, output)
 		return
@@ -428,7 +426,8 @@ func corruptV2MainRef(t *testing.T, repo *git.Repository, checkpointID string) {
 	require.NoError(t, err)
 
 	require.NoError(t, repo.Storer.SetReference(
-		plumbing.NewHashReference(refName, commitHash)))
+		plumbing.NewHashReference(refName, commitHash),
+	))
 }
 
 // TestExplain_BranchListingShowsCheckpointsAndPrompts runs the same scenario

@@ -13,7 +13,8 @@ func makeSummaryWithNarratives(agents []struct {
 	name      string
 	narrative string
 	status    reviewtypes.AgentStatus
-}) reviewtypes.RunSummary {
+},
+) reviewtypes.RunSummary {
 	runs := make([]reviewtypes.AgentRun, len(agents))
 	for i, a := range agents {
 		var buf []reviewtypes.Event

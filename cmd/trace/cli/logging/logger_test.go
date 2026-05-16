@@ -408,7 +408,8 @@ func TestLogging_AdditionalAttrs(t *testing.T) {
 	ctx := WithSession(context.Background(), "context-session") // Will be ignored, global takes precedence
 
 	// Log with additional attrs
-	Info(ctx, "attrs test",
+	Info(
+		ctx, "attrs test",
 		slog.String("hook", "pre-push"),
 		slog.Int("duration_ms", 150),
 		slog.Bool("success", true),
@@ -461,7 +462,8 @@ func TestLogDuration(t *testing.T) {
 	// Simulate some work
 	start := time.Now().Add(-100 * time.Millisecond) // Fake 100ms ago
 
-	LogDuration(ctx, slog.LevelInfo, "operation completed", start,
+	LogDuration(
+		ctx, slog.LevelInfo, "operation completed", start,
 		slog.String("hook", "pre-push"),
 		slog.Bool("success", true),
 	)

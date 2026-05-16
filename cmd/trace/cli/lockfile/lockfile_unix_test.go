@@ -39,7 +39,8 @@ func TestAcquire_ProcessExitReleases(t *testing.T) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestAcquire_ProcessExitReleases", "-test.v")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(
+		os.Environ(),
 		"LOCKFILE_TEST_CHILD=1",
 		"LOCKFILE_TEST_PATH="+path,
 	)

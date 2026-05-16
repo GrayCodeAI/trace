@@ -100,7 +100,8 @@ func AppendReviewEnv(base []string, agentName string, cfg reviewtypes.RunConfig,
 		}
 		out = append(out, kv)
 	}
-	return append(out,
+	return append(
+		out,
 		EnvSession+"=1",
 		EnvAgent+"="+agentName,
 		EnvSkills+"="+skillsJSON,

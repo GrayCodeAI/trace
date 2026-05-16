@@ -175,7 +175,8 @@ func TestCommitHookPerformance(t *testing.T) {
 		if overhead < 0 {
 			overhead = 0
 		}
-		t.Logf("%-14s | %8d | %10s | %10s | %12s | %12s | %10s",
+		t.Logf(
+			"%-14s | %8d | %10s | %10s | %12s | %12s | %10s",
 			r.name,
 			r.total,
 			r.control.Round(time.Millisecond),

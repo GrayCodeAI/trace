@@ -212,8 +212,8 @@ func TestBareNameFromBinaryName(t *testing.T) {
 	common := map[string]string{
 		"trace-pgr": "pgr",
 		"trace-":    "",
-		"foo":        "",
-		"":           "",
+		"foo":       "",
+		"":          "",
 	}
 	for in, want := range common {
 		if got := bareNameFromBinaryName(in); got != want {

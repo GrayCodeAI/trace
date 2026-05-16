@@ -48,7 +48,6 @@ var errStopIteration = errors.New("stop iteration")
 // unwrapped function.
 var chunkTranscript = agent.ChunkTranscript
 
-
 // WriteCommitted writes a committed checkpoint to the trace/checkpoints/v1 branch.
 // Checkpoints are stored at sharded paths: <id[:2]>/<id[2:]>/
 //
@@ -264,7 +263,8 @@ func (s *GitStore) writeFinalTaskCheckpoint(ctx context.Context, opts WriteCommi
 			// if the content is not valid JSONL (avoids silently dropping the transcript).
 			redacted, jsonlErr := redact.JSONLBytes(agentContent)
 			if jsonlErr != nil {
-				logging.Warn(ctx, "subagent transcript is not valid JSONL, falling back to plain redaction",
+				logging.Warn(
+					ctx, "subagent transcript is not valid JSONL, falling back to plain redaction",
 					slog.String("path", opts.SubagentTranscriptPath),
 					slog.String("error", jsonlErr.Error()),
 				)
@@ -579,7 +579,8 @@ func (s *GitStore) findSessionIndex(ctx context.Context, basePath string, existi
 		if entry, exists := entries[path]; exists {
 			meta, err := s.readMetadataFromBlob(entry.Hash)
 			if err != nil {
-				logging.Warn(ctx, "failed to read session metadata during dedup check",
+				logging.Warn(
+					ctx, "failed to read session metadata during dedup check",
 					slog.Int("session_index", i),
 					slog.String("session_id", sessionID),
 					slog.String("error", err.Error()),
@@ -756,7 +757,8 @@ func (s *GitStore) writeTranscript(ctx context.Context, opts WriteCommittedOptio
 	}
 	contentHashSpan.End()
 
-	logging.Debug(logCtx, "write transcript timings",
+	logging.Debug(
+		logCtx, "write transcript timings",
 		slog.String("session_id", opts.SessionID),
 		slog.String("checkpoint_id", opts.CheckpointID.String()),
 		slog.String("agent", string(opts.Agent)),
@@ -1348,7 +1350,8 @@ func (s *GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOpti
 	if sessionIndex == -1 {
 		// Fall back to latest session; log so mismatches are diagnosable.
 		sessionIndex = len(checkpointSummary.Sessions) - 1
-		logging.Debug(ctx, "UpdateCommitted: session ID not found, falling back to latest",
+		logging.Debug(
+			ctx, "UpdateCommitted: session ID not found, falling back to latest",
 			slog.String("session_id", opts.SessionID),
 			slog.String("checkpoint_id", string(opts.CheckpointID)),
 			slog.Int("fallback_index", sessionIndex),
@@ -1867,7 +1870,6 @@ func SignCommitBestEffort(ctx context.Context, commit *object.Commit) {
 	commit.Signature = string(sig)
 }
 
-
 // readTranscriptFromTree reads a transcript from a git tree, handling both chunked and non-chunked formats.
 // It checks for chunk files first (.001, .002, etc.), then falls back to the base file.
 // The agentType is used for reassembling chunks in the correct format.
@@ -1905,7 +1907,8 @@ func readTranscriptFromTree(ctx context.Context, tree *FetchingTree, agentType t
 		for _, chunkFile := range chunkFiles {
 			file, err := tree.File(chunkFile)
 			if err != nil {
-				logging.Warn(ctx, "failed to read transcript chunk file from tree",
+				logging.Warn(
+					ctx, "failed to read transcript chunk file from tree",
 					slog.String("chunk_file", chunkFile),
 					slog.String("error", err.Error()),
 				)
@@ -1913,7 +1916,8 @@ func readTranscriptFromTree(ctx context.Context, tree *FetchingTree, agentType t
 			}
 			content, err := file.Contents()
 			if err != nil {
-				logging.Warn(ctx, "failed to read transcript chunk contents",
+				logging.Warn(
+					ctx, "failed to read transcript chunk contents",
 					slog.String("chunk_file", chunkFile),
 					slog.String("error", err.Error()),
 				)

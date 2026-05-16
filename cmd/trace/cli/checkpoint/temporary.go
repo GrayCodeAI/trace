@@ -226,7 +226,6 @@ func (s *GitStore) ListTemporary(ctx context.Context) ([]TemporaryInfo, error) {
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to iterate branches: %w", err)
 	}
@@ -359,7 +358,8 @@ func (s *GitStore) addTaskMetadataToTree(ctx context.Context, baseTreeHash plumb
 				// Chunk if necessary
 				chunks, chunkErr := agent.ChunkTranscript(ctx, transcriptContent, agentType)
 				if chunkErr != nil {
-					logging.Warn(ctx, "failed to chunk transcript, checkpoint will be saved without transcript",
+					logging.Warn(
+						ctx, "failed to chunk transcript, checkpoint will be saved without transcript",
 						slog.String("error", chunkErr.Error()),
 						slog.String("session_id", opts.SessionID),
 					)
@@ -368,7 +368,8 @@ func (s *GitStore) addTaskMetadataToTree(ctx context.Context, baseTreeHash plumb
 						chunkPath := sessionMetadataDir + "/" + agent.ChunkFileName(paths.TranscriptFileName, i)
 						blobHash, blobErr := CreateBlobFromContent(s.repo, chunk)
 						if blobErr != nil {
-							logging.Warn(ctx, "failed to create blob for transcript chunk",
+							logging.Warn(
+								ctx, "failed to create blob for transcript chunk",
 								slog.String("error", blobErr.Error()),
 								slog.String("session_id", opts.SessionID),
 								slog.Int("chunk_index", i),
@@ -389,7 +390,8 @@ func (s *GitStore) addTaskMetadataToTree(ctx context.Context, baseTreeHash plumb
 			if agentContent, readErr := os.ReadFile(opts.SubagentTranscriptPath); readErr == nil {
 				redacted, jsonlErr := redact.JSONLBytes(agentContent)
 				if jsonlErr != nil {
-					logging.Warn(ctx, "subagent transcript is not valid JSONL, falling back to plain redaction",
+					logging.Warn(
+						ctx, "subagent transcript is not valid JSONL, falling back to plain redaction",
 						slog.String("path", opts.SubagentTranscriptPath),
 						slog.String("error", jsonlErr.Error()),
 					)

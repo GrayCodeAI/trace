@@ -231,7 +231,8 @@ func migrateCheckpointsV2(ctx context.Context, repo *git.Repository, v1Store *ch
 			case errors.Is(migrateErr, errNoFullPackingNeeded):
 				result.migrated++
 			default:
-				logging.Error(ctx, "checkpoint migration failed",
+				logging.Error(
+					ctx, "checkpoint migration failed",
 					slog.String("checkpoint_id", string(info.CheckpointID)),
 					slog.String("error", migrateErr.Error()),
 				)
@@ -258,7 +259,8 @@ func migrateCheckpointsV2(ctx context.Context, repo *git.Repository, v1Store *ch
 }
 
 func logCheckpointMigrationSkip(ctx context.Context, checkpointID id.CheckpointID, reason string, err error) {
-	logging.Info(ctx, "checkpoint migration skipped",
+	logging.Info(
+		ctx, "checkpoint migration skipped",
 		slog.String("checkpoint_id", string(checkpointID)),
 		slog.String("reason", reason),
 		slog.String("error", err.Error()),
@@ -405,7 +407,8 @@ func migrateOneCheckpoint(ctx context.Context, repo *git.Repository, v1Store *ch
 	if shouldCopyTaskMetadata {
 		taskTrees, taskErr := collectTaskMetadataForMigratedFullGeneration(repo, info.CheckpointID, summary, v1ToV2SessionIdx)
 		if taskErr != nil {
-			logging.Warn(ctx, "failed to copy task metadata to v2",
+			logging.Warn(
+				ctx, "failed to copy task metadata to v2",
 				slog.String("checkpoint_id", string(info.CheckpointID)),
 				slog.String("error", taskErr.Error()),
 			)
@@ -416,13 +419,15 @@ func migrateOneCheckpoint(ctx context.Context, repo *git.Repository, v1Store *ch
 
 	if compactFailed {
 		outcome.compactTranscriptSkipped = true
-		logging.Warn(ctx, "compact transcript not generated during checkpoint migration",
+		logging.Warn(
+			ctx, "compact transcript not generated during checkpoint migration",
 			slog.String("checkpoint_id", string(info.CheckpointID)),
 			slog.Int("migrated_sessions", migratedSessions),
 		)
 	}
 	if skippedMissingSessions > 0 {
-		logging.Warn(ctx, "checkpoint migration skipped v1 sessions with missing transcript/session content",
+		logging.Warn(
+			ctx, "checkpoint migration skipped v1 sessions with missing transcript/session content",
 			slog.String("checkpoint_id", string(info.CheckpointID)),
 			slog.Int("missing_sessions", skippedMissingSessions),
 		)
@@ -652,7 +657,8 @@ func readV1SessionForMigration(ctx context.Context, v1Store *checkpoint.GitStore
 }
 
 func warnMissingV1Session(ctx context.Context, checkpointID id.CheckpointID, sessionIdx int, err error) {
-	logging.Warn(ctx, "skipping v1 session with missing transcript during checkpoint migration",
+	logging.Warn(
+		ctx, "skipping v1 session with missing transcript during checkpoint migration",
 		slog.String("checkpoint_id", checkpointID.String()),
 		slog.Int("session_index", sessionIdx),
 		slog.String("error", err.Error()),
@@ -802,7 +808,8 @@ func addRecomputedGenerationJSON(v2Store *checkpoint.V2GitStore, treeHash plumbi
 }
 
 func pruneCheckpointFromRoot(repo *git.Repository, rootTreeHash plumbing.Hash, shardPrefix, shardSuffix string) (plumbing.Hash, error) {
-	newRoot, err := checkpoint.UpdateSubtree(repo, rootTreeHash,
+	newRoot, err := checkpoint.UpdateSubtree(
+		repo, rootTreeHash,
 		[]string{shardPrefix},
 		nil,
 		checkpoint.UpdateSubtreeOptions{
@@ -829,7 +836,8 @@ func pruneCheckpointFromRoot(repo *git.Repository, rootTreeHash plumbing.Hash, s
 		return newRoot, nil
 	}
 
-	prunedRoot, err := checkpoint.UpdateSubtree(repo, rootTreeHash,
+	prunedRoot, err := checkpoint.UpdateSubtree(
+		repo, rootTreeHash,
 		nil,
 		nil,
 		checkpoint.UpdateSubtreeOptions{
@@ -1066,7 +1074,8 @@ func backfillCompactTranscripts(ctx context.Context, v1Store *checkpoint.GitStor
 	for _, sessionIdx := range needsBackfill {
 		content, readErr := v1Store.ReadSessionContent(ctx, info.CheckpointID, sessionIdx)
 		if readErr != nil {
-			logging.Warn(ctx, "transcript.jsonl backfill: could not read v1 session",
+			logging.Warn(
+				ctx, "transcript.jsonl backfill: could not read v1 session",
 				slog.String("checkpoint_id", string(info.CheckpointID)),
 				slog.Int("session_index", sessionIdx),
 				slog.String("error", readErr.Error()),
@@ -1083,7 +1092,8 @@ func backfillCompactTranscripts(ctx context.Context, v1Store *checkpoint.GitStor
 			// tryCompactTranscript already logs for no-agent and compact-error cases;
 			// log the empty-transcript case here.
 			if len(content.Transcript) == 0 {
-				logging.Warn(ctx, "transcript.jsonl backfill: empty transcript in v1",
+				logging.Warn(
+					ctx, "transcript.jsonl backfill: empty transcript in v1",
 					slog.String("checkpoint_id", string(info.CheckpointID)),
 					slog.Int("session_index", sessionIdx),
 				)
@@ -1097,7 +1107,8 @@ func backfillCompactTranscripts(ctx context.Context, v1Store *checkpoint.GitStor
 			CompactTranscript: compacted,
 		})
 		if updateErr != nil {
-			logging.Warn(ctx, "transcript.jsonl backfill: failed to write to v2",
+			logging.Warn(
+				ctx, "transcript.jsonl backfill: failed to write to v2",
 				slog.String("checkpoint_id", string(info.CheckpointID)),
 				slog.Int("session_index", sessionIdx),
 				slog.String("error", updateErr.Error()),
@@ -1162,7 +1173,8 @@ func compactTranscriptForStartLine(ctx context.Context, transcript []byte, m che
 		return nil
 	}
 	if m.Agent == "" {
-		logging.Warn(ctx, "compact transcript skipped: no agent type in checkpoint metadata",
+		logging.Warn(
+			ctx, "compact transcript skipped: no agent type in checkpoint metadata",
 			slog.String("checkpoint_id", string(m.CheckpointID)),
 		)
 		return nil
@@ -1175,7 +1187,8 @@ func compactTranscriptForStartLine(ctx context.Context, transcript []byte, m che
 		StartLine:  startLine,
 	})
 	if err != nil {
-		logging.Warn(ctx, "compact transcript generation failed during migration",
+		logging.Warn(
+			ctx, "compact transcript generation failed during migration",
 			slog.String("checkpoint_id", string(m.CheckpointID)),
 			slog.String("agent", string(m.Agent)),
 			slog.String("error", err.Error()),
@@ -1183,7 +1196,8 @@ func compactTranscriptForStartLine(ctx context.Context, transcript []byte, m che
 		return nil
 	}
 	if len(compacted) == 0 {
-		logging.Warn(ctx, "transcript.jsonl generation produced no output",
+		logging.Warn(
+			ctx, "transcript.jsonl generation produced no output",
 			slog.String("checkpoint_id", string(m.CheckpointID)),
 			slog.String("agent", string(m.Agent)),
 			slog.Int("input_bytes", len(transcript)),
@@ -1213,7 +1227,8 @@ func computeCompactOffset(ctx context.Context, fullTranscript, fullCompact []byt
 		StartLine:  startLine,
 	})
 	if err != nil {
-		logging.Warn(ctx, "compact transcript offset calculation failed during migration",
+		logging.Warn(
+			ctx, "compact transcript offset calculation failed during migration",
 			slog.String("checkpoint_id", string(m.CheckpointID)),
 			slog.String("agent", string(m.Agent)),
 			slog.String("error", err.Error()),
@@ -1228,7 +1243,8 @@ func computeCompactOffset(ctx context.Context, fullTranscript, fullCompact []byt
 	scopedLines := bytes.Count(scopedCompact, []byte{'\n'})
 	offset := fullLines - scopedLines
 	if offset < 0 {
-		logging.Warn(ctx, "compact transcript offset was negative during migration, defaulting to 0",
+		logging.Warn(
+			ctx, "compact transcript offset was negative during migration, defaulting to 0",
 			slog.String("checkpoint_id", string(m.CheckpointID)),
 			slog.Int("full_lines", fullLines),
 			slog.Int("scoped_lines", scopedLines),
@@ -1338,7 +1354,8 @@ func resolveV1CheckpointTree(repo *git.Repository, cpID id.CheckpointID) (*objec
 // Best-effort: failures are logged and do not block migration.
 func cleanupV1TranscriptFiles(ctx context.Context, _ *git.Repository, v2Store *checkpoint.V2GitStore, cpID id.CheckpointID, sessionCount int) {
 	if err := v2Store.CleanupV1TranscriptFiles(ctx, cpID, sessionCount); err != nil {
-		logging.Warn(ctx, "v1 transcript cleanup failed",
+		logging.Warn(
+			ctx, "v1 transcript cleanup failed",
 			slog.String("checkpoint_id", string(cpID)),
 			slog.String("error", err.Error()),
 		)

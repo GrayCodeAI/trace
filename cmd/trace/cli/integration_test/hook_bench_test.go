@@ -238,7 +238,8 @@ func runSessionStartHook(b *testing.B, repo *benchutil.BenchRepo) {
 		cmd := exec.Command(binary, "hooks", "claude-code", "session-start")
 		cmd.Dir = repo.Dir
 		cmd.Stdin = bytes.NewReader(stdinPayload)
-		cmd.Env = append(testutil.GitIsolatedEnv(),
+		cmd.Env = append(
+			testutil.GitIsolatedEnv(),
 			"TRACE_TEST_CLAUDE_PROJECT_DIR="+claudeProjectDir,
 		)
 

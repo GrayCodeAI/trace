@@ -47,19 +47,19 @@ func TestLoad_RejectsUnknownKeys(t *testing.T) {
 
 	// Create .trace directory
 	traceDir := filepath.Join(tmpDir, ".trace")
-	if err := os.MkdirAll(traceDir, 0755); err != nil {
+	if err := os.MkdirAll(traceDir, 0o755); err != nil {
 		t.Fatalf("failed to create .trace directory: %v", err)
 	}
 
 	// Create settings.json with an unknown key
 	settingsFile := filepath.Join(traceDir, "settings.json")
 	settingsContent := `{"enabled": true, "unknown_key": "value"}`
-	if err := os.WriteFile(settingsFile, []byte(settingsContent), 0644); err != nil {
+	if err := os.WriteFile(settingsFile, []byte(settingsContent), 0o644); err != nil {
 		t.Fatalf("failed to write settings file: %v", err)
 	}
 
 	// Initialize a git repo (required by paths.AbsPath)
-	if err := os.MkdirAll(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
 		t.Fatalf("failed to create .git directory: %v", err)
 	}
 
@@ -81,7 +81,7 @@ func TestLoad_AcceptsValidKeys(t *testing.T) {
 
 	// Create .trace directory
 	traceDir := filepath.Join(tmpDir, ".trace")
-	if err := os.MkdirAll(traceDir, 0755); err != nil {
+	if err := os.MkdirAll(traceDir, 0o755); err != nil {
 		t.Fatalf("failed to create .trace directory: %v", err)
 	}
 
@@ -99,12 +99,12 @@ func TestLoad_AcceptsValidKeys(t *testing.T) {
 		"vercel": true,
 		"sign_checkpoint_commits": false
 	}`
-	if err := os.WriteFile(settingsFile, []byte(settingsContent), 0644); err != nil {
+	if err := os.WriteFile(settingsFile, []byte(settingsContent), 0o644); err != nil {
 		t.Fatalf("failed to write settings file: %v", err)
 	}
 
 	// Initialize a git repo (required by paths.AbsPath)
-	if err := os.MkdirAll(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
 		t.Fatalf("failed to create .git directory: %v", err)
 	}
 
@@ -165,26 +165,26 @@ func TestLoad_LocalSettingsRejectsUnknownKeys(t *testing.T) {
 
 	// Create .trace directory
 	traceDir := filepath.Join(tmpDir, ".trace")
-	if err := os.MkdirAll(traceDir, 0755); err != nil {
+	if err := os.MkdirAll(traceDir, 0o755); err != nil {
 		t.Fatalf("failed to create .trace directory: %v", err)
 	}
 
 	// Create valid settings.json
 	settingsFile := filepath.Join(traceDir, "settings.json")
 	settingsContent := `{"enabled": true}`
-	if err := os.WriteFile(settingsFile, []byte(settingsContent), 0644); err != nil {
+	if err := os.WriteFile(settingsFile, []byte(settingsContent), 0o644); err != nil {
 		t.Fatalf("failed to write settings file: %v", err)
 	}
 
 	// Create settings.local.json with an unknown key
 	localSettingsFile := filepath.Join(traceDir, "settings.local.json")
 	localSettingsContent := `{"bad_key": true}`
-	if err := os.WriteFile(localSettingsFile, []byte(localSettingsContent), 0644); err != nil {
+	if err := os.WriteFile(localSettingsFile, []byte(localSettingsContent), 0o644); err != nil {
 		t.Fatalf("failed to write local settings file: %v", err)
 	}
 
 	// Initialize a git repo (required by paths.AbsPath)
-	if err := os.MkdirAll(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
 		t.Fatalf("failed to create .git directory: %v", err)
 	}
 

@@ -101,7 +101,8 @@ func TestCodexAgent_ResolveRestoredSessionFile(t *testing.T) {
 
 	path, err := ag.ResolveRestoredSessionFile(dir, "019d24c3-1111-2222-3333-444444444444", []byte(sampleRollout))
 	require.NoError(t, err)
-	require.Equal(t,
+	require.Equal(
+		t,
 		filepath.Join(dir, "2026", "03", "25", "rollout-2026-03-25T11-31-10-019d24c3-1111-2222-3333-444444444444.jsonl"),
 		path,
 	)

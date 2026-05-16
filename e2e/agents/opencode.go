@@ -31,7 +31,7 @@ func init() {
 
 func (a *openCodeAgent) Name() string               { return "opencode" }
 func (a *openCodeAgent) Binary() string             { return "opencode" }
-func (a *openCodeAgent) TraceAgent() string        { return "opencode" }
+func (a *openCodeAgent) TraceAgent() string         { return "opencode" }
 func (a *openCodeAgent) PromptPattern() string      { return `(Ask anything|▣)` }
 func (a *openCodeAgent) TimeoutMultiplier() float64 { return 2.0 }
 

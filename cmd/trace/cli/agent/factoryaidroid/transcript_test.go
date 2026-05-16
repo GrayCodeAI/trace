@@ -607,14 +607,16 @@ func TestExtractAllModifiedFilesFromTranscript_IncludesSubagentFiles(t *testing.
 	}
 
 	// Main transcript: Write to main.go + Task call spawning subagent "sub1"
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeWriteToolLine(t, "a1", "/repo/main.go"),
 		makeTaskToolUseLine(t, "a2", "toolu_task1"),
 		makeTaskResultLine(t, "u1", "toolu_task1", "sub1"),
 	)
 
 	// Subagent transcript: Write to helper.go + Edit to utils.go
-	writeJSONLFile(t, subagentsDir+"/agent-sub1.jsonl",
+	writeJSONLFile(
+		t, subagentsDir+"/agent-sub1.jsonl",
 		makeWriteToolLine(t, "sa1", "/repo/helper.go"),
 		makeEditToolLine(t, "sa2", "/repo/utils.go"),
 	)
@@ -656,14 +658,16 @@ func TestExtractAllModifiedFilesFromTranscript_DeduplicatesAcrossAgents(t *testi
 	}
 
 	// Main transcript: Write to shared.go + Task call
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeWriteToolLine(t, "a1", "/repo/shared.go"),
 		makeTaskToolUseLine(t, "a2", "toolu_task1"),
 		makeTaskResultLine(t, "u1", "toolu_task1", "sub1"),
 	)
 
 	// Subagent transcript: Also modifies shared.go (same file as main)
-	writeJSONLFile(t, subagentsDir+"/agent-sub1.jsonl",
+	writeJSONLFile(
+		t, subagentsDir+"/agent-sub1.jsonl",
 		makeEditToolLine(t, "sa1", "/repo/shared.go"),
 	)
 
@@ -687,7 +691,8 @@ func TestExtractAllModifiedFilesFromTranscript_NoSubagents(t *testing.T) {
 	transcriptPath := tmpDir + "/transcript.jsonl"
 
 	// Main transcript: Write to a file, no Task calls
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeWriteToolLine(t, "a1", "/repo/solo.go"),
 	)
 
@@ -718,13 +723,15 @@ func TestExtractAllModifiedFilesFromTranscript_SubagentOnlyChanges(t *testing.T)
 	// Main transcript: ONLY a Task call, no direct file modifications
 	// This is the key bug scenario - if we only look at the main transcript,
 	// we miss all the subagent's file changes entirely.
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeTaskToolUseLine(t, "a1", "toolu_task1"),
 		makeTaskResultLine(t, "u1", "toolu_task1", "sub1"),
 	)
 
 	// Subagent transcript: Write to two files
-	writeJSONLFile(t, subagentsDir+"/agent-sub1.jsonl",
+	writeJSONLFile(
+		t, subagentsDir+"/agent-sub1.jsonl",
 		makeWriteToolLine(t, "sa1", "/repo/subagent_file1.go"),
 		makeWriteToolLine(t, "sa2", "/repo/subagent_file2.go"),
 	)
@@ -912,7 +919,8 @@ func TestExtractPrompts(t *testing.T) {
 	tmpDir := t.TempDir()
 	transcriptPath := tmpDir + "/transcript.jsonl"
 
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeUserTextLine(t, "u1", "Fix the login bug"),
 		makeAssistantTextLine(t, "a1", "I'll fix the login bug."),
 		makeUserTextLine(t, "u2", "Now add tests"),
@@ -943,7 +951,8 @@ func TestExtractPrompts_StripsIDETags(t *testing.T) {
 
 	// User message with IDE context tags injected by VSCode extension
 	promptWithTags := `<ide_opened_file>/repo/main.go</ide_opened_file>Fix the bug`
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeUserTextLine(t, "u1", promptWithTags),
 	)
 
@@ -967,7 +976,8 @@ func TestExtractPrompts_WithOffset(t *testing.T) {
 	tmpDir := t.TempDir()
 	transcriptPath := tmpDir + "/transcript.jsonl"
 
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeUserTextLine(t, "u1", "First prompt"),
 		makeAssistantTextLine(t, "a1", "Done."),
 		makeUserTextLine(t, "u2", "Second prompt"),
@@ -995,7 +1005,8 @@ func TestExtractSummary(t *testing.T) {
 	tmpDir := t.TempDir()
 	transcriptPath := tmpDir + "/transcript.jsonl"
 
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeUserTextLine(t, "u1", "Fix the bug"),
 		makeAssistantTextLine(t, "a1", "Working on it..."),
 		makeUserTextLine(t, "u2", "Thanks"),
@@ -1020,7 +1031,8 @@ func TestExtractSummary_SkipsToolUseBlocks(t *testing.T) {
 	transcriptPath := tmpDir + "/transcript.jsonl"
 
 	// Last assistant message has tool_use (no text), second-to-last has text
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeUserTextLine(t, "u1", "Edit main.go"),
 		makeAssistantTextLine(t, "a1", "I updated the file."),
 		makeWriteToolLine(t, "a2", "/repo/main.go"),
@@ -1099,14 +1111,16 @@ func TestCalculateTotalTokenUsageFromTranscript_WithSubagentFiles(t *testing.T) 
 	}
 
 	// Main transcript: assistant message with tokens + Task spawning subagent "sub1"
-	writeJSONLFile(t, transcriptPath,
+	writeJSONLFile(
+		t, transcriptPath,
 		makeAssistantTokenLine(t, "a1", "msg_main1", 100, 50),
 		makeTaskToolUseLine(t, "a2", "toolu_task2"),
 		makeTaskResultLine(t, "u2", "toolu_task2", "sub99"),
 	)
 
 	// Subagent transcript: assistant message with its own tokens
-	writeJSONLFile(t, subagentsDir+"/agent-sub99.jsonl",
+	writeJSONLFile(
+		t, subagentsDir+"/agent-sub99.jsonl",
 		makeAssistantTokenLine(t, "sa1", "msg_sub1", 200, 80),
 		makeAssistantTokenLine(t, "sa2", "msg_sub2", 150, 60),
 	)

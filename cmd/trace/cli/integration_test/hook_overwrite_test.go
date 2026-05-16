@@ -35,7 +35,8 @@ func TestHookOverwrite_MidTurnWipe_NextPromptRecovers(t *testing.T) {
 
 	// === Prompt 1: normal flow, hooks work ===
 	err := env.SimulateUserPromptSubmitWithPromptAndTranscriptPath(
-		sess.ID, "Create files A and B", sess.TranscriptPath)
+		sess.ID, "Create files A and B", sess.TranscriptPath,
+	)
 	require.NoError(t, err)
 
 	env.WriteFile("fileA.go", "package main\n\nfunc A() {}\n")
@@ -89,7 +90,8 @@ func TestHookOverwrite_MidTurnWipe_NextPromptRecovers(t *testing.T) {
 	})
 
 	err = env.SimulateUserPromptSubmitWithPromptAndTranscriptPath(
-		sess.ID, "Create file C", sess.TranscriptPath)
+		sess.ID, "Create file C", sess.TranscriptPath,
+	)
 	require.NoError(t, err)
 
 	// Verify hooks were reinstalled by EnsureSetup

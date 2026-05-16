@@ -312,13 +312,15 @@ func TestListArchivedV2GenerationCandidates_SkipsDivergedLocalAndRemote(t *testi
 		OldestCheckpointAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		NewestCheckpointAt: time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC),
 	}
-	createRepairArchivedGenerationRef(t, repo, refName, id.MustCheckpointID("100000000009"), staleGen,
+	createRepairArchivedGenerationRef(
+		t, repo, refName, id.MustCheckpointID("100000000009"), staleGen,
 		time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 2, 1, 1, 0, 0, 0, time.UTC),
 	)
 	runGenerationRepairGit(t, repoRoot, "push", "origin", refName.String()+":"+refName.String())
 
-	localOID := createRepairArchivedGenerationRef(t, repo, refName, id.MustCheckpointID("200000000009"), staleGen,
+	localOID := createRepairArchivedGenerationRef(
+		t, repo, refName, id.MustCheckpointID("200000000009"), staleGen,
 		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 3, 1, 1, 0, 0, 0, time.UTC),
 	)

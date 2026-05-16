@@ -24,7 +24,6 @@ func TestParseHookEvent_SessionStart(t *testing.T) {
 	input := `{"conversation_id": "test-session-123", "transcript_path": "/tmp/transcript.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -50,7 +49,6 @@ func TestParseHookEvent_SessionStart_IncludesModel(t *testing.T) {
 	input := `{"conversation_id": "sess-model", "transcript_path": "/tmp/t.jsonl", "model": "` + testModel + `"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -67,7 +65,6 @@ func TestParseHookEvent_SessionStart_EmptyModel(t *testing.T) {
 	input := `{"conversation_id": "sess-no-model", "transcript_path": "/tmp/t.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -84,7 +81,6 @@ func TestParseHookEvent_TurnStart(t *testing.T) {
 	input := `{"conversation_id": "sess-456", "transcript_path": "/tmp/t.jsonl", "prompt": "Hello world"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameBeforeSubmitPrompt, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +103,6 @@ func TestParseHookEvent_TurnStart_IncludesModel(t *testing.T) {
 	input := `{"conversation_id": "sess-m", "transcript_path": "/tmp/t.jsonl", "prompt": "hi", "model": "` + testModel + `"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameBeforeSubmitPrompt, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -123,7 +118,6 @@ func TestParseHookEvent_TurnStart_EmptyModel(t *testing.T) {
 	input := `{"conversation_id": "sess-nm", "transcript_path": "/tmp/t.jsonl", "prompt": "hi"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameBeforeSubmitPrompt, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +164,6 @@ func TestParseHookEvent_TurnEnd(t *testing.T) {
 	input := `{"conversation_id": "sess-789", "transcript_path": "/tmp/stop.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameStop, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,7 +183,6 @@ func TestParseHookEvent_SessionEnd(t *testing.T) {
 	input := `{"conversation_id": "ending-session", "transcript_path": "/tmp/end.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionEnd, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -210,7 +202,6 @@ func TestParseHookEvent_SessionEnd_IncludesModel(t *testing.T) {
 	input := `{"conversation_id": "end-model", "transcript_path": "/tmp/end.jsonl", "model": "` + testModel + `"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionEnd, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,7 +229,6 @@ func TestParseHookEvent_TurnEnd_CLINoTranscriptPath(t *testing.T) {
 	input := `{"conversation_id": "cli-session-id", "status": "completed", "loop_count": 3}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameStop, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -275,7 +265,6 @@ func TestParseHookEvent_SessionEnd_CLINoTranscriptPath(t *testing.T) {
 	input := `{"conversation_id": "cli-end-session", "reason": "user_closed", "duration_ms": 45000, "is_background_agent": false, "final_status": "completed"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionEnd, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -302,7 +291,6 @@ func TestParseHookEvent_TurnEnd_IDEWithTranscriptPath(t *testing.T) {
 	input := `{"conversation_id": "ide-session", "transcript_path": "/home/user/.cursor/projects/proj/agent-transcripts/ide-session/ide-session.jsonl", "status": "completed", "loop_count": 5}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameStop, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -328,7 +316,6 @@ func TestParseHookEvent_SubagentStart(t *testing.T) {
 	}
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSubagentStart, strings.NewReader(string(inputBytes)))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -361,7 +348,6 @@ func TestParseHookEvent_SubagentEnd(t *testing.T) {
 	}
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSubagentStop, strings.NewReader(string(inputBytes)))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -387,7 +373,6 @@ func TestParseHookEvent_PreCompact(t *testing.T) {
 	input := `{"conversation_id": "compact-session", "transcript_path": "/tmp/compact.jsonl", "context_tokens": 8500, "context_window_size": 16000}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNamePreCompact, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -413,7 +398,6 @@ func TestParseHookEvent_UnknownHook_ReturnsNil(t *testing.T) {
 	input := `{"session_id": "unknown", "transcript_path": "/tmp/unknown.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), "unknown-hook-name", strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -558,7 +542,6 @@ func TestParseHookEvent_AllHookTypes(t *testing.T) {
 
 			ag := &CursorAgent{}
 			event, err := ag.ParseHookEvent(context.Background(), tc.hookName, strings.NewReader(tc.inputTemplate))
-
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

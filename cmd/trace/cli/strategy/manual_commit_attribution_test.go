@@ -14,8 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testThreeLines = "line1\nline2\nline3\n"
-const testFile1 = "file1.go"
+const (
+	testThreeLines = "line1\nline2\nline3\n"
+	testFile1      = "file1.go"
+)
 
 func TestDiffLines_NoChanges(t *testing.T) {
 	content := testThreeLines

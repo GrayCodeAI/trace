@@ -363,7 +363,8 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 		trackedFiles[f.Name] = true
 		return nil
 	}); iterErr != nil {
-		logging.Debug(ctx, "HEAD tree iteration error during rewind",
+		logging.Debug(
+			ctx, "HEAD tree iteration error during rewind",
 			slog.Any("error", iterErr),
 		)
 	}
@@ -648,7 +649,8 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(ctx context.Context, w, errW io.W
 		if v2Err == nil {
 			v2Summary, readErr := v2Store.ReadCommitted(ctx, point.CheckpointID)
 			if readErr != nil {
-				logging.Debug(ctx, "v2 ReadCommitted failed, falling back to v1",
+				logging.Debug(
+					ctx, "v2 ReadCommitted failed, falling back to v1",
 					slog.String("checkpoint_id", string(point.CheckpointID)),
 					slog.String("error", readErr.Error()),
 				)

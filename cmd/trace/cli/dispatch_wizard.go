@@ -21,12 +21,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var errDispatchCancelled = errors.New("dispatch cancelled")
-var listDispatchWizardRepos = discoverAuthenticatedDispatchWizardRepos
-var listDispatchWizardRepoResources = defaultListDispatchWizardRepoResources
-var resolveDispatchWizardTopLevel = resolveGitTopLevel
-var getDispatchWizardCurrentBranch = GetCurrentBranch
-var runDispatchWizardForm = func(form *huh.Form) error { return form.Run() }
+var (
+	errDispatchCancelled            = errors.New("dispatch cancelled")
+	listDispatchWizardRepos         = discoverAuthenticatedDispatchWizardRepos
+	listDispatchWizardRepoResources = defaultListDispatchWizardRepoResources
+	resolveDispatchWizardTopLevel   = resolveGitTopLevel
+	getDispatchWizardCurrentBranch  = GetCurrentBranch
+	runDispatchWizardForm           = func(form *huh.Form) error { return form.Run() }
+)
 
 func defaultListDispatchWizardRepoResources(ctx context.Context) ([]api.Repository, error) {
 	client, err := NewAuthenticatedAPIClient(false)
