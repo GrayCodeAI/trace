@@ -15,12 +15,14 @@ type Output struct {
 	ExitCode int
 }
 
-type Option func(*runConfig)
-type runConfig struct {
-	Model          string
-	PermissionMode string
-	PromptTimeout  time.Duration
-}
+type (
+	Option    func(*runConfig)
+	runConfig struct {
+		Model          string
+		PermissionMode string
+		PromptTimeout  time.Duration
+	}
+)
 
 func WithModel(model string) Option {
 	return func(c *runConfig) { c.Model = model }
@@ -68,8 +70,10 @@ type ExternalAgent interface {
 	IsExternalAgent() bool
 }
 
-var registry []Agent
-var gates = map[string]chan struct{}{}
+var (
+	registry []Agent
+	gates    = map[string]chan struct{}{}
+)
 
 func Register(a Agent) {
 	registry = append(registry, a)

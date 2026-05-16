@@ -92,7 +92,8 @@ func addV1SessionTasksTreeWithContent(t *testing.T, repo *git.Repository, cpID i
 	commit, err := repo.CommitObject(ref.Hash())
 	require.NoError(t, err)
 
-	newRoot, err := checkpoint.UpdateSubtree(repo, commit.TreeHash,
+	newRoot, err := checkpoint.UpdateSubtree(
+		repo, commit.TreeHash,
 		[]string{string(cpID[:2]), string(cpID[2:]), strconv.Itoa(sessionIdx), "tasks"},
 		tasksTree.Entries,
 		checkpoint.UpdateSubtreeOptions{MergeMode: checkpoint.MergeKeepExisting},
@@ -120,7 +121,8 @@ func addV1RootTasksTreeWithContent(t *testing.T, repo *git.Repository, cpID id.C
 	commit, err := repo.CommitObject(ref.Hash())
 	require.NoError(t, err)
 
-	newRoot, err := checkpoint.UpdateSubtree(repo, commit.TreeHash,
+	newRoot, err := checkpoint.UpdateSubtree(
+		repo, commit.TreeHash,
 		[]string{string(cpID[:2]), string(cpID[2:]), "tasks"},
 		tasksTree.Entries,
 		checkpoint.UpdateSubtreeOptions{MergeMode: checkpoint.MergeKeepExisting},
@@ -140,7 +142,8 @@ func TestMigrateCheckpointsV2_Basic(t *testing.T) {
 	v1Store, v2Store := newMigrateStores(repo)
 
 	cpID := id.MustCheckpointID("a1b2c3d4e5f6")
-	writeV1Checkpoint(t, v1Store, cpID, "session-001",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-001",
 		[]byte("{\"type\":\"assistant\",\"message\":\"hello\"}\n"),
 		[]string{"test prompt"},
 	)
@@ -412,7 +415,8 @@ func TestMigrateCheckpointsV2_Idempotent(t *testing.T) {
 	v1Store, v2Store := newMigrateStores(repo)
 
 	cpID := id.MustCheckpointID("c3d4e5f6a1b2")
-	writeV1Checkpoint(t, v1Store, cpID, "session-idem",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-idem",
 		[]byte("{\"type\":\"assistant\",\"message\":\"idempotent test\"}\n"),
 		[]string{"idem prompt"},
 	)
@@ -439,7 +443,8 @@ func TestMigrateCheckpointsV2_ForceOverwritesExisting(t *testing.T) {
 	v1Store, v2Store := newMigrateStores(repo)
 
 	cpID := id.MustCheckpointID("f0f1f2f3f4f5")
-	writeV1Checkpoint(t, v1Store, cpID, "session-force",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-force",
 		[]byte("{\"type\":\"assistant\",\"message\":\"original\"}\n"),
 		[]string{"original prompt"},
 	)
@@ -490,11 +495,13 @@ func TestMigrateCheckpointsV2_ForceMultipleCheckpoints(t *testing.T) {
 
 	cpID1 := id.MustCheckpointID("a0a1a2a3a4a5")
 	cpID2 := id.MustCheckpointID("b0b1b2b3b4b5")
-	writeV1Checkpoint(t, v1Store, cpID1, "session-force-1",
+	writeV1Checkpoint(
+		t, v1Store, cpID1, "session-force-1",
 		[]byte("{\"type\":\"assistant\",\"message\":\"first\"}\n"),
 		[]string{"prompt 1"},
 	)
-	writeV1Checkpoint(t, v1Store, cpID2, "session-force-2",
+	writeV1Checkpoint(
+		t, v1Store, cpID2, "session-force-2",
 		[]byte("{\"type\":\"assistant\",\"message\":\"second\"}\n"),
 		[]string{"prompt 2"},
 	)
@@ -624,13 +631,15 @@ func TestMigrateCheckpointsV2_MultiSession(t *testing.T) {
 	cpID := id.MustCheckpointID("d4e5f6a1b2c3")
 
 	// Write first session
-	writeV1Checkpoint(t, v1Store, cpID, "session-multi-1",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-multi-1",
 		[]byte("{\"type\":\"assistant\",\"message\":\"session 1\"}\n"),
 		[]string{"prompt 1"},
 	)
 
 	// Write second session to same checkpoint
-	writeV1Checkpoint(t, v1Store, cpID, "session-multi-2",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-multi-2",
 		[]byte("{\"type\":\"assistant\",\"message\":\"session 2\"}\n"),
 		[]string{"prompt 2"},
 	)
@@ -655,7 +664,8 @@ func TestMigrateCheckpointsV2_SkipsV1SessionWithoutTranscript(t *testing.T) {
 
 	cpID := id.MustCheckpointID("445566778899")
 
-	writeV1Checkpoint(t, v1Store, cpID, "session-real",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-real",
 		[]byte("{\"type\":\"assistant\",\"message\":\"real session\"}\n"),
 		[]string{"real prompt"},
 	)
@@ -696,7 +706,8 @@ func TestMigrateCheckpointsV2_SkipsV1SessionWithMissingDirectory(t *testing.T) {
 	v1Store, v2Store := newMigrateStores(repo)
 
 	cpID := id.MustCheckpointID("4455667788aa")
-	writeV1Checkpoint(t, v1Store, cpID, "session-real",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-real",
 		[]byte("{\"type\":\"assistant\",\"message\":\"real session\"}\n"),
 		[]string{"real prompt"},
 	)
@@ -728,7 +739,8 @@ func TestMigrateCheckpointsV2_TaskMetadataUsesMigratedSessionIndexAfterSkip(t *t
 
 	cpID := id.MustCheckpointID("66778899aabb")
 
-	writeV1Checkpoint(t, v1Store, cpID, "session-real",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-real",
 		[]byte("{\"type\":\"assistant\",\"message\":\"real session\"}\n"),
 		[]string{"real prompt"},
 	)
@@ -904,11 +916,13 @@ func TestMigrateCheckpointsV2_ForcePrunesSkippedV2Sessions(t *testing.T) {
 	v1Store, v2Store := newMigrateStores(repo)
 
 	cpID := id.MustCheckpointID("778899aabbcc")
-	writeV1Checkpoint(t, v1Store, cpID, "session-keep",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-keep",
 		[]byte("{\"type\":\"assistant\",\"message\":\"keep\"}\n"),
 		[]string{"keep prompt"},
 	)
-	writeV1Checkpoint(t, v1Store, cpID, "session-stale",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-stale",
 		[]byte("{\"type\":\"assistant\",\"message\":\"stale\"}\n"),
 		[]string{"stale prompt"},
 	)
@@ -962,7 +976,8 @@ func TestMigrateCheckpointsV2_ForcePruneRemovesEmptyShardWhenAllSessionsSkipped(
 	v1Store, v2Store := newMigrateStores(repo)
 
 	cpID := id.MustCheckpointID("8899aabbccdd")
-	writeV1Checkpoint(t, v1Store, cpID, "session-stale-only",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-stale-only",
 		[]byte("{\"type\":\"assistant\",\"message\":\"stale only\"}\n"),
 		[]string{"stale prompt"},
 	)
@@ -1154,11 +1169,13 @@ func TestMigrateCheckpointsV2_AllSkippedOnRerun(t *testing.T) {
 	cpID1 := id.MustCheckpointID("f6a1b2c3d4e5")
 	cpID2 := id.MustCheckpointID("a1b2c3d4e5f7")
 
-	writeV1Checkpoint(t, v1Store, cpID1, "session-p1",
+	writeV1Checkpoint(
+		t, v1Store, cpID1, "session-p1",
 		[]byte("{\"type\":\"assistant\",\"message\":\"first\"}\n"),
 		[]string{"prompt 1"},
 	)
-	writeV1Checkpoint(t, v1Store, cpID2, "session-p2",
+	writeV1Checkpoint(
+		t, v1Store, cpID2, "session-p2",
 		[]byte("{\"type\":\"assistant\",\"message\":\"second\"}\n"),
 		[]string{"prompt 2"},
 	)
@@ -1306,7 +1323,8 @@ func TestMigrateCheckpointsV2_RepairsMissingFullTranscriptBeforeBackfill(t *test
 	v1Store, v2Store := newMigrateStores(repo)
 
 	cpID := id.MustCheckpointID("112233aabbcc")
-	writeV1Checkpoint(t, v1Store, cpID, "session-repair-001",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-repair-001",
 		[]byte("{\"type\":\"assistant\",\"message\":\"repair me\"}\n"),
 		[]string{"repair prompt"},
 	)
@@ -1343,7 +1361,8 @@ func TestMigrateCheckpointsV2_SkipsRepairWhenArchivedFullExists(t *testing.T) {
 	v1Store, v2Store := newMigrateStores(repo)
 
 	cpID := id.MustCheckpointID("334455ddeeff")
-	writeV1Checkpoint(t, v1Store, cpID, "session-repair-archive-001",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-repair-archive-001",
 		[]byte("{\"type\":\"assistant\",\"message\":\"repair from archive fallback\"}\n"),
 		[]string{"repair archive prompt"},
 	)
@@ -1588,11 +1607,13 @@ func TestMigrateCheckpointsV2_PreservesCombinedAttribution(t *testing.T) {
 	cpID := id.MustCheckpointID("ccdd55667788")
 
 	// Write two sessions so combined attribution is meaningful
-	writeV1Checkpoint(t, v1Store, cpID, "session-ca-001",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-ca-001",
 		[]byte("{\"type\":\"assistant\",\"message\":\"session 1\"}\n"),
 		[]string{"prompt 1"},
 	)
-	writeV1Checkpoint(t, v1Store, cpID, "session-ca-002",
+	writeV1Checkpoint(
+		t, v1Store, cpID, "session-ca-002",
 		[]byte("{\"type\":\"assistant\",\"message\":\"session 2\"}\n"),
 		[]string{"prompt 2"},
 	)

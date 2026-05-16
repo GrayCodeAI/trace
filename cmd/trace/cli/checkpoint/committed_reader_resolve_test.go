@@ -253,5 +253,6 @@ func corruptV2MainMetadata(t *testing.T, repo *git.Repository, cpID id.Checkpoin
 	require.NoError(t, err)
 
 	require.NoError(t, repo.Storer.SetReference(
-		plumbing.NewHashReference(refName, commitHash)))
+		plumbing.NewHashReference(refName, commitHash),
+	))
 }

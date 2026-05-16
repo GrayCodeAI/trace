@@ -954,7 +954,7 @@ func TestStagedFilesOverlapWithContent_DeletedFile(t *testing.T) {
 
 	// Create and commit a file that will be deleted
 	filePath := filepath.Join(dir, "to_delete.txt")
-	err = os.WriteFile(filePath, []byte("original content"), 0644)
+	err = os.WriteFile(filePath, []byte("original content"), 0o644)
 	require.NoError(t, err)
 	_, err = worktree.Add("to_delete.txt")
 	require.NoError(t, err)

@@ -19,15 +19,17 @@ func init() {
 	RegisterGate("gemini-cli", 2)
 }
 
-const geminiDefaultModel = "gemini-2.5-flash"
-const geminiTrustWorkspaceEnvKey = "GEMINI_CLI_TRUST_WORKSPACE"
-const geminiTrustWorkspaceEnv = geminiTrustWorkspaceEnvKey + "=true"
+const (
+	geminiDefaultModel         = "gemini-2.5-flash"
+	geminiTrustWorkspaceEnvKey = "GEMINI_CLI_TRUST_WORKSPACE"
+	geminiTrustWorkspaceEnv    = geminiTrustWorkspaceEnvKey + "=true"
+)
 
 type Gemini struct{}
 
 func (g *Gemini) Name() string               { return "gemini-cli" }
 func (g *Gemini) Binary() string             { return "gemini" }
-func (g *Gemini) TraceAgent() string        { return "gemini" }
+func (g *Gemini) TraceAgent() string         { return "gemini" }
 func (g *Gemini) PromptPattern() string      { return `Type your message` }
 func (g *Gemini) TimeoutMultiplier() float64 { return 2.5 }
 

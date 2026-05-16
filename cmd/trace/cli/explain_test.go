@@ -1187,7 +1187,6 @@ func TestExplainDefault_ShowsBranchView(t *testing.T) {
 
 	var stdout bytes.Buffer
 	err = runExplainDefault(context.Background(), &stdout, true) // noPager=true for test
-
 	// Should NOT error - should show branch view
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
@@ -1242,7 +1241,6 @@ func TestExplainDefault_NoCheckpoints_ShowsHelpfulMessage(t *testing.T) {
 
 	var stdout bytes.Buffer
 	err = runExplainDefault(context.Background(), &stdout, true) // noPager=true for test
-
 	// Should NOT error
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
@@ -3737,7 +3735,6 @@ func TestRunExplainBranchDefault_DetachedHead(t *testing.T) {
 
 	var stdout bytes.Buffer
 	err = runExplainBranchDefault(context.Background(), &stdout, true)
-
 	// Should NOT error
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
@@ -4387,7 +4384,6 @@ func TestRunExplainCommit_NoCheckpointTrailer(t *testing.T) {
 
 	var buf bytes.Buffer
 	err = runExplainCommit(context.Background(), &buf, &buf, hash.String()[:7], false, false, false, false, false, false, false)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -12,8 +12,10 @@ import (
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent/testutil"
 )
 
-const testMatcherStartup = "startup"
-const testHookNameMyHook = "my-hook"
+const (
+	testMatcherStartup = "startup"
+	testHookNameMyHook = "my-hook"
+)
 
 func TestInstallHooks_FreshInstall(t *testing.T) {
 	tempDir := t.TempDir()

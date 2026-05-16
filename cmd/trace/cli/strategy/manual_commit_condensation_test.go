@@ -46,6 +46,7 @@ func (f *fakeTranscriptCompactorAgent) ReadTranscript(string) ([]byte, error) { 
 func (f *fakeTranscriptCompactorAgent) ChunkTranscript(context.Context, []byte, int) ([][]byte, error) {
 	return nil, nil
 }
+
 func (f *fakeTranscriptCompactorAgent) ReassembleTranscript([][]byte) ([]byte, error) {
 	return nil, nil
 }
@@ -54,9 +55,11 @@ func (f *fakeTranscriptCompactorAgent) GetSessionDir(string) (string, error) { r
 func (f *fakeTranscriptCompactorAgent) ResolveSessionFile(_, sessionID string) string {
 	return sessionID
 }
+
 func (f *fakeTranscriptCompactorAgent) ReadSession(*agent.HookInput) (*agent.AgentSession, error) {
 	return nil, nil //nolint:nilnil // test stub
 }
+
 func (f *fakeTranscriptCompactorAgent) WriteSession(context.Context, *agent.AgentSession) error {
 	return nil
 }
@@ -64,6 +67,7 @@ func (f *fakeTranscriptCompactorAgent) FormatResumeCommand(string) string { retu
 func (f *fakeTranscriptCompactorAgent) DeclaredCapabilities() agent.DeclaredCaps {
 	return f.caps
 }
+
 func (f *fakeTranscriptCompactorAgent) CompactTranscript(_ context.Context, sessionRef string) (*agent.CompactedTranscript, error) {
 	if f.err != nil {
 		return nil, f.err

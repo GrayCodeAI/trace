@@ -273,7 +273,8 @@ func runRewindInteractive(ctx context.Context, w, errW io.Writer) error { //noli
 	logCtx := logging.WithComponent(ctx, "rewind")
 	logCtx = logging.WithAgent(logCtx, agent.Name())
 
-	logging.Debug(logCtx, "rewind started",
+	logging.Debug(
+		logCtx, "rewind started",
 		slog.String("checkpoint_id", selectedPoint.ID),
 		slog.String("session_id", selectedPoint.SessionID),
 		slog.Bool("is_task_checkpoint", selectedPoint.IsTaskCheckpoint),
@@ -281,14 +282,16 @@ func runRewindInteractive(ctx context.Context, w, errW io.Writer) error { //noli
 
 	// Perform the rewind using strategy
 	if err := start.Rewind(ctx, w, errW, *selectedPoint); err != nil {
-		logging.Error(logCtx, "rewind failed",
+		logging.Error(
+			logCtx, "rewind failed",
 			slog.String("checkpoint_id", selectedPoint.ID),
 			slog.String("error", err.Error()),
 		)
 		return err //nolint:wrapcheck // already present in codebase
 	}
 
-	logging.Debug(logCtx, "rewind completed",
+	logging.Debug(
+		logCtx, "rewind completed",
 		slog.String("checkpoint_id", selectedPoint.ID),
 	)
 
@@ -514,7 +517,8 @@ func runRewindToInternal(ctx context.Context, w, errW io.Writer, commitID string
 	logCtx := logging.WithComponent(ctx, "rewind")
 	logCtx = logging.WithAgent(logCtx, agent.Name())
 
-	logging.Debug(logCtx, "rewind started",
+	logging.Debug(
+		logCtx, "rewind started",
 		slog.String("checkpoint_id", selectedPoint.ID),
 		slog.String("session_id", selectedPoint.SessionID),
 		slog.Bool("is_task_checkpoint", selectedPoint.IsTaskCheckpoint),
@@ -522,14 +526,16 @@ func runRewindToInternal(ctx context.Context, w, errW io.Writer, commitID string
 
 	// Perform the rewind
 	if err := start.Rewind(ctx, w, errW, *selectedPoint); err != nil {
-		logging.Error(logCtx, "rewind failed",
+		logging.Error(
+			logCtx, "rewind failed",
 			slog.String("checkpoint_id", selectedPoint.ID),
 			slog.String("error", err.Error()),
 		)
 		return err //nolint:wrapcheck // already present in codebase
 	}
 
-	logging.Debug(logCtx, "rewind completed",
+	logging.Debug(
+		logCtx, "rewind completed",
 		slog.String("checkpoint_id", selectedPoint.ID),
 	)
 
@@ -609,21 +615,24 @@ func handleLogsOnlyRewindNonInteractive(ctx context.Context, w, errW io.Writer, 
 	logCtx := logging.WithComponent(ctx, "rewind")
 	logCtx = logging.WithAgent(logCtx, agent.Name())
 
-	logging.Debug(logCtx, "logs-only rewind started",
+	logging.Debug(
+		logCtx, "logs-only rewind started",
 		slog.String("checkpoint_id", point.ID),
 		slog.String("session_id", point.SessionID),
 	)
 
 	sessions, err := start.RestoreLogsOnly(ctx, w, errW, point, true) // force=true for explicit rewind
 	if err != nil {
-		logging.Error(logCtx, "logs-only rewind failed",
+		logging.Error(
+			logCtx, "logs-only rewind failed",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
 		)
 		return fmt.Errorf("failed to restore logs: %w", err)
 	}
 
-	logging.Debug(logCtx, "logs-only rewind completed",
+	logging.Debug(
+		logCtx, "logs-only rewind completed",
 		slog.String("checkpoint_id", point.ID),
 	)
 
@@ -647,7 +656,8 @@ func handleLogsOnlyResetNonInteractive(ctx context.Context, w, errW io.Writer, s
 	logCtx := logging.WithComponent(ctx, "rewind")
 	logCtx = logging.WithAgent(logCtx, agent.Name())
 
-	logging.Debug(logCtx, "logs-only reset started",
+	logging.Debug(
+		logCtx, "logs-only reset started",
 		slog.String("checkpoint_id", point.ID),
 		slog.String("session_id", point.SessionID),
 	)
@@ -661,7 +671,8 @@ func handleLogsOnlyResetNonInteractive(ctx context.Context, w, errW io.Writer, s
 	// Restore logs first
 	sessions, err := start.RestoreLogsOnly(ctx, w, errW, point, true) // force=true for explicit rewind
 	if err != nil {
-		logging.Error(logCtx, "logs-only reset failed during log restoration",
+		logging.Error(
+			logCtx, "logs-only reset failed during log restoration",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
 		)
@@ -670,14 +681,16 @@ func handleLogsOnlyResetNonInteractive(ctx context.Context, w, errW io.Writer, s
 
 	// Perform git reset --hard
 	if err := performGitResetHard(ctx, point.ID); err != nil {
-		logging.Error(logCtx, "logs-only reset failed during git reset",
+		logging.Error(
+			logCtx, "logs-only reset failed during git reset",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
 		)
 		return fmt.Errorf("failed to reset branch: %w", err)
 	}
 
-	logging.Debug(logCtx, "logs-only reset completed",
+	logging.Debug(
+		logCtx, "logs-only reset completed",
 		slog.String("checkpoint_id", point.ID),
 	)
 
@@ -894,7 +907,8 @@ func handleLogsOnlyRestore(ctx context.Context, w, errW io.Writer, start *strate
 	logCtx := logging.WithComponent(ctx, "rewind")
 	logCtx = logging.WithAgent(logCtx, agent.Name())
 
-	logging.Debug(logCtx, "logs-only restore started",
+	logging.Debug(
+		logCtx, "logs-only restore started",
 		slog.String("checkpoint_id", point.ID),
 		slog.String("session_id", point.SessionID),
 	)
@@ -902,14 +916,16 @@ func handleLogsOnlyRestore(ctx context.Context, w, errW io.Writer, start *strate
 	// Restore logs
 	sessions, err := start.RestoreLogsOnly(ctx, w, errW, point, true) // force=true for explicit rewind
 	if err != nil {
-		logging.Error(logCtx, "logs-only restore failed",
+		logging.Error(
+			logCtx, "logs-only restore failed",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
 		)
 		return fmt.Errorf("failed to restore logs: %w", err)
 	}
 
-	logging.Debug(logCtx, "logs-only restore completed",
+	logging.Debug(
+		logCtx, "logs-only restore completed",
 		slog.String("checkpoint_id", point.ID),
 	)
 
@@ -931,14 +947,16 @@ func handleLogsOnlyCheckout(ctx context.Context, w, errW io.Writer, start *strat
 	logCtx := logging.WithComponent(ctx, "rewind")
 	logCtx = logging.WithAgent(logCtx, agent.Name())
 
-	logging.Debug(logCtx, "logs-only checkout started",
+	logging.Debug(
+		logCtx, "logs-only checkout started",
 		slog.String("checkpoint_id", point.ID),
 		slog.String("session_id", point.SessionID),
 	)
 
 	sessions, err := start.RestoreLogsOnly(ctx, w, errW, point, true) // force=true for explicit rewind
 	if err != nil {
-		logging.Error(logCtx, "logs-only checkout failed during log restoration",
+		logging.Error(
+			logCtx, "logs-only checkout failed during log restoration",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
 		)
@@ -971,14 +989,16 @@ func handleLogsOnlyCheckout(ctx context.Context, w, errW io.Writer, start *strat
 
 	// Perform git checkout
 	if err := CheckoutBranch(ctx, point.ID); err != nil {
-		logging.Error(logCtx, "logs-only checkout failed during git checkout",
+		logging.Error(
+			logCtx, "logs-only checkout failed during git checkout",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
 		)
 		return fmt.Errorf("failed to checkout commit: %w", err)
 	}
 
-	logging.Debug(logCtx, "logs-only checkout completed",
+	logging.Debug(
+		logCtx, "logs-only checkout completed",
 		slog.String("checkpoint_id", point.ID),
 	)
 
@@ -999,14 +1019,16 @@ func handleLogsOnlyReset(ctx context.Context, w, errW io.Writer, start *strategy
 	logCtx := logging.WithComponent(ctx, "rewind")
 	logCtx = logging.WithAgent(logCtx, agent.Name())
 
-	logging.Debug(logCtx, "logs-only reset (interactive) started",
+	logging.Debug(
+		logCtx, "logs-only reset (interactive) started",
 		slog.String("checkpoint_id", point.ID),
 		slog.String("session_id", point.SessionID),
 	)
 
 	sessions, restoreErr := start.RestoreLogsOnly(ctx, w, errW, point, true) // force=true for explicit rewind
 	if restoreErr != nil {
-		logging.Error(logCtx, "logs-only reset failed during log restoration",
+		logging.Error(
+			logCtx, "logs-only reset failed during log restoration",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", restoreErr.Error()),
 		)
@@ -1069,14 +1091,16 @@ func handleLogsOnlyReset(ctx context.Context, w, errW io.Writer, start *strategy
 
 	// Perform git reset --hard
 	if err := performGitResetHard(ctx, point.ID); err != nil {
-		logging.Error(logCtx, "logs-only reset failed during git reset",
+		logging.Error(
+			logCtx, "logs-only reset failed during git reset",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
 		)
 		return fmt.Errorf("failed to reset branch: %w", err)
 	}
 
-	logging.Debug(logCtx, "logs-only reset (interactive) completed",
+	logging.Debug(
+		logCtx, "logs-only reset (interactive) completed",
 		slog.String("checkpoint_id", point.ID),
 	)
 

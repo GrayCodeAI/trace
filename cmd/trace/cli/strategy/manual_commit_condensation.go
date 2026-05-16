@@ -169,7 +169,8 @@ func (s *ManualCommitStrategy) CondenseSession(ctx context.Context, repo *git.Re
 	// genuinely empty sessions (no transcript, no shadow branch, no tracked files)
 	// would acquire committed files from the fallback and bypass this gate.
 	if len(sessionData.Transcript) == 0 && len(sessionData.FilesTouched) == 0 {
-		logging.Info(logCtx, "session skipped: no transcript or files to condense",
+		logging.Info(
+			logCtx, "session skipped: no transcript or files to condense",
 			slog.String("session_id", state.SessionID),
 			slog.String("agent_type", string(state.AgentType)),
 			slog.String("checkpoint_id", checkpointID.String()),
@@ -286,7 +287,8 @@ func (s *ManualCommitStrategy) CondenseSession(ctx context.Context, repo *git.Re
 	writeCommittedV2Span.End()
 	writeV2Duration := time.Since(writeV2Start)
 
-	logging.Debug(logCtx, "condense timings",
+	logging.Debug(
+		logCtx, "condense timings",
 		slog.String("session_id", state.SessionID),
 		slog.String("checkpoint_id", checkpointID.String()),
 		slog.Int64("extract_session_data_ms", extractDuration.Milliseconds()),
@@ -326,7 +328,8 @@ func (s *ManualCommitStrategy) CondenseSession(ctx context.Context, repo *git.Re
 func redactOrDrop(logCtx context.Context, transcript []byte, sessionID string, checkpointID id.CheckpointID) (redact.RedactedBytes, time.Duration) {
 	redactedTranscript, redactDuration, err := redactSessionTranscript(logCtx, transcript)
 	if err != nil {
-		logging.Warn(logCtx, "failed to redact transcript secrets, dropping transcript for checkpoint",
+		logging.Warn(
+			logCtx, "failed to redact transcript secrets, dropping transcript for checkpoint",
 			slog.String("session_id", sessionID),
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("error", err.Error()),
@@ -344,7 +347,8 @@ func skipIfPostRedactionEmpty(logCtx context.Context, redactedTranscript redact.
 	if redactedTranscript.Len() > 0 || len(sessionData.FilesTouched) > 0 {
 		return nil
 	}
-	logging.Info(logCtx, "session skipped: nothing to persist after redaction",
+	logging.Info(
+		logCtx, "session skipped: nothing to persist after redaction",
 		slog.String("session_id", state.SessionID),
 		slog.String("agent_type", string(state.AgentType)),
 		slog.String("checkpoint_id", checkpointID.String()),
@@ -462,7 +466,8 @@ func (s *ManualCommitStrategy) extractOrCreateSessionData(ctx context.Context, r
 		// This happens for sessions where the agent never set TranscriptPath
 		// (e.g., Codex hooks may send null transcript_path). The skip gate in
 		// CondenseSession will skip condensation if nothing is found.
-		logging.Debug(logging.WithComponent(ctx, "checkpoint"),
+		logging.Debug(
+			logging.WithComponent(ctx, "checkpoint"),
 			"no shadow branch and no transcript path, returning empty session data",
 			slog.String("session_id", state.SessionID),
 			slog.String("agent_type", string(state.AgentType)),
@@ -487,7 +492,8 @@ func compactAndRedactExternalTranscript(ctx context.Context, ag agent.Agent, sta
 	compactor, ok := agent.AsTranscriptCompactor(ag)
 	if !ok {
 		if _, isCap := ag.(agent.CapabilityDeclarer); isCap {
-			logging.Warn(ctx, "external transcript compaction unavailable, skipping transcript.jsonl",
+			logging.Warn(
+				ctx, "external transcript compaction unavailable, skipping transcript.jsonl",
 				slog.String("session_id", state.SessionID),
 				slog.String("agent", string(ag.Name())),
 			)
@@ -503,7 +509,8 @@ func compactAndRedactExternalTranscript(ctx context.Context, ag agent.Agent, sta
 
 	redacted, err := redactSessionJSONLBytes(compacted.Transcript)
 	if err != nil {
-		logging.Warn(ctx, "failed to redact external compact transcript, dropping",
+		logging.Warn(
+			ctx, "failed to redact external compact transcript, dropping",
 			slog.String("session_id", state.SessionID),
 			slog.String("agent", string(compactor.Name())),
 			slog.String("error", err.Error()),
@@ -537,7 +544,8 @@ func buildExternalCompactTranscript(ctx context.Context, ag agent.Agent, state *
 	startLine := state.CompactTranscriptStart
 	fullLines := countCompactLines(transcript)
 	if fullLines < startLine {
-		logging.Warn(compactCtx, "external compact transcript shorter than previous compact transcript start; resetting compact transcript start",
+		logging.Warn(
+			compactCtx, "external compact transcript shorter than previous compact transcript start; resetting compact transcript start",
 			slog.String("session_id", state.SessionID),
 			slog.String("agent", string(ag.Name())),
 			slog.Int("compact_transcript_lines", fullLines),
@@ -586,7 +594,8 @@ func compactTranscriptForExternalAgent(
 	transcriptPath string,
 ) *agent.CompactedTranscript {
 	if transcriptPath == "" {
-		logging.Warn(ctx, "external transcript compaction skipped: missing session transcript path",
+		logging.Warn(
+			ctx, "external transcript compaction skipped: missing session transcript path",
 			slog.String("session_id", sessionID),
 			slog.String("agent", string(compactor.Name())),
 		)
@@ -595,7 +604,8 @@ func compactTranscriptForExternalAgent(
 
 	compacted, err := compactor.CompactTranscript(ctx, transcriptPath)
 	if err != nil {
-		logging.Warn(ctx, "external transcript compaction failed, skipping transcript.jsonl on /main",
+		logging.Warn(
+			ctx, "external transcript compaction failed, skipping transcript.jsonl on /main",
 			slog.String("session_id", sessionID),
 			slog.String("agent", string(compactor.Name())),
 			slog.String("error", err.Error()),
@@ -603,14 +613,16 @@ func compactTranscriptForExternalAgent(
 		return nil
 	}
 	if compacted == nil {
-		logging.Warn(ctx, "external transcript compaction returned nil transcript",
+		logging.Warn(
+			ctx, "external transcript compaction returned nil transcript",
 			slog.String("session_id", sessionID),
 			slog.String("agent", string(compactor.Name())),
 		)
 		return nil
 	}
 	if len(bytes.TrimSpace(compacted.Transcript)) == 0 {
-		logging.Warn(ctx, "external transcript compaction returned empty transcript",
+		logging.Warn(
+			ctx, "external transcript compaction returned empty transcript",
 			slog.String("session_id", sessionID),
 			slog.String("agent", string(compactor.Name())),
 		)
@@ -620,7 +632,8 @@ func compactTranscriptForExternalAgent(
 		compacted.Transcript = append(compacted.Transcript, '\n')
 	}
 	if len(compacted.Assets) > 0 {
-		logging.Warn(ctx, "external transcript compaction returned assets that are not yet persisted",
+		logging.Warn(
+			ctx, "external transcript compaction returned assets that are not yet persisted",
 			slog.String("session_id", sessionID),
 			slog.String("agent", string(compactor.Name())),
 			slog.Int("asset_count", len(compacted.Assets)),
@@ -1342,7 +1355,8 @@ func (s *ManualCommitStrategy) CondenseSessionByID(ctx context.Context, sessionI
 	if !hasShadowBranch {
 		// No shadow branch means no checkpoint data to condense.
 		// Just clean up the state file.
-		logging.Info(logCtx, "no shadow branch for session, clearing state only",
+		logging.Info(
+			logCtx, "no shadow branch for session, clearing state only",
 			slog.String("session_id", sessionID),
 			slog.String("shadow_branch", shadowBranchName),
 		)
@@ -1361,14 +1375,16 @@ func (s *ManualCommitStrategy) CondenseSessionByID(ctx context.Context, sessionI
 	if result.Skipped {
 		// Nothing to condense. Mark fully condensed so trace doctor doesn't
 		// keep retrying this empty session on every invocation.
-		logging.Info(logCtx, "session condensation skipped (no transcript or files), marking fully condensed",
+		logging.Info(
+			logCtx, "session condensation skipped (no transcript or files), marking fully condensed",
 			slog.String("session_id", sessionID),
 		)
 		state.FullyCondensed = true
 		return s.saveSessionState(ctx, state)
 	}
 
-	logging.Info(logCtx, "session condensed by ID",
+	logging.Info(
+		logCtx, "session condensed by ID",
 		slog.String("session_id", sessionID),
 		slog.String("checkpoint_id", result.CheckpointID.String()),
 		slog.Int("checkpoints_condensed", result.CheckpointsCount),
@@ -1392,7 +1408,8 @@ func (s *ManualCommitStrategy) CondenseSessionByID(ctx context.Context, sessionI
 
 	// Clean up shadow branch if no other sessions need it
 	if err := s.cleanupShadowBranchIfUnused(ctx, repo, shadowBranchName, sessionID); err != nil {
-		logging.Warn(logCtx, "failed to clean up shadow branch",
+		logging.Warn(
+			logCtx, "failed to clean up shadow branch",
 			slog.String("shadow_branch", shadowBranchName),
 			slog.String("error", err.Error()),
 		)
@@ -1441,7 +1458,8 @@ func (s *ManualCommitStrategy) CondenseAndMarkFullyCondensed(ctx context.Context
 	// Check if shadow branch exists — required for condensation
 	repo, err := OpenRepository(ctx)
 	if err != nil {
-		logging.Warn(logCtx, "eager condense: failed to open repository",
+		logging.Warn(
+			logCtx, "eager condense: failed to open repository",
 			slog.String("session_id", sessionID),
 			slog.String("error", err.Error()),
 		)
@@ -1456,7 +1474,8 @@ func (s *ManualCommitStrategy) CondenseAndMarkFullyCondensed(ctx context.Context
 	if !hasShadowBranch {
 		// No shadow branch = no checkpoint data to condense.
 		// Unlike CondenseSessionByID, we do NOT delete the state file.
-		logging.Info(logCtx, "eager condense: no shadow branch",
+		logging.Info(
+			logCtx, "eager condense: no shadow branch",
 			slog.String("session_id", sessionID),
 			slog.String("shadow_branch", shadowBranchName),
 		)
@@ -1468,7 +1487,8 @@ func (s *ManualCommitStrategy) CondenseAndMarkFullyCondensed(ctx context.Context
 	// Generate checkpoint ID and condense
 	checkpointID, err := id.Generate()
 	if err != nil {
-		logging.Warn(logCtx, "eager condense: failed to generate checkpoint ID",
+		logging.Warn(
+			logCtx, "eager condense: failed to generate checkpoint ID",
 			slog.String("error", err.Error()),
 		)
 		return nil // fail-open
@@ -1477,7 +1497,8 @@ func (s *ManualCommitStrategy) CondenseAndMarkFullyCondensed(ctx context.Context
 	// Condense with nil committedFiles (include all FilesTouched)
 	result, err := s.CondenseSession(ctx, repo, checkpointID, state, nil)
 	if err != nil {
-		logging.Warn(logCtx, "eager condense on session stop failed, PostCommit will retry",
+		logging.Warn(
+			logCtx, "eager condense on session stop failed, PostCommit will retry",
 			slog.String("session_id", sessionID),
 			slog.String("error", err.Error()),
 		)
@@ -1487,7 +1508,8 @@ func (s *ManualCommitStrategy) CondenseAndMarkFullyCondensed(ctx context.Context
 	if result.Skipped {
 		// No transcript or files — nothing to condense. Mark fully condensed
 		// so PostCommit doesn't keep retrying this empty session.
-		logging.Info(logCtx, "eager condense skipped (no transcript or files), marking fully condensed",
+		logging.Info(
+			logCtx, "eager condense skipped (no transcript or files), marking fully condensed",
 			slog.String("session_id", sessionID),
 		)
 		state.FullyCondensed = true
@@ -1506,7 +1528,8 @@ func (s *ManualCommitStrategy) CondenseAndMarkFullyCondensed(ctx context.Context
 	state.FullyCondensed = true // FilesTouched is already empty (checked above)
 	// Phase stays ENDED — do NOT set to IDLE
 
-	logging.Info(logCtx, "eager condense on session stop succeeded",
+	logging.Info(
+		logCtx, "eager condense on session stop succeeded",
 		slog.String("session_id", sessionID),
 		slog.String("checkpoint_id", result.CheckpointID.String()),
 	)
@@ -1517,7 +1540,8 @@ func (s *ManualCommitStrategy) CondenseAndMarkFullyCondensed(ctx context.Context
 
 	// Clean up shadow branch
 	if err := s.cleanupShadowBranchIfUnused(ctx, repo, shadowBranchName, sessionID); err != nil {
-		logging.Warn(logCtx, "eager condense: failed to clean up shadow branch",
+		logging.Warn(
+			logCtx, "eager condense: failed to clean up shadow branch",
 			slog.String("shadow_branch", shadowBranchName),
 			slog.String("error", err.Error()),
 		)
@@ -1572,7 +1596,8 @@ func compactTranscriptForV2(ctx context.Context, ag agent.Agent, transcript reda
 		StartLine:  checkpointTranscriptStart,
 	})
 	if err != nil {
-		logging.Warn(ctx, "compact transcript generation failed, skipping transcript.jsonl on /main",
+		logging.Warn(
+			ctx, "compact transcript generation failed, skipping transcript.jsonl on /main",
 			slog.String("agent", string(ag.Name())),
 			slog.String("error", err.Error()),
 		)
@@ -1607,7 +1632,8 @@ func computeCompactTranscriptStart(ctx context.Context, ag agent.Agent, state *S
 		StartLine:  0,
 	})
 	if err != nil || len(fullCompacted) == 0 {
-		logging.Warn(ctx, "failed to recalculate compact transcript start, using 0",
+		logging.Warn(
+			ctx, "failed to recalculate compact transcript start, using 0",
 			slog.String("session_id", state.SessionID),
 		)
 		return 0
@@ -1627,7 +1653,8 @@ func computeCompactTranscriptStart(ctx context.Context, ag agent.Agent, state *S
 func writeCommittedV2(ctx context.Context, repo *git.Repository, opts cpkg.WriteCommittedOptions) error {
 	v2URL, err := remote.FetchURL(ctx)
 	if err != nil {
-		logging.Debug(ctx, "manual-commit condensation: using origin for v2 write fetch remote",
+		logging.Debug(
+			ctx, "manual-commit condensation: using origin for v2 write fetch remote",
 			slog.String("error", err.Error()),
 		)
 		v2URL = originRemote
@@ -1647,7 +1674,8 @@ func writeCommittedV2IfEnabled(ctx context.Context, repo *git.Repository, opts c
 		return
 	}
 	if err := writeCommittedV2(ctx, repo, opts); err != nil {
-		logging.Warn(ctx, "v2 dual-write failed",
+		logging.Warn(
+			ctx, "v2 dual-write failed",
 			slog.String("checkpoint_id", opts.CheckpointID.String()),
 			slog.String("error", err.Error()),
 		)
@@ -1673,7 +1701,8 @@ func writeTaskMetadataV2IfEnabled(
 
 	shadowCommit, err := repo.CommitObject(shadowRef.Hash())
 	if err != nil {
-		logging.Warn(ctx, "v2 dual-write task metadata copy skipped: failed to read shadow commit",
+		logging.Warn(
+			ctx, "v2 dual-write task metadata copy skipped: failed to read shadow commit",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("session_id", sessionID),
 			slog.String("error", err.Error()),
@@ -1683,7 +1712,8 @@ func writeTaskMetadataV2IfEnabled(
 
 	shadowTree, err := shadowCommit.Tree()
 	if err != nil {
-		logging.Warn(ctx, "v2 dual-write task metadata copy skipped: failed to read shadow tree",
+		logging.Warn(
+			ctx, "v2 dual-write task metadata copy skipped: failed to read shadow tree",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("session_id", sessionID),
 			slog.String("error", err.Error()),
@@ -1699,7 +1729,8 @@ func writeTaskMetadataV2IfEnabled(
 
 	v2URL, err := remote.FetchURL(ctx)
 	if err != nil {
-		logging.Debug(ctx, "manual-commit condensation: using origin for v2 task metadata fetch remote",
+		logging.Debug(
+			ctx, "manual-commit condensation: using origin for v2 task metadata fetch remote",
 			slog.String("error", err.Error()),
 		)
 		v2URL = originRemote
@@ -1707,7 +1738,8 @@ func writeTaskMetadataV2IfEnabled(
 	v2Store := cpkg.NewV2GitStore(repo, v2URL)
 	sessionIndex, err := resolveV2SessionIndexForCheckpoint(repo, checkpointID, sessionID)
 	if err != nil {
-		logging.Warn(ctx, "v2 dual-write task metadata copy skipped: failed to resolve session index",
+		logging.Warn(
+			ctx, "v2 dual-write task metadata copy skipped: failed to resolve session index",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("session_id", sessionID),
 			slog.String("error", err.Error()),
@@ -1716,7 +1748,8 @@ func writeTaskMetadataV2IfEnabled(
 	}
 
 	if err := spliceTaskTreeToV2FullCurrent(ctx, repo, v2Store, checkpointID, sessionIndex, tasksTree.Hash); err != nil {
-		logging.Warn(ctx, "v2 dual-write task metadata copy failed",
+		logging.Warn(
+			ctx, "v2 dual-write task metadata copy failed",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("session_id", sessionID),
 			slog.String("error", err.Error()),
@@ -1805,7 +1838,8 @@ func spliceTaskTreeToV2FullCurrent(
 	shardSuffix := string(checkpointID[2:])
 	sessionDir := strconv.Itoa(sessionIndex)
 
-	newRootHash, err := cpkg.UpdateSubtree(repo, rootTreeHash,
+	newRootHash, err := cpkg.UpdateSubtree(
+		repo, rootTreeHash,
 		[]string{shardPrefix, shardSuffix, sessionDir, "tasks"},
 		incomingTasksTree.Entries,
 		cpkg.UpdateSubtreeOptions{MergeMode: cpkg.MergeKeepExisting},

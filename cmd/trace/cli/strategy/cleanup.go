@@ -693,7 +693,8 @@ func DeleteAllCleanupItems(ctx context.Context, items []CleanupItem) (*CleanupRe
 
 		// Log deleted branches
 		for _, id := range deleted {
-			logging.Info(logCtx, "deleted shadow branch",
+			logging.Info(
+				logCtx, "deleted shadow branch",
 				slog.String("type", string(CleanupTypeShadowBranch)),
 				slog.String("id", id),
 				slog.String("reason", reasonMap[id]),
@@ -701,7 +702,8 @@ func DeleteAllCleanupItems(ctx context.Context, items []CleanupItem) (*CleanupRe
 		}
 		// Log failed branches
 		for _, id := range failed {
-			logging.Warn(logCtx, "failed to delete shadow branch",
+			logging.Warn(
+				logCtx, "failed to delete shadow branch",
 				slog.String("type", string(CleanupTypeShadowBranch)),
 				slog.String("id", id),
 				slog.String("reason", reasonMap[id]),
@@ -720,7 +722,8 @@ func DeleteAllCleanupItems(ctx context.Context, items []CleanupItem) (*CleanupRe
 
 		// Log deleted session states
 		for _, id := range deleted {
-			logging.Info(logCtx, "deleted session state",
+			logging.Info(
+				logCtx, "deleted session state",
 				slog.String("type", string(CleanupTypeSessionState)),
 				slog.String("id", id),
 				slog.String("reason", reasonMap[id]),
@@ -728,7 +731,8 @@ func DeleteAllCleanupItems(ctx context.Context, items []CleanupItem) (*CleanupRe
 		}
 		// Log failed session states
 		for _, id := range failed {
-			logging.Warn(logCtx, "failed to delete session state",
+			logging.Warn(
+				logCtx, "failed to delete session state",
 				slog.String("type", string(CleanupTypeSessionState)),
 				slog.String("id", id),
 				slog.String("reason", reasonMap[id]),
@@ -747,7 +751,8 @@ func DeleteAllCleanupItems(ctx context.Context, items []CleanupItem) (*CleanupRe
 
 		// Log deleted checkpoints
 		for _, id := range deleted {
-			logging.Info(logCtx, "deleted checkpoint",
+			logging.Info(
+				logCtx, "deleted checkpoint",
 				slog.String("type", string(CleanupTypeCheckpoint)),
 				slog.String("id", id),
 				slog.String("reason", reasonMap[id]),
@@ -755,7 +760,8 @@ func DeleteAllCleanupItems(ctx context.Context, items []CleanupItem) (*CleanupRe
 		}
 		// Log failed checkpoints
 		for _, id := range failed {
-			logging.Warn(logCtx, "failed to delete checkpoint",
+			logging.Warn(
+				logCtx, "failed to delete checkpoint",
 				slog.String("type", string(CleanupTypeCheckpoint)),
 				slog.String("id", id),
 				slog.String("reason", reasonMap[id]),
@@ -772,14 +778,16 @@ func DeleteAllCleanupItems(ctx context.Context, items []CleanupItem) (*CleanupRe
 		result.FailedV2Refs = failed
 
 		for _, id := range deleted {
-			logging.Info(logCtx, "deleted v2 generation",
+			logging.Info(
+				logCtx, "deleted v2 generation",
 				slog.String("type", string(CleanupTypeV2Generation)),
 				slog.String("id", id),
 				slog.String("reason", reasonMap[id]),
 			)
 		}
 		for _, id := range failed {
-			logging.Warn(logCtx, "failed to delete v2 generation",
+			logging.Warn(
+				logCtx, "failed to delete v2 generation",
 				slog.String("type", string(CleanupTypeV2Generation)),
 				slog.String("id", id),
 				slog.String("reason", reasonMap[id]),
@@ -791,7 +799,8 @@ func DeleteAllCleanupItems(ctx context.Context, items []CleanupItem) (*CleanupRe
 	totalDeleted := len(result.ShadowBranches) + len(result.SessionStates) + len(result.Checkpoints) + len(result.V2Generations)
 	totalFailed := len(result.FailedBranches) + len(result.FailedStates) + len(result.FailedCheckpoints) + len(result.FailedV2Refs)
 	if totalDeleted > 0 || totalFailed > 0 {
-		logging.Info(logCtx, "cleanup completed",
+		logging.Info(
+			logCtx, "cleanup completed",
 			slog.Int("deleted_branches", len(result.ShadowBranches)),
 			slog.Int("deleted_session_states", len(result.SessionStates)),
 			slog.Int("deleted_checkpoints", len(result.Checkpoints)),

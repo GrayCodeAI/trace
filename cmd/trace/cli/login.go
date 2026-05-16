@@ -17,11 +17,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const fallbackDeviceAuthPollInterval = time.Second
-const defaultSlowDownBackoff = 5 * time.Second
-const maxPollInterval = 30 * time.Second
-const maxExpiresIn = 15 * time.Minute
-const maxTransientErrors = 5
+const (
+	fallbackDeviceAuthPollInterval = time.Second
+	defaultSlowDownBackoff         = 5 * time.Second
+	maxPollInterval                = 30 * time.Second
+	maxExpiresIn                   = 15 * time.Minute
+	maxTransientErrors             = 5
+)
 
 // browserOpenFunc is the signature for opening a URL in the user's browser.
 type browserOpenFunc func(ctx context.Context, url string) error

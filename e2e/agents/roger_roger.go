@@ -32,7 +32,7 @@ type RogerRoger struct{}
 
 func (r *RogerRoger) Name() string                            { return "roger-roger" }
 func (r *RogerRoger) Binary() string                          { return "roger-roger" }
-func (r *RogerRoger) TraceAgent() string                     { return "roger-roger" }
+func (r *RogerRoger) TraceAgent() string                      { return "roger-roger" }
 func (r *RogerRoger) PromptPattern() string                   { return `>` }
 func (r *RogerRoger) TimeoutMultiplier() float64              { return 0.5 } // Deterministic, no API calls
 func (r *RogerRoger) Bootstrap() error                        { return nil }
