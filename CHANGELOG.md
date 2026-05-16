@@ -6,6 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/). This project ad
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Version re-baselined to `0.2.0`** in
+  `cmd/trace/cli/versioninfo/versioninfo.go`. Aligns trace with the rest
+  of the hawk-eco ecosystem (`hawk`, `tok`, `eyrie`, `yaad`, `sight`,
+  `inspect`).
+
+### Added — Production hygiene (top-50 OSS parity)
+- `.gitattributes` — LF line-ending normalization, binary detection,
+  GitHub linguist hints (collapse `go.sum` in PR diffs, mark `docs/**`
+  and the symlinked `AGENTS.md` as documentation).
+- `.editorconfig` — consistent formatting across editors (UTF-8, LF
+  newlines, 2-space YAML, tabs for Go, final newline + trim trailing
+  whitespace).
+- `.github/PULL_REQUEST_TEMPLATE.md` — Summary / Changes / Privacy &
+  redaction impact / Agent compatibility / Testing / Checklist. The
+  privacy/redaction section is specific to trace because every change
+  in `redact/` can leak PII or secrets if regressed.
+
 ## [0.1.0] - 2026-05-03
 
 ### Added
