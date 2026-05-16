@@ -88,7 +88,8 @@ func TestExtractPromptsFromEvents(t *testing.T) {
 
 	t.Run("multi-turn conversation", func(t *testing.T) {
 		t.Parallel()
-		lines := append(testJSONLLines, //nolint:gocritic // append to copy is intentional
+		lines := append(
+			testJSONLLines, //nolint:gocritic // append to copy is intentional
 			`{"type":"user.message","data":{"content":"now delete it"},"id":"8","timestamp":"2026-03-03T00:01:00Z","parentId":"7"}`,
 		)
 		content := strings.Join(lines, "\n") + "\n"
@@ -377,7 +378,8 @@ func TestCalculateTokenUsage_SessionShutdown(t *testing.T) {
 	t.Parallel()
 	ag := &CopilotCLIAgent{}
 
-	lines := append(testJSONLLines, //nolint:gocritic // append to copy is intentional
+	lines := append(
+		testJSONLLines, //nolint:gocritic // append to copy is intentional
 		`{"type":"session.shutdown","data":{"modelMetrics":{"claude-sonnet-4.6":{"requests":{"count":3},"usage":{"inputTokens":64807,"outputTokens":289,"cacheReadTokens":42625,"cacheWriteTokens":100}}}},"id":"99","timestamp":"2026-03-03T00:01:00Z","parentId":""}`,
 	)
 	content := []byte(strings.Join(lines, "\n") + "\n")

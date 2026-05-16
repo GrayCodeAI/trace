@@ -257,7 +257,8 @@ func runAttach(ctx context.Context, w io.Writer, sessionID string, agentName typ
 func writeAttachCheckpointV2(ctx context.Context, repo *git.Repository, opts cpkg.WriteCommittedOptions) error {
 	v2URL, err := remote.FetchURL(ctx)
 	if err != nil {
-		logging.Debug(ctx, "attach: using origin for v2 store fetch remote",
+		logging.Debug(
+			ctx, "attach: using origin for v2 store fetch remote",
 			slog.String("error", err.Error()),
 		)
 	}
@@ -361,7 +362,8 @@ func checkpointPresentLocally(ctx context.Context, repo *git.Repository, checkpo
 	if v2Only {
 		v2URL, urlErr := remote.FetchURL(ctx)
 		if urlErr != nil {
-			logging.Debug(ctx, "attach: using origin for v2 store fetch remote",
+			logging.Debug(
+				ctx, "attach: using origin for v2 store fetch remote",
 				slog.String("error", urlErr.Error()),
 			)
 		}

@@ -40,7 +40,8 @@ func handleClaudeCodePostTodoFromReader(ctx context.Context, reader io.Reader) e
 	}
 
 	logCtx := logging.WithAgent(logging.WithComponent(ctx, "hooks"), ag.Name())
-	logging.Info(logCtx, "post-todo",
+	logging.Info(
+		logCtx, "post-todo",
 		slog.String("hook", "post-todo"),
 		slog.String("hook_type", "subagent"),
 		slog.String("model_session_id", input.SessionID),

@@ -454,8 +454,14 @@ func renderBrailleChart(w io.Writer, sty activityStyles, hourly []hourlyPoint, r
 			//   dot3 dot6     bit2 bit5
 			//   dot7 dot8     bit6 bit7
 			dotBits := [8][2]int{
-				{0, 0}, {1, 0}, {2, 0}, {0, 1},
-				{1, 1}, {2, 1}, {3, 0}, {3, 1},
+				{0, 0},
+				{1, 0},
+				{2, 0},
+				{0, 1},
+				{1, 1},
+				{2, 1},
+				{3, 0},
+				{3, 1},
 			}
 
 			for bit, offset := range dotBits {

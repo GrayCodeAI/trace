@@ -44,7 +44,8 @@ func ResolveCommittedReaderForCheckpoint(
 			return nil, nil, ctx.Err() //nolint:wrapcheck // Propagating context cancellation
 		}
 		if err != nil && !errors.Is(err, ErrCheckpointNotFound) && !errors.Is(err, ErrNoTranscript) {
-			logging.Debug(ctx, "v2 ReadCommitted failed, falling back to v1",
+			logging.Debug(
+				ctx, "v2 ReadCommitted failed, falling back to v1",
 				slog.String("checkpoint_id", checkpointID.String()),
 				slog.String("error", err.Error()),
 			)
@@ -92,7 +93,8 @@ func ResolveRawSessionLogForCheckpoint(
 			return nil, "", ctx.Err() //nolint:wrapcheck // Propagating context cancellation
 		}
 		if err != nil && !errors.Is(err, ErrCheckpointNotFound) && !errors.Is(err, ErrNoTranscript) {
-			logging.Debug(ctx, "v2 GetSessionLog failed, falling back to v1",
+			logging.Debug(
+				ctx, "v2 GetSessionLog failed, falling back to v1",
 				slog.String("checkpoint_id", checkpointID.String()),
 				slog.String("error", err.Error()),
 			)

@@ -340,7 +340,8 @@ func classifyPushOutput(output string) error {
 func classifyPushFailure(ctx context.Context, output string, pushErr error) error {
 	if strings.TrimSpace(output) != "" {
 		if pushErr != nil {
-			logging.Debug(ctx, "git push failed",
+			logging.Debug(
+				ctx, "git push failed",
 				slog.String("error", pushErr.Error()),
 				slog.String("output", output),
 			)
@@ -348,7 +349,8 @@ func classifyPushFailure(ctx context.Context, output string, pushErr error) erro
 		return classifyPushOutput(output)
 	}
 	if pushErr != nil {
-		logging.Debug(ctx, "git push failed without output",
+		logging.Debug(
+			ctx, "git push failed without output",
 			slog.String("error", pushErr.Error()),
 		)
 		return fmt.Errorf("push failed: %w", pushErr)

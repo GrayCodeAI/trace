@@ -749,7 +749,8 @@ func TestRunSessionsFix_MetadataCheckFailure_PropagatesError(t *testing.T) {
 	require.NoError(t, err)
 
 	localRef := plumbing.NewHashReference(
-		plumbing.NewBranchReferenceName(paths.MetadataBranchName), localHash)
+		plumbing.NewBranchReferenceName(paths.MetadataBranchName), localHash,
+	)
 	require.NoError(t, repo.Storer.SetReference(localRef))
 
 	// Create a remote-tracking ref that points to a nonexistent object.
@@ -757,7 +758,8 @@ func TestRunSessionsFix_MetadataCheckFailure_PropagatesError(t *testing.T) {
 	// which fails with a non-0/1 exit code → treated as an error.
 	bogusHash := plumbing.NewHash("0000000000000000000000000000000000000001")
 	remoteRef := plumbing.NewHashReference(
-		plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName), bogusHash)
+		plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName), bogusHash,
+	)
 	require.NoError(t, repo.Storer.SetReference(remoteRef))
 
 	// Build a minimal cobra command with captured output and context

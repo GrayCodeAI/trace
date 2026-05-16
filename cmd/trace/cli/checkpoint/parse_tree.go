@@ -369,7 +369,8 @@ func isAbsoluteGitTreePath(path string) bool {
 }
 
 func logInvalidGitTreePath(ctx context.Context, operation, path string, err error) {
-	logging.Warn(ctx, "skipping invalid git tree path",
+	logging.Warn(
+		ctx, "skipping invalid git tree path",
 		slog.String("operation", operation),
 		slog.String("path", path),
 		slog.String("error", err.Error()),

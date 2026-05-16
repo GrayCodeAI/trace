@@ -21,7 +21,8 @@ func TestDeletedFilesCommitDeletion(t *testing.T) {
 	testutil.ForEachAgent(t, 3*time.Minute, func(t *testing.T, s *testutil.RepoState, ctx context.Context) {
 		require.NoError(t, os.WriteFile(
 			filepath.Join(s.Dir, "to_delete.go"),
-			[]byte("package main\n\nfunc ToDelete() {}\n"), 0o644))
+			[]byte("package main\n\nfunc ToDelete() {}\n"), 0o644,
+		))
 		s.Git(t, "add", "to_delete.go")
 		s.Git(t, "commit", "--no-verify", "-m", "Add to_delete.go")
 

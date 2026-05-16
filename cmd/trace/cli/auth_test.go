@@ -141,14 +141,18 @@ func TestRunAuthList_TablePrintsRows(t *testing.T) {
 	lastUsed := "2026-04-01T12:00:00Z"
 	list := func(context.Context, string) ([]api.Token, error) {
 		return []api.Token{
-			{ID: "tok-1", Name: "laptop", Scope: "cli",
+			{
+				ID: "tok-1", Name: "laptop", Scope: "cli",
 				CreatedAt:  "2026-01-01T00:00:00Z",
 				ExpiresAt:  "2027-01-01T00:00:00Z",
-				LastUsedAt: &lastUsed},
-			{ID: "tok-2", Name: "ci", Scope: "cli",
+				LastUsedAt: &lastUsed,
+			},
+			{
+				ID: "tok-2", Name: "ci", Scope: "cli",
 				CreatedAt:  "2026-02-01T00:00:00Z",
 				ExpiresAt:  "2027-01-01T00:00:00Z",
-				LastUsedAt: nil},
+				LastUsedAt: nil,
+			},
 		}, nil
 	}
 

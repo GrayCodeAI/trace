@@ -34,7 +34,7 @@ func (s *PiSession) Home() string { return s.home }
 
 func (p *Pi) Name() string               { return "pi" }
 func (p *Pi) Binary() string             { return "pi" }
-func (p *Pi) TraceAgent() string          { return "pi" }
+func (p *Pi) TraceAgent() string         { return "pi" }
 func (p *Pi) PromptPattern() string      { return `\$\d` }
 func (p *Pi) TimeoutMultiplier() float64 { return 1.5 }
 
@@ -130,7 +130,8 @@ func (p *Pi) RunPrompt(ctx context.Context, dir string, prompt string, opts ...O
 	args := []string{"-p", prompt, "--no-skills", "--no-prompt-templates", "--no-themes"}
 	displayArgs := []string{"-p", fmt.Sprintf("%q", prompt), "--no-skills", "--no-prompt-templates", "--no-themes"}
 
-	env := append(filterEnv(os.Environ(), "TRACE_TEST_TTY", "PI_CODING_AGENT_DIR"),
+	env := append(
+		filterEnv(os.Environ(), "TRACE_TEST_TTY", "PI_CODING_AGENT_DIR"),
 		"PI_CODING_AGENT_DIR="+home,
 	)
 

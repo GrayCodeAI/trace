@@ -197,7 +197,8 @@ func runLoginProcess(t *testing.T, apiBaseURL string) *loginProcess {
 
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "login", "--insecure-http-auth")
 	cmd.Dir = env.RepoDir
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 		"TRACE_TEST_GEMINI_PROJECT_DIR="+env.GeminiProjectDir,
 		"TRACE_TEST_OPENCODE_PROJECT_DIR="+env.OpenCodeProjectDir,

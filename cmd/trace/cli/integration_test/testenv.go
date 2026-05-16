@@ -123,7 +123,8 @@ func (env *TestEnv) Cleanup() {
 // Includes Claude, Gemini, and OpenCode project dirs so tests work for any agent.
 // Delegates to testutil.GitIsolatedEnv() for git config isolation.
 func (env *TestEnv) cliEnv() []string {
-	base := append(testutil.GitIsolatedEnv(),
+	base := append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 		"TRACE_TEST_GEMINI_PROJECT_DIR="+env.GeminiProjectDir,
 		"TRACE_TEST_OPENCODE_PROJECT_DIR="+env.OpenCodeProjectDir,
@@ -1167,7 +1168,8 @@ func (env *TestEnv) gitCommitWithShadowHooks(message string, simulateTTY bool, f
 }
 
 func (env *TestEnv) gitHookEnv(extra ...string) []string {
-	envVars := append(testutil.GitIsolatedEnv(),
+	envVars := append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_OPENCODE_PROJECT_DIR="+env.OpenCodeProjectDir,
 		"TRACE_TEST_OPENCODE_MOCK_EXPORT=1",
 	)

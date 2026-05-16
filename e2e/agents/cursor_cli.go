@@ -29,7 +29,7 @@ type CursorCLI struct{}
 
 func (a *CursorCLI) Name() string               { return "cursor-cli" }
 func (a *CursorCLI) Binary() string             { return "agent" }
-func (a *CursorCLI) TraceAgent() string        { return "cursor" }
+func (a *CursorCLI) TraceAgent() string         { return "cursor" }
 func (a *CursorCLI) TimeoutMultiplier() float64 { return 1.5 }
 
 // PromptPattern returns a regex matching Cursor's ready-state prompt markers.

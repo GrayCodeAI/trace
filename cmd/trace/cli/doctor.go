@@ -322,7 +322,8 @@ func promptSessionAction(ss stuckSession) (string, error) {
 	if ss.HasShadowBranch && ss.CheckpointCount > 0 {
 		options = append(options, huh.NewOption("Condense (save to permanent storage)", "condense"))
 	}
-	options = append(options,
+	options = append(
+		options,
 		huh.NewOption("Discard (remove session data)", "discard"),
 		huh.NewOption("Skip (leave as-is)", "skip"),
 	)
