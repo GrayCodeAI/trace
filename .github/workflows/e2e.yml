@@ -17,7 +17,8 @@ on:
           - copilot-cli
           - roger-roger
           - codex
-  push:
+  # Disabled: E2E tests require API keys, not suitable for automated CI
+  # push:
     branches:
       - main
 
