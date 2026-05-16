@@ -900,7 +900,8 @@ func TestV2GitStore_UpdateCommitted_PreservesExistingTaskMetadataInFullCurrent(t
 	blobHash, err := CreateBlobFromContent(repo, checkpointJSON)
 	require.NoError(t, err)
 
-	newRootHash, err := UpdateSubtree(repo, rootTreeHash,
+	newRootHash, err := UpdateSubtree(
+		repo, rootTreeHash,
 		taskPath,
 		[]object.TreeEntry{{Name: "checkpoint.json", Mode: filemode.Regular, Hash: blobHash}},
 		UpdateSubtreeOptions{MergeMode: MergeKeepExisting},

@@ -285,7 +285,8 @@ func TestAttach_DifferentWorkingDirectory(t *testing.T) {
 	emptyProjectDir := t.TempDir()
 	cmd := exec.Command(getTestBinary(), "attach", sessionID, "-a", "claude-code", "-f")
 	cmd.Dir = env.RepoDir
-	cmd.Env = append(env.cliEnv(),
+	cmd.Env = append(
+		env.cliEnv(),
 		"HOME="+fakeHome,
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+emptyProjectDir,
 	)
@@ -327,7 +328,8 @@ func TestAttach_CodexSessionTreeLayout(t *testing.T) {
 
 	cmd := exec.Command(getTestBinary(), "attach", sessionID, "-a", "codex", "-f")
 	cmd.Dir = env.RepoDir
-	cmd.Env = append(env.cliEnv(),
+	cmd.Env = append(
+		env.cliEnv(),
 		"TRACE_TEST_CODEX_SESSION_DIR="+codexDir,
 	)
 

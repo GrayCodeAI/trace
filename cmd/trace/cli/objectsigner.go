@@ -15,8 +15,10 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
-var registerObjectSignerOnce sync.Once
-var objectSignerLoader = loadObjectSigner
+var (
+	registerObjectSignerOnce sync.Once
+	objectSignerLoader       = loadObjectSigner
+)
 
 func RegisterObjectSigner() {
 	registerObjectSignerOnce.Do(func() {

@@ -83,7 +83,6 @@ func TestRun_SuccessfulRun(t *testing.T) {
 	rec := &stubSinkRecorder{}
 
 	summary, err := Run(context.Background(), reviewer, reviewtypes.RunConfig{}, []reviewtypes.Sink{rec})
-
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -329,7 +328,6 @@ func TestRun_TokenTracking(t *testing.T) {
 	}
 
 	summary, err := Run(context.Background(), reviewer, reviewtypes.RunConfig{}, nil)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -358,7 +356,6 @@ func TestRun_SinkFanOut(t *testing.T) {
 	rec2 := &stubSinkRecorder{}
 
 	_, err := Run(context.Background(), reviewer, reviewtypes.RunConfig{}, []reviewtypes.Sink{rec1, rec2})
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

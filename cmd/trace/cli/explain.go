@@ -742,7 +742,8 @@ func prefetchCheckpointBlobs(ctx context.Context, _ io.Writer, repo *git.Reposit
 	if missingCount == 0 {
 		return
 	}
-	logging.Debug(ctx, "explain prefetch: fetching missing checkpoint blobs",
+	logging.Debug(
+		ctx, "explain prefetch: fetching missing checkpoint blobs",
 		slog.String("checkpoint_id", cpID.String()),
 		slog.Int("blob_count", missingCount),
 	)
@@ -761,7 +762,8 @@ func buildCheckpointFetchingTree(ctx context.Context, repo *git.Repository, cpID
 	}
 	cpSubtree, err := rootTree.Tree(cpID.Path())
 	if err != nil {
-		logging.Debug(ctx, "explain prefetch: cp subtree not found",
+		logging.Debug(
+			ctx, "explain prefetch: cp subtree not found",
 			slog.String("store", label),
 			slog.String("checkpoint_id", cpID.String()),
 			slog.String("error", err.Error()),
@@ -777,7 +779,8 @@ func runPreFetch(ctx context.Context, ft *checkpoint.FetchingTree, cpID id.Check
 	}
 	prefetched, err := ft.PreFetch()
 	if err != nil {
-		logging.Debug(ctx, "explain prefetch: PreFetch failed",
+		logging.Debug(
+			ctx, "explain prefetch: PreFetch failed",
 			slog.String("store", label),
 			slog.String("checkpoint_id", cpID.String()),
 			slog.String("error", err.Error()),
@@ -785,7 +788,8 @@ func runPreFetch(ctx context.Context, ft *checkpoint.FetchingTree, cpID id.Check
 		return
 	}
 	if prefetched > 0 {
-		logging.Debug(ctx, "explain prefetch: blobs fetched in one round-trip",
+		logging.Debug(
+			ctx, "explain prefetch: blobs fetched in one round-trip",
 			slog.String("store", label),
 			slog.String("checkpoint_id", cpID.String()),
 			slog.Int("blob_count", prefetched),
@@ -828,7 +832,8 @@ func newExplainCheckpointLookup(ctx context.Context) (*explainCheckpointLookup, 
 
 	v2URL, err := remote.FetchURL(ctx)
 	if err != nil {
-		logging.Debug(ctx, "explain: using origin for v2 store fetch remote",
+		logging.Debug(
+			ctx, "explain: using origin for v2 store fetch remote",
 			slog.String("error", err.Error()),
 		)
 		v2URL = ""
@@ -871,7 +876,8 @@ func listCommittedForExplain(ctx context.Context, v1Store *checkpoint.GitStore, 
 
 	v2Committed, v2Err := v2Store.ListCommitted(ctx)
 	if v2Err != nil {
-		logging.Debug(ctx, "v2 ListCommitted failed, using v1 only",
+		logging.Debug(
+			ctx, "v2 ListCommitted failed, using v1 only",
 			slog.String("error", v2Err.Error()),
 		)
 		if v1Err != nil {
@@ -881,7 +887,8 @@ func listCommittedForExplain(ctx context.Context, v1Store *checkpoint.GitStore, 
 	}
 
 	if v1Err != nil {
-		logging.Debug(ctx, "v1 ListCommitted failed, returning v2 only",
+		logging.Debug(
+			ctx, "v1 ListCommitted failed, returning v2 only",
 			slog.String("error", v1Err.Error()),
 		)
 		return v2Committed, nil
@@ -1026,12 +1033,14 @@ func generateCheckpointSummary(ctx context.Context, w, errW io.Writer, v1Store *
 		}
 		return fmt.Errorf("failed to save summary: %w", v1Err)
 	case v1Err != nil:
-		logging.Debug(ctx, "v1 UpdateSummary failed (v2 succeeded)",
+		logging.Debug(
+			ctx, "v1 UpdateSummary failed (v2 succeeded)",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("error", v1Err.Error()),
 		)
 	case v2Err != nil:
-		logging.Debug(ctx, "v2 UpdateSummary failed (v1 succeeded)",
+		logging.Debug(
+			ctx, "v2 UpdateSummary failed (v1 succeeded)",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("error", v2Err.Error()),
 		)
@@ -2113,7 +2122,8 @@ func getBranchCheckpoints(ctx context.Context, repo *git.Repository, limit int) 
 	v1Store := checkpoint.NewGitStore(repo)
 	v2URL, err := remote.FetchURL(ctx)
 	if err != nil {
-		logging.Debug(ctx, "explain: using origin for branch checkpoint v2 store fetch remote",
+		logging.Debug(
+			ctx, "explain: using origin for branch checkpoint v2 store fetch remote",
 			slog.String("error", err.Error()),
 		)
 		v2URL = ""

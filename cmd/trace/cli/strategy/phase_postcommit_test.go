@@ -737,7 +737,8 @@ func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
 `
 	require.NoError(t, os.WriteFile(
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
-		[]byte(transcript), 0o644))
+		[]byte(transcript), 0o644,
+	))
 
 	// Create files A.txt and B.txt
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "A.txt"), []byte("file A"), 0o644))
@@ -800,7 +801,8 @@ func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
 `
 	f, err := os.OpenFile(
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
-		os.O_APPEND|os.O_WRONLY, 0o644)
+		os.O_APPEND|os.O_WRONLY, 0o644,
+	)
 	require.NoError(t, err)
 	_, err = f.WriteString(transcript2)
 	require.NoError(t, err)
@@ -1050,7 +1052,8 @@ func TestPostCommit_ActiveSession_CarryForward_PartialCommit(t *testing.T) {
 `
 	require.NoError(t, os.WriteFile(
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
-		[]byte(transcript), 0o644))
+		[]byte(transcript), 0o644,
+	))
 
 	// Create all three files
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "A.txt"), []byte("file A"), 0o644))
@@ -1149,7 +1152,8 @@ func TestPostCommit_ActiveSession_CarryForward_AllCommitted(t *testing.T) {
 `
 	require.NoError(t, os.WriteFile(
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
-		[]byte(transcript), 0o644))
+		[]byte(transcript), 0o644,
+	))
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "A.txt"), []byte("file A"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "B.txt"), []byte("file B"), 0o644))
@@ -1648,7 +1652,8 @@ func setupSessionWithCheckpoint(t *testing.T, s *ManualCommitStrategy, _ *git.Re
 
 	require.NoError(t, os.WriteFile(
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
-		[]byte(testTranscriptPromptResponse), 0o644))
+		[]byte(testTranscriptPromptResponse), 0o644,
+	))
 
 	// SaveStep creates the shadow branch and checkpoint
 	// Include test.txt as a modified file so it's saved to the shadow branch
@@ -1682,7 +1687,8 @@ func setupSessionWithCheckpointAndFile(t *testing.T, s *ManualCommitStrategy, di
 
 	require.NoError(t, os.WriteFile(
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
-		[]byte(testTranscript), 0o644))
+		[]byte(testTranscript), 0o644,
+	))
 
 	err := s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
@@ -1980,7 +1986,8 @@ func TestPostCommit_StaleActiveSession_NotCondensed(t *testing.T) {
 `
 	require.NoError(t, os.WriteFile(
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
-		[]byte(transcript), 0o644))
+		[]byte(transcript), 0o644,
+	))
 
 	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      newSessionID,
@@ -2484,7 +2491,8 @@ func TestPostCommit_ActiveSession_DifferentFilesThanCommit_ShouldCondense(t *tes
 `
 	require.NoError(t, os.WriteFile(
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
-		[]byte(transcript), 0o644))
+		[]byte(transcript), 0o644,
+	))
 
 	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,

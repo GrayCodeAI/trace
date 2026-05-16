@@ -280,7 +280,8 @@ func (s *State) NormalizeAfterLoad(ctx context.Context) {
 	// during ACTIVE phase with immediate condensation.
 	if s.Phase == "active_committed" {
 		logCtx := logging.WithComponent(ctx, "session")
-		logging.Info(logCtx, "migrating legacy active_committed phase to active",
+		logging.Info(
+			logCtx, "migrating legacy active_committed phase to active",
 			slog.String("session_id", s.SessionID),
 		)
 		s.Phase = PhaseActive
@@ -419,7 +420,8 @@ func (s *StateStore) Load(ctx context.Context, sessionID string) (*State, error)
 	// Validate JSON before unmarshal to provide clearer error for truncated/corrupt files.
 	if !json.Valid(data) {
 		logCtx := logging.WithComponent(ctx, "session")
-		logging.Warn(logCtx, "session state file contains invalid JSON (possibly truncated)",
+		logging.Warn(
+			logCtx, "session state file contains invalid JSON (possibly truncated)",
 			slog.String("session_id", sessionID),
 			slog.Int("bytes", len(data)),
 		)
@@ -434,7 +436,8 @@ func (s *StateStore) Load(ctx context.Context, sessionID string) (*State, error)
 
 	if state.IsStale() {
 		logCtx := logging.WithComponent(ctx, "session")
-		logging.Debug(logCtx, "deleting stale session state",
+		logging.Debug(
+			logCtx, "deleting stale session state",
 			slog.String("session_id", sessionID),
 		)
 		_ = s.Clear(ctx, sessionID) //nolint:errcheck // best-effort cleanup of stale session

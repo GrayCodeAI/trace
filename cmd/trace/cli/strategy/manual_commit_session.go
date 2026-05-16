@@ -94,7 +94,8 @@ func (s *ManualCommitStrategy) listAllSessionStates(ctx context.Context) ([]*Ses
 		if _, err := repo.Reference(refName, true); err != nil {
 			if !state.Phase.IsActive() && state.LastCheckpointID.IsEmpty() {
 				if clearErr := store.Clear(ctx, state.SessionID); clearErr != nil {
-					logging.Warn(ctx, "failed to clear orphaned session state",
+					logging.Warn(
+						ctx, "failed to clear orphaned session state",
 						slog.String("session_id", state.SessionID),
 						slog.Any("error", clearErr),
 					)

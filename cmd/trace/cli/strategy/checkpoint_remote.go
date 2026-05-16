@@ -69,7 +69,8 @@ func resolvePushSettings(ctx context.Context, pushRemoteName string) pushSetting
 	}
 	checkpointURL, enabled, err := remote.PushURL(ctx, pushRemoteName)
 	if err != nil {
-		logging.Warn(ctx, "checkpoint-remote: could not derive URL from push remote",
+		logging.Warn(
+			ctx, "checkpoint-remote: could not derive URL from push remote",
 			slog.String("remote", pushRemoteName),
 			slog.String("repo", config.Repo),
 			slog.String("error", err.Error()),
@@ -90,7 +91,8 @@ func resolvePushSettings(ctx context.Context, pushRemoteName string) pushSetting
 		// skip the fetch entirely. Only fetch the metadata branch; trails are always pushed
 		// to the user's push remote, not the checkpoint remote.
 		if err := fetchMetadataBranchIfMissing(ctx, checkpointURL); err != nil {
-			logging.Warn(ctx, "checkpoint-remote: failed to fetch metadata branch",
+			logging.Warn(
+				ctx, "checkpoint-remote: failed to fetch metadata branch",
 				slog.String("error", err.Error()),
 			)
 		}
@@ -99,7 +101,8 @@ func resolvePushSettings(ctx context.Context, pushRemoteName string) pushSetting
 	// Also fetch v2 /main ref if v2 refs are enabled
 	if s.IsPushV2RefsEnabled() {
 		if err := fetchV2MainRefIfMissing(ctx, checkpointURL); err != nil {
-			logging.Warn(ctx, "checkpoint-remote: failed to fetch v2 /main ref",
+			logging.Warn(
+				ctx, "checkpoint-remote: failed to fetch v2 /main ref",
 				slog.String("error", err.Error()),
 			)
 		}

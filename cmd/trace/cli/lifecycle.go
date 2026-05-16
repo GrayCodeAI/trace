@@ -64,7 +64,8 @@ func DispatchLifecycleEvent(ctx context.Context, ag agent.Agent, event *agent.Ev
 // fires state machine transition.
 func handleLifecycleSessionStart(ctx context.Context, ag agent.Agent, event *agent.Event) error {
 	logCtx := logging.WithAgent(logging.WithComponent(ctx, "lifecycle"), ag.Name())
-	logging.Info(logCtx, "session-start",
+	logging.Info(
+		logCtx, "session-start",
 		slog.String("event", event.Type.String()),
 		slog.String("session_id", event.SessionID),
 		slog.String("session_ref", event.SessionRef),
@@ -169,7 +170,8 @@ func sessionStartMessage(agentName types.AgentName, emptyRepo bool) string {
 // persistence (see its doc comment for the full rationale).
 func handleLifecycleModelUpdate(ctx context.Context, ag agent.Agent, event *agent.Event) error {
 	logCtx := logging.WithAgent(logging.WithComponent(ctx, "lifecycle"), ag.Name())
-	logging.Info(logCtx, "model-update",
+	logging.Info(
+		logCtx, "model-update",
 		slog.String("session_id", event.SessionID),
 		slog.String("model", event.Model),
 	)
@@ -206,7 +208,8 @@ func handleLifecycleModelUpdate(ctx context.Context, ag agent.Agent, event *agen
 // ensures strategy setup, initializes session.
 func handleLifecycleTurnStart(ctx context.Context, ag agent.Agent, event *agent.Event) error {
 	logCtx := logging.WithAgent(logging.WithComponent(ctx, "lifecycle"), ag.Name())
-	logging.Info(logCtx, "turn-start",
+	logging.Info(
+		logCtx, "turn-start",
 		slog.String("event", event.Type.String()),
 		slog.String("session_id", event.SessionID),
 		slog.String("session_ref", event.SessionRef),
@@ -285,7 +288,8 @@ func handleLifecycleTurnStart(ctx context.Context, ag agent.Agent, event *agent.
 //nolint:maintidx // high complexity due to sequential orchestration of 8 steps (validation, extraction, file detection, filtering, token calc, step save, phase transition, cleanup) - splitting would obscure the flow
 func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Event) error {
 	logCtx := logging.WithAgent(logging.WithComponent(ctx, "lifecycle"), ag.Name())
-	logging.Info(logCtx, "turn-end",
+	logging.Info(
+		logCtx, "turn-end",
 		slog.String("event", event.Type.String()),
 		slog.String("session_id", event.SessionID),
 		slog.String("session_ref", event.SessionRef),
@@ -598,7 +602,8 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 // Also resets the transcript offset since the transcript may be truncated.
 func handleLifecycleCompaction(ctx context.Context, ag agent.Agent, event *agent.Event) error {
 	logCtx := logging.WithAgent(logging.WithComponent(ctx, "lifecycle"), ag.Name())
-	logging.Info(logCtx, "compaction",
+	logging.Info(
+		logCtx, "compaction",
 		slog.String("event", event.Type.String()),
 		slog.String("session_id", event.SessionID),
 	)
@@ -631,7 +636,8 @@ func handleLifecycleCompaction(ctx context.Context, ag agent.Agent, event *agent
 // handleLifecycleSessionEnd handles session end: marks the session as ended.
 func handleLifecycleSessionEnd(ctx context.Context, ag agent.Agent, event *agent.Event) error {
 	logCtx := logging.WithAgent(logging.WithComponent(ctx, "lifecycle"), ag.Name())
-	logging.Info(logCtx, "session-end",
+	logging.Info(
+		logCtx, "session-end",
 		slog.String("event", event.Type.String()),
 		slog.String("session_id", event.SessionID),
 	)
@@ -670,7 +676,8 @@ func handleLifecycleSessionEnd(ctx context.Context, ag agent.Agent, event *agent
 // handleLifecycleSubagentStart handles subagent start: captures pre-task state.
 func handleLifecycleSubagentStart(ctx context.Context, ag agent.Agent, event *agent.Event) error {
 	logCtx := logging.WithAgent(logging.WithComponent(ctx, "lifecycle"), ag.Name())
-	logging.Info(logCtx, "subagent started",
+	logging.Info(
+		logCtx, "subagent started",
 		slog.String("event", event.Type.String()),
 		slog.String("session_id", event.SessionID),
 		slog.String("tool_use_id", event.ToolUseID),

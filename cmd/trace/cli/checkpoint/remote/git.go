@@ -350,7 +350,8 @@ func appendCheckpointTokenEnv(baseEnv []string, token string) []string {
 
 	idx := existingCount
 	encoded := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
-	return append(filtered,
+	return append(
+		filtered,
 		fmt.Sprintf("GIT_CONFIG_COUNT=%d", existingCount+1),
 		fmt.Sprintf("GIT_CONFIG_KEY_%d=http.extraHeader", idx),
 		fmt.Sprintf("GIT_CONFIG_VALUE_%d=Authorization: Basic %s", idx, encoded),

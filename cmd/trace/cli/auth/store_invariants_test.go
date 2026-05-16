@@ -27,8 +27,8 @@ func TestProductionAuthStoreIsKeyringOnly(t *testing.T) {
 	// "we are persisting auth tokens to a file from production code".
 	forbidden := []string{
 		"TRACE_TEST_AUTH_STORE_FILE", // the test env-var hook
-		"os.WriteFile",                // token-on-disk write
-		"os.ReadFile",                 // token-on-disk read
+		"os.WriteFile",               // token-on-disk write
+		"os.ReadFile",                // token-on-disk read
 	}
 
 	entries, err := os.ReadDir(".")

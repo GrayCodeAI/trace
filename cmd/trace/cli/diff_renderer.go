@@ -9,31 +9,31 @@ import (
 
 // Theme holds customizable ANSI color codes for diff rendering.
 type Theme struct {
-	Addition    string // ANSI code for added lines
-	Deletion    string // ANSI code for deleted lines
-	Context     string // ANSI code for context lines
-	LineNumber  string // ANSI code for line number gutter
-	Header      string // ANSI code for diff headers
-	WordAdd     string // ANSI code for word-level additions
-	WordDel     string // ANSI code for word-level deletions
-	Collapse    string // ANSI code for collapsed section marker
-	Reset       string // ANSI reset code
-	Bold        string // ANSI bold
-	FilePath    string // ANSI code for file paths in summary
-	StatAdd     string // ANSI code for +N in summary
-	StatDel     string // ANSI code for -N in summary
+	Addition   string // ANSI code for added lines
+	Deletion   string // ANSI code for deleted lines
+	Context    string // ANSI code for context lines
+	LineNumber string // ANSI code for line number gutter
+	Header     string // ANSI code for diff headers
+	WordAdd    string // ANSI code for word-level additions
+	WordDel    string // ANSI code for word-level deletions
+	Collapse   string // ANSI code for collapsed section marker
+	Reset      string // ANSI reset code
+	Bold       string // ANSI bold
+	FilePath   string // ANSI code for file paths in summary
+	StatAdd    string // ANSI code for +N in summary
+	StatDel    string // ANSI code for -N in summary
 }
 
 // DefaultTheme returns a color theme inspired by delta/lazygit.
 func DefaultTheme() Theme {
 	return Theme{
-		Addition:   "\033[32m",    // green
-		Deletion:   "\033[31m",    // red
-		Context:    "\033[0m",     // default
+		Addition:   "\033[32m",     // green
+		Deletion:   "\033[31m",     // red
+		Context:    "\033[0m",      // default
 		LineNumber: "\033[38;5;8m", // gray
-		Header:     "\033[1;36m",  // bold cyan
-		WordAdd:    "\033[30;42m", // black on green background
-		WordDel:    "\033[30;41m", // black on red background
+		Header:     "\033[1;36m",   // bold cyan
+		WordAdd:    "\033[30;42m",  // black on green background
+		WordDel:    "\033[30;41m",  // black on red background
 		Collapse:   "\033[38;5;8m", // gray
 		Reset:      "\033[0m",
 		Bold:       "\033[1m",
@@ -46,16 +46,16 @@ func DefaultTheme() Theme {
 // DiffRenderer renders unified diffs with ANSI coloring,
 // line numbers, word-level highlighting, and context collapse.
 type DiffRenderer struct {
-	Theme            Theme
-	ContextLines     int // number of context lines to show before collapsing (default 3)
+	Theme             Theme
+	ContextLines      int // number of context lines to show before collapsing (default 3)
 	CollapseThreshold int // minimum unchanged lines to collapse (default 8)
 }
 
 // NewDiffRenderer creates a DiffRenderer with default settings.
 func NewDiffRenderer() *DiffRenderer {
 	return &DiffRenderer{
-		Theme:            DefaultTheme(),
-		ContextLines:     3,
+		Theme:             DefaultTheme(),
+		ContextLines:      3,
 		CollapseThreshold: 8,
 	}
 }
@@ -403,9 +403,9 @@ func (r *DiffRenderer) RenderSummary(diffs []string) string {
 	}
 
 	type fileStat struct {
-		path       string
-		additions  int
-		deletions  int
+		path      string
+		additions int
+		deletions int
 	}
 
 	var stats []fileStat
@@ -469,7 +469,8 @@ func (r *DiffRenderer) RenderSummary(diffs []string) string {
 			path = "..." + path[len(path)-maxPath+3:]
 		}
 		bar := renderChangeBar(s.additions, s.deletions, 20, r.Theme)
-		fmt.Fprintf(&out, " %s%-*s%s %s%+4d%s %s%+4d%s %s\n",
+		fmt.Fprintf(
+			&out, " %s%-*s%s %s%+4d%s %s%+4d%s %s\n",
 			r.Theme.FilePath, maxPath, path, r.Theme.Reset,
 			r.Theme.StatAdd, s.additions, r.Theme.Reset,
 			r.Theme.StatDel, -s.deletions, r.Theme.Reset,
@@ -478,7 +479,8 @@ func (r *DiffRenderer) RenderSummary(diffs []string) string {
 	}
 
 	// Summary line
-	fmt.Fprintf(&out, "\n %s%d files changed%s, %s%d insertions(+)%s, %s%d deletions(-)%s\n",
+	fmt.Fprintf(
+		&out, "\n %s%d files changed%s, %s%d insertions(+)%s, %s%d deletions(-)%s\n",
 		r.Theme.Bold, len(stats), r.Theme.Reset,
 		r.Theme.StatAdd, totalAdd, r.Theme.Reset,
 		r.Theme.StatDel, totalDel, r.Theme.Reset,
@@ -537,7 +539,6 @@ func truncateStr(s string, maxLen int) string {
 	}
 	return s[:maxLen-3] + "..."
 }
-
 
 // applySyntaxHighlight applies basic syntax highlighting for common languages.
 // It detects keywords for Go, Python, JavaScript, and TypeScript.

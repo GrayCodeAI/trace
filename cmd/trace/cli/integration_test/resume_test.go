@@ -490,7 +490,8 @@ func (env *TestEnv) RunResume(branchName string) (string, error) {
 	// Detach from controlling terminal so huh can't open /dev/tty for prompts.
 	cmd := execx.NonInteractive(ctx, getTestBinary(), "resume", branchName)
 	cmd.Dir = env.RepoDir
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 	)
 
@@ -505,7 +506,8 @@ func (env *TestEnv) RunResumeForce(branchName string) (string, error) {
 	ctx := env.T.Context()
 	cmd := exec.CommandContext(ctx, getTestBinary(), "resume", "--force", branchName)
 	cmd.Dir = env.RepoDir
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 	)
 

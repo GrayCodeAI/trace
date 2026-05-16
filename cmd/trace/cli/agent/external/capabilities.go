@@ -54,24 +54,31 @@ func (w *wrappedAgent) IsPreview() bool       { return w.ea.IsPreview() }
 func (w *wrappedAgent) DetectPresence(ctx context.Context) (bool, error) {
 	return w.ea.DetectPresence(ctx)
 }
-func (w *wrappedAgent) ProtectedDirs() []string                   { return w.ea.ProtectedDirs() }
+func (w *wrappedAgent) ProtectedDirs() []string { return w.ea.ProtectedDirs() }
 func (w *wrappedAgent) ReadTranscript(ref string) ([]byte, error) { return w.ea.ReadTranscript(ref) }
+
 func (w *wrappedAgent) ChunkTranscript(ctx context.Context, c []byte, m int) ([][]byte, error) {
 	return w.ea.ChunkTranscript(ctx, c, m)
 }
+
 func (w *wrappedAgent) ReassembleTranscript(chunks [][]byte) ([]byte, error) {
 	return w.ea.ReassembleTranscript(chunks)
 }
+
 func (w *wrappedAgent) GetSessionID(input *agent.HookInput) string { return w.ea.GetSessionID(input) }
+
 func (w *wrappedAgent) GetSessionDir(repoPath string) (string, error) {
 	return w.ea.GetSessionDir(repoPath)
 }
+
 func (w *wrappedAgent) ResolveSessionFile(dir, id string) string {
 	return w.ea.ResolveSessionFile(dir, id)
 }
+
 func (w *wrappedAgent) ReadSession(input *agent.HookInput) (*agent.AgentSession, error) {
 	return w.ea.ReadSession(input)
 }
+
 func (w *wrappedAgent) WriteSession(ctx context.Context, s *agent.AgentSession) error {
 	return w.ea.WriteSession(ctx, s)
 }
@@ -80,9 +87,11 @@ func (w *wrappedAgent) FormatResumeCommand(id string) string { return w.ea.Forma
 // --- HookSupport ---
 
 func (w *wrappedAgent) HookNames() []string { return w.ea.HookNames() }
+
 func (w *wrappedAgent) ParseHookEvent(ctx context.Context, name string, stdin io.Reader) (*agent.Event, error) {
 	return w.ea.ParseHookEvent(ctx, name, stdin)
 }
+
 func (w *wrappedAgent) InstallHooks(ctx context.Context, localDev bool, force bool) (int, error) {
 	return w.ea.InstallHooks(ctx, localDev, force)
 }
@@ -96,12 +105,15 @@ func (w *wrappedAgent) AreHooksInstalled(ctx context.Context) bool {
 func (w *wrappedAgent) GetTranscriptPosition(path string) (int, error) {
 	return w.ea.GetTranscriptPosition(path)
 }
+
 func (w *wrappedAgent) ExtractModifiedFilesFromOffset(path string, offset int) ([]string, int, error) {
 	return w.ea.ExtractModifiedFilesFromOffset(path, offset)
 }
+
 func (w *wrappedAgent) ExtractPrompts(ref string, offset int) ([]string, error) {
 	return w.ea.ExtractPrompts(ref, offset)
 }
+
 func (w *wrappedAgent) ExtractSummary(ref string) (string, error) {
 	return w.ea.ExtractSummary(ref)
 }
@@ -145,6 +157,7 @@ func (w *wrappedAgentWithProtectedFiles) ProtectedFiles() []string {
 func (w *wrappedAgent) ExtractAllModifiedFiles(data []byte, offset int, dir string) ([]string, error) {
 	return w.ea.ExtractAllModifiedFiles(data, offset, dir)
 }
+
 func (w *wrappedAgent) CalculateTotalTokenUsage(data []byte, offset int, dir string) (*agent.TokenUsage, error) {
 	return w.ea.CalculateTotalTokenUsage(data, offset, dir)
 }

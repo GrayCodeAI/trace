@@ -30,7 +30,8 @@ func NewHookRunner(repoDir, claudeProjectDir string, t interface {
 	Helper()
 	Fatalf(format string, args ...interface{})
 	Logf(format string, args ...interface{})
-}) *HookRunner {
+},
+) *HookRunner {
 	return &HookRunner{
 		RepoDir:          repoDir,
 		ClaudeProjectDir: claudeProjectDir,
@@ -240,7 +241,8 @@ func (r *HookRunner) runHookInRepoDir(hookName string, inputJSON []byte) error {
 	cmd := exec.Command(getTestBinary(), "hooks", "claude-code", hookName)
 	cmd.Dir = r.RepoDir
 	cmd.Stdin = bytes.NewReader(inputJSON)
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+r.ClaudeProjectDir,
 	)
 
@@ -435,7 +437,8 @@ func (r *HookRunner) runAgentHookWithOutput(agentName, hookName string, inputJSO
 	cmd := exec.Command(getTestBinary(), "hooks", agentName, hookName)
 	cmd.Dir = r.RepoDir
 	cmd.Stdin = bytes.NewReader(inputJSON)
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+r.ClaudeProjectDir,
 		"GOCACHE=/tmp/go-build",
 	)
@@ -459,7 +462,8 @@ func (r *HookRunner) runShellHookCommandWithOutput(command string, inputJSON []b
 	cmd := exec.Command("/bin/sh", "-c", command)
 	cmd.Dir = r.RepoDir
 	cmd.Stdin = bytes.NewReader(inputJSON)
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+r.ClaudeProjectDir,
 		"GOCACHE=/tmp/go-build",
 	)
@@ -590,7 +594,8 @@ func NewGeminiHookRunner(repoDir, geminiProjectDir string, t interface {
 	Helper()
 	Fatalf(format string, args ...interface{})
 	Logf(format string, args ...interface{})
-}) *GeminiHookRunner {
+},
+) *GeminiHookRunner {
 	return &GeminiHookRunner{
 		RepoDir:          repoDir,
 		GeminiProjectDir: geminiProjectDir,
@@ -616,7 +621,8 @@ func (r *GeminiHookRunner) runGeminiHookInRepoDir(hookName string, inputJSON []b
 	cmd := exec.Command(getTestBinary(), "hooks", "gemini", hookName)
 	cmd.Dir = r.RepoDir
 	cmd.Stdin = bytes.NewReader(inputJSON)
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_GEMINI_PROJECT_DIR="+r.GeminiProjectDir,
 	)
 
@@ -635,7 +641,8 @@ func (r *GeminiHookRunner) runGeminiHookWithOutput(hookName string, inputJSON []
 	cmd := exec.Command(getTestBinary(), "hooks", "gemini", hookName)
 	cmd.Dir = r.RepoDir
 	cmd.Stdin = bytes.NewReader(inputJSON)
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_GEMINI_PROJECT_DIR="+r.GeminiProjectDir,
 	)
 
@@ -845,7 +852,8 @@ func NewFactoryDroidHookRunner(repoDir string, t interface {
 	Helper()
 	Fatalf(format string, args ...interface{})
 	Logf(format string, args ...interface{})
-}) *FactoryDroidHookRunner {
+},
+) *FactoryDroidHookRunner {
 	return &FactoryDroidHookRunner{
 		RepoDir: repoDir,
 		T:       t,
@@ -1204,7 +1212,8 @@ func NewOpenCodeHookRunner(repoDir, openCodeProjectDir string, t interface {
 	Helper()
 	Fatalf(format string, args ...interface{})
 	Logf(format string, args ...interface{})
-}) *OpenCodeHookRunner {
+},
+) *OpenCodeHookRunner {
 	return &OpenCodeHookRunner{
 		RepoDir:            repoDir,
 		OpenCodeProjectDir: openCodeProjectDir,
@@ -1228,7 +1237,8 @@ func (r *OpenCodeHookRunner) runOpenCodeHookInRepoDir(hookName string, inputJSON
 	cmd := exec.Command(getTestBinary(), "hooks", "opencode", hookName)
 	cmd.Dir = r.RepoDir
 	cmd.Stdin = bytes.NewReader(inputJSON)
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_OPENCODE_PROJECT_DIR="+r.OpenCodeProjectDir,
 		"TRACE_TEST_OPENCODE_MOCK_EXPORT=1", // Use pre-written mock transcript instead of calling opencode export
 	)

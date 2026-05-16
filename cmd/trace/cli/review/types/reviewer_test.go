@@ -8,7 +8,7 @@ import (
 func TestEventTaxonomy(t *testing.T) {
 	t.Parallel()
 	// All event variants must implement Event (sealed via private isEvent()).
-	var events = []Event{
+	events := []Event{
 		Started{},
 		AssistantText{Text: "hello"},
 		ToolCall{Name: "read", Args: "file.go"},

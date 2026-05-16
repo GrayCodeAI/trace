@@ -147,7 +147,8 @@ func detectScopeBaseRef(ctx context.Context, repo *git.Repository) (string, erro
 	}
 	var candidates []candidate
 
-	out, runErr := runGit(ctx, repoRoot,
+	out, runErr := runGit(
+		ctx, repoRoot,
 		"for-each-ref",
 		"--merged", "HEAD",
 		"--format=%(refname:short)%09%(committerdate:unix)",

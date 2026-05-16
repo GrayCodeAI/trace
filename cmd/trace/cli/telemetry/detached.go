@@ -63,12 +63,12 @@ func BuildEventPayload(cmd *cobra.Command, agent string, isTraceEnabled bool, ve
 	}
 
 	properties := map[string]any{
-		"command":         cmd.CommandPath(),
-		"agent":           selectedAgent,
+		"command":        cmd.CommandPath(),
+		"agent":          selectedAgent,
 		"isTraceEnabled": isTraceEnabled,
-		"cli_version":     version,
-		"os":              runtime.GOOS,
-		"arch":            runtime.GOARCH,
+		"cli_version":    version,
+		"os":             runtime.GOOS,
+		"arch":           runtime.GOARCH,
 	}
 
 	if len(flags) > 0 {
@@ -134,11 +134,11 @@ func BuildPluginEventPayload(pluginName string, isTraceEnabled bool, version str
 	return &EventPayload{
 		Event: "plugin_invocation",
 		Properties: map[string]interface{}{
-			"plugin_name":    pluginName,
-			"trace_enabled":  isTraceEnabled,
-			"cli_version":    version,
-			"$lib":           "trace-cli",
-			"$lib_version":   version,
+			"plugin_name":   pluginName,
+			"trace_enabled": isTraceEnabled,
+			"cli_version":   version,
+			"$lib":          "trace-cli",
+			"$lib_version":  version,
 		},
 	}
 }

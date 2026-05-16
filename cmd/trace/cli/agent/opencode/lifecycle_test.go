@@ -22,7 +22,6 @@ func TestParseHookEvent_SessionStart(t *testing.T) {
 	input := `{"session_id": "sess-abc123"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -47,7 +46,6 @@ func TestParseHookEvent_TurnStart(t *testing.T) {
 	input := `{"session_id": "sess-1", "prompt": "Fix the bug in login.ts"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameTurnStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +72,6 @@ func TestParseHookEvent_TurnStart_IncludesModel(t *testing.T) {
 	input := `{"session_id": "sess-model", "prompt": "hello", "model": "claude-sonnet-4-20250514"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameTurnStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +88,6 @@ func TestParseHookEvent_TurnStart_EmptyModel(t *testing.T) {
 	input := `{"session_id": "sess-no-model", "prompt": "hello"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameTurnStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +103,6 @@ func TestParseHookEvent_TurnEnd(t *testing.T) {
 	input := `{"session_id": "sess-2"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameTurnEnd, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -131,7 +126,6 @@ func TestParseHookEvent_Compaction(t *testing.T) {
 	input := `{"session_id": "sess-3"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameCompaction, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -152,7 +146,6 @@ func TestParseHookEvent_SessionEnd(t *testing.T) {
 	input := `{"session_id": "sess-4"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionEnd, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -167,7 +160,6 @@ func TestParseHookEvent_UnknownHook(t *testing.T) {
 
 	ag := &OpenCodeAgent{}
 	event, err := ag.ParseHookEvent(context.Background(), "unknown-hook", strings.NewReader(`{}`))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

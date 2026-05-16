@@ -171,7 +171,8 @@ func (c *CursorAgent) PrepareTranscript(ctx context.Context, sessionRef string) 
 		info, err := os.Stat(sessionRef)
 		if err == nil {
 			if info.Size() > 0 {
-				logging.Debug(logCtx, "transcript file ready",
+				logging.Debug(
+					logCtx, "transcript file ready",
 					slog.Int64("size", info.Size()),
 				)
 				return nil
@@ -195,7 +196,8 @@ func (c *CursorAgent) PrepareTranscript(ctx context.Context, sessionRef string) 
 		}
 	}
 
-	logging.Warn(logCtx, "transcript file not ready within timeout, proceeding",
+	logging.Warn(
+		logCtx, "transcript file not ready within timeout, proceeding",
 		slog.Duration("timeout", effectiveTimeout),
 		slog.String("path", sessionRef),
 	)

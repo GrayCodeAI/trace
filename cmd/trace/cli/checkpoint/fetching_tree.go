@@ -70,7 +70,8 @@ func (t *FetchingTree) File(path string) (*object.File, error) {
 
 	entry, findErr := t.inner.FindEntry(path)
 	if findErr != nil {
-		logging.Debug(t.ctx, "FetchingTree.File: entry not found",
+		logging.Debug(
+			t.ctx, "FetchingTree.File: entry not found",
 			slog.String("path", path),
 			slog.String("error", findErr.Error()),
 		)
@@ -85,12 +86,14 @@ func (t *FetchingTree) File(path string) (*object.File, error) {
 		return nil, fmt.Errorf("blob %s not available locally and no fetcher configured", entry.Hash.String()[:12])
 	}
 
-	logging.Debug(t.ctx, "FetchingTree.File: blob missing locally, fetching from remote",
+	logging.Debug(
+		t.ctx, "FetchingTree.File: blob missing locally, fetching from remote",
 		slog.String("path", path),
 		slog.String("hash", entry.Hash.String()[:12]),
 	)
 	if fetchErr := t.fetch(t.ctx, []plumbing.Hash{entry.Hash}); fetchErr != nil {
-		logging.Warn(t.ctx, "FetchingTree.File: blob fetch failed",
+		logging.Warn(
+			t.ctx, "FetchingTree.File: blob fetch failed",
 			slog.String("path", path),
 			slog.String("hash", entry.Hash.String()[:12]),
 			slog.String("error", fetchErr.Error()),
@@ -102,7 +105,8 @@ func (t *FetchingTree) File(path string) (*object.File, error) {
 		return file, nil
 	}
 
-	logging.Debug(t.ctx, "FetchingTree.File: storer cache stale, reading via git cat-file",
+	logging.Debug(
+		t.ctx, "FetchingTree.File: storer cache stale, reading via git cat-file",
 		slog.String("path", path),
 		slog.String("hash", entry.Hash.String()[:12]),
 	)
@@ -124,7 +128,8 @@ func (t *FetchingTree) PreFetch() (int, error) {
 		return 0, nil
 	}
 
-	logging.Debug(t.ctx, "FetchingTree.PreFetch: batch-fetching missing blobs",
+	logging.Debug(
+		t.ctx, "FetchingTree.PreFetch: batch-fetching missing blobs",
 		slog.Int("count", len(missing)),
 	)
 
@@ -180,7 +185,8 @@ func (t *FetchingTree) readFileViaGit(path string, entry *object.TreeEntry) (*ob
 	cmd := exec.CommandContext(t.ctx, "git", "cat-file", "-p", entry.Hash.String())
 	content, cmdErr := cmd.Output()
 	if cmdErr != nil {
-		logging.Warn(t.ctx, "FetchingTree.readFileViaGit: cat-file failed",
+		logging.Warn(
+			t.ctx, "FetchingTree.readFileViaGit: cat-file failed",
 			slog.String("path", path),
 			slog.String("hash", entry.Hash.String()[:12]),
 			slog.String("error", cmdErr.Error()),
@@ -208,7 +214,8 @@ func (t *FetchingTree) readFileViaGit(path string, entry *object.TreeEntry) (*ob
 		return nil, fmt.Errorf("blob decode: %w", dErr)
 	}
 
-	logging.Debug(t.ctx, "FetchingTree.readFileViaGit: blob read successfully",
+	logging.Debug(
+		t.ctx, "FetchingTree.readFileViaGit: blob read successfully",
 		slog.String("path", path),
 		slog.String("hash", entry.Hash.String()[:12]),
 		slog.Int64("size", int64(len(content))),

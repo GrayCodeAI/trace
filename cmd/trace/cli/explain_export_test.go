@@ -423,7 +423,8 @@ func TestExplainCmd_SessionIndexRequiresTranscriptFlag(t *testing.T) {
 
 	err := cmd.ExecuteContext(context.Background())
 	require.Error(t, err)
-	require.Contains(t,
+	require.Contains(
+		t,
 		err.Error(), "--session-index only applies",
 		"expected --session-index validation error, got: %v", err,
 	)

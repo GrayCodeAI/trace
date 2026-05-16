@@ -583,7 +583,8 @@ func FetchBlobsByHash(ctx context.Context, hashes []plumbing.Hash) error {
 	}
 
 	if fetchErr := remote.FetchBlobs(ctx, fetchTarget, hashStrs); fetchErr != nil {
-		logging.Debug(ctx, "fetch-by-hash failed, falling back to full metadata fetch",
+		logging.Debug(
+			ctx, "fetch-by-hash failed, falling back to full metadata fetch",
 			slog.Int("blob_count", len(hashes)),
 			slog.String("fetch_target", fetchTarget),
 			slog.String("error", fetchErr.Error()),

@@ -388,7 +388,8 @@ func TestFetchAndMergeRef_RotationConflict(t *testing.T) {
 
 	archiveRefName := plumbing.ReferenceName(paths.V2FullRefPrefix + "0000000000001")
 	require.NoError(t, remoteRepo.Storer.SetReference(
-		plumbing.NewHashReference(archiveRefName, archiveCommitHash)))
+		plumbing.NewHashReference(archiveRefName, archiveCommitHash),
+	))
 
 	// Create fresh orphan /full/current
 	emptyTree, err := checkpoint.BuildTreeFromEntries(context.Background(), remoteRepo, map[string]object.TreeEntry{})
@@ -397,7 +398,8 @@ func TestFetchAndMergeRef_RotationConflict(t *testing.T) {
 		"Start generation", "Test", "test@test.com")
 	require.NoError(t, err)
 	require.NoError(t, remoteRepo.Storer.SetReference(
-		plumbing.NewHashReference(fullCurrentRef, orphanHash)))
+		plumbing.NewHashReference(fullCurrentRef, orphanHash),
+	))
 
 	// Push rotated state to bare (force /full/current since it's now an orphan)
 	pushRotated := exec.CommandContext(ctx, "git", "push", "--force", bareDir,

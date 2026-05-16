@@ -379,7 +379,8 @@ func (s *V2GitStore) readTranscriptFromFullRefs(ctx context.Context, checkpointI
 
 	// Not found locally — try fetching remote /full/* refs
 	if fetchErr := s.fetchRemoteFullRefs(ctx); fetchErr != nil {
-		logging.Debug(ctx, "failed to fetch remote /full/* refs",
+		logging.Debug(
+			ctx, "failed to fetch remote /full/* refs",
 			slog.String("error", fetchErr.Error()),
 		)
 		return nil, nil

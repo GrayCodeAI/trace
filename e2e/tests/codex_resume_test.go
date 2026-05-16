@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/GrayCodeAI/trace/e2e/agents"
-	"github.com/GrayCodeAI/trace/e2e/trace"
 	"github.com/GrayCodeAI/trace/e2e/testutil"
+	"github.com/GrayCodeAI/trace/e2e/trace"
 	"github.com/stretchr/testify/require"
 )
 

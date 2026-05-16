@@ -120,7 +120,8 @@ func TestFailureBullet_NoColor(t *testing.T) {
 func TestRenderIdentity_BulletRowsRule(t *testing.T) {
 	t.Parallel()
 	s := newStatusStyles(io.Discard)
-	got := s.renderIdentity("Checkpoint", "abc123",
+	got := s.renderIdentity(
+		"Checkpoint", "abc123",
 		[]explainRow{{Label: "session", Value: "s1"}, {Label: "tokens", Value: "1.2k"}},
 	)
 	if !strings.HasPrefix(got, "● Checkpoint abc123\n") {
@@ -140,7 +141,8 @@ func TestRenderIdentity_BulletRowsRule(t *testing.T) {
 func TestRenderSuccess_BulletThenRows(t *testing.T) {
 	t.Parallel()
 	s := newStatusStyles(io.Discard)
-	got := s.renderSuccess("Summary generated for abc",
+	got := s.renderSuccess(
+		"Summary generated for abc",
 		[]explainRow{{Label: "provider", Value: "claude-code"}},
 	)
 	want := "✓ Summary generated for abc\n  provider  claude-code\n"
@@ -152,7 +154,8 @@ func TestRenderSuccess_BulletThenRows(t *testing.T) {
 func TestRenderFailure_BulletThenRows(t *testing.T) {
 	t.Parallel()
 	s := newStatusStyles(io.Discard)
-	got := s.renderFailure("Commit not found",
+	got := s.renderFailure(
+		"Commit not found",
 		[]explainRow{{Label: "ref", Value: "deadbeef"}},
 	)
 	want := "✗ Commit not found\n  ref      deadbeef\n"

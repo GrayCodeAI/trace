@@ -197,7 +197,8 @@ func (a *OpenCodeAgent) ReadSession(input *agent.HookInput) (*agent.AgentSession
 	modifiedFiles, err := ExtractModifiedFiles(data)
 	if err != nil {
 		// Non-fatal: we can still return the session without modified files
-		logging.Warn(context.Background(), "failed to extract modified files from opencode session",
+		logging.Warn(
+			context.Background(), "failed to extract modified files from opencode session",
 			slog.String("session_ref", input.SessionRef),
 			slog.String("error", err.Error()),
 		)
@@ -238,7 +239,8 @@ func (a *OpenCodeAgent) importSessionIntoOpenCode(ctx context.Context, sessionID
 		// Non-fatal: session might not exist yet (first session).
 		// Import will still work for new sessions; only rewind of existing sessions
 		// would have stale messages.
-		logging.Warn(ctx, "could not delete existing opencode session",
+		logging.Warn(
+			ctx, "could not delete existing opencode session",
 			slog.String("session_id", sessionID),
 			slog.String("error", err.Error()),
 		)

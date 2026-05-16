@@ -435,7 +435,8 @@ func (e *Agent) run(ctx context.Context, stdin []byte, args ...string) ([]byte, 
 	// so cmd.Run() doesn't block waiting for pipe reads.
 	cmd.WaitDelay = 3 * time.Second
 
-	cmd.Env = append(cmd.Environ(),
+	cmd.Env = append(
+		cmd.Environ(),
 		"TRACE_PROTOCOL_VERSION="+strconv.Itoa(ProtocolVersion),
 		"TRACE_CLI_VERSION="+versioninfo.Version,
 	)

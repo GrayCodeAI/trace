@@ -699,7 +699,8 @@ func TestExtractAllModifiedFiles_IncludesSubagentFiles(t *testing.T) {
 	)
 
 	// Subagent transcript: Write to helper.go + Edit to utils.go (still on disk)
-	writeJSONLFile(t, subagentsDir+"/agent-sub1.jsonl",
+	writeJSONLFile(
+		t, subagentsDir+"/agent-sub1.jsonl",
 		makeWriteToolLine(t, "sa1", "/repo/helper.go"),
 		makeEditToolLine(t, "sa2", "/repo/utils.go"),
 	)
@@ -748,7 +749,8 @@ func TestExtractAllModifiedFiles_DeduplicatesAcrossAgents(t *testing.T) {
 	)
 
 	// Subagent transcript: Also modifies shared.go (same file as main)
-	writeJSONLFile(t, subagentsDir+"/agent-sub1.jsonl",
+	writeJSONLFile(
+		t, subagentsDir+"/agent-sub1.jsonl",
 		makeEditToolLine(t, "sa1", "/repo/shared.go"),
 	)
 
@@ -809,7 +811,8 @@ func TestExtractAllModifiedFiles_SubagentOnlyChanges(t *testing.T) {
 	)
 
 	// Subagent transcript: Write to two files (still on disk)
-	writeJSONLFile(t, subagentsDir+"/agent-sub1.jsonl",
+	writeJSONLFile(
+		t, subagentsDir+"/agent-sub1.jsonl",
 		makeWriteToolLine(t, "sa1", "/repo/subagent_file1.go"),
 		makeWriteToolLine(t, "sa2", "/repo/subagent_file2.go"),
 	)

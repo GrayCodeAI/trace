@@ -171,7 +171,8 @@ func TransitionAndLog(goCtx context.Context, state *SessionState, event session.
 
 	handlerErr := session.ApplyTransition(goCtx, state, result, handler)
 	if handlerErr != nil {
-		logging.Error(logCtx, "action handler error during transition",
+		logging.Error(
+			logCtx, "action handler error during transition",
 			slog.String("session_id", state.SessionID),
 			slog.String("event", event.String()),
 			slog.Any("error", handlerErr),
@@ -179,14 +180,16 @@ func TransitionAndLog(goCtx context.Context, state *SessionState, event session.
 	}
 
 	if result.NewPhase != oldPhase {
-		logging.Info(logCtx, "phase transition",
+		logging.Info(
+			logCtx, "phase transition",
 			slog.String("session_id", state.SessionID),
 			slog.String("event", event.String()),
 			slog.String("from", string(oldPhase)),
 			slog.String("to", string(result.NewPhase)),
 		)
 	} else {
-		logging.Debug(logCtx, "phase unchanged",
+		logging.Debug(
+			logCtx, "phase unchanged",
 			slog.String("session_id", state.SessionID),
 			slog.String("event", event.String()),
 			slog.String("phase", string(result.NewPhase)),

@@ -218,7 +218,8 @@ func waitForTranscriptFlush(ctx context.Context, transcriptPath string, hookStar
 	}
 	fileAge := time.Since(info.ModTime())
 	if fileAge > staleThreshold {
-		logging.Debug(logCtx, "transcript file is stale, skipping sentinel wait",
+		logging.Debug(
+			logCtx, "transcript file is stale, skipping sentinel wait",
 			slog.Duration("file_age", fileAge),
 		)
 		return
@@ -227,14 +228,16 @@ func waitForTranscriptFlush(ctx context.Context, transcriptPath string, hookStar
 	deadline := time.Now().Add(maxWait)
 	for time.Now().Before(deadline) {
 		if checkStopSentinel(transcriptPath, tailBytes, hookStartTime, maxSkew) {
-			logging.Debug(logCtx, "transcript flush sentinel found",
+			logging.Debug(
+				logCtx, "transcript flush sentinel found",
 				slog.Duration("wait", time.Since(hookStartTime)),
 			)
 			return
 		}
 		time.Sleep(pollInterval)
 	}
-	logging.Warn(logCtx, "transcript flush sentinel not found within timeout, proceeding",
+	logging.Warn(
+		logCtx, "transcript flush sentinel not found within timeout, proceeding",
 		slog.Duration("timeout", maxWait),
 	)
 }

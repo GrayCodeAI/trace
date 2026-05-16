@@ -570,5 +570,7 @@ func (f *fakeExternalAgent) ResolveSessionFile(_, _ string) string           { r
 func (f *fakeExternalAgent) ReadSession(_ *agent.HookInput) (*agent.AgentSession, error) {
 	return nil, nil //nolint:nilnil // test stub
 }
+
 func (f *fakeExternalAgent) WriteSession(_ context.Context, _ *agent.AgentSession) error { return nil }
-func (f *fakeExternalAgent) FormatResumeCommand(_ string) string                         { return "" }
+
+func (f *fakeExternalAgent) FormatResumeCommand(_ string) string { return "" }

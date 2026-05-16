@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/GrayCodeAI/trace/e2e/agents"
-	"github.com/GrayCodeAI/trace/e2e/trace"
 	"github.com/GrayCodeAI/trace/e2e/testutil"
+	"github.com/GrayCodeAI/trace/e2e/trace"
 )
 
 func TestMain(m *testing.M) {

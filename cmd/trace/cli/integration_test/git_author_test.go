@@ -84,7 +84,8 @@ func TestGetGitAuthorFallbackToGitCommand(t *testing.T) {
 	// Use environment variables to set author and committer (works in CI without global config)
 	commitCmd := exec.Command("git", "commit", "-m", "Initial")
 	commitCmd.Dir = env.RepoDir
-	commitCmd.Env = append(testutil.GitIsolatedEnv(),
+	commitCmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"GIT_AUTHOR_NAME=Test User",
 		"GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=Test User",
@@ -255,7 +256,8 @@ func TestGetGitAuthorRemovingLocalConfig(t *testing.T) {
 
 	commitCmd := exec.Command("git", "commit", "-m", "Initial")
 	commitCmd.Dir = env.RepoDir
-	commitCmd.Env = append(testutil.GitIsolatedEnv(),
+	commitCmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"GIT_AUTHOR_NAME=Test User",
 		"GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=Test User",

@@ -123,7 +123,8 @@ func executeAgentHook(cmd *cobra.Command, agentName types.AgentName, hookName st
 		slog.String("hook_type", hookType))
 	defer span.End()
 
-	logging.Debug(ctx, "hook invoked",
+	logging.Debug(
+		ctx, "hook invoked",
 		slog.String("hook", hookName),
 		slog.String("hook_type", hookType),
 		slog.String("strategy", strategyName),

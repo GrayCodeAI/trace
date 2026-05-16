@@ -37,7 +37,8 @@ func TestHookLogging_WritesToSessionLogFile(t *testing.T) {
 	// Use post-commit since it takes no arguments
 	cmd := exec.Command(getTestBinary(), "hooks", "git", "post-commit")
 	cmd.Dir = env.RepoDir
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 		"TRACE_LOG_LEVEL=debug",
 	)
@@ -94,7 +95,8 @@ func TestHookLogging_WritesWithoutSession(t *testing.T) {
 	// Run a hook with TRACE_LOG_LEVEL=debug
 	cmd := exec.Command(getTestBinary(), "hooks", "git", "post-commit")
 	cmd.Dir = env.RepoDir
-	cmd.Env = append(testutil.GitIsolatedEnv(),
+	cmd.Env = append(
+		testutil.GitIsolatedEnv(),
 		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 		"TRACE_LOG_LEVEL=debug",
 	)

@@ -56,13 +56,13 @@ func main() {
 
 	if *outputFile != "" {
 		colorReport := renderReport(parents, true)
-		if err := os.WriteFile(*outputFile, []byte(colorReport), 0644); err != nil {
+		if err := os.WriteFile(*outputFile, []byte(colorReport), 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "error writing %s: %v\n", *outputFile, err)
 			os.Exit(1)
 		}
 		noColorFile := strings.TrimSuffix(*outputFile, ".txt") + ".nocolor.txt"
 		plainReport := stripANSI(colorReport)
-		if err := os.WriteFile(noColorFile, []byte(plainReport), 0644); err != nil {
+		if err := os.WriteFile(noColorFile, []byte(plainReport), 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "error writing %s: %v\n", noColorFile, err)
 			os.Exit(1)
 		}

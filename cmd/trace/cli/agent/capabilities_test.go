@@ -40,6 +40,7 @@ func (m *mockBuiltinHookAgent) HookNames() []string { return nil }
 func (m *mockBuiltinHookAgent) ParseHookEvent(context.Context, string, io.Reader) (*Event, error) {
 	return nil, nil //nolint:nilnil // test mock
 }
+
 func (m *mockBuiltinHookAgent) InstallHooks(context.Context, bool, bool) (int, error) {
 	return 0, nil
 }
@@ -57,6 +58,7 @@ func (m *mockFullAgent) DeclaredCapabilities() DeclaredCaps { return m.caps }
 
 // HookSupport
 func (m *mockFullAgent) HookNames() []string { return nil }
+
 func (m *mockFullAgent) ParseHookEvent(context.Context, string, io.Reader) (*Event, error) {
 	return nil, nil //nolint:nilnil // test mock
 }
@@ -66,6 +68,7 @@ func (m *mockFullAgent) AreHooksInstalled(context.Context) bool                {
 
 // TranscriptAnalyzer
 func (m *mockFullAgent) GetTranscriptPosition(string) (int, error) { return 0, nil }
+
 func (m *mockFullAgent) ExtractModifiedFilesFromOffset(string, int) ([]string, int, error) {
 	return nil, 0, nil
 }
@@ -95,6 +98,7 @@ func (m *mockFullAgent) WriteHookResponse(string) error { return nil }
 func (m *mockFullAgent) ExtractAllModifiedFiles([]byte, int, string) ([]string, error) {
 	return nil, nil
 }
+
 func (m *mockFullAgent) CalculateTotalTokenUsage([]byte, int, string) (*TokenUsage, error) {
 	return nil, nil //nolint:nilnil // test mock
 }

@@ -70,7 +70,8 @@ func TestParseHookEvent_SessionShutdown_ClearsCache(t *testing.T) {
 
 	// Populate the cache via session_start.
 	if _, err := a.ParseHookEvent(ctx, HookNameSessionStart, strings.NewReader(
-		`{"type":"session_start","session_file":"/tmp/2026-05-09T12-00-00-000Z_cached-id.jsonl"}`)); err != nil {
+		`{"type":"session_start","session_file":"/tmp/2026-05-09T12-00-00-000Z_cached-id.jsonl"}`,
+	)); err != nil {
 		t.Fatalf("session_start setup: %v", err)
 	}
 	if got := readCachedSessionID(ctx); got != "cached-id" {

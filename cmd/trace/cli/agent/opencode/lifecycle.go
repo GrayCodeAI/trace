@@ -203,7 +203,8 @@ func (a *OpenCodeAgent) fetchAndCacheExport(ctx context.Context, sessionID strin
 	}
 
 	if !json.Valid(data) {
-		logging.Debug(logging.WithComponent(ctx, "lifecycle"),
+		logging.Debug(
+			logging.WithComponent(ctx, "lifecycle"),
 			"opencode export file contained invalid JSON",
 			slog.Int("bytes", len(data)),
 			slog.String("path", tmpFile),

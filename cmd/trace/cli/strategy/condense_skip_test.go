@@ -183,9 +183,9 @@ func TestFilterFilesTouched_AppliesFallbackForMidTurnCommit(t *testing.T) {
 		StepCount: 2, // prior SaveStep evidence
 	}
 	committedFiles := map[string]struct{}{
-		"app/foo.go":       {},
+		"app/foo.go":      {},
 		".trace/internal": {},
-		"app/bar.go":       {},
+		"app/bar.go":      {},
 	}
 
 	filterFilesTouched(sessionData, committedFiles, state)

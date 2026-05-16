@@ -267,9 +267,9 @@ func TestParseHunkHeader(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		input       string
-		wantOld     int
-		wantNew     int
+		input   string
+		wantOld int
+		wantNew int
 	}{
 		{"@@ -1,3 +1,4 @@", 1, 1},
 		{"@@ -10,5 +20,7 @@ func main()", 10, 20},

@@ -160,7 +160,8 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 		return nil
 	}
 
-	logging.Debug(logCtx, "found checkpoint(s) on branch",
+	logging.Debug(
+		logCtx, "found checkpoint(s) on branch",
 		slog.String("branch", branchName),
 		slog.Int("checkpoint_count", len(result.checkpointIDs)),
 		slog.String("commit", result.commitHash[:7]),
@@ -195,7 +196,8 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 		latest, tree, latestRepo, err := resolveLatestCheckpoint(ctx, result.checkpointIDs)
 		if err != nil {
 			// No metadata available — nothing to resume from
-			logging.Warn(logCtx, "resolveLatestCheckpoint failed",
+			logging.Warn(
+				logCtx, "resolveLatestCheckpoint failed",
 				slog.Int("checkpoint_count", len(result.checkpointIDs)),
 				slog.String("error", err.Error()),
 			)
@@ -220,7 +222,8 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 				metadataTree = v2Tree
 				freshRepo = v2Repo
 			} else {
-				logging.Debug(logCtx, "v2 metadata tree not available, trying v1",
+				logging.Debug(
+					logCtx, "v2 metadata tree not available, trying v1",
 					slog.String("checkpoint_id", checkpointID.String()),
 					slog.String("error", v2Err.Error()),
 				)
@@ -233,7 +236,8 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 		var treeErr error
 		metadataTree, freshRepo, treeErr = getMetadataTree(ctx)
 		if treeErr != nil {
-			logging.Warn(logCtx, "getMetadataTree failed, checking remote",
+			logging.Warn(
+				logCtx, "getMetadataTree failed, checking remote",
 				slog.String("checkpoint_id", checkpointID.String()),
 				slog.String("error", treeErr.Error()),
 			)
@@ -241,7 +245,8 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 		}
 	}
 
-	logging.Debug(logCtx, "metadata tree obtained",
+	logging.Debug(
+		logCtx, "metadata tree obtained",
 		slog.String("checkpoint_id", checkpointID.String()),
 		slog.String("checkpoint_path", checkpointID.Path()),
 		slog.String("tree_hash", metadataTree.Hash.String()),
@@ -252,7 +257,8 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 	// the trace metadata branch.
 	cpSubtree, cpErr := metadataTree.Tree(checkpointID.Path())
 	if cpErr != nil {
-		logging.Debug(logCtx, "checkpoint subtree not found in metadata tree, trying remote",
+		logging.Debug(
+			logCtx, "checkpoint subtree not found in metadata tree, trying remote",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("checkpoint_path", checkpointID.Path()),
 			slog.String("tree_hash", metadataTree.Hash.String()),
@@ -266,7 +272,8 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 	for _, e := range cpSubtree.Entries {
 		subtreeEntryNames = append(subtreeEntryNames, fmt.Sprintf("%s(%s:%s)", e.Name, e.Mode, e.Hash.String()[:7]))
 	}
-	logging.Debug(logCtx, "checkpoint subtree found",
+	logging.Debug(
+		logCtx, "checkpoint subtree found",
 		slog.String("checkpoint_id", checkpointID.String()),
 		slog.String("subtree_hash", cpSubtree.Hash.String()),
 		slog.Int("entry_count", len(cpSubtree.Entries)),
@@ -281,12 +288,14 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 	// Batch-prefetch all missing blobs in one network round-trip instead of
 	// fetching one blob per File() call during metadata reads.
 	if prefetched, pfErr := ft.PreFetch(); pfErr != nil {
-		logging.Warn(logCtx, "PreFetch failed, falling back to per-blob fetching",
+		logging.Warn(
+			logCtx, "PreFetch failed, falling back to per-blob fetching",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("error", pfErr.Error()),
 		)
 	} else if prefetched > 0 {
-		logging.Debug(logCtx, "PreFetch completed",
+		logging.Debug(
+			logCtx, "PreFetch completed",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.Int("blobs_fetched", prefetched),
 		)
@@ -295,7 +304,8 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 	// Read metadata from checkpoint subtree (paths are relative to checkpoint root)
 	metadata, err := strategy.ReadCheckpointMetadataFromSubtree(ft, checkpointID.Path())
 	if err != nil {
-		logging.Warn(logCtx, "ReadCheckpointMetadataFromSubtree failed, checking remote",
+		logging.Warn(
+			logCtx, "ReadCheckpointMetadataFromSubtree failed, checking remote",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("subtree_hash", cpSubtree.Hash.String()),
 			slog.String("error", err.Error()),
@@ -303,7 +313,8 @@ func resumeFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName 
 		return checkRemoteMetadata(ctx, w, errW, checkpointID)
 	}
 
-	logging.Debug(logCtx, "checkpoint metadata read successfully",
+	logging.Debug(
+		logCtx, "checkpoint metadata read successfully",
 		slog.String("checkpoint_id", checkpointID.String()),
 		slog.String("session_id", metadata.SessionID),
 		slog.Int("session_count", metadata.SessionCount),
@@ -343,7 +354,8 @@ func resolveLatestCheckpoint(ctx context.Context, checkpointIDs []id.CheckpointI
 		// Navigate to each checkpoint's subtree, wrap with blob fetching
 		cpSubtree, cpErr := metadataTree.Tree(cpID.Path())
 		if cpErr != nil {
-			logging.Debug(ctx, "resolveLatestCheckpoint: checkpoint subtree not found",
+			logging.Debug(
+				ctx, "resolveLatestCheckpoint: checkpoint subtree not found",
 				slog.String("checkpoint_id", cpID.String()),
 				slog.String("error", cpErr.Error()),
 			)
@@ -352,14 +364,16 @@ func resolveLatestCheckpoint(ctx context.Context, checkpointIDs []id.CheckpointI
 		ft := checkpoint.NewFetchingTree(ctx, cpSubtree, freshRepo.Storer, FetchBlobsByHash)
 		// Batch-prefetch blobs for this checkpoint subtree.
 		if _, pfErr := ft.PreFetch(); pfErr != nil {
-			logging.Debug(ctx, "resolveLatestCheckpoint: PreFetch failed",
+			logging.Debug(
+				ctx, "resolveLatestCheckpoint: PreFetch failed",
 				slog.String("checkpoint_id", cpID.String()),
 				slog.String("error", pfErr.Error()),
 			)
 		}
 		metadata, metaErr := strategy.ReadCheckpointMetadataFromSubtree(ft, cpID.Path())
 		if metaErr != nil {
-			logging.Debug(ctx, "resolveLatestCheckpoint: checkpoint metadata read failed",
+			logging.Debug(
+				ctx, "resolveLatestCheckpoint: checkpoint metadata read failed",
 				slog.String("checkpoint_id", cpID.String()),
 				slog.String("error", metaErr.Error()),
 			)
@@ -387,13 +401,15 @@ func getMetadataTree(ctx context.Context) (*object.Tree, *git.Repository, error)
 	logRefHash := func(repo *git.Repository, source string) {
 		ref, refErr := repo.Reference(plumbing.NewBranchReferenceName("trace/checkpoints/v1"), true)
 		if refErr != nil {
-			logging.Debug(logCtx, "metadata branch ref not found",
+			logging.Debug(
+				logCtx, "metadata branch ref not found",
 				slog.String("source", source),
 				slog.String("error", refErr.Error()),
 			)
 			return
 		}
-		logging.Debug(logCtx, "metadata branch ref resolved",
+		logging.Debug(
+			logCtx, "metadata branch ref resolved",
 			slog.String("source", source),
 			slog.String("ref_hash", ref.Hash().String()),
 		)
@@ -408,17 +424,20 @@ func getMetadataTree(ctx context.Context) (*object.Tree, *git.Repository, error)
 			logRefHash(freshRepo, "checkpoint-remote")
 			metadataTree, treeErr := strategy.GetMetadataBranchTree(freshRepo)
 			if treeErr == nil {
-				logging.Debug(logCtx, "metadata tree obtained via checkpoint remote fetch",
+				logging.Debug(
+					logCtx, "metadata tree obtained via checkpoint remote fetch",
 					slog.String("tree_hash", metadataTree.Hash.String()),
 				)
 				return metadataTree, freshRepo, nil
 			}
-			logging.Debug(logCtx, "checkpoint remote fetch succeeded but tree read failed",
+			logging.Debug(
+				logCtx, "checkpoint remote fetch succeeded but tree read failed",
 				slog.String("error", treeErr.Error()),
 			)
 		}
 	} else {
-		logging.Debug(logCtx, "checkpoint remote fetch skipped or failed",
+		logging.Debug(
+			logCtx, "checkpoint remote fetch skipped or failed",
 			slog.String("error", fetchErr.Error()),
 		)
 	}
@@ -430,17 +449,20 @@ func getMetadataTree(ctx context.Context) (*object.Tree, *git.Repository, error)
 			logRefHash(freshRepo, "treeless-fetch")
 			metadataTree, treeErr := strategy.GetMetadataBranchTree(freshRepo)
 			if treeErr == nil {
-				logging.Debug(logCtx, "metadata tree obtained via treeless fetch",
+				logging.Debug(
+					logCtx, "metadata tree obtained via treeless fetch",
 					slog.String("tree_hash", metadataTree.Hash.String()),
 				)
 				return metadataTree, freshRepo, nil
 			}
-			logging.Debug(logCtx, "treeless fetch succeeded but tree read failed",
+			logging.Debug(
+				logCtx, "treeless fetch succeeded but tree read failed",
 				slog.String("error", treeErr.Error()),
 			)
 		}
 	} else {
-		logging.Debug(logCtx, "treeless fetch failed, trying local",
+		logging.Debug(
+			logCtx, "treeless fetch failed, trying local",
 			slog.String("error", fetchErr.Error()),
 		)
 	}
@@ -451,12 +473,14 @@ func getMetadataTree(ctx context.Context) (*object.Tree, *git.Repository, error)
 		logRefHash(localRepo, "local")
 		metadataTree, err := strategy.GetMetadataBranchTree(localRepo)
 		if err == nil {
-			logging.Debug(logCtx, "metadata tree obtained from local branch",
+			logging.Debug(
+				logCtx, "metadata tree obtained from local branch",
 				slog.String("tree_hash", metadataTree.Hash.String()),
 			)
 			return metadataTree, localRepo, nil
 		}
-		logging.Debug(logCtx, "local metadata branch not available",
+		logging.Debug(
+			logCtx, "local metadata branch not available",
 			slog.String("error", err.Error()),
 		)
 	}
@@ -468,17 +492,20 @@ func getMetadataTree(ctx context.Context) (*object.Tree, *git.Repository, error)
 			logRefHash(freshRepo, "full-fetch")
 			metadataTree, treeErr := strategy.GetMetadataBranchTree(freshRepo)
 			if treeErr == nil {
-				logging.Debug(logCtx, "metadata tree obtained via full fetch",
+				logging.Debug(
+					logCtx, "metadata tree obtained via full fetch",
 					slog.String("tree_hash", metadataTree.Hash.String()),
 				)
 				return metadataTree, freshRepo, nil
 			}
-			logging.Debug(logCtx, "full fetch succeeded but tree read failed",
+			logging.Debug(
+				logCtx, "full fetch succeeded but tree read failed",
 				slog.String("error", treeErr.Error()),
 			)
 		}
 	} else {
-		logging.Debug(logCtx, "full fetch failed",
+		logging.Debug(
+			logCtx, "full fetch failed",
 			slog.String("error", fetchErr.Error()),
 		)
 	}
@@ -494,7 +521,8 @@ func getMetadataTree(ctx context.Context) (*object.Tree, *git.Repository, error)
 		logging.Debug(logCtx, "metadata tree obtained from remote-tracking branch")
 		return remoteTree, remoteRepo, nil
 	}
-	logging.Debug(logCtx, "remote metadata tree also not available",
+	logging.Debug(
+		logCtx, "remote metadata tree also not available",
 		slog.String("error", remoteErr.Error()),
 	)
 
@@ -515,11 +543,13 @@ func getV2MetadataTree(ctx context.Context) (*object.Tree, *git.Repository, erro
 		if localErr == nil {
 			return tree, repo, nil
 		}
-		logging.Debug(ctx, "v2 checkpoint remote fetch succeeded but tree read failed",
+		logging.Debug(
+			ctx, "v2 checkpoint remote fetch succeeded but tree read failed",
 			slog.String("error", localErr.Error()),
 		)
 	} else {
-		logging.Debug(ctx, "v2 checkpoint remote fetch skipped or failed",
+		logging.Debug(
+			ctx, "v2 checkpoint remote fetch skipped or failed",
 			slog.String("error", fetchErr.Error()),
 		)
 	}
@@ -694,7 +724,8 @@ func checkRemoteMetadata(ctx context.Context, w, errW io.Writer, checkpointID id
 			if cpErr == nil {
 				ft := checkpoint.NewFetchingTree(ctx, cpSubtree, v2Repo.Storer, FetchBlobsByHash)
 				if _, pfErr := ft.PreFetch(); pfErr != nil {
-					logging.Debug(logCtx, "checkRemoteMetadata v2: PreFetch failed",
+					logging.Debug(
+						logCtx, "checkRemoteMetadata v2: PreFetch failed",
 						slog.String("error", pfErr.Error()),
 					)
 				}
@@ -704,7 +735,8 @@ func checkRemoteMetadata(ctx context.Context, w, errW io.Writer, checkpointID id
 				}
 			}
 		}
-		logging.Debug(logCtx, "v2 remote metadata not available, trying v1",
+		logging.Debug(
+			logCtx, "v2 remote metadata not available, trying v1",
 			slog.String("checkpoint_id", checkpointID.String()),
 		)
 	}
@@ -712,7 +744,8 @@ func checkRemoteMetadata(ctx context.Context, w, errW io.Writer, checkpointID id
 	// Open a fresh repo to avoid stale packfile index issues
 	repo, repoErr := openRepository(ctx)
 	if repoErr != nil {
-		logging.Warn(logCtx, "failed to open repository for remote check",
+		logging.Warn(
+			logCtx, "failed to open repository for remote check",
 			slog.String("error", repoErr.Error()),
 		)
 		fmt.Fprintf(errW, "Checkpoint '%s' found in commit but session metadata not available\n", checkpointID)
@@ -731,15 +764,18 @@ func checkRemoteMetadata(ctx context.Context, w, errW io.Writer, checkpointID id
 			if fetchErr := strategy.FetchMetadataBranch(ctx, checkpointURL); fetchErr == nil {
 				freshRepo, freshErr := openRepository(ctx)
 				if freshErr != nil {
-					logging.Debug(logCtx, "checkpoint remote: open repository failed after fetch",
+					logging.Debug(
+						logCtx, "checkpoint remote: open repository failed after fetch",
 						slog.String("error", freshErr.Error()),
 					)
 				} else if metadataTree, treeErr := strategy.GetMetadataBranchTree(freshRepo); treeErr != nil {
-					logging.Debug(logCtx, "checkpoint remote: fetch succeeded but tree read failed",
+					logging.Debug(
+						logCtx, "checkpoint remote: fetch succeeded but tree read failed",
 						slog.String("error", treeErr.Error()),
 					)
 				} else if metadata, err := tryReadCheckpointFromTree(ctx, metadataTree, freshRepo, checkpointID); err != nil {
-					logging.Debug(logCtx, "checkpoint remote: tree read succeeded but checkpoint metadata read failed",
+					logging.Debug(
+						logCtx, "checkpoint remote: tree read succeeded but checkpoint metadata read failed",
 						slog.String("checkpoint_id", checkpointID.String()),
 						slog.String("error", err.Error()),
 					)
@@ -747,7 +783,8 @@ func checkRemoteMetadata(ctx context.Context, w, errW io.Writer, checkpointID id
 					return resumeSession(ctx, w, errW, metadata, false)
 				}
 			} else {
-				logging.Debug(logCtx, "checkpoint remote fetch failed",
+				logging.Debug(
+					logCtx, "checkpoint remote fetch failed",
 					slog.String("error", fetchErr.Error()),
 				)
 			}
@@ -785,7 +822,8 @@ func tryReadCheckpointFromTree(ctx context.Context, tree *object.Tree, repo *git
 	}
 	ft := checkpoint.NewFetchingTree(ctx, cpSubtree, repo.Storer, FetchBlobsByHash)
 	if _, pfErr := ft.PreFetch(); pfErr != nil {
-		logging.Debug(ctx, "tryReadCheckpointFromTree: PreFetch failed",
+		logging.Debug(
+			ctx, "tryReadCheckpointFromTree: PreFetch failed",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("error", pfErr.Error()),
 		)
@@ -815,7 +853,8 @@ func resumeSession(ctx context.Context, w, errW io.Writer, metadata *strategy.Ch
 	// Initialize logging context with agent
 	logCtx := logging.WithAgent(logging.WithComponent(ctx, "resume"), ag.Name())
 
-	logging.Debug(logCtx, "resume session started",
+	logging.Debug(
+		logCtx, "resume session started",
 		slog.String("checkpoint_id", checkpointID.String()),
 		slog.String("session_id", sessionID),
 	)
@@ -853,7 +892,8 @@ func resumeSession(ctx context.Context, w, errW io.Writer, metadata *strategy.Ch
 		return resumeSingleSession(ctx, w, errW, ag, sessionID, checkpointID, repoRoot, force)
 	}
 
-	logging.Debug(logCtx, "resume session completed",
+	logging.Debug(
+		logCtx, "resume session completed",
 		slog.String("checkpoint_id", checkpointID.String()),
 		slog.Int("session_count", len(sessions)),
 	)
@@ -896,7 +936,8 @@ func resumeSingleSession(ctx context.Context, w, errW io.Writer, ag agent.Agent,
 	}
 
 	if checkpointID.IsEmpty() {
-		logging.Debug(ctx, "resume session: empty checkpoint ID",
+		logging.Debug(
+			ctx, "resume session: empty checkpoint ID",
 			slog.String("checkpoint_id", checkpointID.String()),
 		)
 		fmt.Fprintf(w, "Session '%s' found in commit trailer but session log not available\n", sessionID)
@@ -912,7 +953,8 @@ func resumeSingleSession(ctx context.Context, w, errW io.Writer, ag agent.Agent,
 		if repoErr == nil {
 			v2URL, fetchRemoteErr := remote.FetchURL(ctx)
 			if fetchRemoteErr != nil {
-				logging.Debug(ctx, "resume: using origin for v2 session log fetch remote",
+				logging.Debug(
+					ctx, "resume: using origin for v2 session log fetch remote",
 					slog.String("error", fetchRemoteErr.Error()),
 				)
 				v2URL = ""
@@ -921,7 +963,8 @@ func resumeSingleSession(ctx context.Context, w, errW io.Writer, ag agent.Agent,
 			var v2Err error
 			logContent, _, v2Err = v2Store.GetSessionLog(ctx, checkpointID)
 			if v2Err != nil {
-				logging.Debug(ctx, "v2 GetSessionLog failed, falling back to v1",
+				logging.Debug(
+					ctx, "v2 GetSessionLog failed, falling back to v1",
 					slog.String("checkpoint_id", checkpointID.String()),
 					slog.String("error", v2Err.Error()),
 				)
@@ -933,7 +976,8 @@ func resumeSingleSession(ctx context.Context, w, errW io.Writer, ag agent.Agent,
 	}
 	if err != nil {
 		if errors.Is(err, checkpoint.ErrCheckpointNotFound) || errors.Is(err, checkpoint.ErrNoTranscript) {
-			logging.Debug(ctx, "resume session completed (no metadata)",
+			logging.Debug(
+				ctx, "resume session completed (no metadata)",
 				slog.String("checkpoint_id", checkpointID.String()),
 				slog.String("session_id", sessionID),
 			)
@@ -942,7 +986,8 @@ func resumeSingleSession(ctx context.Context, w, errW io.Writer, ag agent.Agent,
 			fmt.Fprintf(w, "  %s\n", ag.FormatResumeCommand(sessionID))
 			return nil
 		}
-		logging.Error(ctx, "resume session failed",
+		logging.Error(
+			ctx, "resume session failed",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("session_id", sessionID),
 			slog.String("error", err.Error()),
@@ -989,7 +1034,8 @@ func resumeSingleSession(ctx context.Context, w, errW io.Writer, ag agent.Agent,
 
 	// Write the session using the agent's WriteSession method
 	if err := ag.WriteSession(ctx, agentSession); err != nil {
-		logging.Error(ctx, "resume session failed during write",
+		logging.Error(
+			ctx, "resume session failed during write",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("session_id", sessionID),
 			slog.String("error", err.Error()),
@@ -997,7 +1043,8 @@ func resumeSingleSession(ctx context.Context, w, errW io.Writer, ag agent.Agent,
 		return fmt.Errorf("failed to write session: %w", err)
 	}
 
-	logging.Debug(ctx, "resume session completed",
+	logging.Debug(
+		ctx, "resume session completed",
 		slog.String("checkpoint_id", checkpointID.String()),
 		slog.String("session_id", sessionID),
 	)

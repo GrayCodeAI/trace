@@ -188,7 +188,8 @@ func (s *ManualCommitStrategy) CommitMsg(_ context.Context, commitMsgFile string
 func (s *ManualCommitStrategy) PostRewrite(ctx context.Context, rewriteType string, r io.Reader) error {
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 	if rewriteType != "amend" && rewriteType != "rebase" {
-		logging.Debug(logCtx, "post-rewrite: unsupported rewrite type, skipping",
+		logging.Debug(
+			logCtx, "post-rewrite: unsupported rewrite type, skipping",
 			slog.String("rewrite_type", rewriteType),
 		)
 		return nil
@@ -220,7 +221,8 @@ func (s *ManualCommitStrategy) PostRewrite(ctx context.Context, rewriteType stri
 	for _, state := range sessions {
 		changed, err := s.remapSessionForRewrite(ctx, repo, state, rewrites)
 		if err != nil {
-			logging.Warn(logCtx, "post-rewrite: failed to remap session linkage",
+			logging.Warn(
+				logCtx, "post-rewrite: failed to remap session linkage",
 				slog.String("session_id", state.SessionID),
 				slog.String("error", err.Error()),
 			)
@@ -230,13 +232,15 @@ func (s *ManualCommitStrategy) PostRewrite(ctx context.Context, rewriteType stri
 			continue
 		}
 		if err := s.saveSessionState(ctx, state); err != nil {
-			logging.Warn(logCtx, "post-rewrite: failed to save remapped session state",
+			logging.Warn(
+				logCtx, "post-rewrite: failed to save remapped session state",
 				slog.String("session_id", state.SessionID),
 				slog.String("error", err.Error()),
 			)
 			continue
 		}
-		logging.Info(logCtx, "post-rewrite: remapped session linkage",
+		logging.Info(
+			logCtx, "post-rewrite: remapped session linkage",
 			slog.String("session_id", state.SessionID),
 			slog.String("rewrite_type", rewriteType),
 			slog.String("base_commit", truncateHash(state.BaseCommit)),
@@ -358,7 +362,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 	// Skip during rebase, cherry-pick, or revert operations
 	// These are replaying existing commits and should not be linked to agent sessions
 	if isGitSequenceOperation(ctx) {
-		logging.Debug(logCtx, "prepare-commit-msg: skipped during git sequence operation",
+		logging.Debug(
+			logCtx, "prepare-commit-msg: skipped during git sequence operation",
 			slog.String("strategy", "manual-commit"),
 			slog.String("source", source),
 		)
@@ -369,7 +374,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 	// These are auto-generated messages - not from Claude sessions
 	switch source {
 	case "merge", "squash":
-		logging.Debug(logCtx, "prepare-commit-msg: skipped for source",
+		logging.Debug(
+			logCtx, "prepare-commit-msg: skipped for source",
 			slog.String("strategy", "manual-commit"),
 			slog.String("source", source),
 		)
@@ -406,7 +412,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 		findSessionsSpan.RecordError(err)
 		findSessionsSpan.End()
 		// No active sessions or error listing - silently skip (hooks must be resilient)
-		logging.Debug(logCtx, "prepare-commit-msg: no active sessions",
+		logging.Debug(
+			logCtx, "prepare-commit-msg: no active sessions",
 			slog.String("strategy", "manual-commit"),
 			slog.String("source", source),
 		)
@@ -428,7 +435,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 
 	if len(sessionsWithContent) == 0 {
 		// No new content — no trailer needed
-		logging.Debug(logCtx, "prepare-commit-msg: no content to link",
+		logging.Debug(
+			logCtx, "prepare-commit-msg: no content to link",
 			slog.String("strategy", "manual-commit"),
 			slog.String("source", source),
 			slog.Int("sessions_found", len(sessions)),
@@ -451,7 +459,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 	if existingCpID, found := trailers.ParseCheckpoint(message); found {
 		readCommitMessageSpan.End()
 		// Trailer already exists (e.g., amend) - keep it
-		logging.Debug(logCtx, "prepare-commit-msg: trailer already exists",
+		logging.Debug(
+			logCtx, "prepare-commit-msg: trailer already exists",
 			slog.String("strategy", "manual-commit"),
 			slog.String("source", source),
 			slog.String("existing_checkpoint_id", existingCpID.String()),
@@ -513,7 +522,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 
 			result := askConfirmTTY(header, details, "Link this commit to session context?", true)
 			if result == ttyResultSkip {
-				logging.Debug(logCtx, "prepare-commit-msg: user declined trailer",
+				logging.Debug(
+					logCtx, "prepare-commit-msg: user declined trailer",
 					slog.String("strategy", "manual-commit"),
 					slog.String("source", source),
 				)
@@ -522,7 +532,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 			if result == ttyResultLinkAlways {
 				// Persist preference so future commits auto-link (non-fatal if it fails)
 				if saveErr := saveCommitLinkingAlways(ctx); saveErr != nil {
-					logging.Warn(logCtx, "prepare-commit-msg: failed to save commit_linking=always",
+					logging.Warn(
+						logCtx, "prepare-commit-msg: failed to save commit_linking=always",
 						slog.String("error", saveErr.Error()),
 					)
 				}
@@ -534,7 +545,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 		message = addCheckpointTrailerWithComment(message, checkpointID, string(agentType), displayPrompt)
 	}
 
-	logging.Info(logCtx, "prepare-commit-msg: trailer added",
+	logging.Info(
+		logCtx, "prepare-commit-msg: trailer added",
 		slog.String("strategy", "manual-commit"),
 		slog.String("source", source),
 		slog.String("checkpoint_id", checkpointID.String()),
@@ -566,7 +578,8 @@ func (s *ManualCommitStrategy) handleAmendCommitMsg(ctx context.Context, commitM
 
 	// If message already has a trailer, keep it unchanged
 	if existingCpID, found := trailers.ParseCheckpoint(message); found {
-		logging.Debug(logCtx, "prepare-commit-msg: amend preserves existing trailer",
+		logging.Debug(
+			logCtx, "prepare-commit-msg: amend preserves existing trailer",
 			slog.String("strategy", "manual-commit"),
 			slog.String("checkpoint_id", existingCpID.String()),
 		)
@@ -616,7 +629,8 @@ func (s *ManualCommitStrategy) handleAmendCommitMsg(ctx context.Context, commitM
 			return nil //nolint:nilerr // Hook must be silent on failure
 		}
 
-		logging.Info(logCtx, "prepare-commit-msg: restored trailer on amend",
+		logging.Info(
+			logCtx, "prepare-commit-msg: restored trailer on amend",
 			slog.String("strategy", "manual-commit"),
 			slog.String("checkpoint_id", cpID.String()),
 			slog.String("session_id", state.SessionID),
@@ -626,7 +640,8 @@ func (s *ManualCommitStrategy) handleAmendCommitMsg(ctx context.Context, commitM
 	}
 
 	// No checkpoint ID found - leave message unchanged
-	logging.Debug(logCtx, "prepare-commit-msg: amend with no checkpoint to restore",
+	logging.Debug(
+		logCtx, "prepare-commit-msg: amend with no checkpoint to restore",
 		slog.String("strategy", "manual-commit"),
 	)
 	return nil
@@ -692,7 +707,8 @@ func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
 	logCtx := logging.WithComponent(h.ctx, "checkpoint")
 	shouldCondense := h.shouldCondenseWithOverlapCheck(state.Phase.IsActive(), state.LastInteractionTime)
 
-	logging.Debug(logCtx, "post-commit: HandleCondense decision",
+	logging.Debug(
+		logCtx, "post-commit: HandleCondense decision",
 		slog.String("session_id", state.SessionID),
 		slog.String("phase", string(state.Phase)),
 		slog.Bool("has_new", h.hasNew),
@@ -720,7 +736,8 @@ func (h *postCommitActionHandler) HandleCondenseIfFilesTouched(state *session.St
 	logCtx := logging.WithComponent(h.ctx, "checkpoint")
 	shouldCondense := len(state.FilesTouched) > 0 && h.shouldCondenseWithOverlapCheck(state.Phase.IsActive(), state.LastInteractionTime)
 
-	logging.Debug(logCtx, "post-commit: HandleCondenseIfFilesTouched decision",
+	logging.Debug(
+		logCtx, "post-commit: HandleCondenseIfFilesTouched decision",
 		slog.String("session_id", state.SessionID),
 		slog.String("phase", string(state.Phase)),
 		slog.Bool("has_new", h.hasNew),
@@ -771,7 +788,8 @@ func (h *postCommitActionHandler) shouldCondenseWithOverlapCheck(isActive bool, 
 	// session has no recent interaction and falls through to the overlap check.
 	if isActive && isRecentInteraction(lastInteraction) {
 		if h.sessionsWithCommittedFiles > 0 && len(h.filesTouchedBefore) == 0 {
-			logging.Debug(h.ctx, "post-commit: skipping read-only ACTIVE session (no tracked files, other sessions claim committed files)",
+			logging.Debug(
+				h.ctx, "post-commit: skipping read-only ACTIVE session (no tracked files, other sessions claim committed files)",
 				slog.Int("sessions_with_committed_files", h.sessionsWithCommittedFiles),
 			)
 			return false
@@ -836,7 +854,8 @@ func warnStaleEndedSessionsTo(ctx context.Context, count int, w io.Writer) {
 	os.MkdirAll(warnDir, 0o750)
 	//nolint:errcheck,gosec // G104: Best-effort sentinel file write
 	os.WriteFile(warnFile, []byte{}, 0o644)
-	fmt.Fprintf(w,
+	fmt.Fprintf(
+		w,
 		"\ntrace: %d ended session(s) are accumulating and slowing down commits.\n"+
 			"Run 'trace doctor' to condense them and restore commit performance.\n\n",
 		count,
@@ -856,7 +875,8 @@ func isRecentInteraction(lastInteraction *time.Time) bool {
 
 func (h *postCommitActionHandler) HandleDiscardIfNoFiles(state *session.State) error {
 	if len(state.FilesTouched) == 0 {
-		logging.Debug(logging.WithComponent(h.ctx, "checkpoint"), "post-commit: skipping empty ended session (no files to condense)",
+		logging.Debug(
+			logging.WithComponent(h.ctx, "checkpoint"), "post-commit: skipping empty ended session (no files to condense)",
 			slog.String("session_id", state.SessionID),
 		)
 	}
@@ -923,7 +943,8 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error { //nolint:
 	findSessionsSpan.End()
 
 	if err != nil || len(sessions) == 0 {
-		logging.Warn(logCtx, "post-commit: no active sessions despite trailer",
+		logging.Warn(
+			logCtx, "post-commit: no active sessions despite trailer",
 			slog.String("strategy", "manual-commit"),
 			slog.String("checkpoint_id", checkpointID.String()),
 		)
@@ -937,7 +958,8 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error { //nolint:
 	}
 
 	if isRebase {
-		logging.Debug(logCtx, "post-commit: rebase/sequence in progress, skipping phase transitions",
+		logging.Debug(
+			logCtx, "post-commit: rebase/sequence in progress, skipping phase transitions",
 			slog.String("strategy", "manual-commit"),
 		)
 	}
@@ -1014,7 +1036,8 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error { //nolint:
 	_, cleanupBranchesSpan := perf.Start(ctx, "cleanup_shadow_branches")
 	for shadowBranchName := range shadowBranchesToDelete {
 		if uncondensedActiveOnBranch[shadowBranchName] {
-			logging.Debug(logCtx, "post-commit: preserving shadow branch (active session exists)",
+			logging.Debug(
+				logCtx, "post-commit: preserving shadow branch (active session exists)",
 				slog.String("shadow_branch", shadowBranchName),
 			)
 			continue
@@ -1024,7 +1047,8 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error { //nolint:
 				slog.String("shadow_branch", shadowBranchName),
 				slog.String("error", err.Error()))
 		} else {
-			logging.Info(logCtx, "shadow branch deleted",
+			logging.Info(
+				logCtx, "shadow branch deleted",
 				slog.String("strategy", "manual-commit"),
 				slog.String("shadow_branch", shadowBranchName),
 			)
@@ -1132,7 +1156,8 @@ func (s *ManualCommitStrategy) updateCombinedAttributionForCheckpoint(
 		MetricVersion:     2,
 	}
 
-	logging.Info(logCtx, "combined attribution calculated",
+	logging.Info(
+		logCtx, "combined attribution calculated",
 		slog.String("checkpoint_id", checkpointID.String()),
 		slog.Int("sessions", len(summary.Sessions)),
 		slog.Int("agent_files", len(agentFiles)),
@@ -1208,7 +1233,8 @@ func (s *ManualCommitStrategy) postCommitProcessSession(
 		hasNew, contentErr = s.sessionHasNewContent(ctx, repo, state, contentCheckOpts{shadowTree: shadowTree})
 		if contentErr != nil {
 			hasNew = true
-			logging.Debug(logCtx, "post-commit: error checking session content, assuming new content",
+			logging.Debug(
+				logCtx, "post-commit: error checking session content, assuming new content",
 				slog.String("session_id", state.SessionID),
 				slog.String("error", contentErr.Error()),
 			)
@@ -1229,7 +1255,8 @@ func (s *ManualCommitStrategy) postCommitProcessSession(
 	}
 	checkContentSpan.End()
 
-	logging.Debug(logCtx, "post-commit: carry-forward prep",
+	logging.Debug(
+		logCtx, "post-commit: carry-forward prep",
 		slog.String("session_id", state.SessionID),
 		slog.Bool("is_active", state.Phase.IsActive()),
 		slog.String("transcript_path", state.TranscriptPath),
@@ -1288,7 +1315,8 @@ func (s *ManualCommitStrategy) postCommitProcessSession(
 			shadowTree: shadowTree,
 		})
 		state.FilesTouched = remainingFiles
-		logging.Debug(logCtx, "post-commit: carry-forward decision (content-aware)",
+		logging.Debug(
+			logCtx, "post-commit: carry-forward decision (content-aware)",
 			slog.String("session_id", state.SessionID),
 			slog.Int("files_touched_before", len(filesTouchedBefore)),
 			slog.Int("committed_files", len(committedFileSet)),
@@ -1349,7 +1377,8 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 	result, err := s.CondenseSession(ctx, repo, checkpointID, state, committedFiles, opts...)
 	if err != nil {
-		logging.Warn(logCtx, "condensation failed",
+		logging.Warn(
+			logCtx, "condensation failed",
 			slog.String("session_id", state.SessionID),
 			slog.String("error", err.Error()),
 		)
@@ -1357,7 +1386,8 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	}
 
 	if result.Skipped {
-		logging.Debug(logCtx, "condensation skipped, session state unchanged",
+		logging.Debug(
+			logCtx, "condensation skipped, session state unchanged",
 			slog.String("session_id", state.SessionID),
 			slog.String("checkpoint_id", checkpointID.String()),
 		)
@@ -1391,7 +1421,8 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	state.LastCheckpointID = checkpointID
 	state.LastCheckpointCommitHash = newHead
 
-	logging.Info(logCtx, "session condensed",
+	logging.Info(
+		logCtx, "session condensed",
 		slog.String("strategy", "manual-commit"),
 		slog.String("session_id", state.SessionID),
 		slog.String("checkpoint_id", result.CheckpointID.String()),
@@ -1411,7 +1442,8 @@ func (s *ManualCommitStrategy) updateBaseCommitIfChanged(ctx context.Context, st
 	// Only update ACTIVE sessions. IDLE/ENDED sessions are kept around for
 	// LastCheckpointID reuse and should not be advanced to HEAD.
 	if !state.Phase.IsActive() {
-		logging.Debug(logCtx, "post-commit: updateBaseCommitIfChanged skipped non-active session",
+		logging.Debug(
+			logCtx, "post-commit: updateBaseCommitIfChanged skipped non-active session",
 			slog.String("session_id", state.SessionID),
 			slog.String("phase", string(state.Phase)),
 		)
@@ -1423,7 +1455,8 @@ func (s *ManualCommitStrategy) updateBaseCommitIfChanged(ctx context.Context, st
 		// Without this, a subsequent condensation would diff from the old base,
 		// inflating human_added with lines from unrelated prior commits.
 		state.RealignAttributionBase(newHead)
-		logging.Debug(logCtx, "post-commit: updated BaseCommit and AttributionBaseCommit",
+		logging.Debug(
+			logCtx, "post-commit: updated BaseCommit and AttributionBaseCommit",
 			slog.String("session_id", state.SessionID),
 			slog.String("new_head", truncateHash(newHead)),
 		)
@@ -1457,7 +1490,8 @@ func (s *ManualCommitStrategy) postCommitUpdateBaseCommitOnly(ctx context.Contex
 			continue
 		}
 		if state.BaseCommit != newHead {
-			logging.Debug(logCtx, "post-commit (no trailer): updating BaseCommit and AttributionBaseCommit",
+			logging.Debug(
+				logCtx, "post-commit (no trailer): updating BaseCommit and AttributionBaseCommit",
 				slog.String("session_id", state.SessionID),
 				slog.String("old_base", truncateHash(state.BaseCommit)),
 				slog.String("new_head", truncateHash(newHead)),
@@ -1497,7 +1531,8 @@ func (s *ManualCommitStrategy) filterSessionsWithNewContent(ctx context.Context,
 	// "unavailable" and skips overlap checks, falling through to other heuristics.
 	stagedFiles, err := getStagedFiles(ctx)
 	if err != nil {
-		logging.Debug(logCtx,
+		logging.Debug(
+			logCtx,
 			"filterSessionsWithNewContent: getStagedFiles failed, skipping overlap checks",
 			slog.String("error", err.Error()),
 		)
@@ -1507,21 +1542,24 @@ func (s *ManualCommitStrategy) filterSessionsWithNewContent(ctx context.Context,
 	for _, state := range sessions {
 		// Skip fully-condensed ended sessions — no new content possible.
 		if state.FullyCondensed && state.Phase == session.PhaseEnded {
-			logging.Debug(logCtx, "filterSessionsWithNewContent: skipping fully-condensed ended session",
+			logging.Debug(
+				logCtx, "filterSessionsWithNewContent: skipping fully-condensed ended session",
 				slog.String("session_id", state.SessionID),
 			)
 			continue
 		}
 		hasNew, err := s.sessionHasNewContent(ctx, repo, state, contentCheckOpts{stagedFiles: stagedFiles})
 		if err != nil {
-			logging.Debug(logCtx, "filterSessionsWithNewContent: error checking session, skipping it",
+			logging.Debug(
+				logCtx, "filterSessionsWithNewContent: error checking session, skipping it",
 				slog.String("session_id", state.SessionID),
 				slog.String("error", err.Error()),
 			)
 			continue
 		}
 		if !hasNew {
-			logging.Debug(logCtx, "filterSessionsWithNewContent: session has no new content",
+			logging.Debug(
+				logCtx, "filterSessionsWithNewContent: session has no new content",
 				slog.String("session_id", state.SessionID),
 				slog.String("phase", string(state.Phase)),
 				slog.Int("files_touched", len(state.FilesTouched)),
@@ -1566,7 +1604,8 @@ func (s *ManualCommitStrategy) sessionHasNewContent(ctx context.Context, repo *g
 		refName := plumbing.NewBranchReferenceName(shadowBranchName)
 		ref, err := repo.Reference(refName, true)
 		if err != nil {
-			logging.Debug(logCtx, "sessionHasNewContent: no shadow branch, checking live transcript",
+			logging.Debug(
+				logCtx, "sessionHasNewContent: no shadow branch, checking live transcript",
 				slog.String("session_id", state.SessionID),
 				slog.String("shadow_branch", shadowBranchName),
 			)
@@ -1608,7 +1647,8 @@ func (s *ManualCommitStrategy) sessionHasNewContent(ctx context.Context, repo *g
 			if len(opts.stagedFiles) > 0 {
 				// PrepareCommitMsg context: check staged files overlap with content
 				result := stagedFilesOverlapWithContent(ctx, repo, tree, opts.stagedFiles, state.FilesTouched)
-				logging.Debug(logCtx, "sessionHasNewContent: no transcript, carry-forward with staged files",
+				logging.Debug(
+					logCtx, "sessionHasNewContent: no transcript, carry-forward with staged files",
 					slog.String("session_id", state.SessionID),
 					slog.Int("files_touched", len(state.FilesTouched)),
 					slog.Int("staged_files", len(opts.stagedFiles)),
@@ -1618,14 +1658,16 @@ func (s *ManualCommitStrategy) sessionHasNewContent(ctx context.Context, repo *g
 			}
 			// PostCommit context: no staged files, but we have carry-forward files.
 			// Return true and let the caller do the overlap check with committed files.
-			logging.Debug(logCtx, "sessionHasNewContent: no transcript, carry-forward without staged files (post-commit context)",
+			logging.Debug(
+				logCtx, "sessionHasNewContent: no transcript, carry-forward without staged files (post-commit context)",
 				slog.String("session_id", state.SessionID),
 				slog.Int("files_touched", len(state.FilesTouched)),
 			)
 			return true, nil
 		}
 		// No transcript and no FilesTouched - fall back to live transcript check
-		logging.Debug(logCtx, "sessionHasNewContent: no transcript and no files touched, checking live transcript",
+		logging.Debug(
+			logCtx, "sessionHasNewContent: no transcript and no files touched, checking live transcript",
 			slog.String("session_id", state.SessionID),
 		)
 		return s.sessionHasNewContentFromLiveTranscript(ctx, state, opts.stagedFiles)
@@ -1658,7 +1700,8 @@ func (s *ManualCommitStrategy) sessionHasNewContent(ctx context.Context, repo *g
 	}
 	hasUncommittedFiles := len(state.FilesTouched) > 0
 
-	logging.Debug(logCtx, "sessionHasNewContent: transcript size check",
+	logging.Debug(
+		logCtx, "sessionHasNewContent: transcript size check",
 		slog.String("session_id", state.SessionID),
 		slog.Int64("transcript_blob_size", transcriptBlobSize),
 		slog.Int64("checkpoint_transcript_size", state.CheckpointTranscriptSize),
@@ -1674,7 +1717,8 @@ func (s *ManualCommitStrategy) sessionHasNewContent(ctx context.Context, repo *g
 	// This is primarily for PrepareCommitMsg; in PostCommit, stagedFiles is nil/empty.
 	if len(opts.stagedFiles) > 0 {
 		result := stagedFilesOverlapWithContent(ctx, repo, tree, opts.stagedFiles, state.FilesTouched)
-		logging.Debug(logCtx, "sessionHasNewContent: staged files overlap check",
+		logging.Debug(
+			logCtx, "sessionHasNewContent: staged files overlap check",
 			slog.String("session_id", state.SessionID),
 			slog.Int("staged_files", len(opts.stagedFiles)),
 			slog.Bool("result", result),
@@ -1694,7 +1738,8 @@ func (s *ManualCommitStrategy) sessionHasNewContent(ctx context.Context, repo *g
 	// states may retain FilesTouched from older work, and treating that alone as
 	// fresh content would incorrectly condense old sessions into unrelated commits.
 	if hasUncommittedFiles && state.Phase == session.PhaseIdle && isRecentInteraction(state.LastInteractionTime) {
-		logging.Debug(logCtx, "sessionHasNewContent: no staged files, returning true due to recent idle carry-forward files",
+		logging.Debug(
+			logCtx, "sessionHasNewContent: no staged files, returning true due to recent idle carry-forward files",
 			slog.String("session_id", state.SessionID),
 			slog.Bool("has_transcript_growth", hasTranscriptGrowth),
 			slog.Bool("has_uncommitted_files", hasUncommittedFiles),
@@ -1705,7 +1750,8 @@ func (s *ManualCommitStrategy) sessionHasNewContent(ctx context.Context, repo *g
 
 	// No staged files and no carry-forward files: transcript growth is the only
 	// remaining signal that there is new session content to condense.
-	logging.Debug(logCtx, "sessionHasNewContent: no staged files, returning transcript growth",
+	logging.Debug(
+		logCtx, "sessionHasNewContent: no staged files, returning transcript growth",
 		slog.String("session_id", state.SessionID),
 		slog.Bool("has_transcript_growth", hasTranscriptGrowth),
 		slog.Bool("has_uncommitted_files", hasUncommittedFiles),
@@ -1746,19 +1792,22 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(ctx contex
 		return false, nil
 	}
 
-	logging.Debug(logCtx, "live transcript check: found file modifications",
+	logging.Debug(
+		logCtx, "live transcript check: found file modifications",
 		slog.String("session_id", state.SessionID),
 		slog.Int("modified_files", len(modifiedFiles)),
 	)
 
-	logging.Debug(logCtx, "live transcript check: comparing staged vs modified",
+	logging.Debug(
+		logCtx, "live transcript check: comparing staged vs modified",
 		slog.String("session_id", state.SessionID),
 		slog.Int("staged_files", len(stagedFiles)),
 		slog.Int("modified_files", len(modifiedFiles)),
 	)
 
 	if !hasOverlappingFiles(stagedFiles, modifiedFiles) {
-		logging.Debug(logCtx, "live transcript check: no overlap between staged and modified files",
+		logging.Debug(
+			logCtx, "live transcript check: no overlap between staged and modified files",
 			slog.String("session_id", state.SessionID),
 		)
 		return false, nil // No overlap - staged files are unrelated to agent's work
@@ -1803,7 +1852,8 @@ func (s *ManualCommitStrategy) hasNewTranscriptWork(ctx context.Context, state *
 
 	// Re-resolve transcript path — handles agents that relocate transcripts mid-session.
 	if _, resolveErr := resolveTranscriptPath(state); resolveErr != nil {
-		logging.Debug(logCtx, "hasNewTranscriptWork: transcript path resolution failed",
+		logging.Debug(
+			logCtx, "hasNewTranscriptWork: transcript path resolution failed",
 			slog.String("session_id", state.SessionID),
 			slog.Any("error", resolveErr),
 		)
@@ -1821,7 +1871,8 @@ func (s *ManualCommitStrategy) hasNewTranscriptWork(ctx context.Context, state *
 	if state.Phase.IsActive() {
 		if preparer, ok := agent.AsTranscriptPreparer(ag); ok {
 			if prepErr := preparer.PrepareTranscript(ctx, state.TranscriptPath); prepErr != nil {
-				logging.Debug(logCtx, "prepare transcript failed",
+				logging.Debug(
+					logCtx, "prepare transcript failed",
 					slog.String("session_id", state.SessionID),
 					slog.String("agent_type", string(state.AgentType)),
 					slog.String("transcript_path", state.TranscriptPath),
@@ -1837,7 +1888,8 @@ func (s *ManualCommitStrategy) hasNewTranscriptWork(ctx context.Context, state *
 
 	currentPos, err := analyzer.GetTranscriptPosition(state.TranscriptPath)
 	if err != nil {
-		logging.Debug(logCtx, "hasNewTranscriptWork: GetTranscriptPosition failed",
+		logging.Debug(
+			logCtx, "hasNewTranscriptWork: GetTranscriptPosition failed",
 			slog.String("session_id", state.SessionID),
 			slog.String("transcript_path", state.TranscriptPath),
 			slog.Any("error", err),
@@ -1846,7 +1898,8 @@ func (s *ManualCommitStrategy) hasNewTranscriptWork(ctx context.Context, state *
 	}
 
 	if currentPos <= state.CheckpointTranscriptStart {
-		logging.Debug(logCtx, "hasNewTranscriptWork: no new content",
+		logging.Debug(
+			logCtx, "hasNewTranscriptWork: no new content",
 			slog.String("session_id", state.SessionID),
 			slog.Int("current_pos", currentPos),
 			slog.Int("start_offset", state.CheckpointTranscriptStart),
@@ -1872,7 +1925,8 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 
 	// Re-resolve transcript path — handles agents that relocate transcripts mid-session.
 	if _, resolveErr := resolveTranscriptPath(state); resolveErr != nil {
-		logging.Debug(logCtx, "extractModifiedFilesFromLiveTranscript: transcript path resolution failed",
+		logging.Debug(
+			logCtx, "extractModifiedFilesFromLiveTranscript: transcript path resolution failed",
 			slog.String("session_id", state.SessionID),
 			slog.Any("error", resolveErr),
 		)
@@ -1897,7 +1951,8 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 		subagentsDir := filepath.Join(filepath.Dir(state.TranscriptPath), state.SessionID, "subagents")
 		transcriptData, readErr := os.ReadFile(state.TranscriptPath)
 		if readErr != nil {
-			logging.Debug(logCtx, "extractModifiedFilesFromLiveTranscript: failed to read transcript",
+			logging.Debug(
+				logCtx, "extractModifiedFilesFromLiveTranscript: failed to read transcript",
 				slog.String("session_id", state.SessionID),
 				slog.String("error", readErr.Error()),
 			)
@@ -1907,7 +1962,8 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 			c := &claudecode.ClaudeCodeAgent{}
 			allFiles, extractErr := c.ExtractAllModifiedFiles(transcriptData, offset, subagentsDir)
 			if extractErr != nil {
-				logging.Debug(logCtx, "extractModifiedFilesFromLiveTranscript: extraction failed",
+				logging.Debug(
+					logCtx, "extractModifiedFilesFromLiveTranscript: extraction failed",
 					slog.String("session_id", state.SessionID),
 					slog.String("error", extractErr.Error()),
 				)
@@ -1918,7 +1974,8 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 	} else {
 		files, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, offset)
 		if err != nil {
-			logging.Debug(logCtx, "extractModifiedFilesFromLiveTranscript: main transcript extraction failed",
+			logging.Debug(
+				logCtx, "extractModifiedFilesFromLiveTranscript: main transcript extraction failed",
 				slog.String("transcript_path", state.TranscriptPath),
 				slog.Any("error", err),
 			)
@@ -2028,7 +2085,8 @@ func (s *ManualCommitStrategy) tryAgentCommitFastPath(ctx context.Context, commi
 		// (which checks extracted data, not raw state). Keep aligned.
 		if state.TranscriptPath == "" && len(state.FilesTouched) == 0 && state.StepCount == 0 {
 			emptyActiveSessions++
-			logging.Debug(logCtx, "prepare-commit-msg: fast path skipping empty session",
+			logging.Debug(
+				logCtx, "prepare-commit-msg: fast path skipping empty session",
 				slog.String("session_id", state.SessionID),
 				slog.String("agent_type", string(state.AgentType)),
 			)
@@ -2046,7 +2104,8 @@ func (s *ManualCommitStrategy) tryAgentCommitFastPath(ctx context.Context, commi
 	if activeSessions > 0 && emptyActiveSessions == activeSessions {
 		message = "prepare-commit-msg: fast path skipped all ACTIVE sessions as empty"
 	}
-	logging.Debug(logCtx, message,
+	logging.Debug(
+		logCtx, message,
 		slog.Bool("no_tty", noTTY),
 		slog.Int("sessions", len(sessions)),
 		slog.Int("active_sessions", activeSessions),
@@ -2079,7 +2138,8 @@ func (s *ManualCommitStrategy) addTrailerForAgentCommit(logCtx context.Context, 
 
 	message = addCheckpointTrailer(message, cpID)
 
-	logging.Info(logCtx, "prepare-commit-msg: agent commit trailer added",
+	logging.Info(
+		logCtx, "prepare-commit-msg: agent commit trailer added",
 		slog.String("strategy", "manual-commit"),
 		slog.String("source", source),
 		slog.String("checkpoint_id", cpID.String()),
@@ -2550,7 +2610,8 @@ func (s *ManualCommitStrategy) HandleTurnEnd(ctx context.Context, state *Session
 	errCount := s.finalizeAllTurnCheckpoints(ctx, state)
 	if errCount > 0 {
 		logCtx := logging.WithComponent(ctx, "checkpoint")
-		logging.Warn(logCtx, "HandleTurnEnd completed with errors (best-effort)",
+		logging.Warn(
+			logCtx, "HandleTurnEnd completed with errors (best-effort)",
 			slog.String("session_id", state.SessionID),
 			slog.Int("error_count", errCount),
 		)
@@ -2572,7 +2633,8 @@ func (s *ManualCommitStrategy) HandleTurnEnd(ctx context.Context, state *Session
 			if ag, agErr := agent.GetByAgentType(state.AgentType); agErr == nil {
 				if analyzer, ok := agent.AsTranscriptAnalyzer(ag); ok {
 					if pos, posErr := analyzer.GetTranscriptPosition(transcriptPath); posErr == nil && pos > state.CheckpointTranscriptStart {
-						logging.Debug(logging.WithComponent(ctx, "hooks"),
+						logging.Debug(
+							logging.WithComponent(ctx, "hooks"),
 							"advancing CheckpointTranscriptStart to turn end after mid-turn commit",
 							slog.String("session_id", state.SessionID),
 							slog.Int("old_offset", state.CheckpointTranscriptStart),
@@ -2602,7 +2664,8 @@ func precomputeTranscriptBlobsForFinalize(ctx context.Context, repo *git.Reposit
 	defer span.End()
 	precomputed, err := checkpoint.PrecomputeTranscriptBlobs(ctx, repo, transcript, state.AgentType)
 	if err != nil {
-		logging.Warn(ctx, "finalize: precompute transcript blobs failed, falling back to per-checkpoint work",
+		logging.Warn(
+			ctx, "finalize: precompute transcript blobs failed, falling back to per-checkpoint work",
 			slog.String("session_id", state.SessionID),
 			slog.String("error", err.Error()),
 		)
@@ -2626,7 +2689,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 
-	logging.Info(logCtx, "finalizing turn checkpoints with full transcript",
+	logging.Info(
+		logCtx, "finalizing turn checkpoints with full transcript",
 		slog.String("session_id", state.SessionID),
 		slog.Int("checkpoint_count", len(state.TurnCheckpointIDs)),
 	)
@@ -2636,7 +2700,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 	// Read full transcript from live transcript file, re-resolving the path if the
 	// agent relocated it mid-session (e.g., Cursor CLI flat → nested layout change).
 	if state.TranscriptPath == "" {
-		logging.Warn(logCtx, "finalize: no transcript path, skipping",
+		logging.Warn(
+			logCtx, "finalize: no transcript path, skipping",
 			slog.String("session_id", state.SessionID),
 		)
 		state.TurnCheckpointIDs = nil
@@ -2645,7 +2710,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 
 	transcriptPath, resolveErr := resolveTranscriptPath(state)
 	if resolveErr != nil {
-		logging.Warn(logCtx, "finalize: transcript path resolution failed, skipping",
+		logging.Warn(
+			logCtx, "finalize: transcript path resolution failed, skipping",
 			slog.String("session_id", state.SessionID),
 			slog.Any("error", resolveErr),
 		)
@@ -2659,7 +2725,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 		if err != nil {
 			msg = "finalize: failed to read transcript, skipping"
 		}
-		logging.Warn(logCtx, msg,
+		logging.Warn(
+			logCtx, msg,
 			slog.String("session_id", state.SessionID),
 			slog.String("transcript_path", state.TranscriptPath),
 			slog.Any("error", err),
@@ -2671,7 +2738,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 	// Open repository (needed for shadow branch prompt reading and checkpoint store)
 	repo, err := OpenRepository(ctx)
 	if err != nil {
-		logging.Warn(logCtx, "finalize: failed to open repository",
+		logging.Warn(
+			logCtx, "finalize: failed to open repository",
 			slog.String("error", err.Error()),
 		)
 		state.TurnCheckpointIDs = nil
@@ -2696,7 +2764,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 	redactedTranscript, redactErr := redact.JSONLBytes(fullTranscript)
 	redactSpan.End()
 	if redactErr != nil {
-		logging.Warn(logCtx, "finalize: transcript redaction failed, dropping transcript",
+		logging.Warn(
+			logCtx, "finalize: transcript redaction failed, dropping transcript",
 			slog.String("session_id", state.SessionID),
 			slog.String("error", redactErr.Error()),
 		)
@@ -2714,7 +2783,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 	if settings.IsCheckpointsV2Enabled(logCtx) {
 		v2URL, err := remote.FetchURL(logCtx)
 		if err != nil {
-			logging.Debug(logCtx, "finalize: using origin for v2 store fetch remote",
+			logging.Debug(
+				logCtx, "finalize: using origin for v2 store fetch remote",
 				slog.String("error", err.Error()),
 			)
 			v2URL = originRemote
@@ -2738,7 +2808,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 	for _, cpIDStr := range state.TurnCheckpointIDs {
 		cpID, parseErr := id.NewCheckpointID(cpIDStr)
 		if parseErr != nil {
-			logging.Warn(logCtx, "finalize: invalid checkpoint ID, skipping",
+			logging.Warn(
+				logCtx, "finalize: invalid checkpoint ID, skipping",
 				slog.String("checkpoint_id", cpIDStr),
 				slog.String("error", parseErr.Error()),
 			)
@@ -2767,7 +2838,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 		if !v2 {
 			updateErr := store.UpdateCommitted(ctx, updateOpts)
 			if updateErr != nil {
-				logging.Warn(logCtx, "finalize: failed to update checkpoint",
+				logging.Warn(
+					logCtx, "finalize: failed to update checkpoint",
 					slog.String("checkpoint_id", cpIDStr),
 					slog.String("error", updateErr.Error()),
 				)
@@ -2791,7 +2863,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 			}
 		}
 
-		logging.Info(logCtx, "finalize: checkpoint updated with full transcript",
+		logging.Info(
+			logCtx, "finalize: checkpoint updated with full transcript",
 			slog.String("checkpoint_id", cpIDStr),
 			slog.String("session_id", state.SessionID),
 		)
@@ -2836,7 +2909,8 @@ func finalizeInternalCompactTranscript(
 		if readErr != nil {
 			errMsg = readErr.Error()
 		}
-		logging.Debug(ctx, "finalize: failed to read checkpoint metadata, using full transcript for compact output",
+		logging.Debug(
+			ctx, "finalize: failed to read checkpoint metadata, using full transcript for compact output",
 			slog.String("checkpoint_id", cpID.String()),
 			slog.String("session_id", state.SessionID),
 			slog.String("error", errMsg),
@@ -2856,7 +2930,8 @@ func filesChangedInCommit(ctx context.Context, repoDir string, commit *object.Co
 	}
 	result, err := gitops.DiffTreeFiles(ctx, repoDir, parentHash, commit.Hash.String())
 	if err != nil {
-		logging.Warn(ctx, "post-commit: git diff-tree failed, falling back to tree walk",
+		logging.Warn(
+			ctx, "post-commit: git diff-tree failed, falling back to tree walk",
 			slog.String("commit", commit.Hash.String()),
 			slog.String("error", err.Error()),
 		)
@@ -2870,7 +2945,8 @@ func filesChangedInCommit(ctx context.Context, repoDir string, commit *object.Co
 func filesChangedInCommitFallback(ctx context.Context, headTree, parentTree *object.Tree) map[string]struct{} {
 	files, err := getAllChangedFilesBetweenTreesSlow(ctx, parentTree, headTree)
 	if err != nil {
-		logging.Warn(ctx, "post-commit: tree walk fallback also failed; condensation and carry-forward may be affected",
+		logging.Warn(
+			ctx, "post-commit: tree walk fallback also failed; condensation and carry-forward may be affected",
 			slog.String("error", err.Error()),
 		)
 		return make(map[string]struct{})
@@ -2924,7 +3000,8 @@ func (s *ManualCommitStrategy) carryForwardToNewShadowBranch(
 	if err != nil {
 		carryForwardWriteSpan.RecordError(err)
 		carryForwardWriteSpan.End()
-		logging.Warn(logCtx, "post-commit: carry-forward failed",
+		logging.Warn(
+			logCtx, "post-commit: carry-forward failed",
 			slog.String("session_id", state.SessionID),
 			slog.String("error", err.Error()),
 		)
@@ -2933,7 +3010,8 @@ func (s *ManualCommitStrategy) carryForwardToNewShadowBranch(
 	carryForwardWriteSpan.End()
 	duration := time.Since(start)
 	if result.Skipped {
-		logging.Debug(logCtx, "post-commit: carry-forward skipped (no changes)",
+		logging.Debug(
+			logCtx, "post-commit: carry-forward skipped (no changes)",
 			slog.String("session_id", state.SessionID),
 		)
 		return
@@ -2957,11 +3035,13 @@ func (s *ManualCommitStrategy) carryForwardToNewShadowBranch(
 	// IDs from earlier in the turn still need finalization with the full transcript
 	// when HandleTurnEnd runs at stop time.
 
-	logging.Info(logCtx, "post-commit: carried forward remaining files",
+	logging.Info(
+		logCtx, "post-commit: carried forward remaining files",
 		slog.String("session_id", state.SessionID),
 		slog.Int("remaining_files", len(remainingFiles)),
 	)
-	logging.Debug(logCtx, "carry-forward timings",
+	logging.Debug(
+		logCtx, "carry-forward timings",
 		slog.String("session_id", state.SessionID),
 		slog.Int64("write_carry_forward_shadow_ms", duration.Milliseconds()),
 		slog.Int("remaining_files", len(remainingFiles)),

@@ -27,7 +27,7 @@ type Droid struct{}
 
 func (d *Droid) Name() string               { return "factoryai-droid" }
 func (d *Droid) Binary() string             { return "droid" }
-func (d *Droid) TraceAgent() string        { return "factoryai-droid" }
+func (d *Droid) TraceAgent() string         { return "factoryai-droid" }
 func (d *Droid) PromptPattern() string      { return `>` }
 func (d *Droid) TimeoutMultiplier() float64 { return 2.0 }
 

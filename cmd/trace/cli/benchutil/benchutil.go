@@ -159,7 +159,8 @@ func NewBenchRepo(b *testing.B, opts RepoOpts) *BenchRepo {
 	// Optionally create feature branch
 	if opts.FeatureBranch != "" {
 		ref := plumbing.NewHashReference(
-			plumbing.NewBranchReferenceName(opts.FeatureBranch), headHash)
+			plumbing.NewBranchReferenceName(opts.FeatureBranch), headHash,
+		)
 		if err := repo.Storer.SetReference(ref); err != nil {
 			b.Fatalf("create branch: %v", err)
 		}

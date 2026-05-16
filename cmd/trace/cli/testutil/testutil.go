@@ -309,8 +309,10 @@ func SafeIDPrefix(id string) string {
 // gitEmptyConfigPath returns the path to an empty file suitable for use as
 // GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM. We use an empty file instead of
 // os.DevNull because git on Windows cannot open NUL as a config file.
-var gitEmptyConfig string
-var gitEmptyConfigOnce sync.Once
+var (
+	gitEmptyConfig     string
+	gitEmptyConfigOnce sync.Once
+)
 
 func gitEmptyConfigPath() string {
 	gitEmptyConfigOnce.Do(func() {
@@ -342,7 +344,8 @@ func GitIsolatedEnv() []string {
 		}
 		filtered = append(filtered, e)
 	}
-	return append(filtered,
+	return append(
+		filtered,
 		"GIT_CONFIG_GLOBAL="+gitEmptyConfigPath(), // Isolate from user's global git config (e.g. global gitignore)
 		"GIT_CONFIG_SYSTEM="+gitEmptyConfigPath(), // Isolate from system git config
 	)

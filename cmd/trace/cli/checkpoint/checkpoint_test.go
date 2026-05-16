@@ -55,19 +55,19 @@ func TestCopyMetadataDir_SkipsSymlinks(t *testing.T) {
 
 	// Create metadata directory structure
 	metadataDir := filepath.Join(tempDir, "metadata")
-	if err := os.MkdirAll(metadataDir, 0755); err != nil {
+	if err := os.MkdirAll(metadataDir, 0o755); err != nil {
 		t.Fatalf("failed to create metadata dir: %v", err)
 	}
 
 	// Create a regular file that should be included
 	regularFile := filepath.Join(metadataDir, "regular.txt")
-	if err := os.WriteFile(regularFile, []byte("regular content"), 0644); err != nil {
+	if err := os.WriteFile(regularFile, []byte("regular content"), 0o644); err != nil {
 		t.Fatalf("failed to create regular file: %v", err)
 	}
 
 	// Create a sensitive file outside the metadata directory
 	sensitiveFile := filepath.Join(tempDir, "sensitive.txt")
-	if err := os.WriteFile(sensitiveFile, []byte("SECRET DATA"), 0644); err != nil {
+	if err := os.WriteFile(sensitiveFile, []byte("SECRET DATA"), 0o644); err != nil {
 		t.Fatalf("failed to create sensitive file: %v", err)
 	}
 

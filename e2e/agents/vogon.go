@@ -31,7 +31,7 @@ type Vogon struct{}
 
 func (v *Vogon) Name() string               { return "vogon" }
 func (v *Vogon) Binary() string             { return "vogon" }
-func (v *Vogon) TraceAgent() string        { return "vogon" }
+func (v *Vogon) TraceAgent() string         { return "vogon" }
 func (v *Vogon) PromptPattern() string      { return `>` }
 func (v *Vogon) TimeoutMultiplier() float64 { return 0.5 } // Faster than real agents
 

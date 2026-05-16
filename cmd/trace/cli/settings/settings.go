@@ -670,7 +670,8 @@ func CheckpointsVersion(ctx context.Context) int {
 		if configured, ok := s.StrategyOptions["checkpoints_version"]; ok {
 			if _, supported := parseCheckpointsVersion(configured); !supported {
 				checkpointsVersionWarningOnce.Do(func() {
-					fmt.Fprintf(os.Stderr,
+					fmt.Fprintf(
+						os.Stderr,
 						"[trace] unsupported strategy_options.checkpoints_version %v detected in settings. Falling back to the default version (1).\n",
 						configured,
 					)

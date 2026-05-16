@@ -120,7 +120,8 @@ func PushURL(ctx context.Context, pushRemoteName string) (string, bool, error) {
 	if err != nil {
 		fallbackURL, fallbackErr := resolvePushFallbackURL(ctx, pushRemoteName, originURL)
 		if fallbackErr == nil {
-			logFallback(ctx, "push", fallbackURL, "load settings", err,
+			logFallback(
+				ctx, "push", fallbackURL, "load settings", err,
 				slog.String("push_remote", pushRemoteName),
 			)
 			return fallbackURL, false, nil
@@ -141,7 +142,8 @@ func PushURL(ctx context.Context, pushRemoteName string) (string, bool, error) {
 	if err != nil {
 		fallbackURL, fallbackErr := resolvePushFallbackURL(ctx, pushRemoteName, originURL)
 		if fallbackErr == nil {
-			logFallback(ctx, "push", fallbackURL, "get push remote URL", err,
+			logFallback(
+				ctx, "push", fallbackURL, "get push remote URL", err,
 				slog.String("push_remote", pushRemoteName),
 			)
 			return fallbackURL, false, nil
@@ -152,7 +154,8 @@ func PushURL(ctx context.Context, pushRemoteName string) (string, bool, error) {
 	pushInfo, err := ParseURL(pushRemoteURL)
 	if err != nil {
 		if originURL != "" {
-			logFallback(ctx, "push", originURL, "parse push remote URL", err,
+			logFallback(
+				ctx, "push", originURL, "parse push remote URL", err,
 				slog.String("push_remote", pushRemoteName),
 			)
 			return originURL, false, nil
@@ -188,7 +191,8 @@ func PushURL(ctx context.Context, pushRemoteName string) (string, bool, error) {
 	if err != nil {
 		fallbackURL, fallbackErr := resolvePushFallbackURL(ctx, pushRemoteName, originURL)
 		if fallbackErr == nil {
-			logFallback(ctx, "push", fallbackURL, "derive push checkpoint URL", err,
+			logFallback(
+				ctx, "push", fallbackURL, "derive push checkpoint URL", err,
 				slog.String("push_remote", pushRemoteName),
 			)
 			return fallbackURL, false, nil
@@ -203,7 +207,8 @@ func PushURL(ctx context.Context, pushRemoteName string) (string, bool, error) {
 func Configured(ctx context.Context) bool {
 	s, err := settings.Load(ctx)
 	if err != nil {
-		logging.Warn(ctx, "checkpoint remote configuration unavailable; treating as not configured",
+		logging.Warn(
+			ctx, "checkpoint remote configuration unavailable; treating as not configured",
 			slog.String("error", err.Error()),
 		)
 		return false

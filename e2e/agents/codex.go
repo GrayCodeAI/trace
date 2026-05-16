@@ -33,7 +33,7 @@ func (s *CodexSession) Home() string { return s.home }
 
 func (c *Codex) Name() string               { return "codex" }
 func (c *Codex) Binary() string             { return "codex" }
-func (c *Codex) TraceAgent() string        { return "codex" }
+func (c *Codex) TraceAgent() string         { return "codex" }
 func (c *Codex) PromptPattern() string      { return `›` }
 func (c *Codex) TimeoutMultiplier() float64 { return 1.5 }
 
@@ -115,7 +115,8 @@ func (c *Codex) RunPrompt(ctx context.Context, dir string, prompt string, opts .
 	}
 	args = append(args, prompt)
 
-	env := append(filterEnv(os.Environ(), "TRACE_TEST_TTY", "CODEX_HOME"),
+	env := append(
+		filterEnv(os.Environ(), "TRACE_TEST_TTY", "CODEX_HOME"),
 		"CODEX_HOME="+home,
 	)
 

@@ -16,8 +16,10 @@ import (
 // Hook marker used to identify Trace CLI hooks
 const traceHookMarker = "Trace CLI hooks"
 
-const backupSuffix = ".pre-trace"
-const chainComment = "# Chain: run pre-existing hook"
+const (
+	backupSuffix = ".pre-trace"
+	chainComment = "# Chain: run pre-existing hook"
+)
 
 // gitHookNames are the git hooks managed by Trace CLI
 var gitHookNames = []string{"prepare-commit-msg", "commit-msg", "post-commit", "post-rewrite", "pre-push"}

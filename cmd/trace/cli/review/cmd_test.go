@@ -386,8 +386,10 @@ func (p *stubDispatchProcess) Events() <-chan reviewtypes.Event {
 func (p *stubDispatchProcess) Wait() error { return nil }
 
 // Compile-time interface check.
-var _ reviewtypes.AgentReviewer = (*stubDispatchReviewer)(nil)
-var _ reviewtypes.Process = (*stubDispatchProcess)(nil)
+var (
+	_ reviewtypes.AgentReviewer = (*stubDispatchReviewer)(nil)
+	_ reviewtypes.Process       = (*stubDispatchProcess)(nil)
+)
 
 type captureRunConfigReviewer struct {
 	name   string

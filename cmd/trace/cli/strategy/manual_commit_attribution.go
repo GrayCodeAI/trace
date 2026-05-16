@@ -375,7 +375,8 @@ func diffNonAgentFiles(ctx context.Context, p AttributionParams) (nonAgentFileDi
 	}
 	allChangedFiles, err := getAllChangedFiles(ctx, p.BaseTree, p.HeadTree, p.RepoDir, diffBaseCommit, p.HeadCommitHash)
 	if err != nil {
-		logging.Warn(logging.WithComponent(ctx, "attribution"),
+		logging.Warn(
+			logging.WithComponent(ctx, "attribution"),
 			"attribution: failed to enumerate changed files",
 			slog.String("error", err.Error()),
 		)

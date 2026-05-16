@@ -9,8 +9,10 @@ import (
 	"testing"
 )
 
-const testOwner = "GrayCodeAI"
-const testRepo = "trace.io"
+const (
+	testOwner = "GrayCodeAI"
+	testRepo  = "trace.io"
+)
 
 // -- ParseGitHubRemote tests --
 
@@ -597,9 +599,11 @@ func TestConfig_HasFilters(t *testing.T) {
 
 // -- ParseSearchInput tests --
 
-const testQuery = "auth"
-const testAuthor = "alice"
-const testDateWeek = "week"
+const (
+	testQuery    = "auth"
+	testAuthor   = "alice"
+	testDateWeek = "week"
+)
 
 func TestParseSearchInput_QueryOnly(t *testing.T) {
 	t.Parallel()

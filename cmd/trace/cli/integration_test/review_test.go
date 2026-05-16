@@ -133,7 +133,8 @@ printf '%s\n' '{"session_id":"` + sessionID + `","transcript_path":"","prompt":"
 
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "review")
 	cmd.Dir = env.RepoDir
-	cmd.Env = envWithOverrides(env.cliEnv(),
+	cmd.Env = envWithOverrides(
+		env.cliEnv(),
 		"PATH="+fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"TRACE_TEST_BINARY="+getTestBinary(),
 	)

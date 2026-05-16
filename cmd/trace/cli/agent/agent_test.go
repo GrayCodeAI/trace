@@ -8,8 +8,10 @@ import (
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent/types"
 )
 
-const mockAgentName types.AgentName = "mock" // Used by mock implementations
-const mockAgentType types.AgentType = "Mock Agent"
+const (
+	mockAgentName types.AgentName = "mock" // Used by mock implementations
+	mockAgentType types.AgentType = "Mock Agent"
+)
 
 // mockAgent is a minimal implementation of Agent for testing interface compliance.
 type mockAgent struct{}
@@ -29,6 +31,7 @@ func (m *mockAgent) ReadTranscript(_ string) ([]byte, error) { return nil, nil }
 func (m *mockAgent) ChunkTranscript(_ context.Context, content []byte, _ int) ([][]byte, error) {
 	return [][]byte{content}, nil
 }
+
 func (m *mockAgent) ReassembleTranscript(chunks [][]byte) ([]byte, error) {
 	var result []byte
 	for _, c := range chunks {

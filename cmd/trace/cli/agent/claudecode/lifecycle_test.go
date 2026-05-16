@@ -20,7 +20,6 @@ func TestParseHookEvent_SessionStart(t *testing.T) {
 	input := `{"session_id": "test-session-123", "transcript_path": "/tmp/transcript.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -46,7 +45,6 @@ func TestParseHookEvent_SessionStart_IncludesModel(t *testing.T) {
 	input := `{"session_id": "model-session", "transcript_path": "/tmp/t.jsonl", "model": "claude-sonnet-4-20250514"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +64,6 @@ func TestParseHookEvent_SessionStart_EmptyModel(t *testing.T) {
 	input := `{"session_id": "no-model-session", "transcript_path": "/tmp/t.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionStart, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -83,7 +80,6 @@ func TestParseHookEvent_TurnStart(t *testing.T) {
 	input := `{"session_id": "sess-456", "transcript_path": "/tmp/t.jsonl", "prompt": "Hello world"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameUserPromptSubmit, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -106,7 +102,6 @@ func TestParseHookEvent_TurnEnd(t *testing.T) {
 	input := `{"session_id": "sess-789", "transcript_path": "/tmp/stop.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameStop, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -126,7 +121,6 @@ func TestParseHookEvent_TurnEnd_IncludesModel(t *testing.T) {
 	input := `{"session_id": "sess-stop-model", "transcript_path": "/tmp/stop.jsonl", "model": "claude-opus-4-6"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameStop, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -143,7 +137,6 @@ func TestParseHookEvent_SessionEnd(t *testing.T) {
 	input := `{"session_id": "ending-session", "transcript_path": "/tmp/end.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionEnd, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -163,7 +156,6 @@ func TestParseHookEvent_SessionEnd_IncludesModel(t *testing.T) {
 	input := `{"session_id": "end-model", "transcript_path": "/tmp/end.jsonl", "model": "claude-sonnet-4-20250514"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNameSessionEnd, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,7 +182,6 @@ func TestParseHookEvent_SubagentStart(t *testing.T) {
 	}
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNamePreTask, strings.NewReader(string(inputBytes)))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -228,7 +219,6 @@ func TestParseHookEvent_SubagentEnd(t *testing.T) {
 	}
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNamePostTask, strings.NewReader(string(inputBytes)))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -261,7 +251,6 @@ func TestParseHookEvent_SubagentEnd_NoAgentID(t *testing.T) {
 	}
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNamePostTask, strings.NewReader(string(inputBytes)))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -278,7 +267,6 @@ func TestParseHookEvent_PostTodo_ReturnsNil(t *testing.T) {
 	input := `{"session_id": "todo-session", "transcript_path": "/tmp/todo.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), HookNamePostTodo, strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -294,7 +282,6 @@ func TestParseHookEvent_UnknownHook_ReturnsNil(t *testing.T) {
 	input := `{"session_id": "unknown", "transcript_path": "/tmp/unknown.jsonl"}`
 
 	event, err := ag.ParseHookEvent(context.Background(), "unknown-hook-name", strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -386,7 +373,6 @@ func TestParseHookEvent_AllHookTypes(t *testing.T) {
 
 			ag := &ClaudeCodeAgent{}
 			event, err := ag.ParseHookEvent(context.Background(), tc.hookName, strings.NewReader(tc.inputTemplate))
-
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -412,7 +398,6 @@ func TestReadAndParse_ValidInput(t *testing.T) {
 	input := `{"session_id": "test-123", "transcript_path": "/path/to/transcript"}`
 
 	result, err := agent.ReadAndParseHookInput[sessionInfoRaw](strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -458,7 +443,6 @@ func TestReadAndParse_PartialJSON(t *testing.T) {
 	input := `{"session_id": "partial-only"}`
 
 	result, err := agent.ReadAndParseHookInput[sessionInfoRaw](strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -477,7 +461,6 @@ func TestReadAndParse_ExtraFields(t *testing.T) {
 	input := `{"session_id": "test", "transcript_path": "/t", "extra_field": "ignored", "another": 123}`
 
 	result, err := agent.ReadAndParseHookInput[sessionInfoRaw](strings.NewReader(input))
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

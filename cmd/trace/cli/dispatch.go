@@ -13,11 +13,13 @@ import (
 	"golang.org/x/term"
 )
 
-var runDispatch = dispatchpkg.Run
-var renderDispatchMarkdown = dispatchpkg.RenderMarkdown
-var dispatchTerminalMode = interactive.IsTerminalWriter
-var runInteractiveDispatch = defaultRunInteractiveDispatch
-var renderTerminalMarkdown = defaultRenderTerminalMarkdown
+var (
+	runDispatch            = dispatchpkg.Run
+	renderDispatchMarkdown = dispatchpkg.RenderMarkdown
+	dispatchTerminalMode   = interactive.IsTerminalWriter
+	runInteractiveDispatch = defaultRunInteractiveDispatch
+	renderTerminalMarkdown = defaultRenderTerminalMarkdown
+)
 
 func newDispatchCmd() *cobra.Command {
 	var (

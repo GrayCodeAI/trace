@@ -223,7 +223,8 @@ func (s *V2GitStore) updateCommittedMain(ctx context.Context, opts UpdateCommitt
 	if sessionIndex >= len(summary.Sessions) {
 		// findSessionIndex returns next-available when not found; fall back to latest
 		sessionIndex = len(summary.Sessions) - 1
-		logging.Debug(ctx, "v2 UpdateCommitted: session ID not found, falling back to latest",
+		logging.Debug(
+			ctx, "v2 UpdateCommitted: session ID not found, falling back to latest",
 			slog.String("session_id", opts.SessionID),
 			slog.String("checkpoint_id", string(opts.CheckpointID)),
 			slog.Int("fallback_index", sessionIndex),
@@ -701,7 +702,8 @@ func (s *V2GitStore) writeCommittedFullTranscript(ctx context.Context, opts Writ
 func (s *V2GitStore) rotateCurrentIfNeeded(ctx context.Context, treeHash plumbing.Hash) {
 	checkpointCount, countErr := s.CountCheckpointsInTree(treeHash)
 	if countErr != nil {
-		logging.Warn(ctx, "failed to count checkpoints for rotation check",
+		logging.Warn(
+			ctx, "failed to count checkpoints for rotation check",
 			slog.String("error", countErr.Error()),
 		)
 		return
@@ -710,7 +712,8 @@ func (s *V2GitStore) rotateCurrentIfNeeded(ctx context.Context, treeHash plumbin
 		return
 	}
 	if rotErr := s.rotateGeneration(ctx); rotErr != nil {
-		logging.Warn(ctx, "generation rotation failed",
+		logging.Warn(
+			ctx, "generation rotation failed",
 			slog.String("error", rotErr.Error()),
 			slog.Int("checkpoint_count", checkpointCount),
 		)

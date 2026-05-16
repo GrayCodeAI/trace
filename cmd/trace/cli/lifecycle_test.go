@@ -416,7 +416,6 @@ func TestHandleLifecycleTurnEnd_EmptyRepository(t *testing.T) {
 	}
 
 	err := handleLifecycleTurnEnd(context.Background(), ag, event)
-
 	// Should return nil so the hook exits 0 — agents treat non-zero as failure.
 	// The user was already warned at session start.
 	if err != nil {
