@@ -12,7 +12,6 @@ linters:
     - copyloopvar
     - decorder
     - durationcheck
-    - embeddedstructfieldcheck
     - errchkjson
     - errname
     - errorlint
@@ -45,11 +44,9 @@ linters:
     - nilnesserr
     - nilnil
     - noctx
-    - nolintlint
     - nosprintfhostport
     - perfsprint
     - promlinter
-    - protogetter
     - reassign
     - recvcheck
     - revive
@@ -137,6 +134,8 @@ linters:
           - gosec
           - wrapcheck
           - forbidigo
+          - gocritic
+          - usetesting
       - path: ^e2e/
         linters:
           - errcheck
@@ -153,6 +152,9 @@ linters:
       - path: ^internal/sim/
         linters:
           - wrapcheck
+      - path: ^cmd/trace/cli/benchutil/
+        linters:
+          - usetesting
       - text: "`strat` is a misspelling"
         linters:
           - misspell

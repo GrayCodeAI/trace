@@ -325,6 +325,7 @@ func renderDotChart(w io.Writer, sty activityStyles, hourly []hourlyPoint, repos
 // renderContributionChart to enable it.
 var _ = renderBrailleChart // keep compiled while inactive
 
+//nolint:maintidx // Complex rendering function kept compiled but inactive
 func renderBrailleChart(w io.Writer, sty activityStyles, hourly []hourlyPoint, repos []repoContribution) {
 	// Agent breakdown header + total
 	agentTotals := make(map[string]int)
