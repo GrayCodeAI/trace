@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/). This project ad
 
 ---
 
+## [0.2.1](https://github.com/GrayCodeAI/trace/compare/v0.2.0...v0.2.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* gofumpt formatting + go mod tidy ([b0c7ecb](https://github.com/GrayCodeAI/trace/commit/b0c7ecb2bfee6815fba3a0bf5ddb2422eaff9ca2))
+* gofumpt formatting + go mod tidy ([945eac1](https://github.com/GrayCodeAI/trace/commit/945eac1609c6de4bd7e23b82582c59be9aeb6927))
+* upgrade Go from 1.26.1 to 1.26.3 to patch stdlib vulnerabilities ([6480766](https://github.com/GrayCodeAI/trace/commit/648076644f70601ce63fbe95cefe9dd13d31a334))
+
 ## [Unreleased]
 
 ### Changed
