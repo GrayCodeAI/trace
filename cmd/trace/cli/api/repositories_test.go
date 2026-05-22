@@ -19,8 +19,8 @@ func TestClient_ListRepositories_SendsSortAndDecodesResponse(t *testing.T) {
 		gotAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"repositories":[` + //nolint:errcheck // test handler
-			`{"full_name":"GrayCodeAI/cli","checkpoint_count":12},` +
-			`{"full_name":"GrayCodeAI/trace.io","checkpoint_count":3}` +
+			`{"full_name":"entireio/cli","checkpoint_count":12},` +
+			`{"full_name":"entireio/entire.io","checkpoint_count":3}` +
 			`]}`))
 	}))
 	defer server.Close()
@@ -46,10 +46,10 @@ func TestClient_ListRepositories_SendsSortAndDecodesResponse(t *testing.T) {
 	if len(repos) != 2 {
 		t.Fatalf("len(repos) = %d, want 2", len(repos))
 	}
-	if repos[0].FullName != "GrayCodeAI/cli" || repos[0].CheckpointCount != 12 {
+	if repos[0].FullName != "entireio/cli" || repos[0].CheckpointCount != 12 {
 		t.Errorf("repos[0] = %+v", repos[0])
 	}
-	if repos[1].FullName != "GrayCodeAI/trace.io" || repos[1].CheckpointCount != 3 {
+	if repos[1].FullName != "entireio/entire.io" || repos[1].CheckpointCount != 3 {
 		t.Errorf("repos[1] = %+v", repos[1])
 	}
 }
