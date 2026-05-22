@@ -16,6 +16,7 @@ import (
 	_ "github.com/GrayCodeAI/trace/cmd/trace/cli/agent/factoryaidroid"
 	_ "github.com/GrayCodeAI/trace/cmd/trace/cli/agent/geminicli"
 	_ "github.com/GrayCodeAI/trace/cmd/trace/cli/agent/opencode"
+	_ "github.com/GrayCodeAI/trace/cmd/trace/cli/agent/pi"
 	_ "github.com/GrayCodeAI/trace/cmd/trace/cli/agent/vogon"
 
 	// support external agents
