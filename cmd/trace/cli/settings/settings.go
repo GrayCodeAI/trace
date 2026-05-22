@@ -17,6 +17,7 @@ import (
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/jsonutil"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/session"
 )
 
 const (
@@ -24,6 +25,9 @@ const (
 	TraceSettingsFile = ".trace/settings.json"
 	// TraceSettingsLocalFile is the path to the local settings override file (not committed)
 	TraceSettingsLocalFile = ".trace/settings.local.json"
+	// ClonePreferencesFile is the path inside the git common dir for clone-local preferences
+	// (review migration state, etc.). Adapted from upstream "entire/preferences.json".
+	ClonePreferencesFile = "trace/preferences.json"
 	// defaultGenerationRetentionDays is the default retention window for archived
 	// checkpoints v2 raw-transcript generations when no override is configured.
 	defaultGenerationRetentionDays = 14
@@ -952,6 +956,134 @@ func saveToFile(ctx context.Context, settings *TraceSettings, filePath string) e
 	//nolint:gosec // G306: settings file is config, not secrets; 0o644 is appropriate
 	if err := os.WriteFile(filePathAbs, data, 0o644); err != nil {
 		return fmt.Errorf("writing settings file: %w", err)
+	}
+	return nil
+}
+
+// --- Clone-local preferences and raw settings helpers (ported from upstream for review migration) ---
+
+// ClonePreferences holds per-clone (non-committed) preferences, primarily for
+// the review feature (e.g. which agent to use for review fixes, migration dismissal state).
+type ClonePreferences struct {
+	Review         map[string]ReviewConfig `json:"review,omitempty"`
+	ReviewFixAgent string                  `json:"review_fix_agent,omitempty"`
+
+	// ReviewMigrationDismissed records that the user declined the one-shot
+	// migration of review keys from project settings to clone-local prefs.
+	// Once true, `trace review` stops prompting on every invocation.
+	ReviewMigrationDismissed bool `json:"review_migration_dismissed,omitempty"`
+}
+
+// LoadProjectRaw reads .trace/settings.json as a generic JSON object.
+// Used by review migration to move keys without loading the full typed struct.
+func LoadProjectRaw(ctx context.Context) (path string, raw map[string]json.RawMessage, exists bool, err error) {
+	path, err = paths.AbsPath(ctx, TraceSettingsFile)
+	if err != nil {
+		path = TraceSettingsFile
+	}
+	data, readErr := os.ReadFile(path) //nolint:gosec
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return path, map[string]json.RawMessage{}, false, nil
+		}
+		return path, nil, false, fmt.Errorf("reading project settings: %w", readErr)
+	}
+	raw = map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return path, nil, true, fmt.Errorf("parsing project settings: %w", err)
+	}
+	return path, raw, true, nil
+}
+
+// LoadLocalRaw reads .trace/settings.local.json as a generic JSON object.
+func LoadLocalRaw(ctx context.Context) (path string, raw map[string]json.RawMessage, exists bool, err error) {
+	path, err = paths.AbsPath(ctx, TraceSettingsLocalFile)
+	if err != nil {
+		path = TraceSettingsLocalFile
+	}
+	data, readErr := os.ReadFile(path) //nolint:gosec
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return path, map[string]json.RawMessage{}, false, nil
+		}
+		return path, nil, false, fmt.Errorf("reading local settings: %w", readErr)
+	}
+	raw = map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return path, nil, true, fmt.Errorf("parsing local settings: %w", err)
+	}
+	return path, raw, true, nil
+}
+
+// SaveProjectRaw writes a generic JSON object back to .trace/settings.json atomically.
+func SaveProjectRaw(path string, raw map[string]json.RawMessage) error {
+	data, err := jsonutil.MarshalIndentWithNewline(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal project settings: %w", err)
+	}
+	if err := jsonutil.WriteFileAtomic(path, data, 0o644); err != nil {
+		return fmt.Errorf("writing project settings: %w", err)
+	}
+	return nil
+}
+
+// ClonePreferencesPath returns the path to trace/preferences.json inside the git common dir.
+func ClonePreferencesPath(ctx context.Context) (string, error) {
+	commonDir, err := session.GetGitCommonDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(commonDir, ClonePreferencesFile), nil
+}
+
+// LoadClonePreferences loads clone-local preferences from the git common dir.
+func LoadClonePreferences(ctx context.Context) (*ClonePreferences, error) {
+	path, err := ClonePreferencesPath(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return loadClonePreferencesFromFile(path)
+}
+
+// SaveClonePreferences saves clone-local preferences to the git common dir.
+func SaveClonePreferences(ctx context.Context, prefs *ClonePreferences) error {
+	path, err := ClonePreferencesPath(ctx)
+	if err != nil {
+		return err
+	}
+	return saveClonePreferencesToFile(prefs, path)
+}
+
+func loadClonePreferencesFromFile(filePath string) (*ClonePreferences, error) {
+	prefs := &ClonePreferences{}
+	data, err := os.ReadFile(filePath) //nolint:gosec
+	if err != nil {
+		if os.IsNotExist(err) {
+			return prefs, nil
+		}
+		return nil, fmt.Errorf("%w", err)
+	}
+	// Lenient decode (unknown fields are ignored) — same rationale as upstream.
+	if err := json.Unmarshal(data, prefs); err != nil {
+		return nil, fmt.Errorf("parsing preferences file: %w", err)
+	}
+	return prefs, nil
+}
+
+func saveClonePreferencesToFile(prefs *ClonePreferences, filePath string) error {
+	if prefs == nil {
+		prefs = &ClonePreferences{}
+	}
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("creating preferences directory: %w", err)
+	}
+	data, err := jsonutil.MarshalIndentWithNewline(prefs, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling preferences: %w", err)
+	}
+	if err := jsonutil.WriteFileAtomic(filePath, data, 0o644); err != nil {
+		return fmt.Errorf("writing preferences file: %w", err)
 	}
 	return nil
 }
