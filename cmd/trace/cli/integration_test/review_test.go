@@ -243,7 +243,7 @@ func TestReview_MissingSkillAtSpawn_ErrorsCleanly(t *testing.T) {
 	if !strings.Contains(output, "not installed") {
 		t.Errorf("stderr should mention skill not installed; got:\n%s", output)
 	}
-	if _, err := os.Stat(filepath.Join(env.RepoDir, ".git", "entire-sessions", "review-pending.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(env.RepoDir, ".git", "trace-sessions", "review-pending.json")); !os.IsNotExist(err) {
 		t.Errorf("pending marker should not exist; stat err=%v", err)
 	}
 }

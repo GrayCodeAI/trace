@@ -18,7 +18,7 @@ import (
 
 const (
 	pendingV2FullGenerationPublicationVersion = 1
-	pendingV2FullGenerationPublicationDirName = "entire-v2-rotations"
+	pendingV2FullGenerationPublicationDirName = "trace-v2-rotations"
 	pendingV2FullGenerationPublicationFile    = "pending.json"
 	pendingV2FullGenerationPublicationLock    = "pending.lock"
 	pendingV2FullGenerationPublicationLockTTL = 5 * time.Second
