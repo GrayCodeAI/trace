@@ -23,7 +23,7 @@ func TestDispatcher_ForwardedStopFromNonOwnerIsSkipped(t *testing.T) {
 	env := NewRepoWithCommit(t)
 
 	sessionID := "test-cursor-forward-stop"
-	statePath := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
+	statePath := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(statePath), 0o755))
 
 	// Pre-record state with AgentType=Cursor: the firing claude-code hook
@@ -71,7 +71,7 @@ func TestDispatcher_ForwardedSessionEndFromNonOwnerIsSkipped(t *testing.T) {
 	env := NewRepoWithCommit(t)
 
 	sessionID := "test-cursor-forward-sessionend"
-	statePath := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
+	statePath := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(statePath), 0o755))
 
 	initialState := map[string]any{

@@ -28,6 +28,43 @@ func sanitizeDisplayText(s string) string {
 	}, stripped)
 }
 
+// wrapDisplayWidth (ported from upstream for tui_text_test).
+func wrapDisplayWidth(s string, width int) []string {
+	if width <= 0 {
+		return nil
+	}
+	s = strings.TrimRight(s, "\n")
+	if s == "" {
+		return nil
+	}
+	paragraphs := strings.Split(s, "\n")
+	out := make([]string, 0, len(paragraphs))
+	for _, p := range paragraphs {
+		clean := sanitizeDisplayText(p)
+		if clean == "" {
+			out = append(out, "")
+			continue
+		}
+		words := strings.Fields(clean)
+		line := ""
+		for _, w := range words {
+			if len(line)+len(w)+1 > width && line != "" {
+				out = append(out, line)
+				line = w
+			} else {
+				if line != "" {
+					line += " "
+				}
+				line += w
+			}
+		}
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
 func padDisplayWidth(s string, width int) string {
 	return padDisplayWidthWith(s, width, " ")
 }
