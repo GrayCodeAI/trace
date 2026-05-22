@@ -35,7 +35,7 @@ func TestResolveURLFromBase_RejectsNonHTTPScheme(t *testing.T) {
 func TestRequireSecureURL_AllowsHTTPS(t *testing.T) {
 	t.Parallel()
 
-	if err := RequireSecureURL("https://trace.io"); err != nil {
+	if err := RequireSecureURL("https://entire.io"); err != nil {
 		t.Fatalf("RequireSecureURL(https) = %v, want nil", err)
 	}
 }

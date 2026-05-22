@@ -581,6 +581,344 @@ func TestLoadModelHint_TrimsWhitespace(t *testing.T) {
 	}
 }
 
+// --- MutateSessionState tests ---
+
+func TestMutateSessionState_BasicMutation(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	t.Chdir(dir)
+
+	ctx := context.Background()
+	state := &SessionState{
+		SessionID:  "mutate-basic",
+		BaseCommit: "abc123",
+		StartedAt:  time.Now(),
+		StepCount:  1,
+	}
+	if err := SaveSessionState(ctx, state); err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	err = MutateSessionState(ctx, "mutate-basic", func(s *SessionState) error {
+		s.StepCount = 5
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("MutateSessionState() error = %v", err)
+	}
+
+	loaded, err := LoadSessionState(ctx, "mutate-basic")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if loaded.StepCount != 5 {
+		t.Errorf("StepCount = %d, want 5", loaded.StepCount)
+	}
+}
+
+func TestMutateSessionState_SkipSave(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	t.Chdir(dir)
+
+	ctx := context.Background()
+	state := &SessionState{
+		SessionID:  "mutate-skip",
+		BaseCommit: "abc123",
+		StartedAt:  time.Now(),
+		StepCount:  3,
+	}
+	if err := SaveSessionState(ctx, state); err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	err = MutateSessionState(ctx, "mutate-skip", func(s *SessionState) error {
+		s.StepCount = 999
+		return ErrMutationSkip
+	})
+	if err != nil {
+		t.Fatalf("MutateSessionState() with ErrMutationSkip error = %v", err)
+	}
+
+	loaded, err := LoadSessionState(ctx, "mutate-skip")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if loaded.StepCount != 3 {
+		t.Errorf("StepCount = %d, want 3 (skip should not save)", loaded.StepCount)
+	}
+}
+
+func TestMutateSessionState_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	t.Chdir(dir)
+
+	err = MutateSessionState(context.Background(), "nonexistent", func(s *SessionState) error {
+		return nil
+	})
+	if !errors.Is(err, ErrStateNotFound) {
+		t.Errorf("MutateSessionState() error = %v, want ErrStateNotFound", err)
+	}
+}
+
+func TestMutateSessionState_EmptySessionID(t *testing.T) {
+	t.Parallel()
+	err := MutateSessionState(context.Background(), "", func(s *SessionState) error {
+		return nil
+	})
+	if !errors.Is(err, ErrStateNotFound) {
+		t.Errorf("MutateSessionState('') error = %v, want ErrStateNotFound", err)
+	}
+}
+
+func TestMutateSessionState_NestedCallsShareState(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	t.Chdir(dir)
+
+	ctx := context.Background()
+	state := &SessionState{
+		SessionID:  "mutate-nested",
+		BaseCommit: "abc123",
+		StartedAt:  time.Now(),
+		StepCount:  1,
+	}
+	if err := SaveSessionState(ctx, state); err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	err = MutateSessionState(ctx, "mutate-nested", func(outer *SessionState) error {
+		outer.StepCount = 10
+
+		// Nested call should see the outer's mutation and not deadlock.
+		return MutateSessionState(ctx, "mutate-nested", func(inner *SessionState) error {
+			if inner.StepCount != 10 {
+				t.Errorf("nested StepCount = %d, want 10 (should see outer mutation)", inner.StepCount)
+			}
+			inner.CheckpointTranscriptStart = 42
+			return nil
+		})
+	})
+	if err != nil {
+		t.Fatalf("MutateSessionState() nested error = %v", err)
+	}
+
+	loaded, err := LoadSessionState(ctx, "mutate-nested")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if loaded.StepCount != 10 {
+		t.Errorf("StepCount = %d, want 10", loaded.StepCount)
+	}
+	if loaded.CheckpointTranscriptStart != 42 {
+		t.Errorf("CheckpointTranscriptStart = %d, want 42", loaded.CheckpointTranscriptStart)
+	}
+}
+
+func TestMutateSessionState_FnError(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	t.Chdir(dir)
+
+	ctx := context.Background()
+	state := &SessionState{
+		SessionID:  "mutate-fn-err",
+		BaseCommit: "abc123",
+		StartedAt:  time.Now(),
+		StepCount:  1,
+	}
+	if err := SaveSessionState(ctx, state); err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	sentinel := errors.New("mutation failed")
+	err = MutateSessionState(ctx, "mutate-fn-err", func(s *SessionState) error {
+		s.StepCount = 999
+		return sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Errorf("MutateSessionState() error = %v, want %v", err, sentinel)
+	}
+
+	// State should NOT have been saved (fn returned error before save).
+	loaded, err := LoadSessionState(ctx, "mutate-fn-err")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if loaded.StepCount != 1 {
+		t.Errorf("StepCount = %d, want 1 (error should prevent save)", loaded.StepCount)
+	}
+}
+
+// --- RecordFilesTouched tests ---
+
+func TestRecordFilesTouched_MergesIntoState(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	t.Chdir(dir)
+
+	ctx := context.Background()
+	state := &SessionState{
+		SessionID:    "rft-merge",
+		BaseCommit:   "abc123",
+		StartedAt:    time.Now(),
+		FilesTouched: []string{"existing.go"},
+	}
+	if err := SaveSessionState(ctx, state); err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	err = RecordFilesTouched(ctx, "rft-merge",
+		[]string{"modified.go"},
+		[]string{"added.go"},
+		[]string{"deleted.go"},
+	)
+	if err != nil {
+		t.Fatalf("RecordFilesTouched() error = %v", err)
+	}
+
+	loaded, err := LoadSessionState(ctx, "rft-merge")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+
+	expected := map[string]bool{
+		"existing.go": true,
+		"modified.go": true,
+		"added.go":    true,
+		"deleted.go":  true,
+	}
+	got := make(map[string]bool)
+	for _, f := range loaded.FilesTouched {
+		got[f] = true
+	}
+	for f := range expected {
+		if !got[f] {
+			t.Errorf("FilesTouched missing %q, got %v", f, loaded.FilesTouched)
+		}
+	}
+}
+
+func TestRecordFilesTouched_EmptyInputs_NoOp(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	t.Chdir(dir)
+
+	ctx := context.Background()
+	state := &SessionState{
+		SessionID:    "rft-empty",
+		BaseCommit:   "abc123",
+		StartedAt:    time.Now(),
+		FilesTouched: []string{"file.go"},
+	}
+	if err := SaveSessionState(ctx, state); err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	err = RecordFilesTouched(ctx, "rft-empty", nil, nil, nil)
+	if err != nil {
+		t.Fatalf("RecordFilesTouched() with empty inputs error = %v", err)
+	}
+
+	// State should be unchanged.
+	loaded, err := LoadSessionState(ctx, "rft-empty")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if len(loaded.FilesTouched) != 1 || loaded.FilesTouched[0] != "file.go" {
+		t.Errorf("FilesTouched = %v, want [file.go]", loaded.FilesTouched)
+	}
+}
+
+func TestRecordFilesTouched_NotFound_NoOp(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	t.Chdir(dir)
+
+	// Should not error when session doesn't exist.
+	err = RecordFilesTouched(context.Background(), "nonexistent",
+		[]string{"file.go"}, nil, nil)
+	if err != nil {
+		t.Fatalf("RecordFilesTouched() for nonexistent session error = %v, want nil", err)
+	}
+}
+
+func TestRecordFilesTouched_Deduplicates(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	t.Chdir(dir)
+
+	ctx := context.Background()
+	state := &SessionState{
+		SessionID:    "rft-dedup",
+		BaseCommit:   "abc123",
+		StartedAt:    time.Now(),
+		FilesTouched: []string{"file.go"},
+	}
+	if err := SaveSessionState(ctx, state); err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	// Same file in modified list should not create a duplicate.
+	err = RecordFilesTouched(ctx, "rft-dedup",
+		[]string{"file.go"}, nil, nil)
+	if err != nil {
+		t.Fatalf("RecordFilesTouched() error = %v", err)
+	}
+
+	loaded, err := LoadSessionState(ctx, "rft-dedup")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	count := 0
+	for _, f := range loaded.FilesTouched {
+		if f == "file.go" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("file.go appears %d times, want 1 in %v", count, loaded.FilesTouched)
+	}
+}
+
+// --- goroutineID test ---
+
+func TestGoroutineID_ReturnsPositive(t *testing.T) {
+	t.Parallel()
+	id := goroutineID()
+	if id <= 0 {
+		t.Errorf("goroutineID() = %d, want > 0", id)
+	}
+}
+
 func TestClearSessionState_RemovesHintFile(t *testing.T) {
 	dir := t.TempDir()
 	_, err := git.PlainInit(dir, false)
