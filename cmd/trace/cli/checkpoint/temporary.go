@@ -166,7 +166,8 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 		// Retry budget exhausted. With the flock held this means an external
 		// writer beat us shadowRefMaxRetries times in a row — surface it in
 		// logs so operators can see a stuck shadow branch.
-		logging.Warn(logging.WithComponent(ctx, "checkpoint"),
+		logging.Warn(
+			logging.WithComponent(ctx, "checkpoint"),
 			"shadow branch CAS retry budget exhausted",
 			slog.String("shadow_branch", shadowBranchName),
 			slog.Int("retries", shadowRefMaxRetries),
@@ -340,7 +341,8 @@ func (s *GitStore) WriteTemporaryTask(ctx context.Context, opts WriteTemporaryTa
 				return bErr
 			}
 		}
-		logging.Warn(logging.WithComponent(ctx, "checkpoint"),
+		logging.Warn(
+			logging.WithComponent(ctx, "checkpoint"),
 			"shadow branch CAS retry budget exhausted (task checkpoint)",
 			slog.String("shadow_branch", shadowBranchName),
 			slog.Int("retries", shadowRefMaxRetries),
