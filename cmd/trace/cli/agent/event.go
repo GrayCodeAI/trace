@@ -40,6 +40,11 @@ const (
 	// (e.g., Gemini CLI's BeforeModel). The framework stores the model as a hint
 	// for subsequent TurnStart/TurnEnd events in the same session.
 	ModelUpdate
+
+	// ToolUse indicates a tool was used mid-turn (e.g., apply_patch, write_file).
+	// The framework merges the tool's file list into session.FilesTouched so that
+	// mid-turn commits have accurate carry-forward data.
+	ToolUse
 )
 
 // String returns a human-readable name for the event type.
@@ -61,6 +66,8 @@ func (e EventType) String() string {
 		return "SubagentEnd"
 	case ModelUpdate:
 		return "ModelUpdate"
+	case ToolUse:
+		return "ToolUse"
 	default:
 		return "Unknown"
 	}
@@ -96,6 +103,10 @@ type Event struct {
 	// ToolUseID identifies the tool invocation (for SubagentStart/SubagentEnd events).
 	ToolUseID string
 
+	// ToolName identifies the tool that was used (for ToolUse events).
+	// Agents set this to their native tool identifier (e.g., "apply_patch" for Codex).
+	ToolName string
+
 	// SubagentID identifies the subagent instance (for SubagentEnd events).
 	SubagentID string
 
@@ -109,10 +120,19 @@ type Event struct {
 	SubagentType    string
 	TaskDescription string
 
-	// ModifiedFiles is a list of file paths modified by a subagent.
+	// ModifiedFiles is a list of file paths modified by a subagent or tool.
 	// Populated on SubagentEnd events when the agent provides this data
-	// directly via hook payload (e.g., Cursor's subagentStop).
+	// directly via hook payload (e.g., Cursor's subagentStop), and on
+	// ToolUse events for updated files (e.g., Codex apply_patch).
 	ModifiedFiles []string
+
+	// NewFiles is a list of file paths newly created by a tool.
+	// Populated on ToolUse events (e.g., Codex apply_patch "Add File").
+	NewFiles []string
+
+	// DeletedFiles is a list of file paths deleted by a tool.
+	// Populated on ToolUse events (e.g., Codex apply_patch "Delete File").
+	DeletedFiles []string
 
 	// ResponseMessage is an optional message to display to the user via the agent.
 	ResponseMessage string
