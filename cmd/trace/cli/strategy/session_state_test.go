@@ -787,7 +787,8 @@ func TestRecordFilesTouched_MergesIntoState(t *testing.T) {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
-	err = RecordFilesTouched(ctx, "rft-merge",
+	err = RecordFilesTouched(
+		ctx, "rft-merge",
 		[]string{"modified.go"},
 		[]string{"added.go"},
 		[]string{"deleted.go"},

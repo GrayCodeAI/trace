@@ -100,7 +100,8 @@ func (s *ManualCommitStrategy) SaveStep(ctx context.Context, step StepContext) e
 
 		if result.Skipped {
 			logCtx := logging.WithComponent(ctx, "checkpoint")
-			logging.Info(logCtx, "checkpoint skipped (no changes)",
+			logging.Info(
+				logCtx, "checkpoint skipped (no changes)",
 				slog.String("strategy", "manual-commit"),
 				slog.String("checkpoint_type", "session"),
 				slog.Int("checkpoint_count", state.StepCount),
@@ -131,7 +132,8 @@ func (s *ManualCommitStrategy) SaveStep(ctx context.Context, step StepContext) e
 		}
 
 		logCtx := logging.WithComponent(ctx, "checkpoint")
-		logging.Info(logCtx, "checkpoint saved",
+		logging.Info(
+			logCtx, "checkpoint saved",
 			slog.String("strategy", "manual-commit"),
 			slog.String("checkpoint_type", "session"),
 			slog.Int("checkpoint_count", state.StepCount),
@@ -268,7 +270,8 @@ func (s *ManualCommitStrategy) SaveTaskStep(ctx context.Context, step TaskStepCo
 			slog.Bool("branch_created", !branchExisted),
 		}
 		if step.IsIncremental {
-			attrs = append(attrs,
+			attrs = append(
+				attrs,
 				slog.Bool("is_incremental", true),
 				slog.String("incremental_type", step.IncrementalType),
 				slog.Int("incremental_sequence", step.IncrementalSequence),
