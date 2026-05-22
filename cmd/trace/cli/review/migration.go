@@ -21,6 +21,7 @@ type projectReviewSettings struct {
 	hasFixAgent bool
 }
 
+//nolint:unparam // canPrompt is always true in current callers but kept for future CI/scripted use
 func maybePromptReviewSettingsMigration(
 	ctx context.Context,
 	out io.Writer,
