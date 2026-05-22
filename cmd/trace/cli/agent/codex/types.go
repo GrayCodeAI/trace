@@ -1,5 +1,7 @@
 package codex
 
+import "encoding/json"
+
 // HooksFile represents the .codex/hooks.json structure.
 type HooksFile struct {
 	Hooks HookEvents `json:"hooks"`
@@ -61,6 +63,26 @@ type stopRaw struct {
 	PermissionMode       string  `json:"permission_mode"`
 	StopHookActive       bool    `json:"stop_hook_active"`
 	LastAssistantMessage *string `json:"last_assistant_message"` // nullable
+}
+
+// postToolUseRaw is the JSON structure from PostToolUse hooks.
+type postToolUseRaw struct {
+	SessionID      string          `json:"session_id"`
+	TurnID         string          `json:"turn_id"`
+	TranscriptPath *string         `json:"transcript_path"` // nullable
+	CWD            string          `json:"cwd"`
+	HookEventName  string          `json:"hook_event_name"`
+	Model          string          `json:"model"`
+	PermissionMode string          `json:"permission_mode"`
+	ToolName       string          `json:"tool_name"`
+	ToolUseID      string          `json:"tool_use_id"`
+	ToolInput      json.RawMessage `json:"tool_input"`
+	ToolResponse   json.RawMessage `json:"tool_response"`
+}
+
+// applyPatchInput is the structure of tool_input for apply_patch.
+type applyPatchInput struct {
+	Patch string `json:"patch"`
 }
 
 // derefString safely dereferences a nullable string pointer.

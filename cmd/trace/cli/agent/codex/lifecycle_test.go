@@ -130,3 +130,119 @@ func TestParseHookEvent_MalformedJSON_ReturnsError(t *testing.T) {
 	_, err := ag.ParseHookEvent(context.Background(), HookNameSessionStart, strings.NewReader("{invalid json"))
 	require.Error(t, err)
 }
+
+func TestParseHookEvent_PostToolUse_ApplyPatch(t *testing.T) {
+	t.Parallel()
+	ag := &CodexAgent{}
+	input := `{
+		"session_id": "test-uuid",
+		"turn_id": "turn-1",
+		"transcript_path": null,
+		"cwd": "/tmp/repo",
+		"hook_event_name": "PostToolUse",
+		"model": "gpt-5",
+		"permission_mode": "default",
+		"tool_name": "apply_patch",
+		"tool_use_id": "call-patch",
+		"tool_input": {"patch": "*** Add File: a.go\n+hello\n*** Update File: b.go\n@@\n-old\n+new\n*** Delete File: c.go\n*** End Patch\n"},
+		"tool_response": "Patch applied successfully."
+	}`
+
+	event, err := ag.ParseHookEvent(context.Background(), HookNamePostToolUse, strings.NewReader(input))
+	require.NoError(t, err)
+	require.NotNil(t, event)
+	require.Equal(t, agent.ToolUse, event.Type)
+	require.Equal(t, "test-uuid", event.SessionID)
+	require.Equal(t, "apply_patch", event.ToolName)
+	require.Equal(t, []string{"a.go"}, event.NewFiles)
+	require.Equal(t, []string{"b.go"}, event.ModifiedFiles)
+	require.Equal(t, []string{"c.go"}, event.DeletedFiles)
+}
+
+func TestParseHookEvent_PostToolUse_NonApplyPatch_ReturnsNil(t *testing.T) {
+	t.Parallel()
+	ag := &CodexAgent{}
+	input := `{
+		"session_id": "test-uuid",
+		"turn_id": "turn-1",
+		"transcript_path": null,
+		"cwd": "/tmp/repo",
+		"hook_event_name": "PostToolUse",
+		"model": "gpt-5",
+		"permission_mode": "default",
+		"tool_name": "shell",
+		"tool_use_id": "call-shell",
+		"tool_input": {"command": ["echo", "hi"]},
+		"tool_response": "hi\n"
+	}`
+
+	event, err := ag.ParseHookEvent(context.Background(), HookNamePostToolUse, strings.NewReader(input))
+	require.NoError(t, err)
+	require.Nil(t, event)
+}
+
+func TestParseApplyPatchFiles(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		patch       string
+		wantAdded   []string
+		wantUpdated []string
+		wantDeleted []string
+	}{
+		{
+			name: "all three operations",
+			patch: "*** Begin Patch\n" +
+				"*** Add File: docs/added.md\n" +
+				"+# added\n" +
+				"*** Update File: src/changed.go\n" +
+				"@@\n" +
+				"-old\n" +
+				"+new\n" +
+				"*** Delete File: tmp/gone.txt\n" +
+				"*** End Patch\n",
+			wantAdded:   []string{"docs/added.md"},
+			wantUpdated: []string{"src/changed.go"},
+			wantDeleted: []string{"tmp/gone.txt"},
+		},
+		{
+			name:        "empty patch",
+			patch:       "",
+			wantAdded:   nil,
+			wantUpdated: nil,
+			wantDeleted: nil,
+		},
+		{
+			name: "only adds",
+			patch: "*** Add File: a.go\n" +
+				"+line1\n" +
+				"*** Add File: b.go\n" +
+				"+line2\n",
+			wantAdded:   []string{"a.go", "b.go"},
+			wantUpdated: nil,
+			wantDeleted: nil,
+		},
+		{
+			name: "no markers",
+			patch: "*** Begin Patch\n" +
+				"@@\n" +
+				"-old\n" +
+				"+new\n" +
+				"*** End Patch\n",
+			wantAdded:   nil,
+			wantUpdated: nil,
+			wantDeleted: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			added, updated, deleted := parseApplyPatchFiles(tt.patch)
+			require.Equal(t, tt.wantAdded, added)
+			require.Equal(t, tt.wantUpdated, updated)
+			require.Equal(t, tt.wantDeleted, deleted)
+		})
+	}
+}
