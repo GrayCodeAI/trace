@@ -620,7 +620,7 @@ func runTrailCreate(cmd *cobra.Command, title, body, base, branch, statusStr str
 		return fmt.Errorf("failed to decode create response: %w", err)
 	}
 
-	fmt.Fprintf(w, "Created trail %q for branch %s (ID: %s)\n", createResp.Trail.Title, createResp.Trail.Branch, createResp.Trail.TrailID)
+	fmt.Fprintf(w, "Created trail %q for branch %s (ID: %s)\n", createResp.Trail.Title, createResp.Trail.Branch, createResp.Trail.ID)
 
 	// --- Phase 3: Post-creation local operations ---
 
@@ -752,7 +752,7 @@ func runTrailUpdate(ctx context.Context, w, errW io.Writer, insecureHTTP bool, s
 	// Build update request with only changed fields
 	updateReq := buildTrailUpdateRequest(found, statusStr, title, body, labelAdd, labelRemove)
 
-	resp, err := client.Patch(ctx, trailsBasePath(host, owner, repoName)+"/"+found.TrailID, updateReq)
+	resp, err := client.Patch(ctx, trailsBasePath(host, owner, repoName)+"/"+found.ID, updateReq)
 	if err != nil {
 		return fmt.Errorf("failed to update trail: %w", err)
 	}
