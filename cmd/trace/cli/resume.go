@@ -597,7 +597,7 @@ func findBranchCheckpoints(repo *git.Repository, branchName string) (*branchChec
 	defaultBranch := getDefaultBranchFromRemote(repo)
 	if defaultBranch == "" {
 		// Fallback: try common names
-		for _, name := range []string{"main", "master"} {
+		for _, name := range []string{defaultBaseBranch, masterBaseBranch} {
 			if _, err := repo.Reference(plumbing.NewBranchReferenceName(name), true); err == nil {
 				defaultBranch = name
 				break
