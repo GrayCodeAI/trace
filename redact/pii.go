@@ -203,7 +203,7 @@ func compilePIIPatterns(cfg *PIIConfig) []piiPattern {
 // Non-empty label (PII) returns "[REDACTED_<LABEL>]".
 func replacementToken(label string) string {
 	if label == "" {
-		return "REDACTED"
+		return RedactedPlaceholder
 	}
 	return "[REDACTED_" + label + "]"
 }

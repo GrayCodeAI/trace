@@ -690,7 +690,7 @@ func shouldSkipJSONLField(key string) bool {
 
 	// Skip common path and directory fields from agent transcripts.
 	// These appear frequently in tool calls and are structural, not secrets.
-	switch lower {
+	switch lower { //nolint:goconst // repeated field names are literal switch cases, not extractable
 	case "filepath", "file_path", "cwd", "root", "directory", "dir", "path":
 		return true
 	}

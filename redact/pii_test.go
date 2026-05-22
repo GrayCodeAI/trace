@@ -178,7 +178,7 @@ func TestDetectPII_CustomPatterns(t *testing.T) {
 	if len(regions) != 1 {
 		t.Fatalf("expected 1 region, got %d", len(regions))
 	}
-	if regions[0].label != "EMPLOYEE_ID" {
+	if regions[0].label != testLabelEmployeeID {
 		t.Errorf("expected label EMPLOYEE_ID, got %q", regions[0].label)
 	}
 }
@@ -321,11 +321,11 @@ func TestPII_ReplacementTokenFormat(t *testing.T) {
 		label string
 		want  string
 	}{
-		{"", "REDACTED"},
+		{"", RedactedPlaceholder},
 		{labelEmail, "[REDACTED_EMAIL]"},
 		{labelPhone, "[REDACTED_PHONE]"},
 		{labelAddress, "[REDACTED_ADDRESS]"},
-		{"EMPLOYEE_ID", "[REDACTED_EMPLOYEE_ID]"},
+		{testLabelEmployeeID, "[REDACTED_EMPLOYEE_ID]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.label, func(t *testing.T) {
@@ -368,7 +368,7 @@ func TestDetectPII_InvalidAndValidCustomPatterns(t *testing.T) {
 	if len(regions) != 1 {
 		t.Fatalf("expected 1 region (valid pattern should still fire despite invalid sibling), got %d", len(regions))
 	}
-	if regions[0].label != "EMPLOYEE_ID" {
+	if regions[0].label != testLabelEmployeeID {
 		t.Errorf("expected label EMPLOYEE_ID, got %q", regions[0].label)
 	}
 }
@@ -444,10 +444,10 @@ func TestPIIEnabled_FilePathsStillPreserved(t *testing.T) {
 	t.Cleanup(resetPIIConfig)
 
 	paths := []string{
-		"/tmp/TestE2E_Something3407889464/001/controller.go",
-		"/private/var/folders/v4/31cd3cg52_sfrpb1mbtr7q7r0000gn/T/TestE2E_Something/controller",
-		"/Users/peytonmontei/.claude/projects/something.jsonl",
-		"/tmp/test/controller.go\n/tmp/test/model.go\n/tmp/test/view.go",
+		testPathTmpE2E,
+		testPathPrivateVar,
+		testPathUserClaude,
+		testPathMultilineFiles,
 	}
 	for _, p := range paths {
 		got := String(p)
@@ -465,9 +465,9 @@ func TestPIIEnabled_JSONEscapesStillPreserved(t *testing.T) {
 	t.Cleanup(resetPIIConfig)
 
 	tests := []string{
-		`controller.go\nmodel.go\nview.go`,
-		`something.go\tanother.go`,
-		`C:\\Users\\test\\file.go`,
+		testJSONEscapeNewline,
+		testJSONEscapeTab,
+		testJSONEscapeBackslash,
 	}
 	for _, input := range tests {
 		got := String(input)
@@ -489,7 +489,7 @@ func TestPIIEnabled_JSONLPathFieldsStillSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if strings.Contains(got, "REDACTED") {
+	if strings.Contains(got, wantRedacted) {
 		t.Errorf("JSONL path fields should NOT be redacted with PII enabled, got: %s", got)
 	}
 }
@@ -529,7 +529,7 @@ func TestPIIIntegration_OverlappingSecretAndPII(t *testing.T) {
 	if strings.Contains(got, "user@example.com") {
 		t.Error("email should be redacted")
 	}
-	if !strings.Contains(got, "REDACTED") {
+	if !strings.Contains(got, wantRedacted) {
 		t.Error("expected at least one REDACTED token")
 	}
 	if !strings.Contains(got, "[REDACTED_EMAIL]") {

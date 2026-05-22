@@ -11,6 +11,34 @@ import (
 // highEntropySecret is a string with Shannon entropy > 4.5 that will trigger redaction.
 const highEntropySecret = "sk-ant-api03-xK9mZ2vL8nQ5rT1wY4bC7dF0gH3jE6pA"
 
+// Test constants for repeated string literals (goconst).
+const (
+	testFieldContent   = "content"
+	testFieldSessionID = "session_id"
+	testFieldFilePath  = "file_path"
+	testFieldCwd       = "cwd"
+	testFieldType      = "type"
+	testFieldText      = "text"
+
+	testSessionID = "ses_37273a1fdffegpYbwUTqEkPsQ0"
+
+	wantRedacted           = "REDACTED"
+	wantDBPasswordRedacted = "DB_PASSWORD=REDACTED"
+	wantConnRedacted       = "conn=REDACTED"
+	wantDBURLRedacted      = "DATABASE_URL=REDACTED"
+
+	testPathTmpE2E          = "/tmp/TestE2E_Something3407889464/001/controller.go"
+	testPathPrivateVar      = "/private/var/folders/v4/31cd3cg52_sfrpb1mbtr7q7r0000gn/T/TestE2E_Something/controller"
+	testPathUserClaude      = "/Users/peytonmontei/.claude/projects/something.jsonl"
+	testJSONEscapeNewline   = `controller.go\nmodel.go\nview.go`
+	testJSONEscapeTab       = `something.go\tanother.go`
+	testJSONEscapeBackslash = `C:\\Users\\test\\file.go`
+
+	testLabelEmployeeID = "EMPLOYEE_ID"
+
+	testPathMultilineFiles = "/tmp/test/controller.go\n/tmp/test/model.go\n/tmp/test/view.go"
+)
+
 var fakeOpenSSHPrivateKey = makeFakeOpenSSHPrivateKey(`b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
 QyNTUxOQAAACB7ZlJ8tkWCKdRJRGF1BngP3bkNbz8bMF6Yl5xLJp9m1QAAAJj2M3UO9jN1
 DgAAAAtzc2gtZWQyNTUxOQAAACB7ZlJ8tkWCKdRJRGF1BngP3bkNbz8bMF6Yl5xLJp9m1QA
@@ -88,7 +116,7 @@ func TestJSONLBytes_WithSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := []byte(`{"type":"text","content":"REDACTED"}`)
+	expected := []byte(`{"type":"text","content":"` + wantRedacted + `"}`)
 	if !bytes.Equal(result.Bytes(), expected) {
 		t.Errorf("got %q, want %q", result.Bytes(), expected)
 	}
@@ -128,7 +156,7 @@ func TestJSONLContent_TopLevelArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := `["REDACTED","normal text"]`
+	expected := `["` + wantRedacted + `","normal text"]`
 	if result != expected {
 		t.Errorf("got %q, want %q", result, expected)
 	}
@@ -163,7 +191,7 @@ func TestJSONLContent_MultipleObjects_AllRedacted(t *testing.T) {
 	if strings.Contains(result, highEntropySecret) {
 		t.Error("secret in second JSONL object was not redacted")
 	}
-	if !strings.Contains(result, "REDACTED") {
+	if !strings.Contains(result, wantRedacted) {
 		t.Error("expected REDACTED in output")
 	}
 
@@ -198,11 +226,11 @@ func TestJSONLContent_InvalidJSONLine(t *testing.T) {
 
 func TestCollectJSONLReplacements_Succeeds(t *testing.T) {
 	obj := map[string]any{
-		"content": "token=" + highEntropySecret,
+		testFieldContent: "token=" + highEntropySecret,
 	}
 	repls := collectJSONLReplacements(obj)
 	// expect one replacement for high-entropy secret
-	want := []jsonReplacement{{key: "content", original: "token=" + highEntropySecret, redacted: "REDACTED"}}
+	want := []jsonReplacement{{key: testFieldContent, original: "token=" + highEntropySecret, redacted: wantRedacted}}
 	if !slices.Equal(repls, want) {
 		t.Errorf("got %q, want %q", repls, want)
 	}
@@ -215,30 +243,30 @@ func TestShouldSkipJSONLField(t *testing.T) {
 	}{
 		// Fields ending in "id" should be skipped.
 		{"id", true},
-		{"session_id", true},
+		{testFieldSessionID, true},
 		{"sessionId", true},
 		{"checkpoint_id", true},
 		{"checkpointID", true},
 		{"userId", true},
 		// Fields ending in "ids" should be skipped.
 		{"ids", true},
-		{"session_ids", true},
+		{testFieldSessionID + "s", true},
 		{"userIds", true},
 		// Exact match "signature" should be skipped.
 		{"signature", true},
 		// Path-related fields should be skipped.
 		{"filePath", true},
-		{"file_path", true},
-		{"cwd", true},
+		{testFieldFilePath, true},
+		{testFieldCwd, true},
 		{"root", true},
 		{"directory", true},
 		{"dir", true},
 		{"path", true},
 		// Fields that should NOT be skipped.
-		{"content", false},
-		{"type", false},
+		{testFieldContent, false},
+		{testFieldType, false},
 		{"name", false},
-		{"text", false},
+		{testFieldText, false},
 		{"output", false},
 		{"input", false},
 		{"command", false},
@@ -262,8 +290,8 @@ func TestShouldSkipJSONLField(t *testing.T) {
 func TestShouldSkipJSONLField_RedactionBehavior(t *testing.T) {
 	// Verify that secrets in skipped fields are preserved (not redacted).
 	obj := map[string]any{
-		"session_id": highEntropySecret,
-		"content":    highEntropySecret,
+		testFieldSessionID: highEntropySecret,
+		testFieldContent:   highEntropySecret,
 	}
 	repls := collectJSONLReplacements(obj)
 	// Only "content" should produce a replacement; "session_id" should be skipped.
@@ -277,7 +305,7 @@ func TestShouldSkipJSONLField_RedactionBehavior(t *testing.T) {
 
 func TestJSONLContent_SkippedFieldValueCollision(t *testing.T) {
 	t.Parallel()
-	input := `{"session_id":"` + highEntropySecret + `","content":"` + highEntropySecret + `"}`
+	input := `{"` + testFieldSessionID + `":"` + highEntropySecret + `","` + testFieldContent + `":"` + highEntropySecret + `"}`
 
 	result, err := JSONLContent(input)
 	if err != nil {
@@ -287,7 +315,7 @@ func TestJSONLContent_SkippedFieldValueCollision(t *testing.T) {
 	if !strings.Contains(result, `"session_id":"`+highEntropySecret+`"`) {
 		t.Fatalf("expected skipped session_id to be preserved, got: %s", result)
 	}
-	if !strings.Contains(result, `"content":"REDACTED"`) {
+	if !strings.Contains(result, `"`+testFieldContent+`":"`+wantRedacted+`"`) {
 		t.Fatalf("expected content field to be redacted, got: %s", result)
 	}
 }
@@ -303,17 +331,17 @@ func TestString_PatternDetection(t *testing.T) {
 		{
 			name:  "AWS access key (entropy ~3.9, below 4.5 threshold)",
 			input: "key=AKIAYRWQG5EJLPZLBYNP",
-			want:  "key=REDACTED",
+			want:  "key=" + wantRedacted,
 		},
 		{
 			name:  "two AWS keys separated by space produce two REDACTED tokens",
 			input: "key=AKIAYRWQG5EJLPZLBYNP AKIAYRWQG5EJLPZLBYNP",
-			want:  "key=REDACTED REDACTED",
+			want:  "key=" + wantRedacted + " " + wantRedacted,
 		},
 		{
 			name:  "adjacent AWS keys without separator merge into single REDACTED",
 			input: "key=AKIAYRWQG5EJLPZLBYNPAKIAYRWQG5EJLPZLBYNP",
-			want:  "key=REDACTED",
+			want:  "key=" + wantRedacted,
 		},
 	}
 	for _, tt := range tests {
@@ -343,12 +371,12 @@ func TestString_CredentialedURIs(t *testing.T) {
 		{
 			name:  "postgres URI",
 			input: "DATABASE_URL=postgres://app:pwd123@db.example.com:5432/app",
-			want:  "DATABASE_URL=REDACTED",
+			want:  wantDBURLRedacted,
 		},
 		{
 			name:  "postgresql URI with query",
 			input: `dsn="postgresql://svc:moderatepw@localhost/app?sslmode=require"`,
-			want:  `dsn="REDACTED"`,
+			want:  `dsn="` + wantRedacted + `"`,
 		},
 		{
 			name:  "mongodb srv URI",
@@ -358,17 +386,17 @@ func TestString_CredentialedURIs(t *testing.T) {
 		{
 			name:  "mysql URI",
 			input: "mysql://root:p@localhost:3306/app",
-			want:  "REDACTED",
+			want:  wantRedacted,
 		},
 		{
 			name:  "redis URI with empty username",
 			input: "cache redis://:hunter2@localhost:6379/0",
-			want:  "cache REDACTED",
+			want:  "cache " + wantRedacted,
 		},
 		{
 			name:  "generic credentialed URL",
 			input: "proxy=https://user:pass@example.com/path",
-			want:  "proxy=REDACTED",
+			want:  "proxy=" + wantRedacted,
 		},
 		{
 			name:  "URL without password is preserved",
@@ -397,27 +425,27 @@ func TestString_DatabaseConnectionStringRedaction(t *testing.T) {
 		{
 			name:  "postgres keyword DSN",
 			input: `dsn="host=db.example.com port=5432 user=svc password=secret dbname=app sslmode=require"`,
-			want:  `dsn="REDACTED"`,
+			want:  `dsn="` + wantRedacted + `"`,
 		},
 		{
 			name:  "postgres keyword DSN different order",
 			input: "password=secret sslmode=require user=svc host=db.example.com dbname=app",
-			want:  "REDACTED",
+			want:  wantRedacted,
 		},
 		{
 			name:  "sql server connection string",
 			input: "conn=Server=tcp:db.example.com,1433;Database=app;User Id=svc;Password=secret;Encrypt=true",
-			want:  "conn=REDACTED",
+			want:  wantConnRedacted,
 		},
 		{
 			name:  "odbc connection string",
 			input: "conn=Driver={ODBC Driver 18 for SQL Server};Server=db;UID=svc;PWD=secret;Database=app",
-			want:  "conn=REDACTED",
+			want:  wantConnRedacted,
 		},
 		{
 			name:  "jdbc query password",
 			input: "jdbc:postgresql://db.example.com:5432/app?user=svc&password=secret&ssl=true",
-			want:  "REDACTED",
+			want:  wantRedacted,
 		},
 		{
 			name:  "postgres URL query password without userinfo",
@@ -447,17 +475,17 @@ func TestString_DatabaseConnectionStringRedaction(t *testing.T) {
 		{
 			name:  "jdbc semicolon password",
 			input: "jdbc:sqlserver://db.example.com:1433;databaseName=app;user=svc;password=secret;encrypt=true",
-			want:  "REDACTED",
+			want:  wantRedacted,
 		},
 		{
 			name:  "ado.net quoted password with embedded semicolons",
 			input: `conn=Server=db.example.com;User ID=svc;Password="se;cret;here";Encrypt=true`,
-			want:  "conn=REDACTED",
+			want:  wantConnRedacted,
 		},
 		{
 			name:  "ado.net single-quoted password with embedded semicolons",
 			input: `conn=Server=db.example.com;User ID=svc;Password='se;cret;here';Encrypt=true`,
-			want:  "conn=REDACTED",
+			want:  wantConnRedacted,
 		},
 	})
 }
@@ -512,7 +540,7 @@ func TestString_BoundedCredentialValueRedaction(t *testing.T) {
 		{
 			name:  "db password env var",
 			input: "DB_PASSWORD=secret123",
-			want:  "DB_PASSWORD=REDACTED",
+			want:  wantDBPasswordRedacted,
 		},
 		{
 			name:  "postgres password env var",
@@ -522,7 +550,7 @@ func TestString_BoundedCredentialValueRedaction(t *testing.T) {
 		{
 			name:  "redis password env var",
 			input: `REDIS_PASSWORD="secret123"`,
-			want:  `REDIS_PASSWORD="REDACTED"`,
+			want:  `REDIS_PASSWORD="` + wantRedacted + `"`,
 		},
 		{
 			name:  "lowercase database password",
@@ -578,7 +606,7 @@ func TestString_BoundedCredentialValueOverRedactionGuards(t *testing.T) {
 		{
 			name:  "already redacted value is preserved",
 			input: "DB_PASSWORD=REDACTED",
-			want:  "DB_PASSWORD=REDACTED",
+			want:  wantDBPasswordRedacted,
 		},
 		{
 			name:  "prose about password is preserved",
@@ -668,32 +696,32 @@ func TestString_ShortAndOpaquePlaceholdersFallThrough(t *testing.T) {
 		{
 			name:  "single x is not a mask",
 			input: "DB_PASSWORD=x",
-			want:  "DB_PASSWORD=REDACTED",
+			want:  wantDBPasswordRedacted,
 		},
 		{
 			name:  "single dash is not a mask",
 			input: "DB_PASSWORD=-",
-			want:  "DB_PASSWORD=REDACTED",
+			want:  wantDBPasswordRedacted,
 		},
 		{
 			name:  "single asterisk is not a mask",
 			input: "DB_PASSWORD=*",
-			want:  "DB_PASSWORD=REDACTED",
+			want:  wantDBPasswordRedacted,
 		},
 		{
 			name:  "two-char repeat is not a mask",
 			input: "DB_PASSWORD=xx",
-			want:  "DB_PASSWORD=REDACTED",
+			want:  wantDBPasswordRedacted,
 		},
 		{
 			name:  "bracketed value with digits is not a placeholder",
 			input: "DB_PASSWORD=<hunter2>",
-			want:  "DB_PASSWORD=REDACTED",
+			want:  wantDBPasswordRedacted,
 		},
 		{
 			name:  "bracketed mixed-case value is not a placeholder",
 			input: "DB_PASSWORD=<RealPassword>",
-			want:  "DB_PASSWORD=REDACTED",
+			want:  wantDBPasswordRedacted,
 		},
 	})
 }
@@ -758,7 +786,7 @@ func TestJSONLContent_DatabaseCredentialRedaction(t *testing.T) {
 			t.Fatalf("expected %q to be redacted, got: %s", leaked, result)
 		}
 	}
-	for _, preserved := range []string{"ses_37273a1fdffegpYbwUTqEkPsQ0", "/tmp/TestE2E_ExistingFiles/controller.go"} {
+	for _, preserved := range []string{testSessionID, "/tmp/TestE2E_ExistingFiles/controller.go"} {
 		if !strings.Contains(result, preserved) {
 			t.Fatalf("expected structural value %q to be preserved, got: %s", preserved, result)
 		}
@@ -779,13 +807,13 @@ func TestJSONLContent_StructuredCredentialFieldsRedacted(t *testing.T) {
 		}
 	}
 	for _, preserved := range []string{
-		`"DB_PASSWORD":"REDACTED"`,
+		`"DB_PASSWORD":"` + wantRedacted + `"`,
 		`"REDIS_PASSWORD":"${REDIS_PASSWORD}"`,
-		`"password":"REDACTED"`,
+		`"password":"` + wantRedacted + `"`,
 		`"host":"db.example.com"`,
 		`"user":"svc"`,
 		`"note":"correct-horse-db"`,
-		"ses_37273a1fdffegpYbwUTqEkPsQ0",
+		testSessionID,
 	} {
 		if !strings.Contains(result, preserved) {
 			t.Fatalf("expected %q to be preserved, got: %s", preserved, result)
@@ -802,9 +830,9 @@ func TestJSONLContent_NormalizedCredentialKeysRedacted(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, preserved := range []string{
-		`"DB Password":"REDACTED"`,
+		`"DB Password":"` + wantRedacted + `"`,
 		`"note":"correct-horse-db"`,
-		"ses_37273a1fdffegpYbwUTqEkPsQ0",
+		testSessionID,
 	} {
 		if !strings.Contains(result, preserved) {
 			t.Fatalf("expected %q to be preserved, got: %s", preserved, result)
@@ -824,8 +852,8 @@ func TestJSONLContent_DottedCredentialKeysRedacted(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, redacted := range []string{
-		`"db.password":"REDACTED"`,
-		`"mysql.root.password":"REDACTED"`,
+		`"db.password":"` + wantRedacted + `"`,
+		`"mysql.root.password":"` + wantRedacted + `"`,
 	} {
 		if !strings.Contains(result, redacted) {
 			t.Fatalf("expected %q in output, got: %s", redacted, result)
@@ -845,9 +873,9 @@ func TestJSONLContent_RootPasswordJSONKeysRedacted(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, redacted := range []string{
-		`"MYSQL_ROOT_PASSWORD":"REDACTED"`,
-		`"MONGO_INITDB_ROOT_PASSWORD":"REDACTED"`,
-		`"MSSQL_SA_PASSWORD":"REDACTED"`,
+		`"MYSQL_ROOT_PASSWORD":"` + wantRedacted + `"`,
+		`"MONGO_INITDB_ROOT_PASSWORD":"` + wantRedacted + `"`,
+		`"MSSQL_SA_PASSWORD":"` + wantRedacted + `"`,
 	} {
 		if !strings.Contains(result, redacted) {
 			t.Fatalf("expected %q in output, got: %s", redacted, result)
@@ -868,32 +896,32 @@ func TestShouldSkipJSONLObject(t *testing.T) {
 	}{
 		{
 			name: "image type is skipped",
-			obj:  map[string]any{"type": "image", "data": "base64data"},
+			obj:  map[string]any{testFieldType: "image", "data": "base64data"},
 			want: true,
 		},
 		{
 			name: "text type is not skipped",
-			obj:  map[string]any{"type": "text", "content": "hello"},
+			obj:  map[string]any{testFieldType: testFieldText, testFieldContent: "hello"},
 			want: false,
 		},
 		{
 			name: "no type field is not skipped",
-			obj:  map[string]any{"content": "hello"},
+			obj:  map[string]any{testFieldContent: "hello"},
 			want: false,
 		},
 		{
 			name: "non-string type is not skipped",
-			obj:  map[string]any{"type": 42},
+			obj:  map[string]any{testFieldType: 42},
 			want: false,
 		},
 		{
 			name: "image_url type is skipped",
-			obj:  map[string]any{"type": "image_url"},
+			obj:  map[string]any{testFieldType: "image_url"},
 			want: true,
 		},
 		{
 			name: "base64 type is skipped",
-			obj:  map[string]any{"type": "base64"},
+			obj:  map[string]any{testFieldType: "base64"},
 			want: true,
 		},
 	}
@@ -910,8 +938,8 @@ func TestShouldSkipJSONLObject(t *testing.T) {
 func TestShouldSkipJSONLObject_RedactionBehavior(t *testing.T) {
 	// Verify that secrets inside image objects are NOT redacted.
 	obj := map[string]any{
-		"type": "image",
-		"data": highEntropySecret,
+		testFieldType: "image",
+		"data":        highEntropySecret,
 	}
 	repls := collectJSONLReplacements(obj)
 
@@ -923,11 +951,11 @@ func TestShouldSkipJSONLObject_RedactionBehavior(t *testing.T) {
 
 	// Verify that secrets inside non-image objects ARE redacted.
 	obj2 := map[string]any{
-		"type":    "text",
-		"content": highEntropySecret,
+		testFieldType:    "text",
+		testFieldContent: highEntropySecret,
 	}
 	repls2 := collectJSONLReplacements(obj2)
-	wantRepls2 := []jsonReplacement{{key: "content", original: highEntropySecret, redacted: "REDACTED"}}
+	wantRepls2 := []jsonReplacement{{key: testFieldContent, original: highEntropySecret, redacted: wantRedacted}}
 	if !slices.Equal(repls2, wantRepls2) {
 		t.Errorf("got %q, want %q", repls2, wantRepls2)
 	}
@@ -942,13 +970,13 @@ func TestString_FilePaths(t *testing.T) {
 	}{
 		{
 			name:  "temp directory path preserves filenames",
-			input: "/tmp/TestE2E_Something3407889464/001/controller.go",
-			want:  "/tmp/TestE2E_Something3407889464/001/controller.go",
+			input: testPathTmpE2E,
+			want:  testPathTmpE2E,
 		},
 		{
 			name:  "macOS private var folders path",
-			input: "/private/var/folders/v4/31cd3cg52_sfrpb1mbtr7q7r0000gn/T/TestE2E_Something/controller",
-			want:  "/private/var/folders/v4/31cd3cg52_sfrpb1mbtr7q7r0000gn/T/TestE2E_Something/controller",
+			input: testPathPrivateVar,
+			want:  testPathPrivateVar,
 		},
 		{
 			name:  "simple Go file path",
@@ -957,13 +985,13 @@ func TestString_FilePaths(t *testing.T) {
 		},
 		{
 			name:  "user home directory path",
-			input: "/Users/peytonmontei/.claude/projects/something.jsonl",
-			want:  "/Users/peytonmontei/.claude/projects/something.jsonl",
+			input: testPathUserClaude,
+			want:  testPathUserClaude,
 		},
 		{
 			name:  "multiple paths separated by newlines",
-			input: "/tmp/test/controller.go\n/tmp/test/model.go\n/tmp/test/view.go",
-			want:  "/tmp/test/controller.go\n/tmp/test/model.go\n/tmp/test/view.go",
+			input: testPathMultilineFiles,
+			want:  testPathMultilineFiles,
 		},
 	}
 	for _, tt := range tests {
@@ -986,18 +1014,18 @@ func TestString_JSONEscapeSequences(t *testing.T) {
 	}{
 		{
 			name:  "newline escape not corrupted",
-			input: `controller.go\nmodel.go\nview.go`,
-			want:  `controller.go\nmodel.go\nview.go`,
+			input: testJSONEscapeNewline,
+			want:  testJSONEscapeNewline,
 		},
 		{
 			name:  "tab escape not corrupted",
-			input: `something.go\tanother.go`,
-			want:  `something.go\tanother.go`,
+			input: testJSONEscapeTab,
+			want:  testJSONEscapeTab,
 		},
 		{
 			name:  "backslash escape not corrupted",
-			input: `C:\\Users\\test\\file.go`,
-			want:  `C:\\Users\\test\\file.go`,
+			input: testJSONEscapeBackslash,
+			want:  testJSONEscapeBackslash,
 		},
 	}
 	for _, tt := range tests {
@@ -1034,7 +1062,7 @@ func TestString_RealSecretsStillCaught(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := String(tt.input)
-			if !strings.Contains(got, "REDACTED") {
+			if !strings.Contains(got, wantRedacted) {
 				t.Errorf("String(%q) = %q, expected REDACTED somewhere", tt.input, got)
 			}
 		})
@@ -1053,10 +1081,10 @@ func TestJSONLContent_PathFieldsPreserved(t *testing.T) {
 
 	// Structural fields should be preserved
 	mustContain := []string{
-		"ses_37273a1fdffegpYbwUTqEkPsQ0", // session_id (skipped by *id rule)
-		"/private/var/folders",           // file_path (skipped by path rule)
-		"controller.go",                  // filename in file_path
-		"/tmp/TestE2E_ExistingFiles",     // directory (skipped by path rule)
+		testSessionID,                // session_id (skipped by *id rule)
+		"/private/var/folders",       // file_path (skipped by path rule)
+		"controller.go",              // filename in file_path
+		"/tmp/TestE2E_ExistingFiles", // directory (skipped by path rule)
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(result, s) {
@@ -1065,7 +1093,7 @@ func TestJSONLContent_PathFieldsPreserved(t *testing.T) {
 	}
 
 	// No false positives
-	if strings.Contains(result, "REDACTED") {
+	if strings.Contains(result, wantRedacted) {
 		t.Errorf("expected no redactions in structural fields, got: %s", result)
 	}
 }
@@ -1154,7 +1182,7 @@ func TestJSONLContent_PrettyPrintedJSON_IDsPreserved(t *testing.T) {
 	}
 
 	// No false positives on structural data.
-	if strings.Contains(result, "REDACTED") {
+	if strings.Contains(result, wantRedacted) {
 		t.Errorf("expected no redactions in OpenCode export, got redacted content")
 	}
 }
@@ -1193,7 +1221,7 @@ func TestJSONLContent_PrettyPrintedJSON_SecretsStillCaught(t *testing.T) {
 	if strings.Contains(result, highEntropySecret) {
 		t.Error("secret in text field was not redacted")
 	}
-	if !strings.Contains(result, "REDACTED") {
+	if !strings.Contains(result, wantRedacted) {
 		t.Error("expected REDACTED in output")
 	}
 
@@ -1224,7 +1252,7 @@ func TestJSONLContent_SecretsInContentStillCaught(t *testing.T) {
 	if strings.Contains(result, highEntropySecret) {
 		t.Error("secret in content field was not redacted")
 	}
-	if !strings.Contains(result, "REDACTED") {
+	if !strings.Contains(result, wantRedacted) {
 		t.Error("expected REDACTED in output")
 	}
 }
@@ -1284,7 +1312,7 @@ func TestJSONLContent_CrossContextValueCollision(t *testing.T) {
 	if strings.Contains(result, "shared-secret") {
 		t.Errorf("expected shared-secret to be redacted in both contexts, got: %s", result)
 	}
-	if strings.Count(result, `"password":"REDACTED"`) != 2 {
+	if strings.Count(result, `"password":"`+wantRedacted+`"`) != 2 {
 		t.Errorf("expected both password fields redacted, got: %s", result)
 	}
 }
