@@ -663,7 +663,7 @@ func TestMutateSessionState_NotFound(t *testing.T) {
 	}
 	t.Chdir(dir)
 
-	err = MutateSessionState(context.Background(), "nonexistent", func(s *SessionState) error {
+	err = MutateSessionState(context.Background(), "nonexistent", func(_ *SessionState) error {
 		return nil
 	})
 	if !errors.Is(err, ErrStateNotFound) {
@@ -673,7 +673,7 @@ func TestMutateSessionState_NotFound(t *testing.T) {
 
 func TestMutateSessionState_EmptySessionID(t *testing.T) {
 	t.Parallel()
-	err := MutateSessionState(context.Background(), "", func(s *SessionState) error {
+	err := MutateSessionState(context.Background(), "", func(_ *SessionState) error {
 		return nil
 	})
 	if !errors.Is(err, ErrStateNotFound) {

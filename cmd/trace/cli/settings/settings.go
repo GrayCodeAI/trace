@@ -1031,7 +1031,7 @@ func SaveProjectRaw(path string, raw map[string]json.RawMessage) error {
 func ClonePreferencesPath(ctx context.Context) (string, error) {
 	commonDir, err := session.GetGitCommonDir(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("get git common dir: %w", err)
 	}
 	return filepath.Join(commonDir, ClonePreferencesFile), nil
 }
