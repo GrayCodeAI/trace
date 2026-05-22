@@ -120,22 +120,3 @@ func getCustomRulesConfig() *customRulesState {
 	defer customConfigMu.RUnlock()
 	return customConfig
 }
-
-// detectCustomRules returns tagged regions for every match of every
-// configured custom rule. Returns nil if no rules are configured.
-//
-// All regions use an empty label so they are replaced with the bare
-// "REDACTED" token used by the built-in secret layers, not the
-// "[REDACTED_<LABEL>]" token used by PII.
-func detectCustomRules(cfg *customRulesState, s string) []taggedRegion {
-	if cfg == nil || len(cfg.rules) == 0 || s == "" {
-		return nil
-	}
-	var regions []taggedRegion
-	for _, rule := range cfg.rules {
-		for _, loc := range rule.regex.FindAllStringIndex(s, -1) {
-			regions = append(regions, taggedRegion{region: region{loc[0], loc[1]}})
-		}
-	}
-	return regions
-}
