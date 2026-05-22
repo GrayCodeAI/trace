@@ -26,7 +26,7 @@ func TestCodexPostToolUse_PopulatesFilesTouched(t *testing.T) {
 	env := NewRepoWithCommit(t)
 
 	sessionID := "test-codex-post-tool-use"
-	statePath := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
+	statePath := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(statePath), 0o755))
 
 	// Pre-create state with AgentType=Codex. We skip UserPromptSubmit because
@@ -85,7 +85,7 @@ func TestCodexPostToolUse_NonMutatingToolIsNoop(t *testing.T) {
 	env := NewRepoWithCommit(t)
 
 	sessionID := "test-codex-post-tool-use-noop"
-	statePath := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
+	statePath := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(statePath), 0o755))
 
 	initialState := map[string]any{

@@ -55,6 +55,8 @@ func DispatchLifecycleEvent(ctx context.Context, ag agent.Agent, event *agent.Ev
 		return handleLifecycleSubagentEnd(ctx, ag, event)
 	case agent.ModelUpdate:
 		return handleLifecycleModelUpdate(ctx, ag, event)
+	case agent.ToolUse:
+		return handleLifecycleToolUse(ctx, ag, event)
 	default:
 		return fmt.Errorf("unknown lifecycle event type: %d", event.Type)
 	}
@@ -198,6 +200,39 @@ func handleLifecycleModelUpdate(ctx context.Context, ag agent.Agent, event *agen
 	// State doesn't exist yet (or failed to load) — use hint file (see StoreModelHint doc)
 	if err := strategy.StoreModelHint(ctx, event.SessionID, event.Model); err != nil {
 		logging.Warn(logCtx, "failed to store model hint",
+			slog.String("error", err.Error()))
+	}
+
+	return nil
+}
+
+// handleLifecycleToolUse merges a tool's file-change lists into session state.
+// This keeps FilesTouched accurate during a turn so mid-turn commits have
+// correct carry-forward data.
+func handleLifecycleToolUse(ctx context.Context, ag agent.Agent, event *agent.Event) error {
+	logCtx := logging.WithAgent(logging.WithComponent(ctx, "lifecycle"), ag.Name())
+
+	if event.SessionID == "" {
+		return nil
+	}
+
+	totalFiles := len(event.ModifiedFiles) + len(event.NewFiles) + len(event.DeletedFiles)
+	if totalFiles == 0 {
+		return nil
+	}
+
+	logging.Info(
+		logCtx, "tool-use: recording files touched",
+		slog.String("session_id", event.SessionID),
+		slog.String("tool", event.ToolName),
+		slog.Int("modified", len(event.ModifiedFiles)),
+		slog.Int("added", len(event.NewFiles)),
+		slog.Int("deleted", len(event.DeletedFiles)),
+	)
+
+	if err := strategy.RecordFilesTouched(ctx, event.SessionID, event.ModifiedFiles, event.NewFiles, event.DeletedFiles); err != nil {
+		// RecordFilesTouched no-ops on ErrStateNotFound — log and continue.
+		logging.Debug(logCtx, "tool-use: RecordFilesTouched skipped",
 			slog.String("error", err.Error()))
 	}
 

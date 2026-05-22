@@ -1481,3 +1481,73 @@ func (env *TestEnv) CopyTranscriptToTraceTmp(sessionID, transcriptPath string) {
 		env.T.Fatalf("CopyTranscriptToTraceTmp: failed to write transcript to %q: %v", destPath, err)
 	}
 }
+
+// CodexHookRunner executes Codex CLI hooks in the test environment.
+type CodexHookRunner struct {
+	RepoDir string
+	T       interface {
+		Helper()
+		Fatalf(format string, args ...interface{})
+		Logf(format string, args ...interface{})
+	}
+}
+
+// NewCodexHookRunner creates a hook runner for Codex hooks in the given repo.
+func NewCodexHookRunner(repoDir string, t interface {
+	Helper()
+	Fatalf(format string, args ...interface{})
+	Logf(format string, args ...interface{})
+},
+) *CodexHookRunner {
+	return &CodexHookRunner{
+		RepoDir: repoDir,
+		T:       t,
+	}
+}
+
+// runCodexHook runs a Codex hook by name with the given JSON input via stdin.
+func (r *CodexHookRunner) runCodexHook(hookName string, input interface{}) error {
+	r.T.Helper()
+
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("failed to marshal hook input: %w", err)
+	}
+
+	cmd := exec.Command(getTestBinary(), "hooks", "codex", hookName)
+	cmd.Dir = r.RepoDir
+	cmd.Stdin = bytes.NewReader(inputJSON)
+	cmd.Env = testutil.GitIsolatedEnv()
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("codex hook %s failed: %w\nInput: %s\nOutput: %s",
+			hookName, err, inputJSON, output)
+	}
+
+	r.T.Logf("Codex hook %s output: %s", hookName, output)
+	return nil
+}
+
+// SimulateCodexPostToolUseApplyPatch simulates a Codex PostToolUse hook
+// for an apply_patch tool invocation. The patch string is wrapped in the
+// Codex tool_input envelope before being dispatched.
+func (r *CodexHookRunner) SimulateCodexPostToolUseApplyPatch(sessionID, cwd, patch string) error {
+	r.T.Helper()
+
+	input := map[string]any{
+		"session_id":      sessionID,
+		"turn_id":         "t1",
+		"transcript_path": nil,
+		"cwd":             cwd,
+		"hook_event_name": "PostToolUse",
+		"model":           "gpt-5",
+		"permission_mode": "default",
+		"tool_name":       "apply_patch",
+		"tool_use_id":     "call-patch",
+		"tool_input":      map[string]any{"patch": patch},
+		"tool_response":   "Patch applied successfully.",
+	}
+
+	return r.runCodexHook("post-tool-use", input)
+}
