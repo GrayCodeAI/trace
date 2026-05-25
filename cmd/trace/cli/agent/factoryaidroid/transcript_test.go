@@ -693,7 +693,7 @@ func TestExtractAllModifiedFilesFromTranscript_NoSubagents(t *testing.T) {
 	// Main transcript: Write to a file, no Task calls
 	writeJSONLFile(
 		t, transcriptPath,
-		makeWriteToolLine(t, "a1", "/repo/solo.go"),
+		makeWriteToolLine(t, "a1", "/repo/example.go"),
 	)
 
 	files, err := ExtractAllModifiedFilesFromTranscript(transcriptPath, 0, tmpDir+"/nonexistent")
@@ -704,8 +704,8 @@ func TestExtractAllModifiedFilesFromTranscript_NoSubagents(t *testing.T) {
 	if len(files) != 1 {
 		t.Errorf("expected 1 file, got %d: %v", len(files), files)
 	}
-	if len(files) > 0 && files[0] != "/repo/solo.go" {
-		t.Errorf("expected /repo/solo.go, got %q", files[0])
+	if len(files) > 0 && files[0] != "/repo/example.go" {
+		t.Errorf("expected /repo/example.go, got %q", files[0])
 	}
 }
 
