@@ -78,4 +78,4 @@ $ golangci-lint run ./...
 - [ ] No regression in `redact/` tests
 - [ ] No secrets, tokens, or PII added to the repo (test fixtures use
       synthetic values only)
-- [ ] No `Co-authored-by:` trailers (this is solo-developer work)
+- [ ] No `Co-authored-by:` trailers (this is individual-developer work)

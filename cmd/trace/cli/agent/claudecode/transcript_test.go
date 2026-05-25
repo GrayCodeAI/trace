@@ -775,7 +775,7 @@ func TestExtractAllModifiedFiles_NoSubagents(t *testing.T) {
 
 	// Main transcript as bytes: Write to a file, no Task calls
 	transcriptData := buildJSONL(
-		makeWriteToolLine(t, "a1", "/repo/solo.go"),
+		makeWriteToolLine(t, "a1", "/repo/example.go"),
 	)
 
 	files, err := c.ExtractAllModifiedFiles(transcriptData, 0, tmpDir+"/nonexistent")
@@ -786,8 +786,8 @@ func TestExtractAllModifiedFiles_NoSubagents(t *testing.T) {
 	if len(files) != 1 {
 		t.Errorf("expected 1 file, got %d: %v", len(files), files)
 	}
-	if len(files) > 0 && files[0] != "/repo/solo.go" {
-		t.Errorf("expected /repo/solo.go, got %q", files[0])
+	if len(files) > 0 && files[0] != "/repo/example.go" {
+		t.Errorf("expected /repo/example.go, got %q", files[0])
 	}
 }
 
