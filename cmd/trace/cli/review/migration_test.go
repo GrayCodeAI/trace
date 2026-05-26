@@ -20,9 +20,9 @@ func TestReviewSettingsMigration_MovesProjectReviewToClonePreferences(t *testing
 	t.Chdir(tmp)
 	session.ClearGitCommonDirCache()
 
-	entireDir := filepath.Join(tmp, ".entire")
-	if err := os.MkdirAll(entireDir, 0o750); err != nil {
-		t.Fatalf("mkdir .entire: %v", err)
+	traceDir := filepath.Join(tmp, ".trace")
+	if err := os.MkdirAll(traceDir, 0o750); err != nil {
+		t.Fatalf("mkdir .trace: %v", err)
 	}
 	projectSettings := []byte(`{
 		"enabled": true,
@@ -30,7 +30,7 @@ func TestReviewSettingsMigration_MovesProjectReviewToClonePreferences(t *testing
 		"review": {"claude-code": {"skills": ["/review"], "prompt": "project"}},
 		"review_fix_agent": "claude-code"
 	}`)
-	projectPath := filepath.Join(entireDir, "settings.json")
+	projectPath := filepath.Join(traceDir, "settings.json")
 	if err := os.WriteFile(projectPath, projectSettings, 0o600); err != nil {
 		t.Fatalf("write project settings: %v", err)
 	}
@@ -94,11 +94,11 @@ func TestReviewSettingsMigration_MergesNonOverlappingPrefs(t *testing.T) {
 	t.Chdir(tmp)
 	session.ClearGitCommonDirCache()
 
-	entireDir := filepath.Join(tmp, ".entire")
-	if err := os.MkdirAll(entireDir, 0o750); err != nil {
-		t.Fatalf("mkdir .entire: %v", err)
+	traceDir := filepath.Join(tmp, ".trace")
+	if err := os.MkdirAll(traceDir, 0o750); err != nil {
+		t.Fatalf("mkdir .trace: %v", err)
 	}
-	projectPath := filepath.Join(entireDir, "settings.json")
+	projectPath := filepath.Join(traceDir, "settings.json")
 	projectSettings := []byte(`{
 		"enabled": true,
 		"review": {"project-agent": {"prompt": "project"}}
@@ -155,11 +155,11 @@ func TestReviewSettingsMigration_RefusesConflictingPrefs(t *testing.T) {
 	t.Chdir(tmp)
 	session.ClearGitCommonDirCache()
 
-	entireDir := filepath.Join(tmp, ".entire")
-	if err := os.MkdirAll(entireDir, 0o750); err != nil {
-		t.Fatalf("mkdir .entire: %v", err)
+	traceDir := filepath.Join(tmp, ".trace")
+	if err := os.MkdirAll(traceDir, 0o750); err != nil {
+		t.Fatalf("mkdir .trace: %v", err)
 	}
-	projectPath := filepath.Join(entireDir, "settings.json")
+	projectPath := filepath.Join(traceDir, "settings.json")
 	projectSettings := []byte(`{
 		"enabled": true,
 		"review": {"claude-code": {"prompt": "project"}}
@@ -218,11 +218,11 @@ func TestReviewSettingsMigration_NoMoveCleansUpKeys(t *testing.T) {
 	t.Chdir(tmp)
 	session.ClearGitCommonDirCache()
 
-	entireDir := filepath.Join(tmp, ".entire")
-	if err := os.MkdirAll(entireDir, 0o750); err != nil {
-		t.Fatalf("mkdir .entire: %v", err)
+	traceDir := filepath.Join(tmp, ".trace")
+	if err := os.MkdirAll(traceDir, 0o750); err != nil {
+		t.Fatalf("mkdir .trace: %v", err)
 	}
-	projectPath := filepath.Join(entireDir, "settings.json")
+	projectPath := filepath.Join(traceDir, "settings.json")
 	if err := os.WriteFile(projectPath, []byte(`{
 		"enabled": true,
 		"review": null,
@@ -264,11 +264,11 @@ func TestReviewSettingsMigration_DeclinePersistsDismissal(t *testing.T) {
 	t.Chdir(tmp)
 	session.ClearGitCommonDirCache()
 
-	entireDir := filepath.Join(tmp, ".entire")
-	if err := os.MkdirAll(entireDir, 0o750); err != nil {
-		t.Fatalf("mkdir .entire: %v", err)
+	traceDir := filepath.Join(tmp, ".trace")
+	if err := os.MkdirAll(traceDir, 0o750); err != nil {
+		t.Fatalf("mkdir .trace: %v", err)
 	}
-	projectPath := filepath.Join(entireDir, "settings.json")
+	projectPath := filepath.Join(traceDir, "settings.json")
 	projectSettings := []byte(`{
 		"enabled": true,
 		"review": {"claude-code": {"prompt": "project"}}
@@ -325,11 +325,11 @@ func TestReviewSettingsMigration_SkipsWhenProjectHasNoReviewKeys(t *testing.T) {
 	t.Chdir(tmp)
 	session.ClearGitCommonDirCache()
 
-	entireDir := filepath.Join(tmp, ".entire")
-	if err := os.MkdirAll(entireDir, 0o750); err != nil {
-		t.Fatalf("mkdir .entire: %v", err)
+	traceDir := filepath.Join(tmp, ".trace")
+	if err := os.MkdirAll(traceDir, 0o750); err != nil {
+		t.Fatalf("mkdir .trace: %v", err)
 	}
-	projectPath := filepath.Join(entireDir, "settings.json")
+	projectPath := filepath.Join(traceDir, "settings.json")
 	if err := os.WriteFile(projectPath, []byte(`{"enabled":true,"log_level":"debug"}`), 0o600); err != nil {
 		t.Fatalf("write project settings: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestReviewSettingsMigration_SkipsWhenProjectHasNoReviewKeys(t *testing.T) {
 }
 
 // TestReviewSettingsMigration_BailsOnLocalSettingsReviewKeys pins the
-// precondition: when .entire/settings.local.json has review keys, those
+// precondition: when .trace/settings.local.json has review keys, those
 // override clone-local preferences via mergeJSON's wholesale-replace path,
 // so the migration must surface the conflict up front rather than silently
 // produce a migrated-but-masked state. Bailing also intentionally does NOT
@@ -365,11 +365,11 @@ func TestReviewSettingsMigration_BailsOnLocalSettingsReviewKeys(t *testing.T) {
 	t.Chdir(tmp)
 	session.ClearGitCommonDirCache()
 
-	entireDir := filepath.Join(tmp, ".entire")
-	if err := os.MkdirAll(entireDir, 0o750); err != nil {
-		t.Fatalf("mkdir .entire: %v", err)
+	traceDir := filepath.Join(tmp, ".trace")
+	if err := os.MkdirAll(traceDir, 0o750); err != nil {
+		t.Fatalf("mkdir .trace: %v", err)
 	}
-	projectPath := filepath.Join(entireDir, "settings.json")
+	projectPath := filepath.Join(traceDir, "settings.json")
 	projectSettings := []byte(`{
 		"enabled": true,
 		"review": {"claude-code": {"prompt": "project"}}
@@ -377,7 +377,7 @@ func TestReviewSettingsMigration_BailsOnLocalSettingsReviewKeys(t *testing.T) {
 	if err := os.WriteFile(projectPath, projectSettings, 0o600); err != nil {
 		t.Fatalf("write project settings: %v", err)
 	}
-	localPath := filepath.Join(entireDir, "settings.local.json")
+	localPath := filepath.Join(traceDir, "settings.local.json")
 	localSettings := []byte(`{"review": {"local-agent": {"prompt": "local"}}}`)
 	if err := os.WriteFile(localPath, localSettings, 0o600); err != nil {
 		t.Fatalf("write local settings: %v", err)
