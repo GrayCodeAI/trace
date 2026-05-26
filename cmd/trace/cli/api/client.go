@@ -173,7 +173,13 @@ func DecodeJSON(resp *http.Response, dest any) error {
 
 // ErrorResponse represents a standard API error response.
 type ErrorResponse struct {
-	Error string `json:"error"`
+	Error json.RawMessage `json:"error"`
+}
+
+// errorObjectEnvelope is used when the error field is a JSON object with a message subfield.
+type errorObjectEnvelope struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // HTTPError is returned by CheckResponse for non-2xx responses. Callers can use
@@ -212,9 +218,17 @@ func CheckResponse(resp *http.Response) error {
 	}
 
 	var parsed ErrorResponse
-	if err := json.Unmarshal(body, &parsed); err == nil && strings.TrimSpace(parsed.Error) != "" {
-		apiError.Message = parsed.Error
-		return apiError
+	if err := json.Unmarshal(body, &parsed); err == nil && len(parsed.Error) > 0 {
+		var envelope errorObjectEnvelope
+		if json.Unmarshal(parsed.Error, &envelope) == nil && envelope.Message != "" {
+			apiError.Message = envelope.Message
+			return apiError
+		}
+		var msg string
+		if json.Unmarshal(parsed.Error, &msg) == nil && strings.TrimSpace(msg) != "" {
+			apiError.Message = msg
+			return apiError
+		}
 	}
 
 	if text := strings.TrimSpace(string(body)); text != "" {

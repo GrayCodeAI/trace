@@ -47,8 +47,8 @@ func TestBearerTransport_InjectsAuthHeader(t *testing.T) {
 	if gotAuth != "Bearer test-token-123" {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer test-token-123")
 	}
-	if gotUA != "entire-cli" {
-		t.Errorf("User-Agent = %q, want %q", gotUA, "entire-cli")
+	if gotUA != "trace-cli" {
+		t.Errorf("User-Agent = %q, want %q", gotUA, "trace-cli")
 	}
 	if gotAccept != "application/json" {
 		t.Errorf("Accept = %q, want %q", gotAccept, "application/json")
