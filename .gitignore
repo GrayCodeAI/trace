@@ -64,3 +64,6 @@ docs/superpowers
 tmp/
 .tmp/
 .superpowers/
+
+# CodeGraph local index
+.codegraph/
