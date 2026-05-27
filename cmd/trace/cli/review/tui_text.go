@@ -46,20 +46,21 @@ func wrapDisplayWidth(s string, width int) []string {
 			continue
 		}
 		words := strings.Fields(clean)
-		line := ""
+		var line strings.Builder
 		for _, w := range words {
-			if len(line)+len(w)+1 > width && line != "" {
-				out = append(out, line)
-				line = w
+			if line.Len()+len(w)+1 > width && line.Len() > 0 {
+				out = append(out, line.String())
+				line.Reset()
+				line.WriteString(w)
 			} else {
-				if line != "" {
-					line += " "
+				if line.Len() > 0 {
+					line.WriteByte(' ')
 				}
-				line += w
+				line.WriteString(w)
 			}
 		}
-		if line != "" {
-			out = append(out, line)
+		if line.Len() > 0 {
+			out = append(out, line.String())
 		}
 	}
 	return out
