@@ -27,12 +27,16 @@ func newSessionsCmd() *cobra.Command {
 		Long: `View and manage agent sessions tracked by Trace.
 
 Commands:
-  list     List all sessions across all worktrees
-  info     Show detailed information for a specific session
-  stop     Stop one or more active sessions
-  current  Show the active session for the current worktree
-  attach   Attach an existing agent session
-  resume   Switch to a branch and resume its session
+  list        List all sessions across all worktrees
+  info        Show detailed information for a specific session
+  stop        Stop one or more active sessions
+  current     Show the active session for the current worktree
+  attach      Attach an existing agent session
+  resume      Switch to a branch and resume its session
+  replay      Replay a recorded session interactively
+  export      Export a session for team sharing
+  import      Import a shared session
+  analytics   Show session analytics and statistics
 
 Examples:
   trace session list                      List all sessions
@@ -41,7 +45,11 @@ Examples:
   trace session stop                      Interactive stop
   trace session current                   Active session for cwd
   trace session attach <session-id>       Attach an external session
-  trace session resume <branch>           Resume from a branch`,
+  trace session resume <branch>           Resume from a branch
+  trace session replay                    Replay most recent session
+  trace session export                    Export session for sharing
+  trace session import file.json          Import a shared session
+  trace session analytics                 Show session analytics`,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if _, err := paths.WorktreeRoot(cmd.Context()); err != nil {
 				return errors.New("not a git repository")
@@ -56,6 +64,10 @@ Examples:
 	cmd.AddCommand(newSessionCurrentCmd())
 	cmd.AddCommand(newAttachCmd())
 	cmd.AddCommand(newResumeCmd())
+	cmd.AddCommand(newSessionReplayCmd())
+	cmd.AddCommand(newSessionExportCmd())
+	cmd.AddCommand(newSessionImportCmd())
+	cmd.AddCommand(newSessionAnalyticsCmd())
 
 	return cmd
 }
