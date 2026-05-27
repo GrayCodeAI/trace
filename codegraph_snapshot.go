@@ -2,6 +2,7 @@ package trace
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -74,6 +75,9 @@ type GraphDelta struct {
 	ComplexityDelta float64  `json:"complexity_delta"` // change in avg complexity
 }
 
+// ErrNoSnapshots is returned when no snapshots exist in the store.
+var ErrNoSnapshots = errors.New("no snapshots found")
+
 // SnapshotStore manages code graph snapshots.
 type SnapshotStore struct {
 	path string
@@ -103,13 +107,13 @@ func (s *SnapshotStore) Load() (*CodeGraphSnapshot, error) {
 		return nil, fmt.Errorf("list snapshots: %w", err)
 	}
 	if len(files) == 0 {
-		return nil, nil
+		return nil, ErrNoSnapshots
 	}
 
 	// Load most recent
 	data, err := readFile(files[len(files)-1])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read snapshot file: %w", err)
 	}
 
 	var snapshot CodeGraphSnapshot
@@ -195,6 +199,6 @@ func FormatSnapshot(snapshot CodeGraphSnapshot) string {
 }
 
 // Placeholder functions - implement with actual file I/O
-func writeFile(_ string, _ []byte) error        { return nil }
-func listFiles(_, _ string) ([]string, error)    { return nil, nil }
-func readFile(_ string) ([]byte, error)           { return nil, nil }
+func writeFile(_ string, _ []byte) error      { return nil }
+func listFiles(_, _ string) ([]string, error) { return nil, nil }
+func readFile(_ string) ([]byte, error)       { return nil, nil }
