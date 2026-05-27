@@ -1824,7 +1824,7 @@ func buildCondensedCompactTranscriptEntries(transcriptBytes []byte) ([]summarize
 			entries = append(entries, summarize.Entry{Type: summarize.EntryTypeUser, Content: entry.Content})
 		case "assistant":
 			entries = append(entries, summarize.Entry{Type: summarize.EntryTypeAssistant, Content: entry.Content})
-		case "tool":
+		case "tool": //nolint:goconst // semantic label, not worth a constant
 			entries = append(entries, summarize.Entry{Type: summarize.EntryTypeTool, ToolName: entry.ToolName, ToolDetail: entry.ToolDetail})
 		}
 	}

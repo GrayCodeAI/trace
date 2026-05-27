@@ -111,7 +111,7 @@ func runSessionExport(ctx context.Context, w, errW io.Writer, args []string, out
 	}
 
 	// Resolve session ID
-	sessionID := ""
+	var sessionID string
 	if len(args) > 0 {
 		sessionID = args[0]
 	} else {
@@ -134,7 +134,10 @@ func runSessionExport(ctx context.Context, w, errW io.Writer, args []string, out
 	export := buildSessionExport(state)
 
 	// Try to load transcript data
-	transcriptBytes, _ := loadTranscriptForExport(ctx, state)
+	transcriptBytes, err := loadTranscriptForExport(ctx, state)
+	if err == nil {
+		export.Transcript = transcriptBytes
+	}
 	export.Transcript = transcriptBytes
 
 	// Determine output destination
@@ -195,7 +198,7 @@ func buildSessionExport(state *strategy.SessionState) sessionExport {
 }
 
 // loadTranscriptForExport loads transcript data from the session's transcript path.
-func loadTranscriptForExport(ctx context.Context, state *strategy.SessionState) ([]byte, error) {
+func loadTranscriptForExport(_ context.Context, state *strategy.SessionState) ([]byte, error) {
 	if state.TranscriptPath == "" {
 		return nil, errors.New("no transcript path recorded")
 	}
@@ -253,7 +256,7 @@ func runSessionImport(ctx context.Context, w, errW io.Writer, filePath string) e
 	}
 
 	// Check if session already exists
-	existing, _ := strategy.LoadSessionState(ctx, export.SessionID)
+	existing, _ := strategy.LoadSessionState(ctx, export.SessionID) //nolint:errcheck // best-effort existence check
 	if existing != nil {
 		fmt.Fprintf(errW, "Session %s already exists locally. Skipping import.\n", export.SessionID)
 		return NewSilentError(fmt.Errorf("session %s already exists", export.SessionID))
