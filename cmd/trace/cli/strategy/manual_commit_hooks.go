@@ -1944,10 +1944,9 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 
 	var modifiedFiles []string
 
-	// For agents that support subagent-aware extraction, use ExtractAllModifiedFiles
-	// which parses the main transcript AND subagent transcripts in a single pass,
-	// avoiding redundant parsing.
-	if sae, ok := agent.AsSubagentAwareExtractor(ag); ok {
+	// Prefer SubagentAwareExtractor for agents that support it, to include
+	// subagent transcript files in a single pass. Fall back to basic extraction.
+	if subagentExtractor, subOk := agent.AsSubagentAwareExtractor(ag); subOk {
 		subagentsDir := filepath.Join(filepath.Dir(state.TranscriptPath), state.SessionID, "subagents")
 		transcriptData, readErr := os.ReadFile(state.TranscriptPath)
 		if readErr != nil {
@@ -1957,7 +1956,7 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 				slog.String("error", readErr.Error()),
 			)
 		} else {
-			allFiles, extractErr := sae.ExtractAllModifiedFiles(transcriptData, offset, subagentsDir)
+			allFiles, extractErr := subagentExtractor.ExtractAllModifiedFiles(transcriptData, offset, subagentsDir)
 			if extractErr != nil {
 				logging.Debug(
 					logCtx, "extractModifiedFilesFromLiveTranscript: extraction failed",
@@ -2498,50 +2497,12 @@ func getStagedFiles(ctx context.Context) ([]string, error) {
 // Reads prompt.txt directly from the shadow branch tree instead of parsing the full
 // transcript (which involves token counting, context generation, etc.).
 // Returns empty string if no prompt can be retrieved.
-func (s *ManualCommitStrategy) getLastPrompt(_ context.Context, repo *git.Repository, state *SessionState) string {
-	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
-	refName := plumbing.NewBranchReferenceName(shadowBranchName)
-	ref, err := repo.Reference(refName, true)
-	if err != nil {
+func (s *ManualCommitStrategy) getLastPrompt(ctx context.Context, repo *git.Repository, state *SessionState) string {
+	prompts := readPromptsFromShadowBranch(ctx, repo, state)
+	if len(prompts) == 0 {
 		return ""
 	}
-
-	commit, err := repo.CommitObject(ref.Hash())
-	if err != nil {
-		return ""
-	}
-
-	tree, err := commit.Tree()
-	if err != nil {
-		return ""
-	}
-
-	// Read prompt.txt directly from the shadow branch tree.
-	// Prompts are separated by "\n\n---\n\n" — extract the last one.
-	metadataDir := paths.TraceMetadataDir + "/" + state.SessionID
-	promptPath := metadataDir + "/" + paths.PromptFileName
-	file, err := tree.File(promptPath)
-	if err != nil {
-		return ""
-	}
-
-	content, err := file.Contents()
-	if err != nil {
-		return ""
-	}
-
-	return extractLastPrompt(content)
-}
-
-// extractLastPrompt returns the last non-empty prompt from prompt.txt content.
-// Prompts are separated by "\n\n---\n\n".
-func extractLastPrompt(content string) string {
-	if content == "" {
-		return ""
-	}
-
-	prompts := strings.Split(content, "\n\n---\n\n")
-	// Iterate backwards to find the last non-empty prompt
+	// Iterate backwards to find the last non-empty prompt.
 	for i := len(prompts) - 1; i >= 0; i-- {
 		cleaned := strings.TrimSpace(prompts[i])
 		if cleaned != "" && !isOnlySeparators(cleaned) {
@@ -2551,7 +2512,6 @@ func extractLastPrompt(content string) string {
 	return ""
 }
 
-// TODO: check if its duplicated
 // readPromptsFromShadowBranch reads prompt.txt from the shadow branch tree.
 // Returns all prompts split on "\n\n---\n\n", or nil if prompt.txt is not available.
 func readPromptsFromShadowBranch(_ context.Context, repo *git.Repository, state *SessionState) []string {
