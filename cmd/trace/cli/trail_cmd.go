@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -71,7 +72,7 @@ branch, or lists all trails if no trail exists for the current branch.`,
 	cmd.PersistentFlags().BoolVar(&insecureHTTPAuth, "insecure-http-auth", false,
 		"Allow API calls over plain HTTP (insecure, for local development only)")
 	if err := cmd.PersistentFlags().MarkHidden("insecure-http-auth"); err != nil {
-		panic(fmt.Sprintf("hide insecure-http-auth flag: %v", err))
+		fmt.Fprintf(os.Stderr, "WARNING: failed to hide insecure-http-auth flag: %v\n", err)
 	}
 
 	cmd.AddCommand(newTrailListCmd())

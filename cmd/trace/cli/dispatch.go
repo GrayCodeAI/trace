@@ -78,7 +78,7 @@ Examples:
 	cmd.Flags().StringVar(&flagVoice, "voice", "", "voice preset name or literal description")
 	cmd.Flags().BoolVar(&flagInsecureHTTPAuth, "insecure-http-auth", false, "Allow authentication over plain HTTP (insecure, for local development only)")
 	if err := cmd.Flags().MarkHidden("insecure-http-auth"); err != nil {
-		panic(fmt.Sprintf("hide insecure-http-auth flag: %v", err))
+		fmt.Fprintf(os.Stderr, "WARNING: failed to hide insecure-http-auth flag: %v\n", err)
 	}
 
 	return cmd
