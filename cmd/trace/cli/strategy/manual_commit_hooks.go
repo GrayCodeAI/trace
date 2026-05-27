@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
-	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent/claudecode"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent/types"
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/checkpoint"
@@ -1945,9 +1944,10 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 
 	var modifiedFiles []string
 
-	// For Claude Code, use ExtractAllModifiedFiles which parses the main transcript
-	// AND subagent transcripts in a single pass, avoiding redundant parsing.
-	if state.AgentType == agent.AgentTypeClaudeCode {
+	// For agents that support subagent-aware extraction, use ExtractAllModifiedFiles
+	// which parses the main transcript AND subagent transcripts in a single pass,
+	// avoiding redundant parsing.
+	if sae, ok := agent.AsSubagentAwareExtractor(ag); ok {
 		subagentsDir := filepath.Join(filepath.Dir(state.TranscriptPath), state.SessionID, "subagents")
 		transcriptData, readErr := os.ReadFile(state.TranscriptPath)
 		if readErr != nil {
@@ -1957,10 +1957,7 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 				slog.String("error", readErr.Error()),
 			)
 		} else {
-			// TODO: fix when we refactor this area.
-			// rather than instantiating claude specifically, we should iterate agents.
-			c := &claudecode.ClaudeCodeAgent{}
-			allFiles, extractErr := c.ExtractAllModifiedFiles(transcriptData, offset, subagentsDir)
+			allFiles, extractErr := sae.ExtractAllModifiedFiles(transcriptData, offset, subagentsDir)
 			if extractErr != nil {
 				logging.Debug(
 					logCtx, "extractModifiedFilesFromLiveTranscript: extraction failed",

@@ -16,6 +16,13 @@ import (
 	sshagent "golang.org/x/crypto/ssh/agent"
 )
 
+// Default signing program names matching git's own defaults.
+const (
+	DefaultGPGProgram      = "gpg"
+	DefaultSSHSignProgram  = "ssh-keygen"
+	DefaultGPGSMProgram    = "gpgsm"
+)
+
 var (
 	objectSignerLoader = loadObjectSigner
 	scopeName          = map[config.Scope]string{
@@ -151,11 +158,11 @@ func signProgramFromRaw(signFormat programsigner.Format, raw *format.Config) str
 func defaultSignProgram(signFormat programsigner.Format) string {
 	switch signFormat {
 	case programsigner.FormatOpenPGP:
-		return "gpg"
+		return DefaultGPGProgram
 	case programsigner.FormatSSH:
-		return "ssh-keygen"
+		return DefaultSSHSignProgram
 	case programsigner.FormatX509:
-		return "gpgsm"
+		return DefaultGPGSMProgram
 	default:
 		return ""
 	}

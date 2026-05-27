@@ -97,6 +97,19 @@ func (s DumpSink) dumpAgent(run reviewtypes.AgentRun) {
 	fmt.Fprint(s.W, rendered)
 }
 
+// hasAssistantText reports whether buf contains at least one AssistantText
+// event with non-empty Text. More efficient than joinAssistantText when only
+// the existence check is needed (avoids building a string that is immediately
+// discarded).
+func hasAssistantText(buf []reviewtypes.Event) bool {
+	for _, ev := range buf {
+		if at, ok := ev.(reviewtypes.AssistantText); ok && at.Text != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // joinAssistantText extracts AssistantText events from a buffer and joins
 // them with newlines, trimming the result to keep dump output tight.
 func joinAssistantText(buf []reviewtypes.Event) string {
