@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,7 +87,7 @@ func runSessionAnalytics(ctx context.Context, w, errW io.Writer, args []string, 
 	}
 
 	// Resolve session ID
-	sessionID := ""
+	var sessionID string
 	if len(args) > 0 {
 		sessionID = args[0]
 	} else {
@@ -106,10 +107,7 @@ func runSessionAnalytics(ctx context.Context, w, errW io.Writer, args []string, 
 		return NewSilentError(fmt.Errorf("session not found: %s", sessionID))
 	}
 
-	analytics, err := computeSessionAnalytics(ctx, state)
-	if err != nil {
-		return fmt.Errorf("failed to compute analytics: %w", err)
-	}
+	analytics := computeSessionAnalytics(ctx, state)
 
 	if jsonOutput {
 		return writeAnalyticsJSON(w, analytics)
@@ -118,7 +116,7 @@ func runSessionAnalytics(ctx context.Context, w, errW io.Writer, args []string, 
 }
 
 // computeSessionAnalytics computes analytics from session state and transcript.
-func computeSessionAnalytics(ctx context.Context, state *strategy.SessionState) (*sessionAnalytics, error) {
+func computeSessionAnalytics(ctx context.Context, state *strategy.SessionState) *sessionAnalytics {
 	a := &sessionAnalytics{
 		SessionID:    state.SessionID,
 		AgentType:    string(state.AgentType),
@@ -130,11 +128,12 @@ func computeSessionAnalytics(ctx context.Context, state *strategy.SessionState) 
 	}
 
 	// Compute duration
-	if state.EndedAt != nil {
+	switch {
+	case state.EndedAt != nil:
 		a.Duration = state.EndedAt.Sub(state.StartedAt)
-	} else if state.LastInteractionTime != nil {
+	case state.LastInteractionTime != nil:
 		a.Duration = state.LastInteractionTime.Sub(state.StartedAt)
-	} else {
+	default:
 		a.Duration = time.Since(state.StartedAt)
 	}
 	a.DurationDisplay = FormatDuration(a.Duration)
@@ -161,7 +160,7 @@ func computeSessionAnalytics(ctx context.Context, state *strategy.SessionState) 
 		}
 	}
 
-	return a, nil
+	return a
 }
 
 // loadTranscriptForAnalytics loads transcript bytes for analytics computation.
@@ -222,7 +221,10 @@ func extractToolNames(msg json.RawMessage) []string {
 func writeAnalyticsJSON(w io.Writer, a *sessionAnalytics) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(a)
+	if err := enc.Encode(a); err != nil {
+		return fmt.Errorf("encoding analytics JSON: %w", err)
+	}
+	return nil
 }
 
 // writeAnalyticsText writes analytics as formatted text.
@@ -230,7 +232,7 @@ func writeAnalyticsText(w io.Writer, a *sessionAnalytics) error {
 	sty := newStatusStyles(w)
 
 	// Header
-	fmt.Fprintln(w, sty.sectionRule(fmt.Sprintf("Session Analytics: %s", a.SessionID), sty.width))
+	fmt.Fprintln(w, sty.sectionRule("Session Analytics: "+a.SessionID, sty.width))
 	fmt.Fprintln(w)
 
 	// Overview
@@ -248,10 +250,10 @@ func writeAnalyticsText(w io.Writer, a *sessionAnalytics) error {
 	// Messages section
 	fmt.Fprintln(w, sty.render(sty.bold, "  Messages"))
 	fmt.Fprintln(w)
-	writeLabelValue(w, "Total", fmt.Sprintf("%d", a.MessageCount), sty)
-	writeLabelValue(w, "User", fmt.Sprintf("%d", a.UserMessages), sty)
-	writeLabelValue(w, "Assistant", fmt.Sprintf("%d", a.AssistantMsgs), sty)
-	writeLabelValue(w, "Tool calls", fmt.Sprintf("%d", a.ToolCalls), sty)
+	writeLabelValue(w, "Total", strconv.Itoa(a.MessageCount), sty)
+	writeLabelValue(w, "User", strconv.Itoa(a.UserMessages), sty)
+	writeLabelValue(w, "Assistant", strconv.Itoa(a.AssistantMsgs), sty)
+	writeLabelValue(w, "Tool calls", strconv.Itoa(a.ToolCalls), sty)
 	fmt.Fprintln(w)
 
 	// Tool usage section (if any)
@@ -293,13 +295,13 @@ func writeAnalyticsText(w io.Writer, a *sessionAnalytics) error {
 			writeLabelValue(w, "Cache write", formatTokenCount(a.TokenUsage.CacheWrite), sty)
 		}
 		if a.TokenUsage.APICalls > 0 {
-			writeLabelValue(w, "API calls", fmt.Sprintf("%d", a.TokenUsage.APICalls), sty)
+			writeLabelValue(w, "API calls", strconv.Itoa(a.TokenUsage.APICalls), sty)
 		}
 		fmt.Fprintln(w)
 	}
 
 	// Files section
-	writeLabelValue(w, "Files touched", fmt.Sprintf("%d", a.FilesTouched), sty)
+	writeLabelValue(w, "Files touched", strconv.Itoa(a.FilesTouched), sty)
 	fmt.Fprintln(w)
 
 	fmt.Fprintln(w, sty.horizontalRule(sty.width))
@@ -317,21 +319,21 @@ func writeLabelValue(w io.Writer, label, value string, sty statusStyles) {
 
 // maxToolCount returns the maximum count in the tool usage map.
 func maxToolCount(usage map[string]int) int {
-	max := 0
+	peak := 0
 	for _, c := range usage {
-		if c > max {
-			max = c
+		if c > peak {
+			peak = c
 		}
 	}
-	return max
+	return peak
 }
 
 // renderUsageBar renders a simple ASCII bar chart.
-func renderUsageBar(count, max, width int) string {
-	if max == 0 || count == 0 {
+func renderUsageBar(count, maximum, width int) string {
+	if maximum == 0 || count == 0 {
 		return strings.Repeat(" ", width)
 	}
-	filled := (count * width) / max
+	filled := (count * width) / maximum
 	if filled == 0 {
 		filled = 1
 	}
@@ -399,12 +401,12 @@ func runAggregateAnalytics(ctx context.Context, w io.Writer, jsonOutput bool) er
 	}
 
 	sty := newStatusStyles(w)
-	fmt.Fprintln(w, sty.sectionRule(fmt.Sprintf("Aggregate Analytics (%d sessions)", len(active)), sty.width))
+	fmt.Fprintln(w, sty.sectionRule("Aggregate Analytics ("+strconv.Itoa(len(active))+" sessions)", sty.width))
 	fmt.Fprintln(w)
-	writeLabelValue(w, "Sessions", fmt.Sprintf("%d", len(active)), sty)
+	writeLabelValue(w, "Sessions", strconv.Itoa(len(active)), sty)
 	writeLabelValue(w, "Total time", agg.DurationDisplay, sty)
-	writeLabelValue(w, "Checkpoints", fmt.Sprintf("%d", agg.StepCount), sty)
-	writeLabelValue(w, "Files touched", fmt.Sprintf("%d", agg.FilesTouched), sty)
+	writeLabelValue(w, "Checkpoints", strconv.Itoa(agg.StepCount), sty)
+	writeLabelValue(w, "Files touched", strconv.Itoa(agg.FilesTouched), sty)
 
 	if agg.TokenUsage != nil {
 		fmt.Fprintln(w)
@@ -414,7 +416,7 @@ func runAggregateAnalytics(ctx context.Context, w io.Writer, jsonOutput bool) er
 		writeLabelValue(w, "Input", formatTokenCount(agg.TokenUsage.Input), sty)
 		writeLabelValue(w, "Output", formatTokenCount(agg.TokenUsage.Output), sty)
 		if agg.TokenUsage.APICalls > 0 {
-			writeLabelValue(w, "API calls", fmt.Sprintf("%d", agg.TokenUsage.APICalls), sty)
+			writeLabelValue(w, "API calls", strconv.Itoa(agg.TokenUsage.APICalls), sty)
 		}
 	}
 	fmt.Fprintln(w)

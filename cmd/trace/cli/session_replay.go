@@ -60,7 +60,7 @@ func runSessionReplay(ctx context.Context, w, errW io.Writer, args []string, noP
 	}
 
 	// Resolve session ID
-	sessionID := ""
+	var sessionID string
 	if len(args) > 0 {
 		sessionID = args[0]
 	} else {
@@ -97,7 +97,7 @@ func runSessionReplay(ctx context.Context, w, errW io.Writer, args []string, noP
 }
 
 // buildReplayEntries loads and parses the transcript for a session into replay entries.
-func buildReplayEntries(ctx context.Context, state *strategy.SessionState) ([]replayEntry, error) {
+func buildReplayEntries(_ context.Context, state *strategy.SessionState) ([]replayEntry, error) {
 	var transcriptBytes []byte
 
 	// Read the transcript file directly from the recorded path
@@ -215,16 +215,16 @@ func parseAssistantBlocks(msg json.RawMessage) []replayBlock {
 }
 
 // runFullReplay outputs the full replay to the writer.
-func runFullReplay(w io.Writer, state *strategy.SessionState, entries []replayEntry, noPager bool) error {
+func runFullReplay(w io.Writer, state *strategy.SessionState, entries []replayEntry, _ bool) error {
 	sty := newStatusStyles(w)
 
 	// Header
-	fmt.Fprintln(w, sty.sectionRule(fmt.Sprintf("Session Replay: %s", state.SessionID), sty.width))
+	fmt.Fprintln(w, sty.sectionRule("Session Replay: "+state.SessionID, sty.width))
 	fmt.Fprintln(w)
 
 	agentLabel := string(state.AgentType)
 	if agentLabel == "" {
-		agentLabel = "(unknown)"
+		agentLabel = unknownPlaceholder
 	}
 	fmt.Fprintf(w, "  Agent:    %s\n", agentLabel)
 	if state.ModelName != "" {
@@ -249,7 +249,7 @@ func runFullReplay(w io.Writer, state *strategy.SessionState, entries []replayEn
 func runStepReplay(w, errW io.Writer, state *strategy.SessionState, entries []replayEntry) error {
 	sty := newStatusStyles(w)
 
-	fmt.Fprintln(w, sty.sectionRule(fmt.Sprintf("Session Replay: %s", state.SessionID), sty.width))
+	fmt.Fprintln(w, sty.sectionRule("Session Replay: "+state.SessionID, sty.width))
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "  %d messages to replay. Press Enter for next, 'q' to quit.\n", len(entries))
 	fmt.Fprintln(w)
@@ -263,7 +263,10 @@ func runStepReplay(w, errW io.Writer, state *strategy.SessionState, entries []re
 
 		if i < len(entries)-1 {
 			fmt.Fprint(errW, "  [Enter] next  [q] quit > ")
-			input, _ := reader.ReadString('\n')
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				return err
+			}
 			input = strings.TrimSpace(input)
 			if strings.ToLower(input) == "q" {
 				fmt.Fprintln(w, "\n  Replay stopped.")

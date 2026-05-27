@@ -75,6 +75,13 @@ linters:
       # Token threshold for duplication detection
       # Lower = more sensitive (catches smaller duplicates)
       # Default is 150. We use 75 for lint (blocks CI), `mise run dup` uses 50 (advisory)
+    goconst:
+      min-occurrences: 6
+    perfsprint:
+      err-error: true
+      errorf: true
+      sprintf1: true
+      strconcat: false
       threshold: 75
     errcheck:
       check-type-assertions: true

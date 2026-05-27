@@ -22,25 +22,41 @@ const (
 	dateUnknown       = "unknown"
 	activityTimeframe = "last-month"
 	activityLimit     = 1000
+
+	// Canonical agent IDs used for normalization.
+	agentClaude   = "claude"
+	agentGemini   = "gemini"
+	agentAmp      = "amp"
+	agentCodex    = "codex"
+	agentOpencode = "opencode"
+	agentCopilot  = "copilot"
+	agentCursor   = "cursor"
+	agentDroid    = "droid"
+	agentKiro     = "kiro"
+	agentPi       = "pi"
+
+	defaultTimezone = "UTC"
 )
 
 // knownAgents maps normalized agent strings from the API to display IDs.
 // Used for the commit list, where per-checkpoint agent strings are free-form.
 // The /me/activity endpoint returns already-normalized canonical IDs.
+//
+//nolint:goconst // map keys must be string literals
 var knownAgents = map[string]string{
-	"claude":     "claude",
-	"claudecode": "claude",
-	"gemini":     "gemini",
-	"geminicli":  "gemini",
-	"amp":        "amp",
-	"codex":      "codex",
-	"opencode":   "opencode",
-	"copilot":    "copilot",
-	"copilotcli": "copilot",
-	"pi":         "pi",
-	"cursor":     "cursor",
-	"droid":      "droid",
-	"kiro":       "kiro",
+	"claude":     agentClaude,
+	"claudecode": agentClaude,
+	"gemini":     agentGemini,
+	"geminicli":  agentGemini,
+	"amp":        agentAmp,
+	"codex":      agentCodex,
+	"opencode":   agentOpencode,
+	"copilot":    agentCopilot,
+	"copilotcli": agentCopilot,
+	"pi":         agentPi,
+	"cursor":     agentCursor,
+	"droid":      agentDroid,
+	"kiro":       agentKiro,
 }
 
 func newActivityCmd() *cobra.Command {
@@ -176,7 +192,7 @@ func detectTimezone() string {
 	if tz := normalizeTimezone(time.Local.String()); tz != "" {
 		return tz
 	}
-	return "UTC"
+	return defaultTimezone
 }
 
 // normalizeTimezone returns a name Go can load as a time zone, or "" if the
