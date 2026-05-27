@@ -88,7 +88,7 @@ func NewSnapshotStore(path string) *SnapshotStore {
 func (s *SnapshotStore) Save(snapshot CodeGraphSnapshot) error {
 	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal snapshot: %w", err)
 	}
 
 	// Save to file
@@ -99,7 +99,10 @@ func (s *SnapshotStore) Save(snapshot CodeGraphSnapshot) error {
 // Load loads the most recent snapshot.
 func (s *SnapshotStore) Load() (*CodeGraphSnapshot, error) {
 	files, err := listFiles(s.path, "snapshot_*.json")
-	if err != nil || len(files) == 0 {
+	if err != nil {
+		return nil, fmt.Errorf("list snapshots: %w", err)
+	}
+	if len(files) == 0 {
 		return nil, nil
 	}
 
@@ -111,23 +114,23 @@ func (s *SnapshotStore) Load() (*CodeGraphSnapshot, error) {
 
 	var snapshot CodeGraphSnapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal snapshot: %w", err)
 	}
 
 	return &snapshot, nil
 }
 
 // Compare compares two snapshots and returns the delta.
-func CompareSnapshots(old, new *CodeGraphSnapshot) *GraphDelta {
-	if old == nil || new == nil {
+func CompareSnapshots(old, cur *CodeGraphSnapshot) *GraphDelta {
+	if old == nil || cur == nil {
 		return nil
 	}
 
 	delta := &GraphDelta{
-		FilesAdded:      new.FileCount - old.FileCount,
-		NodesAdded:      new.SymbolCount - old.SymbolCount,
-		EdgesAdded:      new.EdgeCount - old.EdgeCount,
-		ComplexityDelta: new.Complexity.AvgCyclomatic - old.Complexity.AvgCyclomatic,
+		FilesAdded:      cur.FileCount - old.FileCount,
+		NodesAdded:      cur.SymbolCount - old.SymbolCount,
+		EdgesAdded:      cur.EdgeCount - old.EdgeCount,
+		ComplexityDelta: cur.Complexity.AvgCyclomatic - old.Complexity.AvgCyclomatic,
 	}
 
 	// Find new and removed symbols
@@ -136,14 +139,14 @@ func CompareSnapshots(old, new *CodeGraphSnapshot) *GraphDelta {
 		oldSymbols[s.Name] = true
 	}
 
-	for _, s := range new.TopSymbols {
+	for _, s := range cur.TopSymbols {
 		if !oldSymbols[s.Name] {
 			delta.NewSymbols = append(delta.NewSymbols, s.Name)
 		}
 	}
 
 	newSymbols := make(map[string]bool)
-	for _, s := range new.TopSymbols {
+	for _, s := range cur.TopSymbols {
 		newSymbols[s.Name] = true
 	}
 
@@ -191,14 +194,7 @@ func FormatSnapshot(snapshot CodeGraphSnapshot) string {
 	return result
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // Placeholder functions - implement with actual file I/O
-func writeFile(path string, data []byte) error        { return nil }
-func listFiles(dir, pattern string) ([]string, error) { return nil, nil }
-func readFile(path string) ([]byte, error)            { return nil, nil }
+func writeFile(_ string, _ []byte) error        { return nil }
+func listFiles(_, _ string) ([]string, error)    { return nil, nil }
+func readFile(_ string) ([]byte, error)           { return nil, nil }
