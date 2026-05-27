@@ -265,7 +265,7 @@ func runStepReplay(w, errW io.Writer, state *strategy.SessionState, entries []re
 			fmt.Fprint(errW, "  [Enter] next  [q] quit > ")
 			input, err := reader.ReadString('\n')
 			if err != nil {
-				return err
+				return fmt.Errorf("reading input: %w", err)
 			}
 			input = strings.TrimSpace(input)
 			if strings.ToLower(input) == "q" {
