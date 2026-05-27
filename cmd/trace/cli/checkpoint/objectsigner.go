@@ -18,9 +18,9 @@ import (
 
 // Default signing program names matching git's own defaults.
 const (
-	DefaultGPGProgram      = "gpg"
-	DefaultSSHSignProgram  = "ssh-keygen"
-	DefaultGPGSMProgram    = "gpgsm"
+	DefaultGPGProgram     = "gpg"
+	DefaultSSHSignProgram = "ssh-keygen"
+	DefaultGPGSMProgram   = "gpgsm"
 )
 
 var (
