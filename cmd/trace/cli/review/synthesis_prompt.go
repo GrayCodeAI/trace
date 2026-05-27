@@ -88,7 +88,7 @@ Be concise; aim for ~300 words.`)
 func usableAgentRuns(summary reviewtypes.RunSummary) []reviewtypes.AgentRun {
 	var result []reviewtypes.AgentRun
 	for _, run := range summary.AgentRuns {
-		if joinAssistantText(run.Buffer) == "" {
+		if !hasAssistantText(run.Buffer) {
 			continue
 		}
 		result = append(result, run)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/logging"
 	"github.com/go-git/go-git/v6/config"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -110,7 +111,7 @@ func hasCustomSSHSignProgram(raw *format.Config) bool {
 
 	program := raw.Section("gpg").Subsection("ssh").Option("program")
 
-	return program != "" && program != "ssh-keygen"
+	return program != "" && program != checkpoint.DefaultSSHSignProgram
 }
 
 func loadScopedConfig(source plugin.ConfigSource, scope config.Scope) *config.Config {
