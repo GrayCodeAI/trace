@@ -2214,7 +2214,10 @@ func addCheckpointTrailerWithComment(message string, checkpointID id.CheckpointI
 // userPrompt is the user's prompt text (stored truncated as LastPrompt for display).
 // model is the LLM model identifier (e.g., "claude-sonnet-4-20250514"); empty if unknown.
 func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID string, agentType types.AgentType, transcriptPath string, userPrompt string, model string) error {
-	repo, err := OpenRepository(ctx)
+	checkpoint.StorerMu.Lock()
+	defer checkpoint.StorerMu.Unlock()
+
+	repo, err := OpenRepositoryLocked(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
 	}

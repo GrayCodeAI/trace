@@ -173,9 +173,15 @@ func writeTranscript(path string, lines []transcriptLine) error {
 
 	raw := buf.Bytes()
 	if len(raw) >= compressGzipThreshold {
-		return os.WriteFile(path+".gz", gzipCompress(raw), 0o644) //nolint:gosec // Writing to controlled git metadata path
+		if err := os.WriteFile(path+".gz", gzipCompress(raw), 0o644); err != nil { //nolint:gosec // Writing to controlled git metadata path
+			return fmt.Errorf("writing compressed transcript: %w", err)
+		}
+		return nil
 	}
-	return os.WriteFile(path, raw, 0o644) //nolint:gosec // Writing to controlled git metadata path
+	if err := os.WriteFile(path, raw, 0o644); err != nil { //nolint:gosec // Writing to controlled git metadata path
+		return fmt.Errorf("writing transcript: %w", err)
+	}
+	return nil
 }
 
 // gzipCompress returns the gzip-compressed form of data.
@@ -194,7 +200,11 @@ func gzipDecompress(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("gzip reader: %w", err)
 	}
 	defer func() { _ = r.Close() }()
-	return io.ReadAll(r)
+	data, err = io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("decompressing transcript: %w", err)
+	}
+	return data, nil
 }
 
 // readTranscriptBytes reads a transcript file, transparently decompressing

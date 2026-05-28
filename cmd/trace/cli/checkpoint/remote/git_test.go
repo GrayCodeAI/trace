@@ -371,7 +371,7 @@ func TestNewCommand_HTTPS_InjectsToken(t *testing.T) {
 	}
 
 	// Auth config should be injected via -c include.path=<file> arg
-	require.True(t, len(cmd.Args) >= 3, "args should include -c and include.path")
+	require.GreaterOrEqual(t, len(cmd.Args), 3, "args should include -c and include.path")
 	assert.Equal(t, "-c", cmd.Args[1], "second arg should be -c")
 	assert.True(t, strings.HasPrefix(cmd.Args[2], "include.path="),
 		"third arg should be include.path=<path>, got: %s", cmd.Args[2])
@@ -398,7 +398,7 @@ func TestNewCommand_SSH_URL_RewritesToHTTPSAndInjectsToken(t *testing.T) {
 		"original SSH target should be gone after rewrite")
 
 	// Auth config should be injected via -c include.path=<file> arg
-	require.True(t, len(cmd.Args) >= 3, "args should include -c and include.path")
+	require.GreaterOrEqual(t, len(cmd.Args), 3, "args should include -c and include.path")
 	assert.Equal(t, "-c", cmd.Args[1], "second arg should be -c")
 	assert.True(t, strings.HasPrefix(cmd.Args[2], "include.path="),
 		"third arg should be include.path=<path>, got: %s", cmd.Args[2])
@@ -573,7 +573,7 @@ func TestNewCommand_GIT_TERMINAL_PROMPT_Coexistence(t *testing.T) {
 	defer cleanup()
 
 	// Auth config should be injected via -c include.path=<file> arg
-	require.True(t, len(cmd.Args) >= 3, "args should include -c and include.path")
+	require.GreaterOrEqual(t, len(cmd.Args), 3, "args should include -c and include.path")
 	assert.Equal(t, "-c", cmd.Args[1], "second arg should be -c")
 	assert.True(t, strings.HasPrefix(cmd.Args[2], "include.path="),
 		"third arg should be include.path=<path>")
@@ -634,17 +634,4 @@ func TestIsLocalPath(t *testing.T) {
 			assert.Equal(t, tt.want, isLocalPath(tt.val))
 		})
 	}
-}
-
-// envToMap converts an env slice to a map for easy assertions.
-// For duplicate keys, the last value wins.
-func envToMap(env []string) map[string]string {
-	m := make(map[string]string, len(env))
-	for _, e := range env {
-		k, v, ok := strings.Cut(e, "=")
-		if ok {
-			m[k] = v
-		}
-	}
-	return m
 }

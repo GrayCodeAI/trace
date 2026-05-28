@@ -58,6 +58,9 @@ func HashWorktreeID(worktreeID string) string {
 // If the new tree hash matches the last checkpoint's tree hash, the checkpoint
 // is skipped to avoid duplicate commits (deduplication).
 func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOptions) (WriteTemporaryResult, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	// Validate base commit - required for shadow branch naming
 	if opts.BaseCommit == "" {
 		return WriteTemporaryResult{}, errors.New("BaseCommit is required for temporary checkpoint")
@@ -67,6 +70,10 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 	if err := validation.ValidateSessionID(opts.SessionID); err != nil {
 		return WriteTemporaryResult{}, fmt.Errorf("invalid temporary checkpoint options: %w", err)
 	}
+
+	// Serialize all storer access in-process. go-git's filesystem storer is
+	// not safe for concurrent read+write even across separate Repository
+	// instances that share the same .git directory.
 
 	// Get shadow branch name
 	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit, opts.WorktreeID)
@@ -112,11 +119,21 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 	// branch — across goroutines and across processes — so the inner CAS
 	// only sees contention from external `git update-ref` callers (rare).
 	err = withShadowBranchFlock(commonDir, shadowBranchName, func() error {
+		// Open a fresh repo to avoid storer contention with concurrent writers.
+		// go-git's storer is not fully thread-safe for concurrent write+read
+		// on the same instance. The flock serializes our own writes, but other
+		// goroutines may be reading from the shared storer concurrently.
+		freshRepo, frErr := s.openFreshRepo()
+		if frErr != nil {
+			return fmt.Errorf("open repo for checkpoint: %w", frErr)
+		}
+		store := &GitStore{repo: freshRepo, repoPath: s.repoPath, blobFetcher: s.blobFetcher}
+
 		// Tiny CAS retry budget: with the flock held, races against our own
 		// code are impossible. Retries cover the pathological case of an
 		// external writer (a user invoking `git update-ref` manually, etc.).
 		for attempt := range shadowRefMaxRetries {
-			parentHash, baseTreeHash, gErr := s.getOrCreateShadowBranch(shadowBranchName)
+			parentHash, baseTreeHash, gErr := store.getOrCreateShadowBranch(shadowBranchName)
 			if gErr != nil {
 				return fmt.Errorf("failed to get shadow branch: %w", gErr)
 			}
@@ -124,12 +141,12 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 			// Get the last checkpoint's tree hash for deduplication
 			var lastTreeHash plumbing.Hash
 			if parentHash != plumbing.ZeroHash {
-				if lastCommit, lcErr := s.repo.CommitObject(parentHash); lcErr == nil {
+				if lastCommit, lcErr := store.repo.CommitObject(parentHash); lcErr == nil {
 					lastTreeHash = lastCommit.TreeHash
 				}
 			}
 
-			treeHash, tErr := s.buildTreeWithChanges(ctx, baseTreeHash, allFiles, allDeletedFiles, opts.MetadataDir, opts.MetadataDirAbs)
+			treeHash, tErr := store.buildTreeWithChanges(ctx, baseTreeHash, allFiles, allDeletedFiles, opts.MetadataDir, opts.MetadataDirAbs)
 			if tErr != nil {
 				return fmt.Errorf("failed to build tree: %w", tErr)
 			}
@@ -143,7 +160,7 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 				return nil
 			}
 
-			commitHash, cErr := s.createCommit(ctx, treeHash, parentHash, commitMsg, opts.AuthorName, opts.AuthorEmail)
+			commitHash, cErr := store.createCommit(ctx, treeHash, parentHash, commitMsg, opts.AuthorName, opts.AuthorEmail)
 			if cErr != nil {
 				return fmt.Errorf("failed to create commit: %w", cErr)
 			}
@@ -187,6 +204,9 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 // Returns nil if the shadow branch doesn't exist.
 // worktreeID should be empty for main worktree or the internal git worktree name for linked worktrees.
 func (s *GitStore) ReadTemporary(ctx context.Context, baseCommit, worktreeID string) (*ReadTemporaryResult, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -219,6 +239,9 @@ func (s *GitStore) ReadTemporary(ctx context.Context, baseCommit, worktreeID str
 
 // ListTemporary lists all shadow branches with their checkpoint info.
 func (s *GitStore) ListTemporary(ctx context.Context) ([]TemporaryInfo, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -275,6 +298,9 @@ func (s *GitStore) ListTemporary(ctx context.Context) ([]TemporaryInfo, error) {
 // Task checkpoints include both code changes and task-specific metadata.
 // Returns the commit hash of the created checkpoint.
 func (s *GitStore) WriteTemporaryTask(ctx context.Context, opts WriteTemporaryTaskOptions) (plumbing.Hash, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	// Validate base commit - required for shadow branch naming
 	if opts.BaseCommit == "" {
 		return plumbing.ZeroHash, errors.New("BaseCommit is required for task checkpoint")
@@ -290,6 +316,7 @@ func (s *GitStore) WriteTemporaryTask(ctx context.Context, opts WriteTemporaryTa
 	if err := validation.ValidateAgentID(opts.AgentID); err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("invalid task checkpoint options: %w", err)
 	}
+
 
 	// Get shadow branch name
 	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit, opts.WorktreeID)
@@ -310,23 +337,29 @@ func (s *GitStore) WriteTemporaryTask(ctx context.Context, opts WriteTemporaryTa
 
 	var resultHash plumbing.Hash
 	err = withShadowBranchFlock(commonDir, shadowBranchName, func() error {
+		freshRepo, frErr := s.openFreshRepo()
+		if frErr != nil {
+			return fmt.Errorf("open repo for task checkpoint: %w", frErr)
+		}
+		store := &GitStore{repo: freshRepo, repoPath: s.repoPath, blobFetcher: s.blobFetcher}
+
 		for attempt := range shadowRefMaxRetries {
-			parentHash, baseTreeHash, gErr := s.getOrCreateShadowBranch(shadowBranchName)
+			parentHash, baseTreeHash, gErr := store.getOrCreateShadowBranch(shadowBranchName)
 			if gErr != nil {
 				return fmt.Errorf("failed to get shadow branch: %w", gErr)
 			}
 
-			newTreeHash, tErr := s.buildTreeWithChanges(ctx, baseTreeHash, allFiles, opts.DeletedFiles, "", "")
+			newTreeHash, tErr := store.buildTreeWithChanges(ctx, baseTreeHash, allFiles, opts.DeletedFiles, "", "")
 			if tErr != nil {
 				return fmt.Errorf("failed to build tree: %w", tErr)
 			}
 
-			newTreeHash, tErr = s.addTaskMetadataToTree(ctx, newTreeHash, opts)
+			newTreeHash, tErr = store.addTaskMetadataToTree(ctx, newTreeHash, opts)
 			if tErr != nil {
 				return fmt.Errorf("failed to add task metadata: %w", tErr)
 			}
 
-			commitHash, cErr := s.createCommit(ctx, newTreeHash, parentHash, opts.CommitMessage, opts.AuthorName, opts.AuthorEmail)
+			commitHash, cErr := store.createCommit(ctx, newTreeHash, parentHash, opts.CommitMessage, opts.AuthorName, opts.AuthorEmail)
 			if cErr != nil {
 				return fmt.Errorf("failed to create commit: %w", cErr)
 			}
@@ -495,6 +528,9 @@ func (s *GitStore) addTaskMetadataToTree(ctx context.Context, baseTreeHash plumb
 // The sessionID filter, if provided, limits results to commits from that session.
 // worktreeID should be empty for main worktree or the internal git worktree name for linked worktrees.
 func (s *GitStore) ListTemporaryCheckpoints(ctx context.Context, baseCommit, worktreeID, sessionID string, limit int) ([]TemporaryCheckpointInfo, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	shadowBranchName := ShadowBranchNameForCommit(baseCommit, worktreeID)
 	return s.listCheckpointsForBranch(ctx, shadowBranchName, sessionID, limit)
 }
@@ -503,6 +539,9 @@ func (s *GitStore) ListTemporaryCheckpoints(ctx context.Context, baseCommit, wor
 // Use this when you already have the full branch name (e.g., from ListTemporary).
 // The sessionID filter, if provided, limits results to commits from that session.
 func (s *GitStore) ListCheckpointsForBranch(ctx context.Context, branchName, sessionID string, limit int) ([]TemporaryCheckpointInfo, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	return s.listCheckpointsForBranch(ctx, branchName, sessionID, limit)
 }
 
@@ -591,6 +630,9 @@ func (s *GitStore) listCheckpointsForBranch(ctx context.Context, shadowBranchNam
 // This is used for checkpoint lookup when the base commit is unknown (e.g., HEAD advanced since session start).
 // The sessionID filter, if provided, limits results to commits from that session.
 func (s *GitStore) ListAllTemporaryCheckpoints(ctx context.Context, sessionID string, limit int) ([]TemporaryCheckpointInfo, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -643,6 +685,9 @@ var errStop = errors.New("stop iteration")
 // agentType is used for reassembling chunked transcripts in the correct format.
 // Handles both chunked and non-chunked transcripts.
 func (s *GitStore) GetTranscriptFromCommit(ctx context.Context, commitHash plumbing.Hash, metadataDir string, agentType types.AgentType) ([]byte, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	commit, err := s.repo.CommitObject(commitHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit: %w", err)
@@ -688,6 +733,9 @@ func (s *GitStore) GetTranscriptFromCommit(ctx context.Context, commitHash plumb
 // ShadowBranchExists checks if a shadow branch exists for the given base commit and worktree.
 // worktreeID should be empty for main worktree or the internal git worktree name for linked worktrees.
 func (s *GitStore) ShadowBranchExists(baseCommit, worktreeID string) bool {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	shadowBranchName := ShadowBranchNameForCommit(baseCommit, worktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	_, err := s.repo.Reference(refName, true)
@@ -699,6 +747,9 @@ func (s *GitStore) ShadowBranchExists(baseCommit, worktreeID string) bool {
 // Uses git CLI instead of go-git's RemoveReference because go-git v5 doesn't properly
 // persist deletions with packed refs or worktrees.
 func (s *GitStore) DeleteShadowBranch(ctx context.Context, baseCommit, worktreeID string) error {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	shadowBranchName := ShadowBranchNameForCommit(baseCommit, worktreeID)
 	cmd := exec.CommandContext(ctx, "git", "branch", "-D", "--", shadowBranchName)
 	if output, err := cmd.CombinedOutput(); err != nil {
