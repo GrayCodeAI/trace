@@ -326,7 +326,7 @@ func CheckoutBranch(ctx context.Context, ref string) error {
 	// Try to resolve as a branch name first.
 	branchRef := plumbing.NewBranchReferenceName(ref)
 	if _, refErr := repo.Reference(branchRef, true); refErr == nil {
-		return wt.Checkout(&git.CheckoutOptions{
+		return wt.Checkout(&git.CheckoutOptions{ //nolint:forbidigo // Safe: go-git v6 fixed the v5 bug that deleted .gitignored dirs (go-git/go-git#970)
 			Branch: branchRef,
 		})
 	}
@@ -336,7 +336,7 @@ func CheckoutBranch(ctx context.Context, ref string) error {
 	if err != nil {
 		return fmt.Errorf("checkout failed: ref %q not found: %w", ref, err)
 	}
-	return wt.Checkout(&git.CheckoutOptions{
+	return wt.Checkout(&git.CheckoutOptions{ //nolint:forbidigo // Safe: go-git v6 fixed the v5 bug that deleted .gitignored dirs (go-git/go-git#970)
 		Hash: *hash,
 	})
 }
