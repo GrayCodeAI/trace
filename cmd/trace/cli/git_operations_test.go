@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-
 func initOpenedTestRepo(t *testing.T, dir string) *git.Repository {
 	t.Helper()
 	testutil.InitRepo(t, dir)
