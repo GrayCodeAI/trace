@@ -241,7 +241,11 @@ func (s *GitStore) ReadTemporary(ctx context.Context, baseCommit, worktreeID str
 func (s *GitStore) ListTemporary(ctx context.Context) ([]TemporaryInfo, error) {
 	StorerMu.Lock()
 	defer StorerMu.Unlock()
+	return s.listTemporary(ctx)
+}
 
+// listTemporary is the unlocked internal implementation. Callers must hold StorerMu.
+func (s *GitStore) listTemporary(ctx context.Context) ([]TemporaryInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -637,7 +641,7 @@ func (s *GitStore) ListAllTemporaryCheckpoints(ctx context.Context, sessionID st
 	}
 
 	// List all shadow branches
-	branches, err := s.ListTemporary(ctx)
+	branches, err := s.listTemporary(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list shadow branches: %w", err)
 	}
