@@ -693,7 +693,7 @@ func shouldSkipJSONLField(key string) bool {
 		"edge_id": true, "tool_id": true, "call_id": true,
 		"event_id": true, "group_id": true, "project_id": true,
 		"checkpoint_id": true,
-		"session_ids": true, "request_ids": true, "trace_ids": true,
+		"session_ids":   true, "request_ids": true, "trace_ids": true,
 		"span_ids": true, "parent_ids": true, "run_ids": true,
 	}
 	if safeIDFields[lower] {
