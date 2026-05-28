@@ -352,7 +352,7 @@ func injectCheckpointTokenViaArgs(baseArgs []string, token string) ([]string, fu
 		return baseArgs, cleanup
 	}
 	_ = tmpFile.Close()
-	_ = os.Chmod(tmpFile.Name(), 0o600)
+	_ = os.Chmod(tmpFile.Name(), 0o600) //nolint:errcheck // Best-effort; read-only perms, failure is non-fatal
 	cleanup = func() { _ = os.Remove(tmpFile.Name()) }
 
 	// Prepend -c include.path=<file> so git loads the auth config on top of

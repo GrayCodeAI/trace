@@ -188,7 +188,7 @@ func writeTranscript(path string, lines []transcriptLine) error {
 func gzipCompress(data []byte) []byte {
 	var buf bytes.Buffer
 	w := gzip.NewWriter(&buf)
-	_, _ = w.Write(data)
+	_, _ = w.Write(data) //nolint:errcheck // In-memory buffer write cannot fail
 	_ = w.Close()
 	return buf.Bytes()
 }
