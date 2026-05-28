@@ -943,6 +943,18 @@ var repoCache sync.Map // map[string]*git.Repository
 // find the repository root, which works correctly even when called from a
 // subdirectory or a linked worktree.
 func OpenRepository(ctx context.Context) (*git.Repository, error) {
+	checkpoint.StorerMu.Lock()
+	defer checkpoint.StorerMu.Unlock()
+	return openRepositoryLocked(ctx)
+}
+
+// OpenRepositoryLocked is like OpenRepository but does not acquire StorerMu.
+// The caller must already hold checkpoint.StorerMu.
+func OpenRepositoryLocked(ctx context.Context) (*git.Repository, error) {
+	return openRepositoryLocked(ctx)
+}
+
+func openRepositoryLocked(ctx context.Context) (*git.Repository, error) {
 	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		// Fallback to current directory if git command fails
@@ -957,7 +969,9 @@ func OpenRepository(ctx context.Context) (*git.Repository, error) {
 	}
 
 	if cached, ok := repoCache.Load(absRoot); ok {
-		return cached.(*git.Repository), nil
+		if repo, ok := cached.(*git.Repository); ok {
+			return repo, nil
+		}
 	}
 
 	repo, err := git.PlainOpen(repoRoot)

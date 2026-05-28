@@ -55,6 +55,9 @@ var chunkTranscript = agent.ChunkTranscript
 //   - For incremental checkpoints: checkpoints/NNN-<tool-use-id>.json
 //   - For final checkpoints: checkpoint.json and agent-<agent-id>.jsonl
 func (s *GitStore) WriteCommitted(ctx context.Context, opts WriteCommittedOptions) error {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	// Validate identifiers to prevent path traversal and malformed data
 	if opts.CheckpointID.IsEmpty() {
 		return errors.New("invalid checkpoint options: checkpoint ID is required")
@@ -501,6 +504,9 @@ func (s *GitStore) writeCheckpointSummary(opts WriteCommittedOptions, basePath s
 // UpdateCheckpointSummary updates root-level checkpoint metadata fields that depend
 // on the full set of sessions already written to the checkpoint.
 func (s *GitStore) UpdateCheckpointSummary(ctx context.Context, checkpointID id.CheckpointID, combinedAttribution *InitialAttribution) error {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -912,6 +918,14 @@ type taskCheckpointData struct {
 //	├── 1/                 # Second session
 //	└── ...
 func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID id.CheckpointID) (*CheckpointSummary, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
+	return s.readCommitted(ctx, checkpointID)
+}
+
+// readCommitted is the unlocked internal implementation. Callers must hold storerMu.
+func (s *GitStore) readCommitted(ctx context.Context, checkpointID id.CheckpointID) (*CheckpointSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -950,6 +964,9 @@ func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID id.Checkpoint
 // This is a lightweight read that avoids fetching transcript/prompt blobs.
 // sessionIndex is 0-based.
 func (s *GitStore) ReadSessionMetadata(ctx context.Context, checkpointID id.CheckpointID, sessionIndex int) (*CommittedMetadata, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -990,6 +1007,14 @@ func (s *GitStore) ReadSessionMetadata(ctx context.Context, checkpointID id.Chec
 // Returns ErrCheckpointNotFound if the checkpoint or session doesn't exist.
 // Returns ErrNoTranscript if the session exists but has no transcript.
 func (s *GitStore) ReadSessionContent(ctx context.Context, checkpointID id.CheckpointID, sessionIndex int) (*SessionContent, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
+	return s.readSessionContent(ctx, checkpointID, sessionIndex)
+}
+
+// readSessionContent is the unlocked internal implementation. Callers must hold storerMu.
+func (s *GitStore) readSessionContent(ctx context.Context, checkpointID id.CheckpointID, sessionIndex int) (*SessionContent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -1046,7 +1071,15 @@ func (s *GitStore) ReadSessionContent(ctx context.Context, checkpointID id.Check
 // ReadLatestSessionContent is a convenience method that reads the latest session's content.
 // This is equivalent to ReadSessionContent(ctx, checkpointID, len(summary.Sessions)-1).
 func (s *GitStore) ReadLatestSessionContent(ctx context.Context, checkpointID id.CheckpointID) (*SessionContent, error) {
-	summary, err := s.ReadCommitted(ctx, checkpointID)
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
+	return s.readLatestSessionContent(ctx, checkpointID)
+}
+
+// readLatestSessionContent is the unlocked internal implementation. Callers must hold storerMu.
+func (s *GitStore) readLatestSessionContent(ctx context.Context, checkpointID id.CheckpointID) (*SessionContent, error) {
+	summary, err := s.readCommitted(ctx, checkpointID)
 	if err != nil {
 		return nil, err
 	}
@@ -1058,7 +1091,7 @@ func (s *GitStore) ReadLatestSessionContent(ctx context.Context, checkpointID id
 	}
 
 	latestIndex := len(summary.Sessions) - 1
-	return s.ReadSessionContent(ctx, checkpointID, latestIndex)
+	return s.readSessionContent(ctx, checkpointID, latestIndex)
 }
 
 // ReadSessionContentByID reads a session's content by its session ID.
@@ -1066,7 +1099,10 @@ func (s *GitStore) ReadLatestSessionContent(ctx context.Context, checkpointID id
 // Returns ErrCheckpointNotFound if the checkpoint doesn't exist.
 // Returns an error if no session with the given ID exists in the checkpoint.
 func (s *GitStore) ReadSessionContentByID(ctx context.Context, checkpointID id.CheckpointID, sessionID string) (*SessionContent, error) {
-	summary, err := s.ReadCommitted(ctx, checkpointID)
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
+	summary, err := s.readCommitted(ctx, checkpointID)
 	if err != nil {
 		return nil, err
 	}
@@ -1076,7 +1112,7 @@ func (s *GitStore) ReadSessionContentByID(ctx context.Context, checkpointID id.C
 
 	// Iterate through sessions to find the one with matching session ID
 	for i := range len(summary.Sessions) {
-		content, readErr := s.ReadSessionContent(ctx, checkpointID, i)
+		content, readErr := s.readSessionContent(ctx, checkpointID, i)
 		if readErr != nil {
 			continue
 		}
@@ -1093,6 +1129,9 @@ func (s *GitStore) ReadSessionContentByID(ctx context.Context, checkpointID id.C
 //
 
 func (s *GitStore) ListCommitted(ctx context.Context) ([]CommittedInfo, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -1160,7 +1199,10 @@ func (s *GitStore) ListCommitted(ctx context.Context) ([]CommittedInfo, error) {
 // GetTranscript retrieves the transcript for a specific checkpoint ID.
 // Returns the latest session's transcript.
 func (s *GitStore) GetTranscript(ctx context.Context, checkpointID id.CheckpointID) ([]byte, error) {
-	content, err := s.ReadLatestSessionContent(ctx, checkpointID)
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
+	content, err := s.readLatestSessionContent(ctx, checkpointID)
 	if err != nil {
 		return nil, err
 	}
@@ -1175,7 +1217,10 @@ func (s *GitStore) GetTranscript(ctx context.Context, checkpointID id.Checkpoint
 // Returns ErrCheckpointNotFound if the checkpoint doesn't exist.
 // Returns ErrNoTranscript if the checkpoint exists but has no transcript.
 func (s *GitStore) GetSessionLog(ctx context.Context, cpID id.CheckpointID) ([]byte, string, error) {
-	content, err := s.ReadLatestSessionContent(ctx, cpID)
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
+	content, err := s.readLatestSessionContent(ctx, cpID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1199,6 +1244,9 @@ func LookupSessionLog(ctx context.Context, cpID id.CheckpointID) ([]byte, string
 // UpdateSummary updates the summary field in the latest session's metadata.
 // Returns ErrCheckpointNotFound if the checkpoint doesn't exist.
 func (s *GitStore) UpdateSummary(ctx context.Context, checkpointID id.CheckpointID, summary *Summary) error {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -1297,6 +1345,9 @@ func (s *GitStore) UpdateSummary(ctx context.Context, checkpointID id.Checkpoint
 //
 // Returns ErrCheckpointNotFound if the checkpoint doesn't exist.
 func (s *GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOptions) error {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if opts.CheckpointID.IsEmpty() {
 		return errors.New("invalid update options: checkpoint ID is required")
 	}
@@ -1962,6 +2013,9 @@ type Author struct {
 // Finds the commit whose subject matches "Checkpoint: <id>" and returns its author.
 // Returns empty Author if the checkpoint is not found or the sessions branch doesn't exist.
 func (s *GitStore) GetCheckpointAuthor(ctx context.Context, checkpointID id.CheckpointID) (Author, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return Author{}, err //nolint:wrapcheck // Propagating context cancellation
 	}

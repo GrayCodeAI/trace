@@ -347,13 +347,13 @@ func injectCheckpointTokenViaArgs(baseArgs []string, token string) ([]string, fu
 		return baseArgs, cleanup
 	}
 	if _, err := tmpFile.WriteString(configContent); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
 		return baseArgs, cleanup
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 	_ = os.Chmod(tmpFile.Name(), 0o600)
-	cleanup = func() { os.Remove(tmpFile.Name()) }
+	cleanup = func() { _ = os.Remove(tmpFile.Name()) }
 
 	// Prepend -c include.path=<file> so git loads the auth config on top of
 	// all other config sources. This does not replace existing config.
