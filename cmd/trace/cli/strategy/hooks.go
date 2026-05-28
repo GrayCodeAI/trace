@@ -173,7 +173,7 @@ func buildHookSpecs(cmdPrefix string) []hookSpec {
 			name: "prepare-commit-msg",
 			content: fmt.Sprintf(`#!/bin/sh
 # %s
-%s hooks git prepare-commit-msg "$1" "$2" 2>/dev/null || true
+%s hooks git prepare-commit-msg "$1" "$2" 2>>".git/trace-hooks.log" || true
 `, traceHookMarker, cmdPrefix),
 		},
 		{
@@ -189,7 +189,7 @@ func buildHookSpecs(cmdPrefix string) []hookSpec {
 			content: fmt.Sprintf(`#!/bin/sh
 # %s
 # Post-commit hook: condense session data if commit has Trace-Checkpoint trailer
-%s hooks git post-commit 2>/dev/null || true
+%s hooks git post-commit 2>>".git/trace-hooks.log" || true
 `, traceHookMarker, cmdPrefix),
 		},
 		{
@@ -197,7 +197,7 @@ func buildHookSpecs(cmdPrefix string) []hookSpec {
 			content: fmt.Sprintf(`#!/bin/sh
 # %s
 # Post-rewrite hook: remap session linkage after amend/rebase rewrites
-%s hooks git post-rewrite "$1" 2>/dev/null || true
+%s hooks git post-rewrite "$1" 2>>".git/trace-hooks.log" || true
 `, traceHookMarker, cmdPrefix),
 		},
 		{

@@ -62,15 +62,17 @@ type CleanupResult struct {
 
 // shadowBranchPattern matches shadow branch names in both old and new formats:
 //   - Old format: trace/<commit[:7+]>
-//   - New format: trace/<commit[:7+]>-<worktreeHash[:6]>
+//   - New format (pre-collision-fix): trace/<commit[:7+]>-<worktreeHash[:6]>
+//   - New format: trace/<commit[:12+]>-<worktreeHash[:10]>
 //
-// The pattern requires at least 7 hex characters for the commit, optionally followed
-// by a dash and exactly 6 hex characters for the worktree hash.
-var shadowBranchPattern = regexp.MustCompile(`^trace/[0-9a-fA-F]{7,}(-[0-9a-fA-F]{6})?$`)
+// The pattern requires at least 7 hex characters for the commit (supporting
+// legacy 7-char names), optionally followed by a dash and 6-10 hex characters
+// for the worktree hash (supporting both old 6-char and new 10-char hashes).
+var shadowBranchPattern = regexp.MustCompile(`^trace/[0-9a-fA-F]{7,}(-[0-9a-fA-F]{6,10})?$`)
 
 // IsShadowBranch returns true if the branch name matches the shadow branch pattern.
 // Shadow branches have the format "trace/<commit-hash>-<worktree-hash>" where the
-// commit hash is at least 7 hex characters and worktree hash is 6 hex characters.
+// commit hash is at least 7 hex characters and worktree hash is 6-10 hex characters.
 // The "trace/checkpoints/v1" branch is NOT a shadow branch.
 func IsShadowBranch(branchName string) bool {
 	// Explicitly exclude metadata and trails branches

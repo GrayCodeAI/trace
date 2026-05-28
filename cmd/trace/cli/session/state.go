@@ -32,6 +32,18 @@ const (
 	// StuckActiveThreshold is the duration after which an ACTIVE session with no
 	// interaction is considered stuck (used by "trace doctor" and "trace status").
 	StuckActiveThreshold = 1 * time.Hour
+
+	// MaxFilesTouched is the maximum number of files tracked in FilesTouched.
+	// When exceeded, oldest entries are removed to prevent unbounded growth.
+	MaxFilesTouched = 1000
+
+	// MaxPromptAttributions is the maximum number of attributions tracked.
+	// When exceeded, oldest entries are removed to prevent unbounded growth.
+	MaxPromptAttributions = 100
+
+	// MaxTurnCheckpointIDs is the maximum number of checkpoint IDs tracked per turn.
+	// When exceeded, oldest entries are removed to prevent unbounded growth.
+	MaxTurnCheckpointIDs = 500
 )
 
 // Kind identifies the purpose of a session. Empty means "normal" (legacy
@@ -321,6 +333,27 @@ func (s *State) NormalizeAfterLoad(ctx context.Context) {
 	}
 }
 
+// EnforceLimits caps unbounded arrays to prevent state file bloat.
+// When limits are exceeded, the oldest entries (those at the front of each
+// slice) are discarded, preserving the most recent data.
+// Call this after modifying state and before Save.
+func (s *State) EnforceLimits() {
+	// Cap FilesTouched: keep the most recent MaxFilesTouched entries
+	if len(s.FilesTouched) > MaxFilesTouched {
+		s.FilesTouched = s.FilesTouched[len(s.FilesTouched)-MaxFilesTouched:]
+	}
+
+	// Cap PromptAttributions: keep the most recent entries
+	if len(s.PromptAttributions) > MaxPromptAttributions {
+		s.PromptAttributions = s.PromptAttributions[len(s.PromptAttributions)-MaxPromptAttributions:]
+	}
+
+	// Cap TurnCheckpointIDs: keep the most recent entries
+	if len(s.TurnCheckpointIDs) > MaxTurnCheckpointIDs {
+		s.TurnCheckpointIDs = s.TurnCheckpointIDs[len(s.TurnCheckpointIDs)-MaxTurnCheckpointIDs:]
+	}
+}
+
 // RealignAttributionBase sets AttributionBaseCommit to newBase and clears any
 // bookkeeping whose meaning depends on attribution being diverged from the
 // shadow-branch base. Call this every time a code path intentionally brings
@@ -448,8 +481,12 @@ func (s *StateStore) Load(ctx context.Context, sessionID string) (*State, error)
 }
 
 // Save saves the session state atomically.
+// Automatically enforces size limits on unbounded arrays before persisting.
 func (s *StateStore) Save(ctx context.Context, state *State) error {
 	_ = ctx // Reserved for future use
+
+	// Enforce size limits to prevent unbounded growth
+	state.EnforceLimits()
 
 	// Validate session ID to prevent path traversal
 	if err := validation.ValidateSessionID(state.SessionID); err != nil {

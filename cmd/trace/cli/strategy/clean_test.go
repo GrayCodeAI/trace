@@ -31,7 +31,7 @@ func TestIsShadowBranch(t *testing.T) {
 		{"old format: full commit hash", "trace/abcdef0123456789abcdef0123456789abcdef01", true},
 		{"old format: mixed case hex", "trace/AbCdEf1", true},
 
-		// Valid shadow branches - new format with worktree hash (7 hex + dash + 6 hex)
+		// Valid shadow branches - new format with worktree hash (12 hex + dash + 10 hex)
 		{"new format: standard", "trace/abc1234-e3b0c4", true},
 		{"new format: numeric worktree hash", "trace/1234567-123456", true},
 		{"new format: full commit with worktree", "trace/abcdef0123456789-fedcba", true},
@@ -51,7 +51,7 @@ func TestIsShadowBranch(t *testing.T) {
 		{"just trace", "trace", false},
 		{"trace with slash only", "trace/", false},
 		{"worktree hash too short (5 chars)", "trace/abc1234-e3b0c", false},
-		{"worktree hash too long (7 chars)", "trace/abc1234-e3b0c44", false},
+		{"worktree hash too long (11 chars)", "trace/abc1234-e3b0c442987", false},
 		{"non-hex in worktree hash", "trace/abc1234-ghijkl", false},
 		{"missing commit hash", "trace/-e3b0c4", false},
 	}

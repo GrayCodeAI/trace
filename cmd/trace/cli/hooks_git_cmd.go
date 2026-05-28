@@ -14,9 +14,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// gitHooksDisabled is set by PersistentPreRunE when Trace is not set up or disabled.
-// When true, all git hook commands return early without doing any work.
-var gitHooksDisabled bool
+// contextKey is an unexported type for context keys defined in this package.
+type contextKey string
+
+// gitHooksDisabledKey is the context key for the git hooks disabled state.
+const gitHooksDisabledKey contextKey = "gitHooksDisabled"
 
 // gitHookContext holds common state for git hook logging.
 type gitHookContext struct {
@@ -100,7 +102,7 @@ func newHooksGitCmd() *cobra.Command {
 			// This prevents global git hooks from doing anything in repos where
 			// Trace was never enabled or has been disabled.
 			if !settings.IsSetUpAndEnabled(ctx) {
-				gitHooksDisabled = true
+				cmd.SetContext(context.WithValue(ctx, gitHooksDisabledKey, true))
 				return nil
 			}
 			// Discover external agent plugins so GetByAgentType works correctly
@@ -136,7 +138,7 @@ func newHooksGitPrepareCommitMsgCmd() *cobra.Command {
 		Short: "Handle prepare-commit-msg git hook",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if gitHooksDisabled {
+			if cmd.Context().Value(gitHooksDisabledKey) == true {
 				return nil
 			}
 
@@ -164,7 +166,7 @@ func newHooksGitCommitMsgCmd() *cobra.Command {
 		Short: "Handle commit-msg git hook",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if gitHooksDisabled {
+			if cmd.Context().Value(gitHooksDisabledKey) == true {
 				return nil
 			}
 
@@ -187,7 +189,7 @@ func newHooksGitPostCommitCmd() *cobra.Command {
 		Short: "Handle post-commit git hook",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if gitHooksDisabled {
+			if cmd.Context().Value(gitHooksDisabledKey) == true {
 				return nil
 			}
 
@@ -209,7 +211,7 @@ func newHooksGitPostRewriteCmd() *cobra.Command {
 		Short: "Handle post-rewrite git hook",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if gitHooksDisabled {
+			if cmd.Context().Value(gitHooksDisabledKey) == true {
 				return nil
 			}
 
@@ -231,7 +233,7 @@ func newHooksGitPrePushCmd() *cobra.Command {
 		Short: "Handle pre-push git hook",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if gitHooksDisabled {
+			if cmd.Context().Value(gitHooksDisabledKey) == true {
 				return nil
 			}
 

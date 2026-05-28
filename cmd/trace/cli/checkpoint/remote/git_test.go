@@ -255,56 +255,48 @@ func TestResolveFetchTarget(t *testing.T) {
 	})
 }
 
-func TestAppendCheckpointTokenEnv(t *testing.T) {
+func TestInjectCheckpointTokenViaArgs(t *testing.T) {
 	t.Parallel()
 
-	t.Run("adds token env vars", func(t *testing.T) {
+	t.Run("prepends include.path to args with temp config file", func(t *testing.T) {
 		t.Parallel()
-		env := appendCheckpointTokenEnv([]string{"PATH=/usr/bin", "HOME=/home/user"}, "my-secret-token")
-		assert.Contains(t, env, "PATH=/usr/bin")
-		assert.Contains(t, env, "HOME=/home/user")
-		assert.Contains(t, env, "GIT_CONFIG_COUNT=1")
-		assert.Contains(t, env, "GIT_CONFIG_KEY_0=http.extraHeader")
+		args, cleanup := injectCheckpointTokenViaArgs([]string{"fetch", "origin", "main"}, "my-secret-token")
+		defer cleanup()
+
+		require.Len(t, args, 5, "should have 2 new args + 3 original")
+		assert.Equal(t, "-c", args[0])
+		assert.True(t, strings.HasPrefix(args[1], "include.path="),
+			"second arg should be include.path=<path>, got: %s", args[1])
+		assert.Equal(t, "fetch", args[2])
+		assert.Equal(t, "origin", args[3])
+		assert.Equal(t, "main", args[4])
+
+		// Extract config file path from include.path=<path>
+		configPath := strings.TrimPrefix(args[1], "include.path=")
+
+		// Config file should exist and have restricted permissions
+		info, err := os.Stat(configPath)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "config file should be mode 0600")
+
+		// Config file should contain the auth header with the base64-encoded token
+		content, err := os.ReadFile(configPath)
+		require.NoError(t, err)
 		wantAuth := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:my-secret-token"))
-		assert.Contains(t, env, "GIT_CONFIG_VALUE_0="+wantAuth)
+		assert.Contains(t, string(content), wantAuth, "config should contain the base64-encoded auth header")
+		assert.Contains(t, string(content), "[http]", "config should have http section")
+		assert.Contains(t, string(content), "extraHeader", "config should set extraHeader")
 	})
 
-	t.Run("preserves existing GIT_CONFIG entries and appends at next index", func(t *testing.T) {
+	t.Run("token not in returned args directly", func(t *testing.T) {
 		t.Parallel()
-		env := appendCheckpointTokenEnv([]string{
-			"PATH=/usr/bin",
-			"GIT_CONFIG_COUNT=2",
-			"GIT_CONFIG_KEY_0=some.key",
-			"GIT_CONFIG_VALUE_0=some-value",
-			"GIT_CONFIG_KEY_1=other.key",
-			"GIT_CONFIG_VALUE_1=other-value",
-		}, "new-token")
+		args, cleanup := injectCheckpointTokenViaArgs([]string{"push", "origin"}, "super-secret")
+		defer cleanup()
 
-		for _, e := range env {
-			if e == "GIT_CONFIG_COUNT=2" {
-				t.Error("old GIT_CONFIG_COUNT should have been replaced")
-			}
+		for _, arg := range args {
+			assert.NotContains(t, arg, "super-secret",
+				"token must not appear directly in args")
 		}
-
-		assert.Contains(t, env, "GIT_CONFIG_COUNT=3")
-		assert.Contains(t, env, "GIT_CONFIG_KEY_0=some.key")
-		assert.Contains(t, env, "GIT_CONFIG_VALUE_0=some-value")
-		assert.Contains(t, env, "GIT_CONFIG_KEY_1=other.key")
-		assert.Contains(t, env, "GIT_CONFIG_VALUE_1=other-value")
-		assert.Contains(t, env, "GIT_CONFIG_KEY_2=http.extraHeader")
-		wantAuth := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:new-token"))
-		assert.Contains(t, env, "GIT_CONFIG_VALUE_2="+wantAuth)
-	})
-
-	t.Run("invalid GIT_CONFIG_COUNT falls back to zero", func(t *testing.T) {
-		t.Parallel()
-		env := appendCheckpointTokenEnv([]string{
-			"PATH=/usr/bin",
-			"GIT_CONFIG_COUNT=not-a-number",
-		}, "tok")
-
-		assert.Contains(t, env, "GIT_CONFIG_COUNT=1")
-		assert.Contains(t, env, "GIT_CONFIG_KEY_0=http.extraHeader")
 	})
 }
 
@@ -339,7 +331,8 @@ func TestIsValidToken(t *testing.T) {
 func TestNewCommand_ControlCharsInToken(t *testing.T) {
 	t.Setenv(CheckpointTokenEnvVar, "token\r\nEvil: injected-header")
 
-	cmd := newCommand(context.Background(), "fetch", "https://github.com/org/repo.git")
+	cmd, cleanup := newCommand(context.Background(), "fetch", "https://github.com/org/repo.git")
+	defer cleanup()
 	assert.Nil(t, cmd.Env, "env should not be set when token contains control characters")
 }
 
@@ -347,7 +340,8 @@ func TestNewCommand_ControlCharsInToken(t *testing.T) {
 func TestNewCommand_NoToken(t *testing.T) {
 	t.Setenv(CheckpointTokenEnvVar, "")
 
-	cmd := newCommand(context.Background(), "fetch", "https://github.com/org/repo.git")
+	cmd, cleanup := newCommand(context.Background(), "fetch", "https://github.com/org/repo.git")
+	defer cleanup()
 	assert.Nil(t, cmd.Stdin, "stdin should be nil")
 	assert.Nil(t, cmd.Env, "env should not be set when token is empty")
 }
@@ -356,7 +350,8 @@ func TestNewCommand_NoToken(t *testing.T) {
 func TestNewCommand_WhitespaceToken(t *testing.T) {
 	t.Setenv(CheckpointTokenEnvVar, "   ")
 
-	cmd := newCommand(context.Background(), "fetch", "https://github.com/org/repo.git")
+	cmd, cleanup := newCommand(context.Background(), "fetch", "https://github.com/org/repo.git")
+	defer cleanup()
 	assert.Nil(t, cmd.Env, "env should not be set when token is only whitespace")
 }
 
@@ -364,32 +359,56 @@ func TestNewCommand_WhitespaceToken(t *testing.T) {
 func TestNewCommand_HTTPS_InjectsToken(t *testing.T) {
 	t.Setenv(CheckpointTokenEnvVar, "ghp_test123")
 
-	cmd := newCommand(context.Background(), "fetch", "https://github.com/org/repo.git")
-	require.NotNil(t, cmd.Env, "env should be set for HTTPS with token")
+	cmd, cleanup := newCommand(context.Background(), "fetch", "https://github.com/org/repo.git")
+	defer cleanup()
 
-	envMap := envToMap(cmd.Env)
-	assert.Equal(t, "1", envMap["GIT_CONFIG_COUNT"])
-	assert.Equal(t, "http.extraHeader", envMap["GIT_CONFIG_KEY_0"])
+	// Token should NOT be in env vars
+	if cmd.Env != nil {
+		for _, e := range cmd.Env {
+			assert.NotContains(t, e, "ghp_test123", "token must not appear in env vars")
+			assert.NotContains(t, e, "GIT_CONFIG_VALUE_", "GIT_CONFIG_VALUE_* must not be used")
+		}
+	}
+
+	// Auth config should be injected via -c include.path=<file> arg
+	require.True(t, len(cmd.Args) >= 3, "args should include -c and include.path")
+	assert.Equal(t, "-c", cmd.Args[1], "second arg should be -c")
+	assert.True(t, strings.HasPrefix(cmd.Args[2], "include.path="),
+		"third arg should be include.path=<path>, got: %s", cmd.Args[2])
+
+	// Verify the config file contains the auth header with the token
+	configPath := strings.TrimPrefix(cmd.Args[2], "include.path=")
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
 	wantAuth := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:ghp_test123"))
-	assert.Equal(t, wantAuth, envMap["GIT_CONFIG_VALUE_0"])
+	assert.Contains(t, string(content), wantAuth, "config file should contain the base64-encoded auth header")
+	assert.Contains(t, string(content), "extraHeader", "config should set extraHeader")
 }
 
 // Not parallel: uses t.Setenv()
 func TestNewCommand_SSH_URL_RewritesToHTTPSAndInjectsToken(t *testing.T) {
 	t.Setenv(CheckpointTokenEnvVar, "ghp_test123")
 
-	cmd := newCommand(context.Background(), "push", "git@github.com:org/repo.git", "main")
+	cmd, cleanup := newCommand(context.Background(), "push", "git@github.com:org/repo.git", "main")
+	defer cleanup()
 
 	assert.Contains(t, cmd.Args, "https://github.com/org/repo.git",
 		"SSH target should be rewritten to HTTPS in args")
 	assert.NotContains(t, cmd.Args, "git@github.com:org/repo.git",
 		"original SSH target should be gone after rewrite")
 
-	require.NotNil(t, cmd.Env, "env should be set after rewriting SSH to HTTPS")
-	envMap := envToMap(cmd.Env)
-	assert.Equal(t, "1", envMap["GIT_CONFIG_COUNT"])
+	// Auth config should be injected via -c include.path=<file> arg
+	require.True(t, len(cmd.Args) >= 3, "args should include -c and include.path")
+	assert.Equal(t, "-c", cmd.Args[1], "second arg should be -c")
+	assert.True(t, strings.HasPrefix(cmd.Args[2], "include.path="),
+		"third arg should be include.path=<path>, got: %s", cmd.Args[2])
+
+	// Verify the config file contains the auth header with the token
+	configPath := strings.TrimPrefix(cmd.Args[2], "include.path=")
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
 	wantAuth := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:ghp_test123"))
-	assert.Equal(t, wantAuth, envMap["GIT_CONFIG_VALUE_0"])
+	assert.Contains(t, string(content), wantAuth, "config file should contain the base64-encoded auth header")
 }
 
 // Not parallel: uses t.Setenv() and os.Stderr
@@ -411,7 +430,8 @@ func TestNewCommand_SSH_Unparseable_WarnsAndSkips(t *testing.T) {
 	// but newCommand will still detect protocol as "" and skip without SSH warning.
 	// Use an SSH SCP target with empty repo path instead: parses as SSH with
 	// Host but owner/repo empty, so rewrite fails and protocol stays SSH.
-	cmd := newCommand(context.Background(), "push", "ssh://git@host/", "main")
+	cmd, cleanup := newCommand(context.Background(), "push", "ssh://git@host/", "main")
+	defer cleanup()
 
 	w.Close()
 	os.Stderr = oldStderr
@@ -433,7 +453,8 @@ func TestNewCommand_SSH_Unparseable_WarnsAndSkips(t *testing.T) {
 func TestNewCommand_LocalPath_NoToken(t *testing.T) {
 	t.Setenv(CheckpointTokenEnvVar, "ghp_test123")
 
-	cmd := newCommand(context.Background(), "push", "/tmp/bare-repo", "main")
+	cmd, cleanup := newCommand(context.Background(), "push", "/tmp/bare-repo", "main")
+	defer cleanup()
 	assert.Nil(t, cmd.Env, "env should NOT be set for local path targets")
 }
 
@@ -485,10 +506,11 @@ func TestCheckpointToken_HTTPSServer_SendsAuthHeader(t *testing.T) {
 	tmpDir := setupTokenTestRepo(t)
 
 	target := srv.URL + "/org/repo.git"
-	cmd := newCommand(context.Background(),
+	cmd, cleanup := newCommand(context.Background(),
 		"fetch", target, "+refs/heads/main:refs/remotes/origin/main")
+	defer cleanup()
 	cmd.Dir = tmpDir
-	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_SSL_NO_VERIFY=1")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSL_NO_VERIFY=1")
 	_ = cmd.Run() //nolint:errcheck // expected to fail against test server
 
 	auth, count := getCapture()
@@ -506,13 +528,11 @@ func TestCheckpointToken_HTTPSServer_NoTokenNoHeader(t *testing.T) {
 	tmpDir := setupTokenTestRepo(t)
 
 	target := srv.URL + "/org/repo.git"
-	cmd := newCommand(context.Background(),
+	cmd, cleanup := newCommand(context.Background(),
 		"fetch", target, "+refs/heads/main:refs/remotes/origin/main")
+	defer cleanup()
 	cmd.Dir = tmpDir
-	if cmd.Env == nil {
-		cmd.Env = os.Environ()
-	}
-	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_SSL_NO_VERIFY=1")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSL_NO_VERIFY=1")
 
 	_ = cmd.Run() //nolint:errcheck // expected to fail against test server
 
@@ -529,10 +549,11 @@ func TestCheckpointToken_HTTPSServer_LsRemoteSendsAuthHeader(t *testing.T) {
 	tmpDir := setupTokenTestRepo(t)
 
 	target := srv.URL + "/org/repo.git"
-	cmd := newCommand(context.Background(),
+	cmd, cleanup := newCommand(context.Background(),
 		"ls-remote", target)
+	defer cleanup()
 	cmd.Dir = tmpDir
-	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_SSL_NO_VERIFY=1")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSL_NO_VERIFY=1")
 
 	_ = cmd.Run() //nolint:errcheck // expected to fail against test server
 
@@ -547,17 +568,27 @@ func TestCheckpointToken_HTTPSServer_LsRemoteSendsAuthHeader(t *testing.T) {
 func TestNewCommand_GIT_TERMINAL_PROMPT_Coexistence(t *testing.T) {
 	t.Setenv(CheckpointTokenEnvVar, "coexist-token")
 
-	cmd := newCommand(context.Background(),
+	cmd, cleanup := newCommand(context.Background(),
 		"fetch", "--no-tags", "--filter=blob:none", "https://github.com/org/repo.git", "refs/heads/main")
-	require.NotNil(t, cmd.Env)
+	defer cleanup()
 
-	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
+	// Auth config should be injected via -c include.path=<file> arg
+	require.True(t, len(cmd.Args) >= 3, "args should include -c and include.path")
+	assert.Equal(t, "-c", cmd.Args[1], "second arg should be -c")
+	assert.True(t, strings.HasPrefix(cmd.Args[2], "include.path="),
+		"third arg should be include.path=<path>")
 
-	envMap := envToMap(cmd.Env)
-	assert.Equal(t, "1", envMap["GIT_CONFIG_COUNT"])
+	// Verify the config file contains the token
+	configPath := strings.TrimPrefix(cmd.Args[2], "include.path=")
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
 	wantAuth := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:coexist-token"))
-	assert.Equal(t, wantAuth, envMap["GIT_CONFIG_VALUE_0"])
-	assert.Equal(t, "0", envMap["GIT_TERMINAL_PROMPT"])
+	assert.Contains(t, string(content), wantAuth)
+
+	// Original args should be preserved after the -c flag
+	assert.Contains(t, cmd.Args, "--no-tags")
+	assert.Contains(t, cmd.Args, "--filter=blob:none")
+	assert.Contains(t, cmd.Args, "https://github.com/org/repo.git")
 }
 
 func TestIsURL(t *testing.T) {

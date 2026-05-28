@@ -35,11 +35,14 @@ const (
 	ShadowBranchPrefix = "trace/"
 
 	// ShadowBranchHashLength is the number of hex characters used in shadow branch names.
-	// Shadow branches are named "trace/<hash>" using the first 7 characters of the commit hash.
-	ShadowBranchHashLength = 7
+	// Shadow branches are named "trace/<hash>" using the first 12 characters of the commit hash.
+	// Increased from 7 to 12 to reduce collision probability in large repositories.
+	ShadowBranchHashLength = 12
 
 	// WorktreeIDHashLength is the number of hex characters used for worktree ID hash.
-	WorktreeIDHashLength = 6
+	// Increased from 6 to 10 to reduce collision probability when multiple worktrees
+	// share similar base commits.
+	WorktreeIDHashLength = 10
 )
 
 // HashWorktreeID returns a short hash of the worktree identifier.
@@ -718,7 +721,7 @@ func ShadowBranchNameForCommit(baseCommit, worktreeID string) string {
 }
 
 // ParseShadowBranchName extracts the commit prefix and worktree hash from a shadow branch name.
-// Input format: "trace/<commit[:7]>-<worktreeHash[:6]>"
+// Input format: "trace/<commit[:12]>-<worktreeHash[:10]>" (also supports legacy 7/6 char format)
 // Returns (commitPrefix, worktreeHash, ok). Returns ("", "", false) if not a valid shadow branch.
 func ParseShadowBranchName(branchName string) (commitPrefix, worktreeHash string, ok bool) {
 	if !strings.HasPrefix(branchName, ShadowBranchPrefix) {

@@ -960,7 +960,7 @@ func TestInstallGitHook_InstallsPostRewrite(t *testing.T) {
 	if !strings.Contains(hookContent, traceHookMarker) {
 		t.Error("installed post-rewrite hook should contain Trace marker")
 	}
-	if !strings.Contains(hookContent, `trace hooks git post-rewrite "$1" 2>/dev/null || true`) {
+	if !strings.Contains(hookContent, `trace hooks git post-rewrite "$1" 2>>".git/trace-hooks.log" || true`) {
 		t.Errorf("installed post-rewrite hook content missing expected command:\n%s", hookContent)
 	}
 }

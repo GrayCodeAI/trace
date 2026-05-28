@@ -85,6 +85,15 @@ func casUpdateShadowBranchRef(ctx context.Context, repoRoot, branchName string, 
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
 	output, err := cmd.CombinedOutput()
 	if err == nil {
+		// Create a keep-around ref to protect the commit from git GC pruning.
+		// Git GC respects refs/keep-around/* as an anchor and will not prune
+		// objects reachable through these refs, even without a reflog entry.
+		// Best-effort: failure here is non-fatal — the shadow branch still exists.
+		keepRef := "refs/keep-around/" + newValue
+		keepCmd := exec.CommandContext(ctx, "git", "update-ref", keepRef, newValue)
+		keepCmd.Dir = repoRoot
+		keepCmd.Env = cmd.Env
+		_ = keepCmd.Run()
 		return nil
 	}
 

@@ -191,9 +191,6 @@ func TestHooksGitCmd_DiscoverExternalAgents_WhenEnabled(t *testing.T) {
 	paths.ClearWorktreeRootCache()
 	session.ClearGitCommonDirCache()
 
-	// Reset global state before the test
-	gitHooksDisabled = false
-
 	// Create .trace/settings.json with enabled: true and external_agents: true
 	traceDir := filepath.Join(tmpDir, paths.TraceDir)
 	if err := os.MkdirAll(traceDir, 0o755); err != nil {
@@ -234,9 +231,9 @@ func TestHooksGitCmd_DiscoverExternalAgents_WhenEnabled(t *testing.T) {
 		t.Fatalf("git hook command failed: %v", err)
 	}
 
-	// PersistentPreRunE should not have disabled hooks
-	if gitHooksDisabled {
-		t.Fatal("gitHooksDisabled should be false when Trace is enabled")
+	// PersistentPreRunE should not have set the disabled context key
+	if cmd.Context().Value(gitHooksDisabledKey) == true {
+		t.Fatal("gitHooksDisabledKey should not be set when Trace is enabled")
 	}
 
 	// The external agent should have been discovered and registered in the agent registry,
