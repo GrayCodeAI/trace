@@ -685,16 +685,23 @@ func shouldSkipJSONLField(key string) bool {
 
 	// Skip known safe ID fields that should not be redacted
 	safeIDFields := map[string]bool{
+		"id": true, "ids": true,
 		"session_id": true, "request_id": true, "trace_id": true,
 		"span_id": true, "parent_id": true, "run_id": true,
 		"message_id": true, "conversation_id": true, "turn_id": true,
 		"user_id": true, "agent_id": true, "node_id": true,
 		"edge_id": true, "tool_id": true, "call_id": true,
 		"event_id": true, "group_id": true, "project_id": true,
+		"checkpoint_id": true,
 		"session_ids": true, "request_ids": true, "trace_ids": true,
 		"span_ids": true, "parent_ids": true, "run_ids": true,
 	}
 	if safeIDFields[lower] {
+		return true
+	}
+
+	// Skip fields ending in "id" or "ids" (camelCase or snake_case).
+	if strings.HasSuffix(lower, "ids") || strings.HasSuffix(lower, "id") {
 		return true
 	}
 
