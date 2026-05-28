@@ -38,12 +38,9 @@ func (s *ManualCommitStrategy) SaveStep(ctx context.Context, step StepContext) e
 	// MutateSessionState because the helper bails with ErrStateNotFound on
 	// missing state — initialization establishes the file the helper will
 	// then mutate under lock.
-	checkpoint.StorerMu.Lock()
 	if err := s.ensureSessionInitialized(ctx, repo, sessionID, step.AgentType); err != nil {
-		checkpoint.StorerMu.Unlock()
 		return err
 	}
-	checkpoint.StorerMu.Unlock()
 
 	mutErr := MutateSessionState(ctx, sessionID, func(state *SessionState) error {
 		_, migrateSpan := perf.Start(ctx, "migrate_shadow_branch")
