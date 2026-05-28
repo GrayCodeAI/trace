@@ -17,16 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// gitCheckout uses git CLI instead of go-git to work around go-git v5 bug
-// where Checkout deletes untracked files (see https://github.com/go-git/go-git/issues/970).
-func gitCheckout(t *testing.T, dir, ref string) {
-	t.Helper()
-	cmd := exec.CommandContext(context.Background(), "git", "checkout", ref)
-	cmd.Dir = dir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to checkout %s: %v\nOutput: %s", ref, err, output)
-	}
-}
 
 func initOpenedTestRepo(t *testing.T, dir string) *git.Repository {
 	t.Helper()
@@ -72,8 +62,10 @@ func TestGetCurrentBranch(t *testing.T) {
 		t.Fatalf("Failed to create feature branch: %v", err)
 	}
 
-	// Checkout feature branch
-	gitCheckout(t, tmpDir, "feature")
+	// Checkout feature branch (go-git v6 fixed the untracked-files-deletion bug)
+	if err := CheckoutBranch(context.Background(), "feature"); err != nil {
+		t.Fatalf("Failed to checkout feature branch: %v", err)
+	}
 
 	// Test getting current branch
 	branch, err := GetCurrentBranch(context.Background())
@@ -115,8 +107,10 @@ func TestGetCurrentBranchDetachedHead(t *testing.T) {
 		t.Fatalf("Failed to create initial commit: %v", err)
 	}
 
-	// Checkout to detached HEAD
-	gitCheckout(t, tmpDir, commit.String())
+	// Checkout to detached HEAD (go-git v6 fixed the untracked-files-deletion bug)
+	if err := CheckoutBranch(context.Background(), commit.String()); err != nil {
+		t.Fatalf("Failed to checkout detached HEAD: %v", err)
+	}
 
 	// Test should error on detached HEAD
 	_, err = GetCurrentBranch(context.Background())
@@ -168,8 +162,10 @@ func TestGetMergeBase(t *testing.T) {
 		t.Fatalf("Failed to create feature branch: %v", err)
 	}
 
-	// Checkout feature and make a commit
-	gitCheckout(t, tmpDir, "feature")
+	// Checkout feature and make a commit (go-git v6 fixed the untracked-files-deletion bug)
+	if err := CheckoutBranch(context.Background(), "feature"); err != nil {
+		t.Fatalf("Failed to checkout feature branch: %v", err)
+	}
 	if err := os.WriteFile(testFile, []byte("feature change"), 0o644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
@@ -355,100 +351,6 @@ func TestHasUncommittedChanges(t *testing.T) {
 	}
 	if hasChanges {
 		t.Error("HasUncommittedChanges(context.Background()) = true, want false for globally gitignored file (core.excludesfile)")
-	}
-}
-
-func TestFindNewUntrackedFiles(t *testing.T) {
-	tests := []struct {
-		name        string
-		current     []string
-		preExisting []string
-		expected    []string
-	}{
-		{
-			name:        "finds new files not in pre-existing list",
-			current:     []string{"file1.go", "file2.go", "file3.go"},
-			preExisting: []string{"file1.go"},
-			expected:    []string{"file2.go", "file3.go"},
-		},
-		{
-			name:        "returns empty when all files pre-exist",
-			current:     []string{"file1.go", "file2.go"},
-			preExisting: []string{"file1.go", "file2.go"},
-			expected:    nil,
-		},
-		{
-			name:        "returns all files when pre-existing is empty",
-			current:     []string{"file1.go", "file2.go"},
-			preExisting: []string{},
-			expected:    []string{"file1.go", "file2.go"},
-		},
-		{
-			name:        "returns nil when current is empty",
-			current:     []string{},
-			preExisting: []string{"file1.go"},
-			expected:    nil,
-		},
-		{
-			name:        "handles nil current slice",
-			current:     nil,
-			preExisting: []string{"file1.go"},
-			expected:    nil,
-		},
-		{
-			name:        "handles nil pre-existing slice",
-			current:     []string{"file1.go", "file2.go"},
-			preExisting: nil,
-			expected:    []string{"file1.go", "file2.go"},
-		},
-		{
-			name:        "handles both nil slices",
-			current:     nil,
-			preExisting: nil,
-			expected:    nil,
-		},
-		{
-			name:        "handles files with paths",
-			current:     []string{"src/main.go", "src/utils.go", "test/main_test.go"},
-			preExisting: []string{"src/main.go"},
-			expected:    []string{"src/utils.go", "test/main_test.go"},
-		},
-		{
-			name:        "handles duplicate files in pre-existing",
-			current:     []string{"file1.go", "file2.go"},
-			preExisting: []string{"file1.go", "file1.go"},
-			expected:    []string{"file2.go"},
-		},
-		{
-			name:        "is case-sensitive",
-			current:     []string{"File.go", "file.go"},
-			preExisting: []string{"file.go"},
-			expected:    []string{"File.go"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := findNewUntrackedFiles(tt.current, tt.preExisting)
-
-			if len(result) != len(tt.expected) {
-				t.Errorf("findNewUntrackedFiles() returned %d files, want %d", len(result), len(tt.expected))
-				t.Errorf("got: %v, want: %v", result, tt.expected)
-				return
-			}
-
-			// Create a map for easy lookup
-			expectedMap := make(map[string]bool)
-			for _, f := range tt.expected {
-				expectedMap[f] = true
-			}
-
-			for _, f := range result {
-				if !expectedMap[f] {
-					t.Errorf("findNewUntrackedFiles() returned unexpected file %q", f)
-				}
-			}
-		})
 	}
 }
 

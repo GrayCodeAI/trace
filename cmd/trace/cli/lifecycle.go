@@ -9,6 +9,7 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -288,11 +289,18 @@ func handleLifecycleTurnStart(ctx context.Context, ag agent.Agent, event *agent.
 				existing, readErr := os.ReadFile(promptPath) //nolint:gosec // session metadata path
 				var content string
 				if readErr == nil && len(existing) > 0 {
-					content = string(existing) + "\n\n---\n\n" + event.Prompt
+					// Decode existing content (was obfuscated on write)
+					decoded := xorObfuscate(existing, sessionID)
+					content = string(decoded) + "\n\n---\n\n" + event.Prompt
 				} else {
 					content = event.Prompt
 				}
-				if writeErr := os.WriteFile(promptPath, []byte(content), 0o600); writeErr != nil { //nolint:gosec // path from internal metadata, not user input
+				// Obfuscate before writing to prevent casual reading of prompts.
+				// NOTE: This is XOR obfuscation, NOT cryptographic encryption.
+				// It prevents casual inspection of prompt.txt on disk but does not
+				// protect against a determined adversary with access to the binary.
+				obfuscated := xorObfuscate([]byte(content), sessionID)
+				if writeErr := os.WriteFile(promptPath, obfuscated, 0o600); writeErr != nil { //nolint:gosec // path from internal metadata, not user input
 					logging.Warn(logCtx, "failed to write prompt.txt",
 						slog.String("error", writeErr.Error()))
 				}
@@ -994,4 +1002,20 @@ func persistEventMetadataToState(event *agent.Event, state *strategy.SessionStat
 	if event.ContextWindowSize > 0 {
 		state.ContextWindowSize = event.ContextWindowSize
 	}
+}
+
+// xorObfuscate applies XOR obfuscation to data using a key derived from the
+// session ID. Because XOR is its own inverse, calling this function twice with
+// the same sessionID returns the original data.
+//
+// NOTE: This is obfuscation, NOT encryption. It deters casual reading of
+// prompt.txt on disk but provides no real security against a determined
+// attacker who can read the source code or the session ID.
+func xorObfuscate(data []byte, sessionID string) []byte {
+	hash := sha256.Sum256([]byte(sessionID))
+	result := make([]byte, len(data))
+	for i, b := range data {
+		result[i] = b ^ hash[i%len(hash)]
+	}
+	return result
 }

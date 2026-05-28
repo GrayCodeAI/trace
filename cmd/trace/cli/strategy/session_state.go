@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/petermattis/goid"
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent/types"
@@ -405,27 +405,11 @@ type sessionGate struct {
 	activeState *SessionState // shared state pointer for nested mutations
 }
 
-// goroutineID extracts the runtime goroutine ID from the stack header. Used
-// only as a reentrancy key for the session mutation gate — never as a
-// security boundary or for application logic.
+// goroutineID returns the runtime goroutine ID. Used only as a reentrancy
+// key for the session mutation gate — never as a security boundary or for
+// application logic.
 func goroutineID() int64 {
-	var buf [64]byte
-	n := runtime.Stack(buf[:], false)
-	const prefix = "goroutine "
-	s := string(buf[:n])
-	if !strings.HasPrefix(s, prefix) {
-		return -1
-	}
-	s = s[len(prefix):]
-	end := strings.IndexByte(s, ' ')
-	if end < 0 {
-		return -1
-	}
-	id, err := strconv.ParseInt(s[:end], 10, 64)
-	if err != nil {
-		return -1
-	}
-	return id
+	return goid.Get()
 }
 
 // ErrMutationSkip signals MutateSessionState to skip the save without

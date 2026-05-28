@@ -253,22 +253,6 @@ func HasUncommittedChanges(ctx context.Context) (bool, error) {
 	return len(strings.TrimSpace(string(output))) > 0, nil
 }
 
-// findNewUntrackedFiles finds files that are newly untracked (not in pre-existing list)
-func findNewUntrackedFiles(current, preExisting []string) []string {
-	preExistingSet := make(map[string]bool)
-	for _, file := range preExisting {
-		preExistingSet[file] = true
-	}
-
-	var newFiles []string
-	for _, file := range current {
-		if !preExistingSet[file] {
-			newFiles = append(newFiles, file)
-		}
-	}
-	return newFiles
-}
-
 // BranchExistsOnRemote checks if a branch exists on the origin remote.
 // First checks local remote-tracking refs, then queries the actual remote
 // via git ls-remote in case local refs are stale (e.g., after a fresh clone
@@ -321,19 +305,40 @@ func BranchExistsLocally(ctx context.Context, branchName string) (bool, error) {
 }
 
 // CheckoutBranch switches to the specified local branch or commit.
-// Uses git CLI instead of go-git to work around go-git v5 bug where Checkout
-// deletes untracked files (see https://github.com/go-git/go-git/issues/970).
-// Should be switched back to go-git once we upgrade to go-git v6
+// Uses go-git v6 Worktree.Checkout (the go-git v5 bug where Checkout
+// deleted untracked files — go-git/go-git#970 — is fixed in v6).
 // Returns an error if the ref doesn't exist or checkout fails.
 func CheckoutBranch(ctx context.Context, ref string) error {
 	if strings.HasPrefix(ref, "-") {
 		return fmt.Errorf("checkout failed: invalid ref %q", ref)
 	}
-	cmd := exec.CommandContext(ctx, "git", "checkout", ref)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("checkout failed: %s: %w", strings.TrimSpace(string(output)), err)
+
+	repo, err := openRepository(ctx)
+	if err != nil {
+		return fmt.Errorf("checkout failed: %w", err)
 	}
-	return nil
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		return fmt.Errorf("checkout failed: could not get worktree: %w", err)
+	}
+
+	// Try to resolve as a branch name first.
+	branchRef := plumbing.NewBranchReferenceName(ref)
+	if _, refErr := repo.Reference(branchRef, true); refErr == nil {
+		return wt.Checkout(&git.CheckoutOptions{
+			Branch: branchRef,
+		})
+	}
+
+	// Fall back to resolving as a commit hash (full or abbreviated).
+	hash, err := repo.ResolveRevision(plumbing.Revision(ref))
+	if err != nil {
+		return fmt.Errorf("checkout failed: ref %q not found: %w", ref, err)
+	}
+	return wt.Checkout(&git.CheckoutOptions{
+		Hash: *hash,
+	})
 }
 
 // ValidateBranchName checks if a branch name is valid using git check-ref-format.
