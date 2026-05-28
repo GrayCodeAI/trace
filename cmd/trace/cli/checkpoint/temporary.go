@@ -317,7 +317,6 @@ func (s *GitStore) WriteTemporaryTask(ctx context.Context, opts WriteTemporaryTa
 		return plumbing.ZeroHash, fmt.Errorf("invalid task checkpoint options: %w", err)
 	}
 
-
 	// Get shadow branch name
 	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit, opts.WorktreeID)
 
