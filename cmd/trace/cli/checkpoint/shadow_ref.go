@@ -93,7 +93,7 @@ func casUpdateShadowBranchRef(ctx context.Context, repoRoot, branchName string, 
 		keepCmd := exec.CommandContext(ctx, "git", "update-ref", keepRef, newValue)
 		keepCmd.Dir = repoRoot
 		keepCmd.Env = cmd.Env
-		_ = keepCmd.Run()
+		_ = keepCmd.Run() //nolint:errcheck // Best-effort keep-around ref; failure is non-fatal
 		return nil
 	}
 
