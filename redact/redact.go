@@ -33,7 +33,7 @@ const dbPasswordKeyShape = `(?:db|database|pg|postgres|postgresql|mysql|mariadb|
 
 var (
 	jdbcPattern          = regexp.MustCompile(`(?i)\bjdbc:[^\s"'<>` + "`" + `]+`)
-	databaseURLPattern   = regexp.MustCompile(`(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis)://[^\s"'<>` + "`" + `]+`)
+	databaseURLPattern   = regexp.MustCompile(`(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|snowflake|databricks)://[^\s"'<>` + "`" + `]+`)
 	keywordDSNPattern    = regexp.MustCompile(`(?i)\b[a-z_][a-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"']+)(?:\s+[a-z_][a-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"']+)){2,}`)
 	semicolonConnPattern = regexp.MustCompile(`(?i)\b[a-z][a-z0-9 _-]*=(?:\{[^}]*\}|"[^"]*"|'[^']*'|[^=;"'\s]+)(?:;[a-z][a-z0-9 _-]*=(?:\{[^}]*\}|"[^"]*"|'[^']*'|[^=;"'\s]+)){2,}`)
 	// credentialValuePattern requires the prefix to start at a non-alphanumeric
@@ -683,8 +683,18 @@ func shouldSkipJSONLField(key string) bool {
 	}
 	lower := strings.ToLower(key)
 
-	// Skip ID fields
-	if strings.HasSuffix(lower, "id") || strings.HasSuffix(lower, "ids") {
+	// Skip known safe ID fields that should not be redacted
+	safeIDFields := map[string]bool{
+		"session_id": true, "request_id": true, "trace_id": true,
+		"span_id": true, "parent_id": true, "run_id": true,
+		"message_id": true, "conversation_id": true, "turn_id": true,
+		"user_id": true, "agent_id": true, "node_id": true,
+		"edge_id": true, "tool_id": true, "call_id": true,
+		"event_id": true, "group_id": true, "project_id": true,
+		"session_ids": true, "request_ids": true, "trace_ids": true,
+		"span_ids": true, "parent_ids": true, "run_ids": true,
+	}
+	if safeIDFields[lower] {
 		return true
 	}
 

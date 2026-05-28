@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -57,7 +56,8 @@ func Fetch(ctx context.Context, opts FetchOptions) ([]byte, error) {
 	args = append(args, opts.Remote)
 	args = append(args, opts.RefSpecs...)
 
-	cmd := newCommand(ctx, args...)
+	cmd, cleanup := newCommand(ctx, args...)
+	defer cleanup()
 	if opts.Dir != "" {
 		cmd.Dir = opts.Dir
 	}
@@ -83,7 +83,8 @@ func FetchBlobs(ctx context.Context, remote string, hashes []string) error {
 	args := []string{"fetch-pack", remote}
 	args = append(args, hashes...)
 
-	cmd := newCommand(ctx, args...)
+	cmd, cleanup := newCommand(ctx, args...)
+	defer cleanup()
 	disableTerminalPrompt(cmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -132,7 +133,8 @@ func PushWithOptions(ctx context.Context, opts PushOptions) (PushResult, error) 
 	args = append(args, pushTarget)
 	args = append(args, opts.RefSpecs...)
 
-	cmd := newCommand(ctx, args...)
+	cmd, cleanup := newCommand(ctx, args...)
+	defer cleanup()
 	if opts.Dir != "" {
 		cmd.Dir = opts.Dir
 	}
@@ -157,7 +159,8 @@ func LsRemoteInDir(ctx context.Context, dir, remote string, patterns ...string) 
 
 func lsRemote(ctx context.Context, dir, remote string, patterns ...string) ([]byte, error) {
 	args := append([]string{"ls-remote", remote}, patterns...)
-	cmd := newCommand(ctx, args...)
+	cmd, cleanup := newCommand(ctx, args...)
+	defer cleanup()
 	if dir != "" {
 		cmd.Dir = dir
 	}
@@ -193,18 +196,23 @@ func ResolveFetchTarget(ctx context.Context, target string) (string, error) {
 //   - if the target in args is (or resolves to) an SSH remote, the target is
 //     rewritten in the args to the equivalent HTTPS URL so git uses HTTP
 //     transport and our injected Authorization header applies;
-//   - a Basic auth token is then injected via GIT_CONFIG_COUNT/GIT_CONFIG_KEY_*/
-//     GIT_CONFIG_VALUE_* environment variables.
+//   - a Basic auth token is injected via a temporary git config file referenced
+//     by the GIT_CONFIG environment variable, so the token never appears in
+//     /proc/PID/environ.
 //
 // If rewriting fails (unparseable URL, missing owner/repo) the command runs
 // unmodified and a one-shot warning is printed.
 // For empty/unset tokens, the command is returned unmodified.
 //
+// The returned cleanup function must be called after the command completes to
+// remove any temporary files. It is always non-nil (safe to call unconditionally).
+//
 // The remote is extracted from args by skipping the git subcommand and any flags
 // (arguments starting with "-"). For example, in
 // ["push", "--no-verify", "origin", "main"], the remote is "origin".
-func newCommand(ctx context.Context, args ...string) *exec.Cmd {
+func newCommand(ctx context.Context, args ...string) (*exec.Cmd, func()) {
 	token := strings.TrimSpace(os.Getenv(CheckpointTokenEnvVar))
+	cleanup := func() {} // no-op by default
 
 	mkCmd := func(finalArgs []string) *exec.Cmd {
 		c := exec.CommandContext(ctx, "git", finalArgs...)
@@ -213,17 +221,17 @@ func newCommand(ctx context.Context, args ...string) *exec.Cmd {
 	}
 
 	if token == "" {
-		return mkCmd(args)
+		return mkCmd(args), cleanup
 	}
 
 	if !isValidToken(token) {
 		fmt.Fprintf(os.Stderr, "[trace] Warning: %s contains invalid characters (CR, LF, or other control chars) — token ignored\n", CheckpointTokenEnvVar)
-		return mkCmd(args)
+		return mkCmd(args), cleanup
 	}
 
 	target := extractRemoteFromArgs(args)
 	if target == "" {
-		return mkCmd(args)
+		return mkCmd(args), cleanup
 	}
 
 	newTarget, protocol := resolveTargetForTokenAuth(ctx, target)
@@ -238,13 +246,17 @@ func newCommand(ctx context.Context, args ...string) *exec.Cmd {
 		sshTokenWarningOnce.Do(func() {
 			fmt.Fprintf(os.Stderr, "[trace] Warning: %s is set but remote uses SSH — token ignored for SSH remotes\n", CheckpointTokenEnvVar)
 		})
-		return cmd
+		return cmd, cleanup
 	case ProtocolHTTPS:
-		cmd.Env = appendCheckpointTokenEnv(os.Environ(), token)
-		return cmd
+		var credCleanup func()
+		args, credCleanup = injectCheckpointTokenViaArgs(args, token)
+		// Rebuild the command with the modified args.
+		cmd = mkCmd(args)
+		cleanup = credCleanup
+		return cmd, cleanup
 	default:
 		// Unknown protocol (e.g., local path, or resolution failed) — don't inject
-		return cmd
+		return cmd, cleanup
 	}
 }
 
@@ -317,45 +329,39 @@ func extractRemoteFromArgs(args []string) string {
 	return ""
 }
 
-// appendCheckpointTokenEnv appends GIT_CONFIG_COUNT-based env vars to inject
-// an Authorization header into git HTTP requests. The token is sent as a Basic
-// credential with the format "x-access-token:<token>" (base64-encoded), which
-// is compatible with GitHub's token authentication.
+// injectCheckpointTokenViaArgs writes the checkpoint token to a temporary git
+// config file (mode 0600) and prepends `-c include.path=<file>` to the args.
+// This keeps the token out of environment variables and command-line arguments
+// visible via /proc — the token lives only in the temp file.
 //
-// Existing GIT_CONFIG_KEY_*/GIT_CONFIG_VALUE_* entries are preserved; the new
-// http.extraHeader entry is appended at the next free index and
-// GIT_CONFIG_COUNT is updated accordingly. This keeps caller-injected git
-// config (e.g., safe.directory, custom CA settings) intact.
-func appendCheckpointTokenEnv(baseEnv []string, token string) []string {
-	existingCount := 0
-	for _, e := range baseEnv {
-		rest, ok := strings.CutPrefix(e, "GIT_CONFIG_COUNT=")
-		if !ok {
-			continue
-		}
-		if n, err := strconv.Atoi(rest); err == nil && n > 0 {
-			existingCount = n
-		}
-	}
+// Returns the possibly-modified args and a cleanup function that removes the
+// temporary config file. The cleanup function is always non-nil.
+func injectCheckpointTokenViaArgs(baseArgs []string, token string) ([]string, func()) {
+	cleanup := func() {}
 
-	// Strip the old GIT_CONFIG_COUNT entry (we'll emit a new one) but keep
-	// GIT_CONFIG_KEY_*/GIT_CONFIG_VALUE_* entries in place.
-	filtered := make([]string, 0, len(baseEnv)+3)
-	for _, e := range baseEnv {
-		if strings.HasPrefix(e, "GIT_CONFIG_COUNT=") {
-			continue
-		}
-		filtered = append(filtered, e)
-	}
-
-	idx := existingCount
 	encoded := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
-	return append(
-		filtered,
-		fmt.Sprintf("GIT_CONFIG_COUNT=%d", existingCount+1),
-		fmt.Sprintf("GIT_CONFIG_KEY_%d=http.extraHeader", idx),
-		fmt.Sprintf("GIT_CONFIG_VALUE_%d=Authorization: Basic %s", idx, encoded),
-	)
+	configContent := fmt.Sprintf("[http]\n\textraHeader = Authorization: Basic %s\n", encoded)
+
+	tmpFile, err := os.CreateTemp("", "trace-git-auth-*.cfg")
+	if err != nil {
+		return baseArgs, cleanup
+	}
+	if _, err := tmpFile.WriteString(configContent); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return baseArgs, cleanup
+	}
+	tmpFile.Close()
+	_ = os.Chmod(tmpFile.Name(), 0o600)
+	cleanup = func() { os.Remove(tmpFile.Name()) }
+
+	// Prepend -c include.path=<file> so git loads the auth config on top of
+	// all other config sources. This does not replace existing config.
+	includeCfg := fmt.Sprintf("include.path=%s", tmpFile.Name())
+	modified := make([]string, 0, len(baseArgs)+2)
+	modified = append(modified, "-c", includeCfg)
+	modified = append(modified, baseArgs...)
+	return modified, cleanup
 }
 
 // isValidToken returns false if the token contains control characters (bytes < 0x20

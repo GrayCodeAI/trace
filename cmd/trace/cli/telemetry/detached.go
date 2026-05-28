@@ -85,6 +85,9 @@ func BuildEventPayload(cmd *cobra.Command, agent string, isTraceEnabled bool, ve
 
 // TrackCommandDetached tracks a command execution by spawning a detached subprocess.
 // This returns immediately without blocking the CLI.
+//
+// Telemetry can be disabled by setting the TRACE_TELEMETRY_OPTOUT environment variable
+// to any non-empty value (e.g., TRACE_TELEMETRY_OPTOUT=1).
 func TrackCommandDetached(cmd *cobra.Command, agent string, isTraceEnabled bool, version string) {
 	// Check opt-out environment variables
 	if os.Getenv("TRACE_TELEMETRY_OPTOUT") != "" {

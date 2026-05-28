@@ -697,8 +697,8 @@ func TestShadowStrategy_GetTaskCheckpointTranscript_NotTaskCheckpoint(t *testing
 }
 
 func TestGetShadowBranchNameForCommit(t *testing.T) {
-	// Hash of empty worktreeID (main worktree) is "e3b0c4"
-	mainWorktreeHash := "e3b0c4"
+	// Hash of empty worktreeID (main worktree) is "e3b0c44298"
+	mainWorktreeHash := "e3b0c44298"
 
 	tests := []struct {
 		name       string
@@ -722,7 +722,7 @@ func TestGetShadowBranchNameForCommit(t *testing.T) {
 			name:       "long commit main worktree",
 			baseCommit: "abc1234567890",
 			worktreeID: "",
-			want:       "trace/abc1234-" + mainWorktreeHash,
+			want:       "trace/abc123456789-" + mainWorktreeHash,
 		},
 		{
 			name:       "with linked worktree",
@@ -4302,7 +4302,7 @@ func TestCondenseSession_V2DualWrite_CopiesTaskMetadataToFullCurrent(t *testing.
 	state, err := s.loadSessionState(context.Background(), sessionID)
 	require.NoError(t, err)
 	state.TranscriptPath = transcriptPath
-	state.BaseCommit = commitHash[:7]
+	state.BaseCommit = commitHash[:12]
 	state.AgentType = agent.AgentTypeClaudeCode
 
 	checkpointID := id.MustCheckpointID("ab11cd22ef33")
