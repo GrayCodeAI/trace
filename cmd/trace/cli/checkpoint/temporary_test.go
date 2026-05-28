@@ -15,17 +15,17 @@ func TestHashWorktreeID(t *testing.T) {
 		{
 			name:       "empty string (main worktree)",
 			worktreeID: "",
-			wantLen:    6,
+			wantLen:    WorktreeIDHashLength,
 		},
 		{
 			name:       "simple worktree name",
 			worktreeID: "test-123",
-			wantLen:    6,
+			wantLen:    WorktreeIDHashLength,
 		},
 		{
 			name:       "complex worktree name",
 			worktreeID: "feature/auth-system",
-			wantLen:    6,
+			wantLen:    WorktreeIDHashLength,
 		},
 	}
 
@@ -69,13 +69,13 @@ func TestShadowBranchNameForCommit(t *testing.T) {
 			name:       "main worktree",
 			baseCommit: "abc1234567890",
 			worktreeID: "",
-			want:       "trace/abc1234-" + HashWorktreeID(""),
+			want:       "trace/abc123456789-" + HashWorktreeID(""),
 		},
 		{
 			name:       "linked worktree",
 			baseCommit: "abc1234567890",
 			worktreeID: "test-123",
-			want:       "trace/abc1234-" + HashWorktreeID("test-123"),
+			want:       "trace/abc123456789-" + HashWorktreeID("test-123"),
 		},
 		{
 			name:       "short commit hash",
