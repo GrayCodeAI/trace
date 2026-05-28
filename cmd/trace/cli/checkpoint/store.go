@@ -1,6 +1,7 @@
 package checkpoint
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/go-git/go-git/v6"
@@ -56,14 +57,9 @@ func (s *GitStore) openFreshRepo() (*git.Repository, error) {
 	if s.repoPath == "" {
 		return s.repo, nil
 	}
-	return git.PlainOpen(s.repoPath)
-}
-
-// withStorerLock acquires the process-wide storer mutex for the duration of fn.
-// This serializes all in-process git storer access to prevent races between
-// concurrent goroutines reading/writing the same .git directory.
-func withStorerLock(fn func() error) error {
-	StorerMu.Lock()
-	defer StorerMu.Unlock()
-	return fn()
+	repo, err := git.PlainOpen(s.repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("opening git repo at %s: %w", s.repoPath, err)
+	}
+	return repo, nil
 }
