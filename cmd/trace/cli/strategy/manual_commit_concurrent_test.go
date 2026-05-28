@@ -45,9 +45,6 @@ import (
 //     (no "object not found" anywhere in the chain)
 //   - the shadow branch commit count equals numSessions * checkpointsPerWorker
 func TestSaveStep_ConcurrentSessionsSameShadowBranch(t *testing.T) {
-	if os.Getenv("CI") != "" {
-		t.Skip("flaky in CI: go-git sha1cd race condition during concurrent worktree access")
-	}
 	const (
 		numSessions          = 8
 		checkpointsPerWorker = 4
