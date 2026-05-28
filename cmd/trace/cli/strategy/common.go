@@ -934,9 +934,14 @@ func GetRemoteMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 	return tree, nil
 }
 
-// OpenRepository opens the git repository from the repo root.
-// It uses 'git rev-parse --show-toplevel' to find the repository root,
-// which works correctly even when called from a subdirectory or a linked worktree.
+// repoCache caches OpenRepository results by absolute repository path to
+// avoid repeated filesystem opens within a single process.
+var repoCache sync.Map // map[string]*git.Repository
+
+// OpenRepository opens the git repository from the repo root, returning a
+// cached instance when available. It uses 'git rev-parse --show-toplevel' to
+// find the repository root, which works correctly even when called from a
+// subdirectory or a linked worktree.
 func OpenRepository(ctx context.Context) (*git.Repository, error) {
 	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
@@ -945,11 +950,41 @@ func OpenRepository(ctx context.Context) (*git.Repository, error) {
 		repoRoot = "."
 	}
 
+	// Resolve to absolute path for a stable cache key.
+	absRoot, err := filepath.Abs(repoRoot)
+	if err != nil {
+		absRoot = repoRoot
+	}
+
+	if cached, ok := repoCache.Load(absRoot); ok {
+		return cached.(*git.Repository), nil
+	}
+
 	repo, err := git.PlainOpen(repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
+	repoCache.Store(absRoot, repo)
 	return repo, nil
+}
+
+// InvalidateRepositoryCache removes all cached repository instances.
+// Call this after operations that change refs (push, fetch, commit, reset)
+// if the caller needs a fresh repository view.
+func InvalidateRepositoryCache() {
+	repoCache.Range(func(key, _ any) bool {
+		repoCache.Delete(key)
+		return true
+	})
+}
+
+// InvalidateRepositoryCacheFor removes the cached repository for a specific path.
+func InvalidateRepositoryCacheFor(path string) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path
+	}
+	repoCache.Delete(absPath)
 }
 
 // IsInsideWorktree returns true if the current directory is inside a git worktree
