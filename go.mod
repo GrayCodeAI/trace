@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/creack/pty v1.1.24
 	github.com/denisbrodbeck/machineid v1.0.1
+	github.com/entireio/auth-go v0.3.4
 	github.com/go-git/go-billy/v6 v6.0.0-alpha.1.0.20260519112248-0095b064a6c6
 	github.com/go-git/go-git/v6 v6.0.0-alpha.2
 	github.com/go-git/x/plugin/objectsigner/auto v0.0.0-20260330134459-33df49246da9
@@ -69,7 +70,6 @@ require (
 	github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
-	github.com/entireio/auth-go v0.3.4 // indirect
 	github.com/fatih/semgroup v1.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/gitleaks/go-gitdiff v0.9.1 // indirect
