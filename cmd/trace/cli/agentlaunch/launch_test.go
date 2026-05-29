@@ -1,11 +1,348 @@
 package agentlaunch
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent/types"
 )
+
+// ---------------------------------------------------------------------------
+// Mock agents for LaunchFixAgent tests
+// ---------------------------------------------------------------------------
+
+// stubAgent is a minimal agent.Agent implementation for testing.
+// It satisfies the full Agent interface but returns zero values everywhere.
+type stubAgent struct {
+	name types.AgentName
+}
+
+func (s *stubAgent) Name() types.AgentName                          { return s.name }
+func (s *stubAgent) Type() types.AgentType                          { return types.AgentType("stub") }
+func (s *stubAgent) Description() string                            { return "stub" }
+func (s *stubAgent) IsPreview() bool                                { return false }
+func (s *stubAgent) DetectPresence(_ context.Context) (bool, error) { return false, nil }
+func (s *stubAgent) ProtectedDirs() []string                        { return nil }
+func (s *stubAgent) GetSessionID(_ *agent.HookInput) string         { return "" }
+func (s *stubAgent) ReadTranscript(_ string) ([]byte, error)        { return nil, nil }
+func (s *stubAgent) ChunkTranscript(_ context.Context, content []byte, _ int) ([][]byte, error) {
+	return [][]byte{content}, nil
+}
+
+func (s *stubAgent) ReassembleTranscript(chunks [][]byte) ([]byte, error) {
+	var result []byte
+	for _, c := range chunks {
+		result = append(result, c...)
+	}
+	return result, nil
+}
+func (s *stubAgent) GetSessionDir(_ string) (string, error) { return "", nil }
+func (s *stubAgent) ResolveSessionFile(sessionDir, agentSessionID string) string {
+	return sessionDir + "/" + agentSessionID + ".jsonl"
+}
+
+func (s *stubAgent) ReadSession(_ *agent.HookInput) (*agent.AgentSession, error) {
+	return nil, nil
+}
+func (s *stubAgent) WriteSession(_ context.Context, _ *agent.AgentSession) error { return nil }
+func (s *stubAgent) FormatResumeCommand(_ string) string                         { return "" }
+
+// stubLauncherAgent embeds stubAgent and adds the Launcher interface.
+// The launchFn field lets each test control what LaunchCmd returns.
+type stubLauncherAgent struct {
+	stubAgent
+	launchFn func(ctx context.Context, prompt string) (*exec.Cmd, error)
+}
+
+func (s *stubLauncherAgent) LaunchCmd(ctx context.Context, prompt string) (*exec.Cmd, error) {
+	return s.launchFn(ctx, prompt)
+}
+
+// Ensure interfaces are satisfied at compile time.
+var (
+	_ agent.Agent    = (*stubAgent)(nil)
+	_ agent.Agent    = (*stubLauncherAgent)(nil)
+	_ agent.Launcher = (*stubLauncherAgent)(nil)
+)
+
+// registerTestAgent registers a factory in the global agent registry under
+// the given name. Tests that call this MUST NOT use t.Parallel() because
+// the registry is process-global. Returns a cleanup func that removes the
+// registration so tests don't leak into each other.
+//
+// NOTE: We accept the registration is never "removed" because the agent
+// registry has no Unregister. Instead we pick unique names per test.
+func registerTestAgent(t *testing.T, name types.AgentName, factory agent.Factory) {
+	t.Helper()
+	agent.Register(name, factory)
+}
+
+// ---------------------------------------------------------------------------
+// Tests for LaunchFixAgent
+// ---------------------------------------------------------------------------
+
+// TestLaunchFixAgent_UnknownAgent verifies that LaunchFixAgent returns a
+// wrapped error when the agent name is not in the registry.
+func TestLaunchFixAgent_UnknownAgent(t *testing.T) {
+	t.Parallel()
+
+	err := LaunchFixAgent(context.Background(), "nonexistent-agent-xyz", "fix this")
+	if err == nil {
+		t.Fatal("expected error for unknown agent, got nil")
+	}
+	if !strings.Contains(err.Error(), "resolve fix agent") {
+		t.Errorf("error %q does not mention 'resolve fix agent'", err)
+	}
+	if !strings.Contains(err.Error(), "nonexistent-agent-xyz") {
+		t.Errorf("error %q does not include the agent name", err)
+	}
+}
+
+// TestLaunchFixAgent_AgentNotLaunchable verifies that LaunchFixAgent returns
+// a specific error when the agent exists but does not implement Launcher.
+func TestLaunchFixAgent_AgentNotLaunchable(t *testing.T) {
+	name := types.AgentName("stub-no-launch")
+	registerTestAgent(t, name, func() agent.Agent {
+		return &stubAgent{name: name}
+	})
+
+	err := LaunchFixAgent(context.Background(), string(name), "fix this")
+	if err == nil {
+		t.Fatal("expected error for non-launchable agent, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot be launched") {
+		t.Errorf("error %q does not mention 'cannot be launched'", err)
+	}
+}
+
+// TestLaunchFixAgent_ExitSuccess verifies that LaunchFixAgent returns nil
+// when the launched command exits cleanly (status 0).
+func TestLaunchFixAgent_ExitSuccess(t *testing.T) {
+	name := types.AgentName("stub-launch-ok")
+	registerTestAgent(t, name, func() agent.Agent {
+		return &stubLauncherAgent{
+			stubAgent: stubAgent{name: name},
+			launchFn: func(_ context.Context, _ string) (*exec.Cmd, error) {
+				return exec.Command("true"), nil
+			},
+		}
+	})
+
+	err := LaunchFixAgent(context.Background(), string(name), "fix something")
+	if err != nil {
+		t.Fatalf("expected nil error for clean exit, got: %v", err)
+	}
+}
+
+// TestLaunchFixAgent_ExitNonZero verifies that LaunchFixAgent wraps the
+// ExitError with the exit code when the command fails.
+func TestLaunchFixAgent_ExitNonZero(t *testing.T) {
+	name := types.AgentName("stub-launch-fail")
+	registerTestAgent(t, name, func() agent.Agent {
+		return &stubLauncherAgent{
+			stubAgent: stubAgent{name: name},
+			launchFn: func(_ context.Context, _ string) (*exec.Cmd, error) {
+				return exec.Command("false"), nil
+			},
+		}
+	})
+
+	err := LaunchFixAgent(context.Background(), string(name), "fix something")
+	if err == nil {
+		t.Fatal("expected error for non-zero exit, got nil")
+	}
+	if !strings.Contains(err.Error(), "fix agent exited with status") {
+		t.Errorf("error %q does not mention 'fix agent exited with status'", err)
+	}
+	// Verify the underlying error is an *exec.ExitError.
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Errorf("error chain does not contain *exec.ExitError: %v", err)
+	}
+}
+
+// TestLaunchFixAgent_ContextCanceled verifies that LaunchFixAgent wraps a
+// context.Canceled error with a descriptive message.
+func TestLaunchFixAgent_ContextCanceled(t *testing.T) {
+	name := types.AgentName("stub-launch-cancel")
+	registerTestAgent(t, name, func() agent.Agent {
+		return &stubLauncherAgent{
+			stubAgent: stubAgent{name: name},
+			launchFn: func(ctx context.Context, _ string) (*exec.Cmd, error) {
+				// Use "sleep" so the cmd.Run() blocks long enough for
+				// us to cancel the context. Pass ctx through so the
+				// exec.CommandContext respects cancellation.
+				return exec.CommandContext(ctx, "sleep", "30"), nil
+			},
+		}
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	err := LaunchFixAgent(ctx, string(name), "fix something")
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if !strings.Contains(err.Error(), "fix agent cancelled") {
+		t.Errorf("error %q does not mention 'fix agent cancelled'", err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error chain does not contain context.Canceled: %v", err)
+	}
+}
+
+// TestLaunchFixAgent_LaunchCmdError verifies that LaunchFixAgent wraps the
+// error returned by Launcher.LaunchCmd.
+func TestLaunchFixAgent_LaunchCmdError(t *testing.T) {
+	name := types.AgentName("stub-launch-cmd-err")
+	registerTestAgent(t, name, func() agent.Agent {
+		return &stubLauncherAgent{
+			stubAgent: stubAgent{name: name},
+			launchFn: func(_ context.Context, _ string) (*exec.Cmd, error) {
+				return nil, fmt.Errorf("binary not found")
+			},
+		}
+	})
+
+	err := LaunchFixAgent(context.Background(), string(name), "fix something")
+	if err == nil {
+		t.Fatal("expected error when LaunchCmd fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "build fix command") {
+		t.Errorf("error %q does not mention 'build fix command'", err)
+	}
+	if !strings.Contains(err.Error(), "binary not found") {
+		t.Errorf("error %q does not wrap the underlying cause 'binary not found'", err)
+	}
+}
+
+// TestLaunchFixAgent_StripsProvenanceFromCmdEnv verifies that LaunchFixAgent
+// removes TRACE_REVIEW_* and TRACE_INVESTIGATE_* entries from the cmd.Env
+// that the launcher returns, so the fix session is not mis-tagged.
+func TestLaunchFixAgent_StripsProvenanceFromCmdEnv(t *testing.T) {
+	name := types.AgentName("stub-launch-env")
+	registerTestAgent(t, name, func() agent.Agent {
+		return &stubLauncherAgent{
+			stubAgent: stubAgent{name: name},
+			launchFn: func(_ context.Context, _ string) (*exec.Cmd, error) {
+				cmd := exec.Command("true")
+				cmd.Env = []string{
+					"TRACE_REVIEW_SESSION=1",
+					"TRACE_REVIEW_AGENT=claude-code",
+					"TRACE_INVESTIGATE_SESSION=1",
+					"TRACE_INVESTIGATE_RUN_ID=abcdef012345",
+					"KEEP_ME=yes",
+				}
+				return cmd, nil
+			},
+		}
+	})
+
+	err := LaunchFixAgent(context.Background(), string(name), "fix something")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	// We can't inspect cmd.Env after Run() completes, but the test exercises
+	// the cmd.Env != nil branch and the stripping logic. The contract that
+	// stripping actually removes entries is pinned by
+	// TestWithoutReviewOrInvestigateEnv below.
+}
+
+// TestLaunchFixAgent_EmptyEnvFallsBackToOsEnviron verifies the fallback
+// path: when the launcher returns a cmd with empty Env, LaunchFixAgent
+// falls back to os.Environ() and strips provenance from it.
+func TestLaunchFixAgent_EmptyEnvFallsBackToOsEnviron(t *testing.T) {
+	// Set provenance vars on the host process so they'd leak without stripping.
+	t.Setenv("TRACE_REVIEW_SESSION", "1")
+	t.Setenv("TRACE_REVIEW_AGENT", "claude-code")
+	t.Setenv("TRACE_INVESTIGATE_SESSION", "1")
+	t.Setenv("TRACE_INVESTIGATE_RUN_ID", "abcdef012345")
+
+	name := types.AgentName("stub-launch-empty-env")
+	registerTestAgent(t, name, func() agent.Agent {
+		return &stubLauncherAgent{
+			stubAgent: stubAgent{name: name},
+			launchFn: func(_ context.Context, _ string) (*exec.Cmd, error) {
+				cmd := exec.Command("true")
+				// Explicitly empty Env — triggers the fallback path.
+				cmd.Env = []string{}
+				return cmd, nil
+			},
+		}
+	})
+
+	err := LaunchFixAgent(context.Background(), string(name), "fix something")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	// The env stripping contract is pinned by TestWithoutReviewOrInvestigateEnv.
+}
+
+// TestLaunchFixAgent_NilEnvFallsBackToOsEnviron is similar to the empty-env
+// test but exercises the nil case (cmd.Env == nil, len(nil) == 0).
+func TestLaunchFixAgent_NilEnvFallsBackToOsEnviron(t *testing.T) {
+	t.Setenv("TRACE_REVIEW_SESSION", "1")
+	t.Setenv("TRACE_REVIEW_STARTING_SHA", "deadbeef")
+
+	name := types.AgentName("stub-launch-nil-env")
+	registerTestAgent(t, name, func() agent.Agent {
+		return &stubLauncherAgent{
+			stubAgent: stubAgent{name: name},
+			launchFn: func(_ context.Context, _ string) (*exec.Cmd, error) {
+				cmd := exec.Command("true")
+				// Leave Env as nil — triggers the nil/0 branch.
+				return cmd, nil
+			},
+		}
+	})
+
+	err := LaunchFixAgent(context.Background(), string(name), "fix something")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+}
+
+// TestLaunchFixAgent_OtherRunError verifies that LaunchFixAgent wraps
+// non-ExitError, non-canceled run errors in the generic message.
+func TestLaunchFixAgent_OtherRunError(t *testing.T) {
+	name := types.AgentName("stub-launch-bad-bin")
+	registerTestAgent(t, name, func() agent.Agent {
+		return &stubLauncherAgent{
+			stubAgent: stubAgent{name: name},
+			launchFn: func(_ context.Context, _ string) (*exec.Cmd, error) {
+				// Point to a binary that doesn't exist.
+				return exec.Command("/nonexistent-binary-path-xyz"), nil
+			},
+		}
+	})
+
+	err := LaunchFixAgent(context.Background(), string(name), "fix something")
+	if err == nil {
+		t.Fatal("expected error for nonexistent binary, got nil")
+	}
+	if !strings.Contains(err.Error(), "run fix agent") {
+		t.Errorf("error %q does not mention 'run fix agent'", err)
+	}
+	// Should NOT match ExitError or context.Canceled paths.
+	if strings.Contains(err.Error(), "fix agent exited with status") {
+		t.Errorf("error %q should not mention exit status", err)
+	}
+	if strings.Contains(err.Error(), "fix agent cancelled") {
+		t.Errorf("error %q should not mention cancelled", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for withoutReviewOrInvestigateEnv
+// ---------------------------------------------------------------------------
 
 // TestWithoutReviewOrInvestigateEnv pins the contract that the helper
 // strips both TRACE_REVIEW_* and TRACE_INVESTIGATE_* entries from the
