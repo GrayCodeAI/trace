@@ -22,7 +22,7 @@ var experimentalCommands = []experimentalCommandInfo{
 	{
 		Name:       "investigate",
 		Invocation: "trace investigate",
-		Summary:    "Multi-agent investigation loop for code analysis",
+		Summary:    "multi-agent investigation loop for code analysis",
 	},
 }
 
