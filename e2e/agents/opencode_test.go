@@ -15,7 +15,7 @@ func TestOpenCodePromptEnv_OverridesPWD(t *testing.T) {
 	t.Parallel()
 	base := []string{
 		"PWD=/some/stale/go-test/dir",
-		"ENTIRE_TEST_TTY=1",
+		"TRACE_TEST_TTY=1",
 		"HOME=/home/runner",
 	}
 
@@ -40,9 +40,9 @@ func TestOpenCodePromptEnv_OverridesPWD(t *testing.T) {
 		t.Fatalf("expected exactly one PWD entry, got %d", count)
 	}
 
-	// ENTIRE_TEST_TTY is still stripped so the agent exercises real TTY detection.
-	if got, ok := envValue(env, "ENTIRE_TEST_TTY"); ok {
-		t.Fatalf("ENTIRE_TEST_TTY = %q, want stripped", got)
+	// TRACE_TEST_TTY is still stripped so the agent exercises real TTY detection.
+	if got, ok := envValue(env, "TRACE_TEST_TTY"); ok {
+		t.Fatalf("TRACE_TEST_TTY = %q, want stripped", got)
 	}
 
 	// Unrelated env is preserved.
