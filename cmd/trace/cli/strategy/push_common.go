@@ -22,6 +22,13 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
+// checkpointPushBudget is one shared deadline across the initial push,
+// fetch-rebase, and second-push legs of commit-and-push. Per-leg budgets
+// would stack (3 legs × N seconds each), so a stuck transport hangs for the
+// sum. A single deadline caps wall-clock at the budget regardless of how
+// many retries fire.
+var checkpointPushBudget = 2 * time.Minute
+
 // pushBranchIfNeeded pushes a branch to the given target if it has unpushed changes.
 // The target can be a remote name (e.g., "origin") or a URL for direct push.
 // When pushing to a URL, the "has unpushed" optimization is skipped since there are
@@ -280,7 +287,7 @@ func finishPush(ctx context.Context, stop func(string), result pushResult, targe
 
 // tryPushSessionsCommon attempts to push the sessions branch.
 func tryPushSessionsCommon(ctx context.Context, remoteName, branchName string) (pushResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, checkpointPushBudget)
 	defer cancel()
 
 	result, err := remote.Push(ctx, remoteName, branchName)
@@ -377,7 +384,7 @@ func printProtectedRefBlock(w io.Writer, ref, target string) {
 // always apply cleanly.
 // The target can be a remote name or a URL.
 func fetchAndRebaseSessionsCommon(ctx context.Context, target, branchName string) error {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, checkpointPushBudget)
 	defer cancel()
 
 	fetchTarget, err := remote.ResolveFetchTarget(ctx, target)
