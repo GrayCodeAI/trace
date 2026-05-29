@@ -61,7 +61,8 @@ type ComposeInput struct {
 func ComposeInvestigatePrompt(in ComposeInput) string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, `You are participating in an autonomous multi-agent investigation. The agents
+	fmt.Fprintf(
+		&b, `You are participating in an autonomous multi-agent investigation. The agents
 — claude-code, codex, others — take turns appending findings, evidence, and analysis
 to a shared findings document until they reach quorum on confirming the
 investigation.

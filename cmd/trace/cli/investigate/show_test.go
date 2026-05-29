@@ -62,7 +62,8 @@ func TestRunShow_SingleManifestDefaults(t *testing.T) {
 
 	store := NewLocalManifestStoreWithDir(t.TempDir())
 	t1 := time.Date(2026, 5, 10, 9, 0, 0, 0, time.UTC)
-	writeShowManifest(t, store, "abcdef012345", "only topic", t1, "quorum", "",
+	writeShowManifest(
+		t, store, "abcdef012345", "only topic", t1, "quorum", "",
 		"## Findings\n\nThe answer is 42.\n",
 		map[string]string{"claude-code": "agree", "codex": "agree"},
 	)
@@ -122,7 +123,8 @@ func TestRunShow_ExactRunIDMatch(t *testing.T) {
 	writeShowManifest(t, store, "bbbbbbbbbbbb", "second topic", t2, "quorum", "", "second body\n", nil)
 
 	var out bytes.Buffer
-	err := RunShow(context.Background(),
+	err := RunShow(
+		context.Background(),
 		ShowInput{RunID: "aaaaaaaaaaaa", Out: &out},
 		ShowDeps{ManifestStore: store},
 	)
@@ -151,7 +153,8 @@ func TestRunShow_PrefixMatchUnique(t *testing.T) {
 	writeShowManifest(t, store, "112233445566", "beta", t2, "quorum", "", "beta body\n", nil)
 
 	var out bytes.Buffer
-	err := RunShow(context.Background(),
+	err := RunShow(
+		context.Background(),
 		ShowInput{RunID: "aabb", Out: &out},
 		ShowDeps{ManifestStore: store},
 	)
@@ -176,7 +179,8 @@ func TestRunShow_PrefixMatchAmbiguous(t *testing.T) {
 	writeShowManifest(t, store, "aabb11223344", "beta", t2, "quorum", "", "beta body\n", nil)
 
 	var out bytes.Buffer
-	err := RunShow(context.Background(),
+	err := RunShow(
+		context.Background(),
 		ShowInput{RunID: "aabb", Out: &out},
 		ShowDeps{ManifestStore: store},
 	)
@@ -199,7 +203,8 @@ func TestRunShow_NoSuchRunID(t *testing.T) {
 	writeShowManifest(t, store, "aabbccddeeff", "alpha", t1, "quorum", "", "alpha body\n", nil)
 
 	var out bytes.Buffer
-	err := RunShow(context.Background(),
+	err := RunShow(
+		context.Background(),
 		ShowInput{RunID: "ffff", Out: &out},
 		ShowDeps{ManifestStore: store},
 	)

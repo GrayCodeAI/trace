@@ -91,7 +91,8 @@ func TestRunClean_RequiresArgOrAll(t *testing.T) {
 
 	env := newCleanTestEnv(t)
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{Out: &out, ErrOut: &errOut},
 		env.deps(nil),
 	)
@@ -108,7 +109,8 @@ func TestRunClean_NoManifestsReportsEmpty(t *testing.T) {
 
 	env := newCleanTestEnv(t)
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{All: true, Out: &out, ErrOut: &errOut},
 		env.deps(nil),
 	)
@@ -130,7 +132,8 @@ func TestRunClean_SingleByRunIDDeletes(t *testing.T) {
 	env.seed(t, "bbbbbbbbbbbb", "second", t2)
 
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{RunID: "aaaaaaaaaaaa", Force: true, Out: &out, ErrOut: &errOut},
 		env.deps(nil),
 	)
@@ -167,7 +170,8 @@ func TestRunClean_PrefixMatchUnique(t *testing.T) {
 	env.seed(t, "bbbbbbbbbbbb", "second", t2)
 
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{RunID: "aaaa", Force: true, Out: &out, ErrOut: &errOut},
 		env.deps(nil),
 	)
@@ -192,7 +196,8 @@ func TestRunClean_PrefixMatchAmbiguous(t *testing.T) {
 	env.seed(t, "abc222222222", "second", t2)
 
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{RunID: "abc", Force: true, Out: &out, ErrOut: &errOut},
 		env.deps(nil),
 	)
@@ -221,7 +226,8 @@ func TestRunClean_AllDeletesEverything(t *testing.T) {
 	env.seed(t, "bbbbbbbbbbbb", "second", t2)
 
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{All: true, Force: true, Out: &out, ErrOut: &errOut},
 		env.deps(nil),
 	)
@@ -249,7 +255,8 @@ func TestRunClean_ConfirmDeclinedAborts(t *testing.T) {
 	confirm := func(_ context.Context, _ string) (bool, error) { return false, nil }
 
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{All: true, Out: &out, ErrOut: &errOut},
 		env.deps(confirm),
 	)
@@ -276,7 +283,8 @@ func TestRunClean_ForceSkipsConfirm(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{All: true, Force: true, Out: &out, ErrOut: &errOut},
 		env.deps(confirm),
 	)
@@ -300,7 +308,8 @@ func TestRunClean_MissingRunDirOK(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{RunID: "aaaaaaaaaaaa", Force: true, Out: &out, ErrOut: &errOut},
 		env.deps(nil),
 	)
@@ -347,7 +356,8 @@ func TestRunClean_AggregatesFailures(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	err := RunClean(context.Background(),
+	err := RunClean(
+		context.Background(),
 		CleanInput{All: true, Force: true, Out: &out, ErrOut: &errOut},
 		deps,
 	)

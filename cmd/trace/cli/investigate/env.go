@@ -57,7 +57,8 @@ func AppendInvestigateEnv(base []string, opts AppendOptions) []string {
 		}
 		out = append(out, kv)
 	}
-	return append(out,
+	return append(
+		out,
 		EnvSession+"=1",
 		EnvAgent+"="+opts.AgentName,
 		EnvRunID+"="+opts.RunID,

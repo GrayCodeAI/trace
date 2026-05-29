@@ -535,7 +535,8 @@ func runContinue(ctx context.Context, cmd *cobra.Command, f runFlags, deps Deps)
 				"This usually means --agents was used with a shorter list than the original run. "+
 				"Either re-run with the original agents (or a superset), or remove the run state at "+
 				".git/trace-investigations/%s/state.json and start a fresh investigation",
-			state.NextAgentIdx, len(agents), state.RunID)
+			state.NextAgentIdx, len(agents), state.RunID,
+		)
 		cmd.SilenceUsage = true
 		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
 		return wrapSilent(silentErr, err)

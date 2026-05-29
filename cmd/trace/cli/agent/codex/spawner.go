@@ -29,7 +29,8 @@ func NewSpawner() spawn.Spawner { return codexSpawner{} }
 func (codexSpawner) Name() string { return string(agent.AgentNameCodex) }
 
 func (codexSpawner) BuildCmd(ctx context.Context, env []string, prompt string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, string(agent.AgentNameCodex),
+	cmd := exec.CommandContext(
+		ctx, string(agent.AgentNameCodex),
 		codexExecCommand,
 		"--skip-git-repo-check",
 		"--dangerously-bypass-approvals-and-sandbox",

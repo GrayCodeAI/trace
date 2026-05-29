@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GrayCodeAI/trace/e2e/trace"
 	"github.com/GrayCodeAI/trace/e2e/testutil"
+	"github.com/GrayCodeAI/trace/e2e/trace"
 )
 
 // TestAlternates_RelativeObjectAlternate_CheckpointSync exercises the checkpoint

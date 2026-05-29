@@ -7,11 +7,11 @@ import (
 	"os/exec"
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/checkpoint"
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/trailers"
-	"github.com/GrayCodeAI/trace/cmd/trace/cli/checkpoint/remote"
 	"github.com/go-git/go-git/v6"
 )
 

@@ -789,7 +789,8 @@ func TestRunFresh_SkipsMultipickerWhenAgentsFlagPresent(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".trace"), 0o755))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tmp, ".trace/settings.local.json"),
-		[]byte(`{"investigate":{"agents":["claude-code","codex"]}}`), 0o644))
+		[]byte(`{"investigate":{"agents":["claude-code","codex"]}}`), 0o644,
+	))
 
 	var pickerCalls int
 	deps := investigate.Deps{
@@ -824,7 +825,8 @@ func TestRunFresh_InvokesMultipickerWhenTwoAgentsAndNoFlag(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".trace"), 0o755))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tmp, ".trace/settings.local.json"),
-		[]byte(`{"investigate":{"agents":["claude-code","codex"]}}`), 0o644))
+		[]byte(`{"investigate":{"agents":["claude-code","codex"]}}`), 0o644,
+	))
 
 	var pickerCalled bool
 	var pickerAskPrompt bool
@@ -868,7 +870,8 @@ func TestRunInvestigate_SoftWarnAcceptedRunsLoop(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".trace"), 0o755))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tmp, ".trace/settings.local.json"),
-		[]byte(`{"investigate":{"agents":["claude-code"],"max_turns":1}}`), 0o644))
+		[]byte(`{"investigate":{"agents":["claude-code"],"max_turns":1}}`), 0o644,
+	))
 
 	var loopCalled bool
 	deps := investigate.Deps{
@@ -910,7 +913,8 @@ func TestRunInvestigate_SoftWarnSilentInNonInteractive(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".trace"), 0o755))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tmp, ".trace/settings.local.json"),
-		[]byte(`{"investigate":{"agents":["claude-code"],"max_turns":1}}`), 0o644))
+		[]byte(`{"investigate":{"agents":["claude-code"],"max_turns":1}}`), 0o644,
+	))
 
 	var loopCalled bool
 	deps := investigate.Deps{

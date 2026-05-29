@@ -62,7 +62,8 @@ func TestRunFix_PicksMostRecent(t *testing.T) {
 	writeFixManifest(t, store, "bbbbbbbbbbbb", "newest topic", t2, "")
 
 	var rec fixLaunchRecord
-	err := RunFix(context.Background(),
+	err := RunFix(
+		context.Background(),
 		FixInput{Out: &bytes.Buffer{}},
 		FixDeps{
 			ManifestStore: store,
@@ -96,7 +97,8 @@ func TestRunFix_ResolvesByRunID(t *testing.T) {
 	writeFixManifest(t, store, "bbbbbbbbbbbb", "newest topic", t2, "")
 
 	var rec fixLaunchRecord
-	err := RunFix(context.Background(),
+	err := RunFix(
+		context.Background(),
 		FixInput{RunID: "aaaaaaaaaaaa", Out: &bytes.Buffer{}},
 		FixDeps{
 			ManifestStore: store,
@@ -121,7 +123,8 @@ func TestRunFix_RunIDNotFound(t *testing.T) {
 	writeFixManifest(t, store, "aaaaaaaaaaaa", "topic", time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC), "")
 
 	var rec fixLaunchRecord
-	err := RunFix(context.Background(),
+	err := RunFix(
+		context.Background(),
 		FixInput{RunID: "ffffffffffff"},
 		FixDeps{
 			ManifestStore: store,
@@ -145,7 +148,8 @@ func TestRunFix_NoManifests(t *testing.T) {
 	store := NewLocalManifestStoreWithDir(t.TempDir())
 
 	var rec fixLaunchRecord
-	err := RunFix(context.Background(),
+	err := RunFix(
+		context.Background(),
 		FixInput{},
 		FixDeps{
 			ManifestStore: store,
@@ -172,7 +176,8 @@ func TestRunFix_ComposesPromptBody(t *testing.T) {
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
 	// Absolute sentinel — readDocOrWarn rejects relative paths.
 	findingsPath := filepath.Join(dir, "findings-sentinel.md")
-	writeFixManifest(t, store, "abcdef012345", "Why is checkout flaky?", now,
+	writeFixManifest(
+		t, store, "abcdef012345", "Why is checkout flaky?", now,
 		findingsPath,
 	)
 
@@ -185,7 +190,8 @@ func TestRunFix_ComposesPromptBody(t *testing.T) {
 	}
 
 	var rec fixLaunchRecord
-	err := RunFix(context.Background(),
+	err := RunFix(
+		context.Background(),
 		FixInput{Out: &bytes.Buffer{}},
 		FixDeps{
 			ManifestStore: store,
@@ -224,13 +230,15 @@ func TestRunFix_TolerateMissingDocs(t *testing.T) {
 	store := NewLocalManifestStoreWithDir(dir)
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
 	// Manifest references a findings file that does not exist in dir.
-	writeFixManifest(t, store, "abcdef012345", "topic", now,
+	writeFixManifest(
+		t, store, "abcdef012345", "topic", now,
 		filepath.Join(dir, "missing-findings.md"),
 	)
 
 	var rec fixLaunchRecord
 	var errBuf bytes.Buffer
-	err := RunFix(context.Background(),
+	err := RunFix(
+		context.Background(),
 		FixInput{Out: &bytes.Buffer{}, ErrOut: &errBuf},
 		FixDeps{
 			ManifestStore: store,
@@ -280,7 +288,8 @@ func TestRunFix_PrefersFindingsContentOverDoc(t *testing.T) {
 
 	var rec fixLaunchRecord
 	var errBuf bytes.Buffer
-	err := RunFix(context.Background(),
+	err := RunFix(
+		context.Background(),
 		FixInput{Out: &bytes.Buffer{}, ErrOut: &errBuf},
 		FixDeps{ManifestStore: store, Launch: stubLaunch(&rec)},
 	)
@@ -303,7 +312,8 @@ func TestRunFix_FallsBackToDefaultFixAgent(t *testing.T) {
 	writeFixManifest(t, store, "abcdef012345", "topic", now, "")
 
 	var rec fixLaunchRecord
-	err := RunFix(context.Background(),
+	err := RunFix(
+		context.Background(),
 		FixInput{Out: &bytes.Buffer{}},
 		FixDeps{
 			ManifestStore: store,

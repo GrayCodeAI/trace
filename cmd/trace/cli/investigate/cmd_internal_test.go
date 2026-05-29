@@ -59,11 +59,13 @@ func TestResolveDocPaths_PerRunIsolation(t *testing.T) {
 	findings1 := resolveDocPaths(commonDir, "aaaaaaaaaaaa")
 	findings2 := resolveDocPaths(commonDir, "bbbbbbbbbbbb")
 
-	require.Equal(t,
+	require.Equal(
+		t,
 		filepath.Join(commonDir, "trace-investigations", "aaaaaaaaaaaa", "findings.md"),
 		findings1,
 	)
-	require.Equal(t,
+	require.Equal(
+		t,
 		filepath.Join(commonDir, "trace-investigations", "bbbbbbbbbbbb", "findings.md"),
 		findings2,
 	)

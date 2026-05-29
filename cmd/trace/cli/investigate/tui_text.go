@@ -7,4 +7,5 @@ func padDisplayWidth(s string, width int) string { return tuiutil.PadDisplayWidt
 func padDisplayWidthWith(s string, width int, pad string) string {
 	return tuiutil.PadDisplayWidthWith(s, width, pad)
 }
+
 func truncateDisplayWidth(s string, width int) string { return tuiutil.TruncateDisplayWidth(s, width) }

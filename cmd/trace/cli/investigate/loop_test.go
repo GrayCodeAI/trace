@@ -174,7 +174,8 @@ func TestRunInvestigateLoop_QuorumReachedFirstRound(t *testing.T) {
 		StartingSHA: "deadbeef",
 	}
 	deps := LoopDeps{
-		SpawnerFor: stableSpawner(t,
+		SpawnerFor: stableSpawner(
+			t,
 			map[string]string{
 				"claude-code": noopScript,
 				"codex":       noopScript,
@@ -223,7 +224,8 @@ func TestRunInvestigateLoop_QuorumDefault(t *testing.T) {
 		StartingSHA: "deadbeef",
 	}
 	deps := LoopDeps{
-		SpawnerFor: stableSpawner(t,
+		SpawnerFor: stableSpawner(
+			t,
 			map[string]string{"claude-code": noopScript, "codex": noopScript},
 			map[string]string{"claude-code": "approve", "codex": "approve"},
 		),
@@ -256,7 +258,8 @@ func TestRunInvestigateLoop_Stalled(t *testing.T) {
 		StartingSHA: "deadbeef",
 	}
 	deps := LoopDeps{
-		SpawnerFor: stableSpawner(t,
+		SpawnerFor: stableSpawner(
+			t,
 			map[string]string{"claude-code": noopScript, "codex": noopScript},
 			map[string]string{"claude-code": "request-changes", "codex": "request-changes"},
 		),
@@ -292,7 +295,8 @@ func TestRunInvestigateLoop_PausedOnTwoFailures(t *testing.T) {
 		StartingSHA: "deadbeef",
 	}
 	deps := LoopDeps{
-		SpawnerFor: stableSpawner(t,
+		SpawnerFor: stableSpawner(
+			t,
 			map[string]string{"claude-code": failScript, "codex": failScript},
 			// No stances written — agents fail before they could.
 			map[string]string{},
@@ -341,7 +345,8 @@ func TestRunInvestigateLoop_UnknownStanceWhenPendingTurnMissing(t *testing.T) {
 		StartingSHA: "deadbeef",
 	}
 	deps := LoopDeps{
-		SpawnerFor: stableSpawner(t,
+		SpawnerFor: stableSpawner(
+			t,
 			map[string]string{"claude-code": noopScript},
 			// No stance — agent exits 0 without writing PendingTurn.
 			map[string]string{},
@@ -384,7 +389,8 @@ func TestRunInvestigateLoop_MissingPendingTurnPausesAfterTwo(t *testing.T) {
 		StartingSHA: "deadbeef",
 	}
 	deps := LoopDeps{
-		SpawnerFor: stableSpawner(t,
+		SpawnerFor: stableSpawner(
+			t,
 			map[string]string{"claude-code": noopScript, "codex": noopScript},
 			map[string]string{}, // No stances
 		),
@@ -679,7 +685,8 @@ func TestRunInvestigateLoop_InvalidStanceRecordedAsUnknown(t *testing.T) {
 		StartingSHA: "deadbeef",
 	}
 	deps := LoopDeps{
-		SpawnerFor: stableSpawner(t,
+		SpawnerFor: stableSpawner(
+			t,
 			map[string]string{"claude-code": noopScript},
 			map[string]string{"claude-code": "wibble"}, // not a valid stance
 		),

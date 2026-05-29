@@ -17,7 +17,8 @@ func TestRunInvestigateConfigPicker_NoEligibleAgents(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	out := &bytes.Buffer{}
-	_, err := investigate.RunInvestigateConfigPicker(ctx, out,
+	_, err := investigate.RunInvestigateConfigPicker(
+		ctx, out,
 		func(_ string) spawn.Spawner { return nil },
 		func(_ context.Context) []types.AgentName {
 			return []types.AgentName{"some-agent"}
@@ -50,7 +51,8 @@ func TestRunInvestigateConfigPicker_FiltersNonInstalled(t *testing.T) {
 
 	ctx := context.Background()
 	out := &bytes.Buffer{}
-	cfg, err := investigate.RunInvestigateConfigPicker(ctx, out,
+	cfg, err := investigate.RunInvestigateConfigPicker(
+		ctx, out,
 		func(name string) spawn.Spawner {
 			if name == "spawner-and-hooked" || name == "spawner-only" {
 				return stubSpawner{name: name}
@@ -72,7 +74,8 @@ func TestRunInvestigateConfigPicker_FiltersNonInstalled(t *testing.T) {
 func TestRunInvestigateConfigPicker_NoSpawnerForReturnsError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, err := investigate.RunInvestigateConfigPicker(ctx, &bytes.Buffer{},
+	_, err := investigate.RunInvestigateConfigPicker(
+		ctx, &bytes.Buffer{},
 		nil, // SpawnerFor missing
 		func(_ context.Context) []types.AgentName { return nil },
 	)
@@ -93,7 +96,8 @@ func TestRunInvestigateConfigPicker_QuorumExceedsAgents(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := investigate.RunInvestigateConfigPicker(ctx, &bytes.Buffer{},
+	_, err := investigate.RunInvestigateConfigPicker(
+		ctx, &bytes.Buffer{},
 		func(_ string) spawn.Spawner { return stubSpawner{name: "agent-a"} },
 		func(_ context.Context) []types.AgentName { return []types.AgentName{"agent-a"} },
 	)

@@ -452,7 +452,8 @@ func TestInvestigate_IssueLink_ResolvesViaFakeGh(t *testing.T) {
 		"--max-turns", "1",
 		"--agents", "claude-code")
 	cmd.Dir = env.RepoDir
-	cmd.Env = envWithOverrides(env.cliEnv(),
+	cmd.Env = envWithOverrides(
+		env.cliEnv(),
 		"PATH="+fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"ENTIRE_TEST_BINARY="+getTestBinary(),
 	)

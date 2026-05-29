@@ -44,7 +44,8 @@ func TestResolve(t *testing.T) {
 			name:    "local build recovers commit from vcs revision",
 			version: "dev",
 			commit:  "unknown",
-			info: buildInfo("(devel)",
+			info: buildInfo(
+				"(devel)",
 				debug.BuildSetting{Key: "vcs.revision", Value: "ddf1a331c0ffee1234567890abcdef0987654321"},
 				debug.BuildSetting{Key: "vcs.modified", Value: "true"},
 			),
@@ -56,7 +57,8 @@ func TestResolve(t *testing.T) {
 			name:    "explicit commit survives build-info fallback",
 			version: "dev",
 			commit:  "abc1234",
-			info: buildInfo("(devel)",
+			info: buildInfo(
+				"(devel)",
 				debug.BuildSetting{Key: "vcs.revision", Value: "ddf1a331c0ffee1234567890abcdef0987654321"},
 			),
 			ok:          true,
