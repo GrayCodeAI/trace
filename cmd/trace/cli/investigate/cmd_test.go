@@ -885,7 +885,7 @@ func TestRunInvestigate_SoftWarnAcceptedRunsLoop(t *testing.T) {
 		},
 		NewSilentError: func(err error) error { return err },
 		SpawnerFor:     func(name string) spawn.Spawner { return stubSpawner{name: name} },
-		LoopRun: func(_ context.Context, in investigate.LoopInput, _ investigate.LoopDeps) (investigate.LoopResult, error) {
+		LoopRun: func(_ context.Context, _ investigate.LoopInput, _ investigate.LoopDeps) (investigate.LoopResult, error) {
 			loopCalled = true
 			return investigate.LoopResult{Outcome: investigate.OutcomeQuorum}, nil
 		},
@@ -918,7 +918,7 @@ func TestRunInvestigate_SoftWarnSilentInNonInteractive(t *testing.T) {
 		},
 		NewSilentError: func(err error) error { return err },
 		SpawnerFor:     func(name string) spawn.Spawner { return stubSpawner{name: name} },
-		LoopRun: func(_ context.Context, in investigate.LoopInput, _ investigate.LoopDeps) (investigate.LoopResult, error) {
+		LoopRun: func(_ context.Context, _ investigate.LoopInput, _ investigate.LoopDeps) (investigate.LoopResult, error) {
 			loopCalled = true
 			return investigate.LoopResult{Outcome: investigate.OutcomeQuorum}, nil
 		},
