@@ -22,11 +22,11 @@ func newAlternatesFilesystem() billy.Filesystem {
 	}
 }
 
-func (fs *alternatesFilesystem) Create(filename string) (billy.File, error) {
+func (fs *alternatesFilesystem) Create(filename string) (billy.File, error) { //nolint:ireturn
 	return fs.root.Create(fs.resolve(filename))
 }
 
-func (fs *alternatesFilesystem) Open(filename string) (billy.File, error) {
+func (fs *alternatesFilesystem) Open(filename string) (billy.File, error) { //nolint:ireturn
 	resolved := fs.resolve(filename)
 	if isAlternatesObjectsPath(resolved) {
 		if content, ok := fs.rewrittenNestedAlternates(resolved); ok {
@@ -57,7 +57,7 @@ func (fs *alternatesFilesystem) rewrittenNestedAlternates(resolved string) (stri
 	return rewriteRelativeAlternates(content, objectsBase)
 }
 
-func (fs *alternatesFilesystem) OpenFile(filename string, flag int, perm gofs.FileMode) (billy.File, error) {
+func (fs *alternatesFilesystem) OpenFile(filename string, flag int, perm gofs.FileMode) (billy.File, error) { //nolint:ireturn
 	return fs.root.OpenFile(fs.resolve(filename), flag, perm)
 }
 
@@ -77,7 +77,7 @@ func (fs *alternatesFilesystem) Join(elem ...string) string {
 	return filepath.Join(elem...)
 }
 
-func (fs *alternatesFilesystem) TempFile(dir, prefix string) (billy.File, error) {
+func (fs *alternatesFilesystem) TempFile(dir, prefix string) (billy.File, error) { //nolint:ireturn
 	return fs.root.TempFile(fs.resolve(dir), prefix)
 }
 

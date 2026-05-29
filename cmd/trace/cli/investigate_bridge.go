@@ -34,7 +34,7 @@ func buildInvestigateDeps() investigate.Deps {
 // or nil for non-launchable agents (cursor, opencode, factoryai-droid,
 // copilot-cli, vogon). Lives in the cli package so the investigate
 // subpackage does not import the per-agent packages (import cycle).
-func launchableSpawnerFor(agentName string) spawn.Spawner {
+func launchableSpawnerFor(agentName string) spawn.Spawner { //nolint:ireturn // factory returns interface by design
 	switch agentName {
 	case string(agent.AgentNameClaudeCode):
 		return claudecode.NewSpawner()

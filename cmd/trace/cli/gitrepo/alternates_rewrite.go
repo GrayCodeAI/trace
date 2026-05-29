@@ -152,7 +152,7 @@ func isAlternatesObjectsPath(absPath string) bool {
 		filepath.Base(filepath.Dir(clean)) == "info"
 }
 
-func inMemoryFile(content string) (billy.File, error) {
+func inMemoryFile(content string) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
 	mem := memfs.New()
 	f, err := mem.Create(alternatesFilePath)
 	if err != nil {

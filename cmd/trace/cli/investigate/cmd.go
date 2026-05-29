@@ -947,7 +947,7 @@ func executeLoopAndCapture(ctx context.Context, cmd *cobra.Command, in LoopInput
 // cancellable child so the in-TUI Ctrl+C handler can stop the run via the
 // same cancel function the cobra root would use on SIGINT. In non-TTY mode
 // the caller's ctx is returned unchanged and cancelTUI is nil.
-func buildProgressSink(ctx context.Context, in LoopInput, out io.Writer) (ProgressSink, *tuiProgressSink, context.Context, context.CancelFunc) {
+func buildProgressSink(ctx context.Context, in LoopInput, out io.Writer) (ProgressSink, *tuiProgressSink, context.Context, context.CancelFunc) { //nolint:ireturn // returns interface by design
 	if !interactive.IsTerminalWriter(out) || !interactive.CanPromptInteractively() {
 		return newTextProgressSink(out), nil, ctx, nil
 	}

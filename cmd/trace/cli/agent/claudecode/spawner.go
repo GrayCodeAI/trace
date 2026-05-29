@@ -12,7 +12,9 @@ import (
 type claudeCodeSpawner struct{}
 
 // NewSpawner returns a Spawner for claude-code's non-interactive review/investigate mode.
-func NewSpawner() spawn.Spawner { return claudeCodeSpawner{} }
+func NewSpawner() spawn.Spawner { //nolint:ireturn // factory returns interface by design
+	return claudeCodeSpawner{}
+}
 
 func (claudeCodeSpawner) Name() string { return string(agent.AgentNameClaudeCode) }
 

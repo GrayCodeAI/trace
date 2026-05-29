@@ -24,7 +24,9 @@ import (
 type codexSpawner struct{}
 
 // NewSpawner returns a Spawner for codex's non-interactive review/investigate mode.
-func NewSpawner() spawn.Spawner { return codexSpawner{} }
+func NewSpawner() spawn.Spawner { //nolint:ireturn // factory returns interface by design
+	return codexSpawner{}
+}
 
 func (codexSpawner) Name() string { return string(agent.AgentNameCodex) }
 

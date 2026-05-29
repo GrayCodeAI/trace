@@ -147,7 +147,7 @@ func (m investigateTUIModel) Init() tea.Cmd {
 }
 
 // Update handles all incoming messages.
-func (m investigateTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m investigateTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:ireturn // bubbletea interface requirement
 	switch msg := msg.(type) {
 	case turnStartedMsg:
 		return m.handleTurnStarted(msg), nil
@@ -295,7 +295,7 @@ func (m investigateTUIModel) handleTurnFinished(msg turnFinishedMsg) investigate
 }
 
 // handleKey processes keyboard input.
-func (m investigateTUIModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m investigateTUIModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) { //nolint:ireturn // bubbletea interface requirement
 	if m.finished && !m.detailMode {
 		// Any key after finished dismisses.
 		return m, tea.Quit

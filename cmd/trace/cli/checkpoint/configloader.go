@@ -1,6 +1,7 @@
 package checkpoint
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -41,15 +42,15 @@ func init() {
 // registerSymlinkConfigLoader registers the symlink-following config loader as
 // the ConfigLoader plugin. Exposed for tests that reset the registry.
 func registerSymlinkConfigLoader() error {
-	return plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
+	return plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource { //nolint:wrapcheck
 		return xconfig.NewAuto(xconfig.WithFilesystem(osSymlinkFS{}))
 	})
 }
 
-func (osSymlinkFS) Open(name string) (billy.File, error) {
+func (osSymlinkFS) Open(name string) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
 	f, err := os.Open(name) //nolint:gosec // G304: name comes from git's own config-path resolution, not user input.
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open %s: %w", name, err)
 	}
 	return f, nil
 }
@@ -58,24 +59,24 @@ func (osSymlinkFS) Stat(name string) (fs.FileInfo, error) {
 	return os.Stat(name)
 }
 
-func (osSymlinkFS) OpenFile(name string, flag int, perm fs.FileMode) (billy.File, error) {
+func (osSymlinkFS) OpenFile(name string, flag int, perm fs.FileMode) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
 	f, err := os.OpenFile(name, flag, perm) //nolint:gosec // G304: name comes from git's own config-path resolution, not user input.
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("openfile %s: %w", name, err)
 	}
 	return f, nil
 }
 
-func (o osSymlinkFS) Create(name string) (billy.File, error) {
+func (o osSymlinkFS) Create(name string) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
 	return o.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o666)
 }
 
 func (osSymlinkFS) Rename(oldpath, newpath string) error {
-	return os.Rename(oldpath, newpath)
+	return os.Rename(oldpath, newpath) //nolint:wrapcheck
 }
 
 func (osSymlinkFS) Remove(name string) error {
-	return os.Remove(name)
+	return os.Remove(name) //nolint:wrapcheck
 }
 
 func (osSymlinkFS) Join(elem ...string) string {
