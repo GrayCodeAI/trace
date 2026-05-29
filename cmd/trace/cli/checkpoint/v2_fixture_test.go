@@ -75,6 +75,7 @@ func writeV2TestCheckpoint(t *testing.T, repo *git.Repository, opts v2TestCheckp
 	}
 }
 
+//nolint:unused
 func writeV2TestMainCheckpoint(t *testing.T, repo *git.Repository, opts v2TestCheckpointOptions) int {
 	t.Helper()
 
@@ -191,6 +192,7 @@ func writeV2TestMainCheckpoint(t *testing.T, repo *git.Repository, opts v2TestCh
 	return sessionIndex
 }
 
+//nolint:unused
 func writeV2TestFullTranscript(t *testing.T, repo *git.Repository, cpID id.CheckpointID, sessionIndex int, transcript []byte) {
 	t.Helper()
 
@@ -202,6 +204,7 @@ func writeV2TestFullTranscript(t *testing.T, repo *git.Repository, cpID id.Check
 	})
 }
 
+//nolint:unused
 func writeV2TestFullSessionFiles(t *testing.T, repo *git.Repository, files map[string][]byte) {
 	t.Helper()
 
@@ -215,6 +218,7 @@ func writeV2TestFullSessionFiles(t *testing.T, repo *git.Repository, files map[s
 	writeV2TestRefEntries(t, repo, refName, parentHash, entries, "test v2 full fixture")
 }
 
+//nolint:unused
 func readV2TestRefEntries(t *testing.T, repo *git.Repository, refName plumbing.ReferenceName) (plumbing.Hash, map[string]object.TreeEntry) {
 	t.Helper()
 
@@ -237,6 +241,7 @@ func readV2TestRefEntries(t *testing.T, repo *git.Repository, refName plumbing.R
 	return ref.Hash(), entries
 }
 
+//nolint:unused
 func writeV2TestRefEntries(t *testing.T, repo *git.Repository, refName plumbing.ReferenceName, parentHash plumbing.Hash, entries map[string]object.TreeEntry, message string) {
 	t.Helper()
 

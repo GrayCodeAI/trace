@@ -23,7 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-type v2CheckpointFixtureOptions struct {
+//nolint:unusedtype v2CheckpointFixtureOptions struct { //nolint:unused
 	CheckpointID     id.CheckpointID
 	SessionID        string
 	Strategy         string
@@ -39,7 +39,8 @@ type v2CheckpointFixtureOptions struct {
 	HasReview        bool
 }
 
-func writeV2CheckpointFixture(t *testing.T, repo *git.Repository, opts v2CheckpointFixtureOptions) {
+//nolint:unusedfunc writeV2CheckpointFixture(//nolint:unused
+func writeV2CheckpointFixtureActual(t *testing.T, repo *git.Repository, opts v2CheckpointFixtureOptions) {
 	t.Helper()
 
 	if opts.CreatedAt.IsZero() {
