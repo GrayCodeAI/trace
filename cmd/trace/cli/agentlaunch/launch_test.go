@@ -3,7 +3,6 @@ package agentlaunch
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"slices"
