@@ -418,6 +418,18 @@ func mergeJSON(settings *TraceSettings, data []byte) error {
 		}
 	}
 
+	// Merge investigate config if present (wholesale replace — the struct
+	// is small and self-contained, so field-level merging adds complexity
+	// without benefit).
+	if investigateRaw, ok := raw["investigate"]; ok {
+		if settings.Investigate == nil {
+			settings.Investigate = &InvestigateConfig{}
+		}
+		if err := json.Unmarshal(investigateRaw, settings.Investigate); err != nil {
+			return fmt.Errorf("parsing investigate field: %w", err)
+		}
+	}
+
 	return nil
 }
 
