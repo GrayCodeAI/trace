@@ -12,7 +12,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/creack/pty v1.1.24
 	github.com/denisbrodbeck/machineid v1.0.1
-	github.com/go-git/go-billy/v6 v6.0.0-20260328065524-593ae452e14d
+	github.com/go-git/go-billy/v6 v6.0.0-alpha.1.0.20260519112248-0095b064a6c6
 	github.com/go-git/go-git/v6 v6.0.0-alpha.2
 	github.com/go-git/x/plugin/objectsigner/auto v0.0.0-20260330134459-33df49246da9
 	github.com/go-git/x/plugin/objectsigner/program v0.0.0-20260509055934-990a63433b45
@@ -63,7 +63,6 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
-	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect

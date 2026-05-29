@@ -25,7 +25,7 @@ export const TracePlugin: Plugin = async ({ directory }) => {
   }
 
   /**
-   * Pipe JSON payload to an entire hooks command (async).
+   * Pipe JSON payload to an trace hooks command (async).
    * Errors are logged but never thrown — plugin failures must not crash OpenCode.
    */
   async function callHook(hookName: string, payload: Record<string, unknown>) {

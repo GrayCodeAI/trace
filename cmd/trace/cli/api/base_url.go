@@ -17,6 +17,16 @@ const (
 
 	// BaseURLEnvVar overrides the Trace API origin for local development.
 	BaseURLEnvVar = "TRACE_API_BASE_URL"
+
+	// AuthBaseURLEnvVar overrides only the auth/login origin (device flow,
+	// auth-tokens management, keyring key). Falls back to BaseURLEnvVar when
+	// unset, which is the right behavior for single-host deployments. Split
+	// hosts (e.g. auth on us.console.partial.to, data on partial.to) set
+	// both.
+	AuthBaseURLEnvVar = "TRACE_AUTH_BASE_URL"
+
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
 )
 
 // BaseURL returns the effective Trace API base URL.
@@ -27,6 +37,38 @@ func BaseURL() string {
 	}
 
 	return DefaultBaseURL
+}
+
+// AuthBaseURL returns the origin used for the device-flow login, auth-token
+// management endpoints, and the keyring key under which the bearer token is
+// stored. TRACE_AUTH_BASE_URL takes precedence; otherwise it falls back to
+// BaseURL() so single-host deployments keep working unchanged.
+//
+// The result is canonicalised — lowercased scheme/host, default port stripped,
+// path/query/fragment dropped, trailing slash collapsed — so the value that
+// flows into store.SaveToken keys matches what tokenmanager.New emits after
+// its own NormalizeOriginURL pass. Without this, a user setting
+// TRACE_AUTH_BASE_URL=https:...443/ would log in successfully
+// (saved under the raw form) but every subsequent data-API command would
+// resolve "not logged in" because the manager probes under the normalised
+// "https://auth.example.com".
+func AuthBaseURL() string {
+	raw := strings.TrimSpace(os.Getenv(AuthBaseURLEnvVar))
+	if raw == "" {
+		raw = BaseURL()
+	}
+	return NormalizeOriginURL(raw)
+}
+
+// IsSplitHost reports whether the CLI is configured for split-host —
+// i.e. TRACE_AUTH_BASE_URL points at a different origin than the data
+// API. Both sides are canonicalised via NormalizeOriginURL before
+// comparison: AuthBaseURL already does this internally, but BaseURL
+// only trims whitespace and a trailing slash, so a cosmetically-
+// different TRACE_API_BASE_URL (uppercase host, explicit :443, path
+// suffix) would otherwise look split when it isn't.
+func IsSplitHost() bool {
+	return AuthBaseURL() != NormalizeOriginURL(BaseURL())
 }
 
 // ResolveURL joins an API-relative path against the effective base URL.
@@ -72,3 +114,38 @@ func RequireSecureURL(baseURL string) error {
 func normalizeBaseURL(raw string) string {
 	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
+
+// NormalizeOriginURL canonicalises a URL to a lowercase scheme+host origin
+// with default ports stripped. Path, query, and fragment are dropped.
+func NormalizeOriginURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return trimmed
+	}
+	scheme := strings.ToLower(u.Scheme)
+	hostname := strings.ToLower(u.Hostname())
+	port := u.Port()
+	dropPort := port == "" ||
+		(scheme == schemeHTTP && port == "80") ||
+		(scheme == schemeHTTPS && port == "443")
+
+	out := url.URL{Scheme: scheme}
+	switch {
+	case dropPort && strings.Contains(hostname, ":"):
+		out.Host = "[" + hostname + "]"
+	case dropPort:
+		out.Host = hostname
+	case strings.Contains(hostname, ":"):
+		out.Host = "[" + hostname + "]:" + port
+	default:
+		out.Host = hostname + ":" + port
+	}
+	return out.String()
+}
+
+// OriginOnly is a backwards-compatible alias for NormalizeOriginURL.
+// Callers reading raw URLs (e.g. TRACE_SEARCH_URL) and feeding them into
+// tokenmanager.TokenRequest.Resource use this to strip path/query/fragment
+// before the lib's stricter origin-only validator runs.
+var OriginOnly = NormalizeOriginURL

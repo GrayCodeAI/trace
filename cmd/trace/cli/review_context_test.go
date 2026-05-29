@@ -268,7 +268,7 @@ func writeReviewContextSettings(t *testing.T, repoRoot string) {
 	t.Helper()
 	entireDir := filepath.Join(repoRoot, ".trace")
 	if err := os.MkdirAll(entireDir, 0o750); err != nil {
-		t.Fatalf("create .entire dir: %v", err)
+		t.Fatalf("create .trace dir: %v", err)
 	}
 	settingsJSON := `{"enabled":true,"review":{"claude-code":{"skills":["/review"]}}}` + "\n"
 	if err := os.WriteFile(filepath.Join(entireDir, "settings.json"), []byte(settingsJSON), 0o600); err != nil {

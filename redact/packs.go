@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// RedactorsDirName is the .entire subdirectory used for user-defined rule packs.
+// RedactorsDirName is the .trace subdirectory used for user-defined rule packs.
 const RedactorsDirName = "redactors"
 
 // maxIdentifierLen caps the length of pack Name and rule ID values. Both fields
@@ -31,7 +31,7 @@ const maxIdentifierLen = 64
 const maxPackFileBytes = 1 << 20 // 1 MiB
 
 // maxPackFiles caps how many pack files LoadPacks will accept under one
-// .entire/redactors/ tree. Same trust model as maxPackFileBytes: prevents a
+// .trace/redactors/ tree. Same trust model as maxPackFileBytes: prevents a
 // runaway directory from stalling every CLI invocation.
 const maxPackFiles = 256
 
@@ -42,7 +42,7 @@ const maxPackFiles = 256
 var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // Pack is a versioned bundle of redaction rules loaded from a single file
-// under .entire/redactors/. Both YAML and JSON encodings are accepted; the
+// under .trace/redactors/. Both YAML and JSON encodings are accepted; the
 // schema is identical.
 type Pack struct {
 	Name        string `json:"name"                  yaml:"name"`
@@ -76,7 +76,7 @@ type Sample struct {
 //
 // Precondition: sourcePath must be a vetted local file path (the production
 // caller is LoadPacks, which only invokes ParsePack with paths produced by
-// WalkDir under the configured .entire/redactors/ directory). Callers passing
+// WalkDir under the configured .trace/redactors/ directory). Callers passing
 // arbitrary or remote paths must enforce their own trust model — ParsePack
 // does not sanitize sourcePath beyond reading its extension.
 func ParsePack(data []byte, sourcePath string) (*Pack, error) {
@@ -171,7 +171,7 @@ func validateIdentifier(field, value, sourcePath string) error {
 }
 
 // LoadPacks discovers and parses all rule packs in dir, including any
-// subdirectories (so the conventional .entire/redactors/local/ path for
+// subdirectories (so the conventional .trace/redactors/local/ path for
 // personal/uncommitted rules is picked up automatically). Files with the
 // extensions .yaml, .yml, and .json are considered packs; other files are
 // ignored. A missing directory is treated as "no packs configured" and

@@ -69,7 +69,7 @@ Fires every time the user submits a prompt. Prepares the repository state tracki
 
 3.  **Initialize Session Strategy**:
     - For strategies that implement `SessionInitializer`, calls `InitializeSession()`.
-    - **Manual-commit strategy**: Creates or validates the shadow branch (`entire/<HEAD-hash[:7]>`), saves session state to `.git/trace-sessions/<session-id>.json` with `BaseCommit`, `WorktreePath`, and `AgentType`.
+    - **Manual-commit strategy**: Creates or validates the shadow branch (`trace/<HEAD-hash[:7]>`), saves session state to `.git/trace-sessions/<session-id>.json` with `BaseCommit`, `WorktreePath`, and `AgentType`.
     - Handles shadow branch conflicts (from other worktrees) and session ID conflicts with appropriate error messages and recovery options.
 
 ### `Stop`

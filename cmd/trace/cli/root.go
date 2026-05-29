@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
+	cliInvestigate "github.com/GrayCodeAI/trace/cmd/trace/cli/investigate"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
 	cliReview "github.com/GrayCodeAI/trace/cmd/trace/cli/review"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/settings"
@@ -101,6 +102,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newLabsCmd())                                                // 'labs' (experimental workflow discovery)
 	cmd.AddCommand(newPluginGroupCmd())                                         // 'plugin' (managed install/list/remove)
 	cmd.AddCommand(cliReview.NewCommand(buildReviewDeps(newReviewAttachCmd()))) // hidden during maturation; runs configured review skills
+	cmd.AddCommand(cliInvestigate.NewCommand(buildInvestigateDeps()))           // investigate: multi-agent loop for code investigation
 	cmd.AddCommand(newRecapCmd())
 
 	// Hidden top-level shortcuts. Functional but print a deprecation hint.

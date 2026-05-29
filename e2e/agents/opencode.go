@@ -166,3 +166,7 @@ func (a *openCodeAgent) StartSession(ctx context.Context, dir string) (Session, 
 	}
 	return nil, fmt.Errorf("opencode TUI failed to start after retry: %w", lastErr)
 }
+
+func openCodePromptEnv(base []string, dir string) []string {
+	return append(filterEnv(base, "TRACE_TEST_TTY", "PWD"), "PWD="+dir)
+}

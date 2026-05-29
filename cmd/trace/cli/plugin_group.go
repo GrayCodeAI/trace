@@ -20,7 +20,7 @@ func newPluginGroupCmd() *cobra.Command {
 		Short: "Manage Trace plugins (install, list, remove)",
 		Long: `Manage Trace plugins.
 
-Plugins are external executables named 'entire-<name>'. The CLI discovers
+Plugins are external executables named 'trace-<name>'. The CLI discovers
 plugins on $PATH and from a per-user managed directory which is
 auto-prepended to PATH at startup. The managed directory is, in order of
 precedence:
@@ -55,7 +55,7 @@ func newPluginInstallCmd() *cobra.Command {
 		Short: "Link or copy a plugin executable into the managed directory",
 		Long: `Link or copy a plugin executable into the managed directory.
 
-The source must be a file whose basename starts with 'entire-' (the
+The source must be a file whose basename starts with 'trace-' (the
 dispatcher only resolves names of that shape). On Unix the file must be
 executable.
 
@@ -126,7 +126,7 @@ func runPluginList(w io.Writer) error {
 	}
 	if len(plugins) == 0 {
 		fmt.Fprintf(w, "No plugins installed in %s.\n", dir)
-		fmt.Fprintln(w, "Install one with 'trace plugin install <path>', or drop an entire-<name> binary anywhere on $PATH.")
+		fmt.Fprintln(w, "Install one with 'trace plugin install <path>', or drop an trace-<name> binary anywhere on $PATH.")
 		return nil
 	}
 	fmt.Fprintf(w, "Managed plugin directory: %s\n\n", dir)

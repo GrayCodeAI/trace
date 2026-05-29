@@ -15,7 +15,7 @@ import (
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
 )
 
-const traceManagedSearchSubagentMarker = "ENTIRE-MANAGED SEARCH SUBAGENT v1"
+const traceManagedSearchSubagentMarker = "TRACE-MANAGED SEARCH SUBAGENT v1"
 
 type searchSubagentScaffoldStatus string
 
