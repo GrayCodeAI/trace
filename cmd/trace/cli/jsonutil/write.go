@@ -11,7 +11,7 @@ import (
 // in the same directory, fsyncing it, renaming into place, and fsyncing the
 // parent directory. A crash or signal mid-write leaves the original file
 // intact rather than a truncated partial — important for config files like
-// .entire/settings.json that callers expect to remain parseable across
+// .trace/settings.json that callers expect to remain parseable across
 // interrupted writes.
 //
 // The fsync between Write and Close guarantees the temp file's bytes are on

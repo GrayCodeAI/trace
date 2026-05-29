@@ -48,7 +48,7 @@ func maybePromptReviewSettingsMigration(
 		return nil
 	}
 
-	// Bail before prompting if .entire/settings.local.json already has review
+	// Bail before prompting if .trace/settings.local.json already has review
 	// keys. settings.local.json overrides clone-local preferences (mergeJSON
 	// wholesale-replaces the review map), so migrating without cleaning the
 	// local file first would silently nullify the migration on the very next
@@ -63,21 +63,21 @@ func maybePromptReviewSettingsMigration(
 	if localHas, localPath, localErr := localSettingsHasReviewKeys(ctx); localErr != nil {
 		return fmt.Errorf("inspect local settings for migration: %w", localErr)
 	} else if localHas {
-		fmt.Fprintln(errOut, "Cannot migrate review preferences: .entire/settings.local.json also has review keys.")
+		fmt.Fprintln(errOut, "Cannot migrate review preferences: .trace/settings.local.json also has review keys.")
 		fmt.Fprintf(errOut, "Those override clone-local preferences and would mask the migration. Remove the\n")
 		fmt.Fprintf(errOut, "`review` / `review_fix_agent` keys from %s, then re-run `entire review`.\n", localPath)
 		return nil
 	}
 
 	if !canPrompt {
-		// Log at Warn so operators tailing .entire/logs/ catch the pending
+		// Log at Warn so operators tailing .trace/logs/ catch the pending
 		// migration on scripted/CI invocations where the stderr hint may
 		// scroll past unnoticed.
 		logging.Warn(ctx, "review migration pending: project settings has review keys that may be committed",
 			slog.String("project_settings_path", project.path),
 			slog.Bool("has_review", project.hasReview),
 			slog.Bool("has_fix_agent", project.hasFixAgent))
-		fmt.Fprintln(errOut, "Review preferences are stored in project settings (.entire/settings.json).")
+		fmt.Fprintln(errOut, "Review preferences are stored in project settings (.trace/settings.json).")
 		fmt.Fprintln(errOut, "These are typically committed and may be visible to teammates.")
 		fmt.Fprintln(errOut, "Run `entire review --edit` interactively to move them to clone-local preferences.")
 		return nil
@@ -86,7 +86,7 @@ func maybePromptReviewSettingsMigration(
 	if promptYN == nil {
 		promptYN = realPromptYN
 	}
-	migrate, err := promptYN(ctx, "Review preferences are stored in project settings (.entire/settings.json), which is typically committed. Move them to clone-local preferences so they stay private?", false)
+	migrate, err := promptYN(ctx, "Review preferences are stored in project settings (.trace/settings.json), which is typically committed. Move them to clone-local preferences so they stay private?", false)
 	if err != nil {
 		return fmt.Errorf("review settings migration prompt: %w", err)
 	}
@@ -264,7 +264,7 @@ func isJSONNull(raw json.RawMessage) bool {
 	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
 
-// localSettingsHasReviewKeys reports whether .entire/settings.local.json
+// localSettingsHasReviewKeys reports whether .trace/settings.local.json
 // exists and contains either a "review" or "review_fix_agent" key. Both keys
 // override clone-local preferences via mergeJSON's wholesale-replace path,
 // so the migration must surface their presence rather than silently produce

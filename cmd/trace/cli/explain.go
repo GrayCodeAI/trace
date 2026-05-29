@@ -663,7 +663,7 @@ func runExplainCheckpointWithLookup(ctx context.Context, w, errW io.Writer, chec
 	associatedCommits, _ := getAssociatedCommits(ctx, lookup.repo, fullCheckpointID, searchAll) //nolint:errcheck // Best-effort
 
 	// Derive author from the first associated commit (the user who made the commit).
-	// Fall back to GetCheckpointAuthor (walks entire/checkpoints/v1) for checkpoints
+	// Fall back to GetCheckpointAuthor (walks trace/checkpoints/v1) for checkpoints
 	// not reachable from the current branch.
 	var author checkpoint.Author
 	if len(associatedCommits) > 0 {
@@ -1077,7 +1077,7 @@ func maybeCompactExternalTranscriptForSummary(ctx context.Context, scopedTranscr
 		return scopedTranscript
 	}
 
-	tmpFile, err := os.CreateTemp("", "entire-summary-transcript-*.jsonl")
+	tmpFile, err := os.CreateTemp("", "trace-summary-transcript-*.jsonl")
 	if err != nil {
 		logging.Debug(ctx, "external summary compaction unavailable",
 			slog.String("agent", string(agentType)),
@@ -2114,7 +2114,7 @@ func walkFirstParentCommits(ctx context.Context, repo *git.Repository, from plum
 // Behavior:
 //   - On feature branches: only show checkpoints unique to this branch (not in main)
 //   - On default branch (main/master): show all checkpoints in history (up to limit)
-//   - Includes both committed checkpoints (entire/checkpoints/v1) and temporary checkpoints (shadow branches)
+//   - Includes both committed checkpoints (trace/checkpoints/v1) and temporary checkpoints (shadow branches)
 func getBranchCheckpoints(ctx context.Context, repo *git.Repository, limit int) ([]strategy.RewindPoint, error) {
 	// Warn (once per process) if metadata branches are disconnected
 	strategy.WarnIfMetadataDisconnected()
@@ -2338,8 +2338,8 @@ func convertTemporaryCheckpoint(repo *git.Repository, tc checkpoint.TemporaryChe
 		return nil
 	}
 
-	// Read session prompt from the shadow branch commit's tree (not from entire/checkpoints/v1)
-	// Temporary checkpoints store their metadata in the shadow branch, not in entire/checkpoints/v1
+	// Read session prompt from the shadow branch commit's tree (not from trace/checkpoints/v1)
+	// Temporary checkpoints store their metadata in the shadow branch, not in trace/checkpoints/v1
 	var sessionPrompt string
 	shadowTree, treeErr := shadowCommit.Tree()
 	if treeErr == nil {

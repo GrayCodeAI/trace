@@ -19,7 +19,7 @@ import (
 )
 
 // Managed plugin storage. The kubectl-style dispatcher in plugin.go resolves
-// `entire-<name>` binaries from $PATH, period. To let `trace plugin install`
+// `trace-<name>` binaries from $PATH, period. To let `trace plugin install`
 // be additive rather than a parallel mechanism, this file provides:
 //
 //  1. PluginBinDir() — a per-user managed dir that main.go prepends to PATH
@@ -40,7 +40,7 @@ const (
 	pluginManagedDataSubdir = "data"
 	pluginEnvPluginData     = "TRACE_PLUGIN_DATA_DIR"
 	// Path segments for the managed plugin tree. Kept as separate
-	// segments (rather than "entire/plugins") so filepath.Join produces
+	// segments (rather than "trace/plugins") so filepath.Join produces
 	// platform-native separators on Windows.
 	pluginManagedTopDir = "trace"
 	pluginManagedSubDir = "plugins"
@@ -105,7 +105,7 @@ func PluginBinDir() (string, error) {
 }
 
 // PluginDataDir returns the per-plugin data directory for the given bare name
-// (e.g. "pgr" for `entire-pgr`). The returned path is not created — that's
+// (e.g. "pgr" for `trace-pgr`). The returned path is not created — that's
 // the plugin's responsibility on first use.
 //
 // Returns an error for names the dispatcher would never invoke (empty,
@@ -224,7 +224,7 @@ func pathEntriesEqual(a, b string) bool {
 
 // InstalledPlugin describes a single entry in the managed bin dir.
 type InstalledPlugin struct {
-	// Name is the bare plugin name (without the `entire-` prefix and any
+	// Name is the bare plugin name (without the `trace-` prefix and any
 	// platform-specific extension).
 	Name string
 	// Path is the absolute path inside the managed bin dir.
@@ -236,7 +236,7 @@ type InstalledPlugin struct {
 }
 
 // ListInstalledPlugins enumerates entries in the managed bin dir whose name
-// starts with `entire-`. Sorted by bare name. A missing dir returns no error
+// starts with `trace-`. Sorted by bare name. A missing dir returns no error
 // and an empty slice.
 func ListInstalledPlugins() ([]*InstalledPlugin, error) {
 	dir, err := PluginBinDir()
@@ -298,7 +298,7 @@ func FindInstalledPlugin(name string) (*InstalledPlugin, error) {
 type InstallPluginOptions struct {
 	// SourcePath is the absolute (or working-dir-relative) path to the plugin
 	// executable. Its basename — minus any platform extension — must match
-	// `entire-<name>` so the dispatcher can resolve it.
+	// `trace-<name>` so the dispatcher can resolve it.
 	SourcePath string
 	// Force replaces an already-installed plugin with the same name.
 	Force bool
@@ -358,7 +358,7 @@ func InstallPluginFromPath(opts InstallPluginOptions) (*InstalledPlugin, error) 
 	}
 
 	// Conflict check on the bare name (not the exact filename). On Windows,
-	// entire-foo.exe / .bat / .cmd all map to bare name "foo"; checking only
+	// trace-foo.exe / .bat / .cmd all map to bare name "foo"; checking only
 	// the destination filename would let a second install of a different
 	// extension silently coexist with the first, with PATHEXT ordering then
 	// deciding which one runs. List all variants and require --force when
@@ -388,10 +388,10 @@ func InstallPluginFromPath(opts InstallPluginOptions) (*InstalledPlugin, error) 
 	// fails, the previously installed plugin (if any) is unaffected.
 	//
 	// The tmp path uses a random suffix and a `.install-` prefix that does
-	// NOT match `entire-`. This protects against two distinct hazards:
+	// NOT match `trace-`. This protects against two distinct hazards:
 	//   1. A user can have a legitimate plugin named "foo.tmp" (file
-	//      "entire-foo.tmp"), which a naive `dest + ".tmp"` would clobber.
-	//   2. ListInstalledPlugins filters by `entire-` prefix, so a tmp that
+	//      "trace-foo.tmp"), which a naive `dest + ".tmp"` would clobber.
+	//   2. ListInstalledPlugins filters by `trace-` prefix, so a tmp that
 	//      starts with `.install-` will not appear in `trace plugin list`
 	//      while the install is in progress.
 	tmpDest, err := makeInstallTmpPath(binDir)
@@ -495,8 +495,8 @@ func copyFileStreaming(src, dest string, srcInfo os.FileInfo) error {
 // RemoveInstalledPlugin removes every managed-dir entry whose bare name
 // matches name. Symlinks are unlinked without touching the source file.
 //
-// Iterating all variants matters on Windows, where entire-foo.exe,
-// entire-foo.bat, and entire-foo.cmd all map to bare name "foo" and could
+// Iterating all variants matters on Windows, where trace-foo.exe,
+// trace-foo.bat, and trace-foo.cmd all map to bare name "foo" and could
 // otherwise leave a runnable variant behind after `trace plugin remove foo`.
 // On Unix the loop typically runs once.
 func RemoveInstalledPlugin(name string) error {
@@ -516,7 +516,7 @@ func RemoveInstalledPlugin(name string) error {
 }
 
 // bareNameFromBinaryName turns a plugin executable's basename into the bare
-// name the dispatcher uses (e.g. "entire-pgr" → "pgr"). Returns "" if the
+// name the dispatcher uses (e.g. "trace-pgr" → "pgr"). Returns "" if the
 // input doesn't match the expected shape.
 //
 // Extension stripping is platform-conditional:
@@ -527,9 +527,9 @@ func RemoveInstalledPlugin(name string) error {
 //     and the dispatcher's lookup.
 //
 //   - On Unix, exec.LookPath matches the exact filename. If we stripped here,
-//     "entire-pgr.exe" would be listed as "pgr" and the user would type
-//     "entire pgr", but the dispatcher's exec.LookPath("entire-pgr") would
-//     not find "entire-pgr.exe". Leaving the dot in place keeps the listed
+//     "trace-pgr.exe" would be listed as "pgr" and the user would type
+//     "entire pgr", but the dispatcher's exec.LookPath("trace-pgr") would
+//     not find "trace-pgr.exe". Leaving the dot in place keeps the listed
 //     name aligned with the only invocation that actually resolves
 //     ("entire pgr.exe"), avoiding silent shadowing surprises.
 func bareNameFromBinaryName(base string) string {

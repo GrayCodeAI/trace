@@ -48,3 +48,19 @@ func useAutoConfigLoader(t *testing.T) {
 		}
 	})
 }
+
+// registerConfigLoaderForTest swaps the registered ConfigLoader plugin to the
+// given register function for the duration of t, then restores NewEmpty on cleanup.
+func registerConfigLoaderForTest(t *testing.T, register func() error) {
+	t.Helper()
+	resetPluginEntry(configLoaderKey)
+	if err := register(); err != nil {
+		t.Fatalf("failed to register config loader: %v", err)
+	}
+	t.Cleanup(func() {
+		resetPluginEntry(configLoaderKey)
+		if err := plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource { return config.NewEmpty() }); err != nil {
+			t.Fatalf("failed to restore NewEmpty config loader: %v", err)
+		}
+	})
+}
