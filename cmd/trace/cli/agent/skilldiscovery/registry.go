@@ -22,7 +22,7 @@ type InstallHint struct {
 
 // curatedBuiltins lists the review-adjacent commands that ship with each
 // agent binary (no plugin install required). See
-// docs/superpowers/specs/2026-04-22-entire-review-picker-install-awareness-design.md
+// docs/superpowers/specs/2026-04-22-trace-review-picker-install-awareness-design.md
 // §Data model for the sources these names came from. Gemini CLI has no
 // built-in review command and relies on the install hint below.
 var curatedBuiltins = map[string][]CuratedSkill{

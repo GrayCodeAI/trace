@@ -82,7 +82,7 @@ func TestSetupClaudeHooks_AddsAllRequiredHooks(t *testing.T) {
 		t.Fatalf("failed to read generated Claude search subagent: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "ENTIRE-MANAGED SEARCH SUBAGENT") {
+	if !strings.Contains(content, "TRACE-MANAGED SEARCH SUBAGENT") {
 		t.Error("Claude search subagent should be marked as Trace-managed")
 	}
 	if !strings.Contains(content, "trace search --json") {

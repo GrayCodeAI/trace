@@ -19,6 +19,11 @@ var experimentalCommands = []experimentalCommandInfo{
 		Invocation: "trace review",
 		Summary:    "Run configured review skills against the current branch",
 	},
+	{
+		Name:       "investigate",
+		Invocation: "trace investigate",
+		Summary:    "multi-agent investigation loop for code analysis",
+	},
 }
 
 func newLabsCmd() *cobra.Command {
@@ -32,7 +37,7 @@ func newLabsCmd() *cobra.Command {
 			}
 			err := fmt.Errorf("unknown labs topic %q", args[0])
 			fmt.Fprintf(cmd.ErrOrStderr(),
-				"%v\n\nRun `trace labs` to see available experimental commands, or run `trace review --help` for command-specific help.\n",
+				"%v\n\nRun `trace labs` to see available experimental commands, or run `trace review --help` or `trace investigate --help` for command-specific help.\n",
 				err)
 			return NewSilentError(err)
 		},
@@ -60,6 +65,7 @@ Available experimental commands:
 ` + renderExperimentalCommands(experimentalCommands) + `
 Try:
   trace review --help
+  trace investigate --help
 `
 }
 

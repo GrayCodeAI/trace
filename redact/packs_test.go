@@ -327,7 +327,7 @@ rules:
 }
 
 // TestLoadPacks_DescendsIntoSubdirs verifies that packs in subdirectories
-// (e.g. the conventional .entire/redactors/local/ for personal/uncommitted
+// (e.g. the conventional .trace/redactors/local/ for personal/uncommitted
 // rules) are discovered. Without recursion, the docs' "personal-only"
 // distribution path would silently no-op.
 func TestLoadPacks_DescendsIntoSubdirs(t *testing.T) {

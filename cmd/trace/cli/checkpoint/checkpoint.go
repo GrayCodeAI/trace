@@ -461,6 +461,15 @@ type CommittedMetadata struct {
 	// ReviewSkills is the snapshot of configured review skills at session start.
 	ReviewSkills []string `json:"review_skills,omitempty"`
 
+	// ReviewPrompt is the actual text of the review request (composed prompt
+	// for spawn, first user prompt for attach). Only set when Kind is a
+	// review kind.
+	ReviewPrompt string `json:"review_prompt,omitempty"`
+
+	// InvestigateRunID is the 12-hex-char ID of the parent investigation
+	// run. Only set when Kind is an investigate kind.
+	InvestigateRunID string `json:"investigate_run_id,omitempty"`
+
 	// Task checkpoint fields (only populated for task checkpoints)
 	IsTask    bool   `json:"is_task,omitempty"`
 	ToolUseID string `json:"tool_use_id,omitempty"`
@@ -543,6 +552,12 @@ type CheckpointSummary struct {
 	// one session in this checkpoint has Kind.IsReview(). Summary-level so
 	// queries can check the flag without scanning all session metadata.
 	HasReview bool `json:"has_review,omitempty"`
+
+	// HasInvestigation is true when this checkpoint was produced by
+	// `trace investigate`. Summary-level so the CLI can detect whether
+	// the current HEAD carries an investigate checkpoint without scanning
+	// all session metadata.
+	HasInvestigation bool `json:"has_investigation,omitempty"`
 }
 
 // SessionMetrics contains hook-provided session metrics from agents that report

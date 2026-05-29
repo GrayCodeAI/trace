@@ -51,7 +51,7 @@ func TestSetupCodexHooks_AddsAllRequiredHooks(t *testing.T) {
 		t.Fatalf("failed to read generated Codex search subagent: %v", err)
 	}
 	searchContent := string(searchData)
-	if !strings.Contains(searchContent, "ENTIRE-MANAGED SEARCH SUBAGENT") {
+	if !strings.Contains(searchContent, "TRACE-MANAGED SEARCH SUBAGENT") {
 		t.Error("Codex search subagent should be marked as Trace-managed")
 	}
 	if !strings.Contains(searchContent, "trace search --json") {
