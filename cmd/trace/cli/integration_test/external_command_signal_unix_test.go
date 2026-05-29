@@ -35,7 +35,7 @@ func TestExternalCommand_SigintReachesPlugin(t *testing.T) {
 			"i=0\nwhile [ $i -lt %d ]; do sleep 0.1; i=$((i+1)); done\nexit 0\n",
 		signalFile, readyFile, pluginLoopSeconds*10,
 	)
-	if err := os.WriteFile(filepath.Join(dir, "entire-trapint"), []byte(body), 0o755); err != nil { //nolint:gosec // test fixture
+	if err := os.WriteFile(filepath.Join(dir, "trace-trapint"), []byte(body), 0o755); err != nil { //nolint:gosec // test fixture
 		t.Fatalf("write plugin: %v", err)
 	}
 

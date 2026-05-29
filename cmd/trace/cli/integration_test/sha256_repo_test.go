@@ -19,9 +19,9 @@ func TestSHA256Repository_EnableAndFirstCheckpoint(t *testing.T) {
 
 	// Set up the SHA-256 repo and initial commit directly via git CLI rather
 	// than going through `trace enable --init-repo`. The bootstrap path
-	// installs hooks that shell out to `entire` on PATH and then runs
-	// `git commit` itself; on CI runners (no `entire` on PATH) the commit-msg
-	// hook fails with "entire: not found". Integration tests deliberately
+	// installs hooks that shell out to `trace` on PATH and then runs
+	// `git commit` itself; on CI runners (no `trace` on PATH) the commit-msg
+	// hook fails with "trace: not found". Integration tests deliberately
 	// avoid that path — they invoke hooks via getTestBinary() instead.
 	gitOutput(t, "", "init", "--object-format=sha256", env.RepoDir)
 	gitOutput(t, env.RepoDir, "config", "user.name", "Test User")
