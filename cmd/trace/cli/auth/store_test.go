@@ -1,10 +1,14 @@
 package auth
 
 import (
+	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/api"
+	"github.com/entireio/auth-go/tokens"
+	"github.com/entireio/auth-go/tokenstore"
 	"github.com/zalando/go-keyring"
 )
 
@@ -146,5 +150,151 @@ func TestLookupCurrentToken(t *testing.T) {
 	}
 	if got != "local-token" {
 		t.Fatalf("LookupCurrentToken() = %q, want %q", got, "local-token")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SaveTokens / LoadTokens / DeleteTokens (tokenstore.Store interface)
+// ---------------------------------------------------------------------------
+
+func TestSaveTokens_LoadTokens_RoundTrip(t *testing.T) {
+	store := NewStoreWithService("test-savetokens-roundtrip")
+
+	want := tokens.TokenSet{
+		AccessToken:  "at-abc123",
+		RefreshToken: "rt-xyz789",
+		TokenType:    "Bearer",
+		ExpiresAt:    time.Date(2026, 12, 25, 10, 0, 0, 0, time.UTC),
+		Scope:        "cli",
+	}
+
+	if err := store.SaveTokens("https://trace.io", want); err != nil {
+		t.Fatalf("SaveTokens() error = %v", err)
+	}
+
+	got, err := store.LoadTokens("https://trace.io")
+	if err != nil {
+		t.Fatalf("LoadTokens() error = %v", err)
+	}
+
+	if got.AccessToken != want.AccessToken {
+		t.Errorf("AccessToken = %q, want %q", got.AccessToken, want.AccessToken)
+	}
+	if got.RefreshToken != want.RefreshToken {
+		t.Errorf("RefreshToken = %q, want %q", got.RefreshToken, want.RefreshToken)
+	}
+	if got.TokenType != want.TokenType {
+		t.Errorf("TokenType = %q, want %q", got.TokenType, want.TokenType)
+	}
+	if !got.ExpiresAt.Equal(want.ExpiresAt) {
+		t.Errorf("ExpiresAt = %v, want %v", got.ExpiresAt, want.ExpiresAt)
+	}
+	if got.Scope != want.Scope {
+		t.Errorf("Scope = %q, want %q", got.Scope, want.Scope)
+	}
+}
+
+func TestSaveTokens_LoadTokens_MinimalRoundTrip(t *testing.T) {
+	// TokenSet with only AccessToken set (no refresh, no expiry).
+	store := NewStoreWithService("test-savetokens-minimal")
+
+	want := tokens.TokenSet{AccessToken: "bare-token"}
+
+	if err := store.SaveTokens("https://trace.io", want); err != nil {
+		t.Fatalf("SaveTokens() error = %v", err)
+	}
+
+	got, err := store.LoadTokens("https://trace.io")
+	if err != nil {
+		t.Fatalf("LoadTokens() error = %v", err)
+	}
+	if got.AccessToken != "bare-token" {
+		t.Errorf("AccessToken = %q, want %q", got.AccessToken, "bare-token")
+	}
+	if !got.ExpiresAt.IsZero() {
+		t.Errorf("ExpiresAt = %v, want zero", got.ExpiresAt)
+	}
+}
+
+func TestSaveTokens_RejectsEmptyAccessToken(t *testing.T) {
+	store := NewStoreWithService("test-savetokens-empty")
+
+	if err := store.SaveTokens("https://trace.io", tokens.TokenSet{}); err == nil {
+		t.Fatal("SaveTokens() with zero TokenSet should fail")
+	}
+}
+
+func TestLoadTokens_NotFound(t *testing.T) {
+	store := NewStoreWithService("test-loadtokens-notfound")
+
+	_, err := store.LoadTokens("https://missing.example.com")
+	if !errors.Is(err, tokenstore.ErrNotFound) {
+		t.Fatalf("LoadTokens() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestLoadTokens_LegacyCompat_PlainString(t *testing.T) {
+	// When a legacy plain-string token was saved via SaveToken,
+	// LoadTokens must wrap it into a TokenSet with AccessToken set.
+	store := NewStoreWithService("test-loadtokens-legacy")
+
+	if err := store.SaveToken("https://trace.io", "legacy-tok"); err != nil {
+		t.Fatalf("SaveToken() error = %v", err)
+	}
+
+	got, err := store.LoadTokens("https://trace.io")
+	if err != nil {
+		t.Fatalf("LoadTokens() error = %v", err)
+	}
+	if got.AccessToken != "legacy-tok" {
+		t.Errorf("AccessToken = %q, want %q", got.AccessToken, "legacy-tok")
+	}
+	if got.RefreshToken != "" {
+		t.Errorf("RefreshToken = %q, want empty (legacy had no refresh)", got.RefreshToken)
+	}
+}
+
+func TestDeleteTokens(t *testing.T) {
+	store := NewStoreWithService("test-deletetokens")
+
+	if err := store.SaveTokens("https://trace.io", tokens.TokenSet{AccessToken: "tok"}); err != nil {
+		t.Fatalf("SaveTokens() error = %v", err)
+	}
+
+	if err := store.DeleteTokens("https://trace.io"); err != nil {
+		t.Fatalf("DeleteTokens() error = %v", err)
+	}
+
+	_, err := store.LoadTokens("https://trace.io")
+	if !errors.Is(err, tokenstore.ErrNotFound) {
+		t.Fatalf("LoadTokens() after delete error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDeleteTokens_MissingProfileIsNoop(t *testing.T) {
+	store := NewStoreWithService("test-deletetokens-noop")
+
+	if err := store.DeleteTokens("https://nonexistent.example.com"); err != nil {
+		t.Fatalf("DeleteTokens() on missing profile error = %v", err)
+	}
+}
+
+func TestSaveTokens_PreservesOtherProfiles(t *testing.T) {
+	store := NewStoreWithService("test-savetokens-preserve")
+
+	if err := store.SaveTokens("https://a.example.com", tokens.TokenSet{AccessToken: "tok-a"}); err != nil {
+		t.Fatalf("SaveTokens(a) error = %v", err)
+	}
+	if err := store.SaveTokens("https://b.example.com", tokens.TokenSet{AccessToken: "tok-b"}); err != nil {
+		t.Fatalf("SaveTokens(b) error = %v", err)
+	}
+
+	a, err := store.LoadTokens("https://a.example.com")
+	if err != nil || a.AccessToken != "tok-a" {
+		t.Fatalf("LoadTokens(a) = %q (err %v), want tok-a", a.AccessToken, err)
+	}
+	b, err := store.LoadTokens("https://b.example.com")
+	if err != nil || b.AccessToken != "tok-b" {
+		t.Fatalf("LoadTokens(b) = %q (err %v), want tok-b", b.AccessToken, err)
 	}
 }
