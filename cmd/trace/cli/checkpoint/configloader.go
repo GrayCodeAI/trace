@@ -56,7 +56,7 @@ func (osSymlinkFS) Open(name string) (billy.File, error) { //nolint:ireturn // i
 }
 
 func (osSymlinkFS) Stat(name string) (fs.FileInfo, error) {
-	return os.Stat(name)
+	return os.Stat(name) //nolint:wrapcheck
 }
 
 func (osSymlinkFS) OpenFile(name string, flag int, perm fs.FileMode) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface

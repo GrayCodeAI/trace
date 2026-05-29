@@ -45,7 +45,7 @@ func wrapAlternatesRewrite(fs billy.Filesystem) billy.Filesystem {
 	return &alternatesRewriteFS{Filesystem: fs}
 }
 
-func (fs *alternatesRewriteFS) Open(filename string) (billy.File, error) {
+func (fs *alternatesRewriteFS) Open(filename string) (billy.File, error) { //nolint:ireturn
 	if isAlternatesFile(filename) {
 		if content, ok := fs.absolutizedAlternates(); ok {
 			return inMemoryFile(content)
