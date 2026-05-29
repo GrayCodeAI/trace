@@ -49,7 +49,7 @@ func (s *stubAgent) ResolveSessionFile(sessionDir, agentSessionID string) string
 }
 
 func (s *stubAgent) ReadSession(_ *agent.HookInput) (*agent.AgentSession, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // test stub
 }
 func (s *stubAgent) WriteSession(_ context.Context, _ *agent.AgentSession) error { return nil }
 func (s *stubAgent) FormatResumeCommand(_ string) string                         { return "" }
@@ -207,7 +207,7 @@ func TestLaunchFixAgent_LaunchCmdError(t *testing.T) {
 		return &stubLauncherAgent{
 			stubAgent: stubAgent{name: name},
 			launchFn: func(_ context.Context, _ string) (*exec.Cmd, error) {
-				return nil, fmt.Errorf("binary not found")
+				return nil, errors.New("binary not found")
 			},
 		}
 	})
