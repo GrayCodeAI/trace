@@ -21,7 +21,7 @@ import (
 )
 
 // TestInvestigate_EnvVarAdoptionCondensesMetadataOnNextCommit pins the full
-// investigate adoption pipeline: ENTIRE_INVESTIGATE_* env vars are set on the
+// investigate adoption pipeline: TRACE_INVESTIGATE_* env vars are set on the
 // UserPromptSubmit hook subprocess (as `trace investigate` would do when
 // spawning each per-turn agent), the lifecycle handler tags the session as
 // agent_investigate, and the metadata is condensed into the checkpoint on the
@@ -122,13 +122,13 @@ func TestInvestigate_EnvVarAdoptionCondensesMetadataOnNextCommit(t *testing.T) {
 // investigate.RunInvestigateLoop directly with a fake spawner rather than
 // running the full `trace investigate` cobra command. The spawner uses
 // /bin/sh to:
-//   - Append a stance block to ENTIRE_INVESTIGATE_TIMELINE_DOC.
+//   - Append a stance block to TRACE_INVESTIGATE_TIMELINE_DOC.
 //   - Invoke `trace hooks claude-code user-prompt-submit` with the same
-//     ENTIRE_INVESTIGATE_* env it inherited, exercising the lifecycle
+//     TRACE_INVESTIGATE_* env it inherited, exercising the lifecycle
 //     adoption path end-to-end.
 //
 // What this covers:
-//   - The loop populates ENTIRE_INVESTIGATE_* on the spawned process.
+//   - The loop populates TRACE_INVESTIGATE_* on the spawned process.
 //   - The hook child inherits those vars and tags the session.
 //   - LoopResult/Outcome reflects the recorded stance.
 //
@@ -178,22 +178,22 @@ func TestInvestigate_FakeAgentLoop_TagsSessionViaLifecycleHook(t *testing.T) {
 	fakeAgentScript := fmt.Sprintf(`set -eu
 python3 -c '
 import json, os, sys
-p = os.environ["ENTIRE_INVESTIGATE_STATE_DOC"]
+p = os.environ["TRACE_INVESTIGATE_STATE_DOC"]
 with open(p, "r") as f:
     state = json.load(f)
 state["pending_turn"] = {"stance": "approve"}
 with open(p, "w") as f:
     json.dump(state, f, indent=2)
 '
-printf '%%s\n' '{"session_id":"%s","transcript_path":"","prompt":"%s"}' | "$ENTIRE_TEST_BINARY" hooks claude-code user-prompt-submit
+printf '%%s\n' '{"session_id":"%s","transcript_path":"","prompt":"%s"}' | "$TRACE_TEST_BINARY" hooks claude-code user-prompt-submit
 `, sessionID, userText)
 
 	spawner := &investigateFakeSpawner{
 		name:   "claude-code",
 		script: fakeAgentScript,
 		extraEnv: []string{
-			"ENTIRE_TEST_BINARY=" + getTestBinary(),
-			"ENTIRE_TEST_CLAUDE_PROJECT_DIR=" + env.ClaudeProjectDir,
+			"TRACE_TEST_BINARY=" + getTestBinary(),
+			"TRACE_TEST_CLAUDE_PROJECT_DIR=" + env.ClaudeProjectDir,
 			// Force the hook child to operate inside env.RepoDir so it
 			// resolves the same git repo the test set up.
 			"PWD=" + env.RepoDir,
@@ -327,7 +327,7 @@ func TestInvestigate_Continue_ResumesAtRecordedAgentIdx(t *testing.T) {
 			script: `set -eu
 python3 -c '
 import json, os
-p = os.environ["ENTIRE_INVESTIGATE_STATE_DOC"]
+p = os.environ["TRACE_INVESTIGATE_STATE_DOC"]
 with open(p, "r") as f:
     state = json.load(f)
 state["pending_turn"] = {"stance": "approve"}
@@ -455,7 +455,7 @@ func TestInvestigate_IssueLink_ResolvesViaFakeGh(t *testing.T) {
 	cmd.Env = envWithOverrides(
 		env.cliEnv(),
 		"PATH="+fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"ENTIRE_TEST_BINARY="+getTestBinary(),
+		"TRACE_TEST_BINARY="+getTestBinary(),
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -516,21 +516,21 @@ func enableInvestigateAgent(t *testing.T, env *TestEnv, name string) {
 }
 
 // SimulateUserPromptSubmitWithInvestigateEnvVars fires UserPromptSubmit with
-// the given prompt and a set of ENTIRE_INVESTIGATE_* env vars on the hook
+// the given prompt and a set of TRACE_INVESTIGATE_* env vars on the hook
 // child process. Mirrors SimulateUserPromptSubmitWithReviewEnvVars.
 func (env *TestEnv) SimulateUserPromptSubmitWithInvestigateEnvVars(sessionID, prompt string, extraEnv []string) error {
 	env.T.Helper()
 	runner := NewHookRunner(env.RepoDir, env.ClaudeProjectDir, env.T)
 	// Reuse the runner's review-env helper: it just appends extraEnv
 	// verbatim on top of the hook subprocess env, so it works for any
-	// ENTIRE_*_* vars regardless of name.
+	// TRACE_*_* vars regardless of name.
 	return runner.SimulateUserPromptSubmitWithReviewEnvVars(sessionID, prompt, extraEnv)
 }
 
 // investigateFakeSpawner is a spawn.Spawner whose BuildCmd returns a
-// /bin/sh process running a canned script with ENTIRE_INVESTIGATE_* +
+// /bin/sh process running a canned script with TRACE_INVESTIGATE_* +
 // extra env. The script may also write a stance to the timeline file
-// (resolved via $ENTIRE_INVESTIGATE_TIMELINE_DOC) and call back into the
+// (resolved via $TRACE_INVESTIGATE_TIMELINE_DOC) and call back into the
 // real trace test binary to drive lifecycle hooks.
 type investigateFakeSpawner struct {
 	name     string

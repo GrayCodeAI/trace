@@ -7,7 +7,7 @@ package investigate
 //
 //  1. Fingerprints the findings file BEFORE the turn.
 //  2. Composes a prompt via ComposeInvestigatePrompt.
-//  3. Spawns the agent via Spawner.BuildCmd with ENTIRE_INVESTIGATE_* env
+//  3. Spawns the agent via Spawner.BuildCmd with TRACE_INVESTIGATE_* env
 //     populated by AppendInvestigateEnv.
 //  4. Discards the agent's stdout/stderr — the lifecycle hooks capture the
 //     full session transcript on the shadow branch and condense it onto
@@ -52,7 +52,7 @@ type LoopDeps struct {
 	SpawnerFor func(agentName string) spawn.Spawner
 
 	// States persists/loads RunState across turns. In production this is
-	// a *StateStore rooted at <git-common-dir>/entire-investigations.
+	// a *StateStore rooted at <git-common-dir>/trace-investigations.
 	States *StateStore
 
 	// Progress receives turn lifecycle events. Production wires either a

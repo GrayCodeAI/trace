@@ -22,7 +22,7 @@ import (
 )
 
 // LaunchFixAgent starts a normal coding agent session with the given
-// prompt. ENTIRE_REVIEW_* and ENTIRE_INVESTIGATE_* env entries are stripped
+// prompt. TRACE_REVIEW_* and TRACE_INVESTIGATE_* env entries are stripped
 // from the child process so the fix session is not tagged as a review or
 // investigate.
 //
@@ -61,7 +61,7 @@ func LaunchFixAgent(ctx context.Context, agentName string, prompt string) error 
 }
 
 // withoutReviewOrInvestigateEnv returns a copy of base with all
-// ENTIRE_REVIEW_* and ENTIRE_INVESTIGATE_* entries removed. The returned
+// TRACE_REVIEW_* and TRACE_INVESTIGATE_* entries removed. The returned
 // slice is fresh — base is never mutated.
 func withoutReviewOrInvestigateEnv(base []string) []string {
 	out := make([]string, 0, len(base))

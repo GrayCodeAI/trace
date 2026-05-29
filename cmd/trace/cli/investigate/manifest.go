@@ -18,7 +18,7 @@ import (
 const manifestsSubdirName = "manifests"
 
 // LocalManifest is the persisted record of one `trace investigate` run for
-// local findings browsing. Written to <git-common-dir>/entire-investigations/
+// local findings browsing. Written to <git-common-dir>/trace-investigations/
 // manifests/<timestamp>-<run-id>.json after each run terminates.
 //
 // The schema is intentionally narrower than RunState: this file is what
@@ -88,7 +88,7 @@ type LocalManifestStore struct {
 }
 
 // NewLocalManifestStore creates a LocalManifestStore rooted at
-// <git-common-dir>/entire-investigations/manifests. Resolves the common dir
+// <git-common-dir>/trace-investigations/manifests. Resolves the common dir
 // via session.GetGitCommonDir, so this requires a git repository context.
 func NewLocalManifestStore(ctx context.Context) (*LocalManifestStore, error) {
 	commonDir, err := session.GetGitCommonDir(ctx)

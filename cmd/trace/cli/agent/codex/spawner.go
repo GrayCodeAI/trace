@@ -18,7 +18,7 @@ import (
 // Less aggressive options (-s workspace-write, --add-dir) are NOT
 // sufficient for `trace investigate`: codex's workspace-write policy
 // excludes `.git/` regardless of --add-dir, so the agent could not
-// write to <git-common-dir>/entire-investigations/<run-id>/
+// write to <git-common-dir>/trace-investigations/<run-id>/
 // (findings.md / state.json) even when that path was added. The user
 // explicitly invoked the agent; the prompt forbids destructive commands.
 type codexSpawner struct{}

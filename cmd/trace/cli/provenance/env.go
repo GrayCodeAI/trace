@@ -1,6 +1,6 @@
 // Package provenance owns the env-var contract that lets the lifecycle hook
 // recognize a spawned agent process as part of `entire review` or `entire
-// investigate`. Both spawn families set their own ENTIRE_*_* vars on the
+// investigate`. Both spawn families set their own TRACE_*_* vars on the
 // child agent process; the UserPromptSubmit hook reads them to tag the
 // in-flight session with the right Kind and provenance metadata.
 //
@@ -19,19 +19,19 @@ import (
 )
 
 const (
-	ReviewSession     = "ENTIRE_REVIEW_SESSION"
-	ReviewAgent       = "ENTIRE_REVIEW_AGENT"
-	ReviewSkills      = "ENTIRE_REVIEW_SKILLS"
-	ReviewPrompt      = "ENTIRE_REVIEW_PROMPT"
-	ReviewStartingSHA = "ENTIRE_REVIEW_STARTING_SHA"
+	ReviewSession     = "TRACE_REVIEW_SESSION"
+	ReviewAgent       = "TRACE_REVIEW_AGENT"
+	ReviewSkills      = "TRACE_REVIEW_SKILLS"
+	ReviewPrompt      = "TRACE_REVIEW_PROMPT"
+	ReviewStartingSHA = "TRACE_REVIEW_STARTING_SHA"
 
-	InvestigateSession     = "ENTIRE_INVESTIGATE_SESSION"
-	InvestigateAgent       = "ENTIRE_INVESTIGATE_AGENT"
-	InvestigateRunID       = "ENTIRE_INVESTIGATE_RUN_ID"
-	InvestigateTopic       = "ENTIRE_INVESTIGATE_TOPIC"
-	InvestigateFindingsDoc = "ENTIRE_INVESTIGATE_FINDINGS_DOC"
-	InvestigateStateDoc    = "ENTIRE_INVESTIGATE_STATE_DOC"
-	InvestigateStartingSHA = "ENTIRE_INVESTIGATE_STARTING_SHA"
+	InvestigateSession     = "TRACE_INVESTIGATE_SESSION"
+	InvestigateAgent       = "TRACE_INVESTIGATE_AGENT"
+	InvestigateRunID       = "TRACE_INVESTIGATE_RUN_ID"
+	InvestigateTopic       = "TRACE_INVESTIGATE_TOPIC"
+	InvestigateFindingsDoc = "TRACE_INVESTIGATE_FINDINGS_DOC"
+	InvestigateStateDoc    = "TRACE_INVESTIGATE_STATE_DOC"
+	InvestigateStartingSHA = "TRACE_INVESTIGATE_STARTING_SHA"
 )
 
 var reviewPrefixes = []string{
@@ -53,13 +53,13 @@ var investigatePrefixes = []string{
 }
 
 // IsReviewEntry reports whether kv is a "KEY=VALUE" entry whose key is one
-// of the ENTIRE_REVIEW_* contract variables.
+// of the TRACE_REVIEW_* contract variables.
 func IsReviewEntry(kv string) bool {
 	return hasAnyPrefix(kv, reviewPrefixes)
 }
 
 // IsInvestigateEntry reports whether kv is a "KEY=VALUE" entry whose key is
-// one of the ENTIRE_INVESTIGATE_* contract variables.
+// one of the TRACE_INVESTIGATE_* contract variables.
 func IsInvestigateEntry(kv string) bool {
 	return hasAnyPrefix(kv, investigatePrefixes)
 }

@@ -8,7 +8,7 @@ import (
 )
 
 // TestWithoutReviewOrInvestigateEnv pins the contract that the helper
-// strips both ENTIRE_REVIEW_* and ENTIRE_INVESTIGATE_* entries from the
+// strips both TRACE_REVIEW_* and TRACE_INVESTIGATE_* entries from the
 // supplied env slice while leaving unrelated entries untouched. This is
 // the leak-prevention guarantee for fix-agent launches: a parent shell
 // may have inherited stale provenance vars, and the fix session must not
@@ -34,36 +34,36 @@ func TestWithoutReviewOrInvestigateEnv(t *testing.T) {
 			input: []string{
 				"PATH=/usr/bin",
 				"HOME=/home/u",
-				"ENTIRE_REVIEW_SESSION=1",
-				"ENTIRE_REVIEW_AGENT=claude-code",
-				"ENTIRE_REVIEW_SKILLS=[\"/x\"]",
-				"ENTIRE_REVIEW_PROMPT=stale review prompt",
-				"ENTIRE_REVIEW_STARTING_SHA=stale1",
-				"ENTIRE_INVESTIGATE_SESSION=1",
-				"ENTIRE_INVESTIGATE_AGENT=claude-code",
-				"ENTIRE_INVESTIGATE_RUN_ID=abcdef012345",
-				"ENTIRE_INVESTIGATE_TOPIC=topic",
-				"ENTIRE_INVESTIGATE_FINDINGS_DOC=/tmp/f.md",
-				"ENTIRE_INVESTIGATE_STATE_DOC=/tmp/state.json",
-				"ENTIRE_INVESTIGATE_STARTING_SHA=stale2",
+				"TRACE_REVIEW_SESSION=1",
+				"TRACE_REVIEW_AGENT=claude-code",
+				"TRACE_REVIEW_SKILLS=[\"/x\"]",
+				"TRACE_REVIEW_PROMPT=stale review prompt",
+				"TRACE_REVIEW_STARTING_SHA=stale1",
+				"TRACE_INVESTIGATE_SESSION=1",
+				"TRACE_INVESTIGATE_AGENT=claude-code",
+				"TRACE_INVESTIGATE_RUN_ID=abcdef012345",
+				"TRACE_INVESTIGATE_TOPIC=topic",
+				"TRACE_INVESTIGATE_FINDINGS_DOC=/tmp/f.md",
+				"TRACE_INVESTIGATE_STATE_DOC=/tmp/state.json",
+				"TRACE_INVESTIGATE_STARTING_SHA=stale2",
 			},
 			want: []string{
 				"PATH=/usr/bin",
 				"HOME=/home/u",
 			},
 			notWant: []string{
-				"ENTIRE_REVIEW_SESSION=1",
-				"ENTIRE_REVIEW_AGENT=claude-code",
-				"ENTIRE_REVIEW_SKILLS=[\"/x\"]",
-				"ENTIRE_REVIEW_PROMPT=stale review prompt",
-				"ENTIRE_REVIEW_STARTING_SHA=stale1",
-				"ENTIRE_INVESTIGATE_SESSION=1",
-				"ENTIRE_INVESTIGATE_AGENT=claude-code",
-				"ENTIRE_INVESTIGATE_RUN_ID=abcdef012345",
-				"ENTIRE_INVESTIGATE_TOPIC=topic",
-				"ENTIRE_INVESTIGATE_FINDINGS_DOC=/tmp/f.md",
-				"ENTIRE_INVESTIGATE_STATE_DOC=/tmp/state.json",
-				"ENTIRE_INVESTIGATE_STARTING_SHA=stale2",
+				"TRACE_REVIEW_SESSION=1",
+				"TRACE_REVIEW_AGENT=claude-code",
+				"TRACE_REVIEW_SKILLS=[\"/x\"]",
+				"TRACE_REVIEW_PROMPT=stale review prompt",
+				"TRACE_REVIEW_STARTING_SHA=stale1",
+				"TRACE_INVESTIGATE_SESSION=1",
+				"TRACE_INVESTIGATE_AGENT=claude-code",
+				"TRACE_INVESTIGATE_RUN_ID=abcdef012345",
+				"TRACE_INVESTIGATE_TOPIC=topic",
+				"TRACE_INVESTIGATE_FINDINGS_DOC=/tmp/f.md",
+				"TRACE_INVESTIGATE_STATE_DOC=/tmp/state.json",
+				"TRACE_INVESTIGATE_STARTING_SHA=stale2",
 			},
 			wantSize: 2,
 		},
@@ -87,26 +87,26 @@ func TestWithoutReviewOrInvestigateEnv(t *testing.T) {
 		{
 			name: "only provenance entries: empty output",
 			input: []string{
-				"ENTIRE_REVIEW_SESSION=1",
-				"ENTIRE_INVESTIGATE_SESSION=1",
+				"TRACE_REVIEW_SESSION=1",
+				"TRACE_INVESTIGATE_SESSION=1",
 			},
 			notWant: []string{
-				"ENTIRE_REVIEW_SESSION=1",
-				"ENTIRE_INVESTIGATE_SESSION=1",
+				"TRACE_REVIEW_SESSION=1",
+				"TRACE_INVESTIGATE_SESSION=1",
 			},
 			wantSize: 0,
 		},
 		{
 			name: "look-alike non-provenance keys survive",
 			input: []string{
-				"NOT_ENTIRE_REVIEW_SESSION=1",
-				"ENTIRE_REVIEW_OTHER=keep",      // not a known prefix
-				"ENTIRE_INVESTIGATE_OTHER=keep", // not a known prefix
+				"NOT_TRACE_REVIEW_SESSION=1",
+				"TRACE_REVIEW_OTHER=keep",      // not a known prefix
+				"TRACE_INVESTIGATE_OTHER=keep", // not a known prefix
 			},
 			want: []string{
-				"NOT_ENTIRE_REVIEW_SESSION=1",
-				"ENTIRE_REVIEW_OTHER=keep",
-				"ENTIRE_INVESTIGATE_OTHER=keep",
+				"NOT_TRACE_REVIEW_SESSION=1",
+				"TRACE_REVIEW_OTHER=keep",
+				"TRACE_INVESTIGATE_OTHER=keep",
 			},
 			wantSize: 3,
 		},
@@ -142,8 +142,8 @@ func TestWithoutReviewOrInvestigateEnv_DoesNotMutateInput(t *testing.T) {
 
 	input := []string{
 		"PATH=/usr/bin",
-		"ENTIRE_REVIEW_SESSION=1",
-		"ENTIRE_INVESTIGATE_SESSION=1",
+		"TRACE_REVIEW_SESSION=1",
+		"TRACE_INVESTIGATE_SESSION=1",
 		"HOME=/home/u",
 	}
 	original := slices.Clone(input)
@@ -166,11 +166,11 @@ func TestWithoutReviewOrInvestigateEnv_DoesNotMutateInput(t *testing.T) {
 // os.Environ() path, assert no provenance entries survive.
 func TestLaunchFixAgent_EmptyEnvFallback_StripsHostProvenance(t *testing.T) {
 	// t.Setenv mutates process global state; cannot run with t.Parallel().
-	t.Setenv("ENTIRE_REVIEW_SESSION", "1")
-	t.Setenv("ENTIRE_REVIEW_AGENT", "claude-code")
-	t.Setenv("ENTIRE_REVIEW_STARTING_SHA", "deadbeefcafe")
-	t.Setenv("ENTIRE_INVESTIGATE_SESSION", "1")
-	t.Setenv("ENTIRE_INVESTIGATE_RUN_ID", "abcdef012345")
+	t.Setenv("TRACE_REVIEW_SESSION", "1")
+	t.Setenv("TRACE_REVIEW_AGENT", "claude-code")
+	t.Setenv("TRACE_REVIEW_STARTING_SHA", "deadbeefcafe")
+	t.Setenv("TRACE_INVESTIGATE_SESSION", "1")
+	t.Setenv("TRACE_INVESTIGATE_RUN_ID", "abcdef012345")
 
 	// Drive the exact branch LaunchFixAgent takes when cmd.Env is empty:
 	// withoutReviewOrInvestigateEnv(os.Environ()).
@@ -201,18 +201,18 @@ func osEnvironForTest() []string {
 // here — the test file lives in the same package as the implementation).
 func hasReviewOrInvestigatePrefix(kv string) bool {
 	prefixes := []string{
-		"ENTIRE_REVIEW_SESSION=",
-		"ENTIRE_REVIEW_AGENT=",
-		"ENTIRE_REVIEW_SKILLS=",
-		"ENTIRE_REVIEW_PROMPT=",
-		"ENTIRE_REVIEW_STARTING_SHA=",
-		"ENTIRE_INVESTIGATE_SESSION=",
-		"ENTIRE_INVESTIGATE_AGENT=",
-		"ENTIRE_INVESTIGATE_RUN_ID=",
-		"ENTIRE_INVESTIGATE_TOPIC=",
-		"ENTIRE_INVESTIGATE_FINDINGS_DOC=",
-		"ENTIRE_INVESTIGATE_STATE_DOC=",
-		"ENTIRE_INVESTIGATE_STARTING_SHA=",
+		"TRACE_REVIEW_SESSION=",
+		"TRACE_REVIEW_AGENT=",
+		"TRACE_REVIEW_SKILLS=",
+		"TRACE_REVIEW_PROMPT=",
+		"TRACE_REVIEW_STARTING_SHA=",
+		"TRACE_INVESTIGATE_SESSION=",
+		"TRACE_INVESTIGATE_AGENT=",
+		"TRACE_INVESTIGATE_RUN_ID=",
+		"TRACE_INVESTIGATE_TOPIC=",
+		"TRACE_INVESTIGATE_FINDINGS_DOC=",
+		"TRACE_INVESTIGATE_STATE_DOC=",
+		"TRACE_INVESTIGATE_STARTING_SHA=",
 	}
 	for _, p := range prefixes {
 		if strings.HasPrefix(kv, p) {

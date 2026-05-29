@@ -40,7 +40,7 @@ func shellCmd(ctx context.Context, env []string, script string) *exec.Cmd {
 }
 
 // pendingTurnScript writes a fresh state.json (copied from the path in
-// $ENTIRE_INVESTIGATE_STATE_DOC) with PendingTurn set. We use a tiny
+// $TRACE_INVESTIGATE_STATE_DOC) with PendingTurn set. We use a tiny
 // helper Go binary at runtime to avoid embedding a JSON parser in
 // /bin/sh. Simplest: use jq if it exists, otherwise just do a here-doc
 // rewrite that preserves the schema fields the loop already wrote.
@@ -107,7 +107,7 @@ func writePendingTurn(t *testing.T, path, stance, note string) {
 
 // stableSpawner returns a SpawnerFor that runs scripts[agent] as the agent
 // process, then (via the onBuildCmd wrapper) writes a PendingTurn into
-// the state.json file at $ENTIRE_INVESTIGATE_STATE_DOC.
+// the state.json file at $TRACE_INVESTIGATE_STATE_DOC.
 func stableSpawner(t *testing.T, scripts map[string]string, stances map[string]string) func(string) spawn.Spawner {
 	return func(agent string) spawn.Spawner {
 		script, ok := scripts[agent]
@@ -135,7 +135,7 @@ func stableSpawner(t *testing.T, scripts map[string]string, stances map[string]s
 	}
 }
 
-// stateDocFromEnv returns the value of $ENTIRE_INVESTIGATE_STATE_DOC in a
+// stateDocFromEnv returns the value of $TRACE_INVESTIGATE_STATE_DOC in a
 // KEY=VALUE env slice, or "" when absent. Mirrors helpers used in other
 // test files.
 func stateDocFromEnv(env []string) string {

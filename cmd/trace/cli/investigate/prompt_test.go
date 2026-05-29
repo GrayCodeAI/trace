@@ -46,8 +46,8 @@ func TestComposeInvestigatePrompt_FirstRound(t *testing.T) {
 		MaxTurns:  3,
 		Turn:      1,
 		Files: Files{
-			Findings: "/abs/repo/.git/entire-investigations/abcdef012345/findings.md",
-			State:    "/abs/repo/.git/entire-investigations/abcdef012345/state.json",
+			Findings: "/abs/repo/.git/trace-investigations/abcdef012345/findings.md",
+			State:    "/abs/repo/.git/trace-investigations/abcdef012345/state.json",
 		},
 	})
 
@@ -59,7 +59,7 @@ func TestComposeInvestigatePrompt_FirstRound(t *testing.T) {
 		"You are agent: claude-code",
 		"Round: 1 of 3",
 		"(turn 1 overall in this session)",
-		"Findings: /abs/repo/.git/entire-investigations/abcdef012345/findings.md",
+		"Findings: /abs/repo/.git/trace-investigations/abcdef012345/findings.md",
 		"Use Entire tools deliberately",
 		"Audit both sides for failure-rate questions",
 		"Keep the TLDR section accurate every turn",
@@ -86,8 +86,8 @@ func TestComposeInvestigatePrompt_MidLoop(t *testing.T) {
 		MaxTurns:  3,
 		Turn:      5,
 		Files: Files{
-			Findings: "/abs/repo/.git/entire-investigations/abcdef012345/findings.md",
-			State:    "/abs/repo/.git/entire-investigations/abcdef012345/state.json",
+			Findings: "/abs/repo/.git/trace-investigations/abcdef012345/findings.md",
+			State:    "/abs/repo/.git/trace-investigations/abcdef012345/state.json",
 		},
 	})
 

@@ -6,36 +6,36 @@ import (
 	"testing"
 )
 
-// TestEnvNamesAreStable pins each ENTIRE_INVESTIGATE_* constant by direct
+// TestEnvNamesAreStable pins each TRACE_INVESTIGATE_* constant by direct
 // comparison so a rename surfaces on the specific constant that broke,
 // rather than as one ambiguous map-iteration failure.
 func TestEnvNamesAreStable(t *testing.T) {
 	t.Parallel()
-	if EnvSession != "ENTIRE_INVESTIGATE_SESSION" {
-		t.Errorf("EnvSession: got %q, want ENTIRE_INVESTIGATE_SESSION", EnvSession)
+	if EnvSession != "TRACE_INVESTIGATE_SESSION" {
+		t.Errorf("EnvSession: got %q, want TRACE_INVESTIGATE_SESSION", EnvSession)
 	}
-	if EnvAgent != "ENTIRE_INVESTIGATE_AGENT" {
-		t.Errorf("EnvAgent: got %q, want ENTIRE_INVESTIGATE_AGENT", EnvAgent)
+	if EnvAgent != "TRACE_INVESTIGATE_AGENT" {
+		t.Errorf("EnvAgent: got %q, want TRACE_INVESTIGATE_AGENT", EnvAgent)
 	}
-	if EnvRunID != "ENTIRE_INVESTIGATE_RUN_ID" {
-		t.Errorf("EnvRunID: got %q, want ENTIRE_INVESTIGATE_RUN_ID", EnvRunID)
+	if EnvRunID != "TRACE_INVESTIGATE_RUN_ID" {
+		t.Errorf("EnvRunID: got %q, want TRACE_INVESTIGATE_RUN_ID", EnvRunID)
 	}
-	if EnvTopic != "ENTIRE_INVESTIGATE_TOPIC" {
-		t.Errorf("EnvTopic: got %q, want ENTIRE_INVESTIGATE_TOPIC", EnvTopic)
+	if EnvTopic != "TRACE_INVESTIGATE_TOPIC" {
+		t.Errorf("EnvTopic: got %q, want TRACE_INVESTIGATE_TOPIC", EnvTopic)
 	}
-	if EnvFindingsDoc != "ENTIRE_INVESTIGATE_FINDINGS_DOC" {
-		t.Errorf("EnvFindingsDoc: got %q, want ENTIRE_INVESTIGATE_FINDINGS_DOC", EnvFindingsDoc)
+	if EnvFindingsDoc != "TRACE_INVESTIGATE_FINDINGS_DOC" {
+		t.Errorf("EnvFindingsDoc: got %q, want TRACE_INVESTIGATE_FINDINGS_DOC", EnvFindingsDoc)
 	}
-	if EnvStateDoc != "ENTIRE_INVESTIGATE_STATE_DOC" {
-		t.Errorf("EnvStateDoc: got %q, want ENTIRE_INVESTIGATE_STATE_DOC", EnvStateDoc)
+	if EnvStateDoc != "TRACE_INVESTIGATE_STATE_DOC" {
+		t.Errorf("EnvStateDoc: got %q, want TRACE_INVESTIGATE_STATE_DOC", EnvStateDoc)
 	}
-	if EnvStartingSHA != "ENTIRE_INVESTIGATE_STARTING_SHA" {
-		t.Errorf("EnvStartingSHA: got %q, want ENTIRE_INVESTIGATE_STARTING_SHA", EnvStartingSHA)
+	if EnvStartingSHA != "TRACE_INVESTIGATE_STARTING_SHA" {
+		t.Errorf("EnvStartingSHA: got %q, want TRACE_INVESTIGATE_STARTING_SHA", EnvStartingSHA)
 	}
 }
 
 // TestIsInvestigateEnvEntry pins the prefix-matching helper used to strip
-// stale ENTIRE_INVESTIGATE_* entries before AppendInvestigateEnv writes new
+// stale TRACE_INVESTIGATE_* entries before AppendInvestigateEnv writes new
 // ones.
 func TestIsInvestigateEnvEntry(t *testing.T) {
 	t.Parallel()
@@ -52,9 +52,9 @@ func TestIsInvestigateEnvEntry(t *testing.T) {
 		{EnvStartingSHA + "=deadbeef", true},
 		{"PATH=/usr/bin", false},
 		{"HOME=/home/u", false},
-		{"ENTIRE_REVIEW_SESSION=1", false},    // review entries are not investigate entries
-		{"ENTIRE_INVESTIGATE_OTHER=1", false}, // unknown investigate-style key
-		{"NOT_ENTIRE_INVESTIGATE_SESSION", false},
+		{"TRACE_REVIEW_SESSION=1", false},    // review entries are not investigate entries
+		{"TRACE_INVESTIGATE_OTHER=1", false}, // unknown investigate-style key
+		{"NOT_TRACE_INVESTIGATE_SESSION", false},
 	}
 	for _, tc := range tests {
 		if got := IsInvestigateEnvEntry(tc.kv); got != tc.want {
@@ -64,8 +64,8 @@ func TestIsInvestigateEnvEntry(t *testing.T) {
 }
 
 // TestAppendInvestigateEnv_StripsStaleInvestigateAndReview pins the contract
-// that AppendInvestigateEnv removes both ENTIRE_INVESTIGATE_* and
-// ENTIRE_REVIEW_* entries before appending fresh values. The review-strip
+// that AppendInvestigateEnv removes both TRACE_INVESTIGATE_* and
+// TRACE_REVIEW_* entries before appending fresh values. The review-strip
 // is the risk-mitigation guard for a child investigate process inheriting
 // review env from a parent shell.
 func TestAppendInvestigateEnv_StripsStaleInvestigateAndReview(t *testing.T) {
@@ -82,11 +82,11 @@ func TestAppendInvestigateEnv_StripsStaleInvestigateAndReview(t *testing.T) {
 		EnvStateDoc + "=/tmp/stale-state.json",
 		EnvStartingSHA + "=stalehash",
 		// stale review vars from an outer review process
-		"ENTIRE_REVIEW_SESSION=1",
-		"ENTIRE_REVIEW_AGENT=stale-review-agent",
-		"ENTIRE_REVIEW_SKILLS=[\"/stale\"]",
-		"ENTIRE_REVIEW_PROMPT=stale review prompt",
-		"ENTIRE_REVIEW_STARTING_SHA=stalehash",
+		"TRACE_REVIEW_SESSION=1",
+		"TRACE_REVIEW_AGENT=stale-review-agent",
+		"TRACE_REVIEW_SKILLS=[\"/stale\"]",
+		"TRACE_REVIEW_PROMPT=stale review prompt",
+		"TRACE_REVIEW_STARTING_SHA=stalehash",
 	}
 	got := AppendInvestigateEnv(base, AppendOptions{
 		AgentName:   "claude-code",
@@ -130,11 +130,11 @@ func TestAppendInvestigateEnv_StripsStaleInvestigateAndReview(t *testing.T) {
 	// they are stripped to prevent cross-tagging.
 	for _, kv := range got {
 		for _, name := range []string{
-			"ENTIRE_REVIEW_SESSION=",
-			"ENTIRE_REVIEW_AGENT=",
-			"ENTIRE_REVIEW_SKILLS=",
-			"ENTIRE_REVIEW_PROMPT=",
-			"ENTIRE_REVIEW_STARTING_SHA=",
+			"TRACE_REVIEW_SESSION=",
+			"TRACE_REVIEW_AGENT=",
+			"TRACE_REVIEW_SKILLS=",
+			"TRACE_REVIEW_PROMPT=",
+			"TRACE_REVIEW_STARTING_SHA=",
 		} {
 			if strings.HasPrefix(kv, name) {
 				t.Errorf("review env entry survived strip: %q", kv)

@@ -274,7 +274,7 @@ func TestNewCommand_FreshRunWritesManifest(t *testing.T) {
 
 	// Manifest should have captured the findings body.
 	manifestStore := investigate.NewLocalManifestStoreWithDir(
-		filepath.Join(tmp, ".git", "entire-investigations", "manifests"),
+		filepath.Join(tmp, ".git", "trace-investigations", "manifests"),
 	)
 	m, ok, err := manifestStore.FindByRunID(context.Background(), captured.RunID)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestNewCommand_FreshRunWritesManifest(t *testing.T) {
 	}
 
 	// Per-run dir should be cleaned up.
-	runDir := filepath.Join(tmp, ".git", "entire-investigations", captured.RunID)
+	runDir := filepath.Join(tmp, ".git", "trace-investigations", captured.RunID)
 	if _, statErr := os.Stat(runDir); !os.IsNotExist(statErr) {
 		t.Errorf("per-run dir should be cleaned up on Quorum, but exists: %s (err=%v)", runDir, statErr)
 	}
@@ -326,7 +326,7 @@ func TestNewCommand_FreshRunPausedKeepsPerRunDir(t *testing.T) {
 	}
 
 	manifestStore := investigate.NewLocalManifestStoreWithDir(
-		filepath.Join(tmp, ".git", "entire-investigations", "manifests"),
+		filepath.Join(tmp, ".git", "trace-investigations", "manifests"),
 	)
 	m, ok, err := manifestStore.FindByRunID(context.Background(), captured.RunID)
 	if err != nil {
@@ -343,7 +343,7 @@ func TestNewCommand_FreshRunPausedKeepsPerRunDir(t *testing.T) {
 	}
 
 	// Per-run dir must remain so --continue can resume.
-	runDir := filepath.Join(tmp, ".git", "entire-investigations", captured.RunID)
+	runDir := filepath.Join(tmp, ".git", "trace-investigations", captured.RunID)
 	if _, statErr := os.Stat(runDir); statErr != nil {
 		t.Errorf("per-run dir should remain on Paused, but stat failed: %v", statErr)
 	}
@@ -420,7 +420,7 @@ func TestNewCommand_ContinueLoadsExistingState(t *testing.T) {
 	tmp := setupInvestigateRepo(t)
 
 	// Create a state file in the conventional location.
-	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
+	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestNewCommand_ContinueLoadsExistingState(t *testing.T) {
 func TestNewCommand_ContinueWritesTerminalManifest(t *testing.T) {
 	tmp := setupInvestigateRepo(t)
 
-	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
+	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +566,7 @@ func TestNewCommand_ContinueLoadsAlwaysPromptFromSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
+	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -608,7 +608,7 @@ func TestNewCommand_ContinueLoadsAlwaysPromptFromSettings(t *testing.T) {
 func TestNewCommand_ContinueRejectsAgentShrink(t *testing.T) {
 	tmp := setupInvestigateRepo(t)
 
-	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
+	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -665,7 +665,7 @@ func TestNewCommand_ContinueWarnsOnSettingsLoadFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
+	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}

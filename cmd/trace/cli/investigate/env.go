@@ -28,7 +28,7 @@ const (
 	EnvStartingSHA = provenance.InvestigateStartingSHA
 )
 
-// AppendOptions carries the data needed to populate the ENTIRE_INVESTIGATE_*
+// AppendOptions carries the data needed to populate the TRACE_INVESTIGATE_*
 // env vars on a spawned agent process.
 type AppendOptions struct {
 	AgentName   string
@@ -39,11 +39,11 @@ type AppendOptions struct {
 	StartingSHA string
 }
 
-// AppendInvestigateEnv adds the ENTIRE_INVESTIGATE_* env vars to base,
+// AppendInvestigateEnv adds the TRACE_INVESTIGATE_* env vars to base,
 // returning the new slice. Used by the loop driver when spawning each per-turn
 // agent process to propagate the investigate-session contract.
 //
-// Any pre-existing ENTIRE_INVESTIGATE_* AND ENTIRE_REVIEW_* entries in base
+// Any pre-existing TRACE_INVESTIGATE_* AND TRACE_REVIEW_* entries in base
 // are stripped before the new values are appended. Stripping investigate
 // entries handles nested invocations and stale inheritance from a parent
 // shell — duplicate keys would otherwise have implementation-defined
@@ -70,7 +70,7 @@ func AppendInvestigateEnv(base []string, opts AppendOptions) []string {
 }
 
 // IsInvestigateEnvEntry reports whether kv is a "KEY=VALUE" entry whose key
-// is one of the ENTIRE_INVESTIGATE_* contract variables.
+// is one of the TRACE_INVESTIGATE_* contract variables.
 func IsInvestigateEnvEntry(kv string) bool {
 	return provenance.IsInvestigateEntry(kv)
 }

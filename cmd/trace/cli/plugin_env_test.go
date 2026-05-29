@@ -32,7 +32,7 @@ func TestPluginEnv(t *testing.T) {
 			wantMiss: []string{"EDITOR", "VISUAL", "PAGER", "GIT_ASKPASS"},
 		},
 		{
-			name:     "ENTIRE namespace passes",
+			name:     "TRACE namespace passes",
 			parent:   []string{"TRACE_FOO=1", "TRACE_AUTH_TOKEN=secret", "PATH=/bin"},
 			wantHave: []string{"TRACE_FOO", "TRACE_AUTH_TOKEN", "PATH"},
 		},

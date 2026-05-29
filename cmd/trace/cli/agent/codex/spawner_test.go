@@ -24,7 +24,7 @@ func TestCodexSpawner_Name(t *testing.T) {
 // (-s workspace-write, --add-dir) are not sufficient because codex's
 // workspace-write policy excludes anything under `.git/` regardless of
 // --add-dir, which blocks investigate's per-run dir at
-// <git-common-dir>/entire-investigations/<run-id>/.
+// <git-common-dir>/trace-investigations/<run-id>/.
 func TestCodexSpawner_Argv(t *testing.T) {
 	t.Parallel()
 	env := []string{"FOO=bar", "BAZ=qux"}
@@ -58,14 +58,14 @@ func TestCodexSpawner_Argv(t *testing.T) {
 
 // TestCodexSpawner_Argv_StableUnderInvestigateEnv pins the contract
 // that the argv does NOT change based on env vars. (A previous
-// implementation appended --add-dir from ENTIRE_INVESTIGATE_FINDINGS_DOC;
+// implementation appended --add-dir from TRACE_INVESTIGATE_FINDINGS_DOC;
 // that approach didn't actually unblock writes under .git/, so we
 // dropped it. This test pins the regression.)
 func TestCodexSpawner_Argv_StableUnderInvestigateEnv(t *testing.T) {
 	t.Parallel()
 	env := []string{
 		"FOO=bar",
-		"ENTIRE_INVESTIGATE_FINDINGS_DOC=/repo/.git/entire-investigations/abcdef012345/findings.md",
+		"TRACE_INVESTIGATE_FINDINGS_DOC=/repo/.git/trace-investigations/abcdef012345/findings.md",
 	}
 	cmd := NewSpawner().BuildCmd(context.Background(), env, "prompt")
 
