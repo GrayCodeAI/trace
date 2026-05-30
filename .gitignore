@@ -67,3 +67,10 @@ tmp/
 
 # CodeGraph local index
 .codegraph/
+
+# AI/IDE tool configs
+.cursor/
+.openclaude/
+.commandcode/
+.antigravitycli/
+.pi/
