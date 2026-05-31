@@ -2,6 +2,7 @@ package trace
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -25,13 +26,13 @@ const (
 type EdgeKind string
 
 const (
-	EdgeCalls       EdgeKind = "calls"
-	EdgeCalledBy    EdgeKind = "called_by"
-	EdgeImplements  EdgeKind = "implements"
-	EdgeUses        EdgeKind = "uses"
-	EdgeImports     EdgeKind = "imports"
-	EdgeInherits    EdgeKind = "inherits"
-	EdgeContains    EdgeKind = "contains"
+	EdgeCalls      EdgeKind = "calls"
+	EdgeCalledBy   EdgeKind = "called_by"
+	EdgeImplements EdgeKind = "implements"
+	EdgeUses       EdgeKind = "uses"
+	EdgeImports    EdgeKind = "imports"
+	EdgeInherits   EdgeKind = "inherits"
+	EdgeContains   EdgeKind = "contains"
 )
 
 // Node represents a symbol in the code graph.
@@ -75,10 +76,10 @@ type Stats struct {
 
 // CodeGraphData represents a serializable export of the code graph.
 type CodeGraphData struct {
-	Version    string      `json:"version"`
-	SnapshotAt time.Time   `json:"snapshot_at"`
-	Nodes      []Node      `json:"nodes"`
-	Edges      []Edge      `json:"edges"`
+	Version    string    `json:"version"`
+	SnapshotAt time.Time `json:"snapshot_at"`
+	Nodes      []Node    `json:"nodes"`
+	Edges      []Edge    `json:"edges"`
 }
 
 // CodeGraph is a directed graph of code symbols and their relationships.
@@ -99,7 +100,7 @@ func NewCodeGraph() *CodeGraph {
 // AddNode adds or updates a node in the graph.
 func (cg *CodeGraph) AddNode(node Node) error {
 	if node.ID == "" {
-		return fmt.Errorf("node ID cannot be empty")
+		return errors.New("node ID cannot be empty")
 	}
 
 	if !isValidNodeKind(node.Kind) {
@@ -248,7 +249,7 @@ func (cg *CodeGraph) Persist(path string) error {
 		return fmt.Errorf("marshal snapshot: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 
