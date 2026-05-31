@@ -211,6 +211,13 @@ type State struct {
 	// than being captured by hooks during normal agent execution.
 	AttachedManually bool `json:"attached_manually,omitempty"`
 
+	// Metadata holds user-defined session tags collected from TRACE_TAG_*
+	// environment variables at session start. Keys are normalized: the
+	// TRACE_TAG_ prefix is stripped, converted to lowercase, and hyphens are
+	// replaced with underscores. Values are stored as-is.
+	// Example: TRACE_TAG_PROJECT=my-app -> metadata["project"]="my-app"
+	Metadata map[string]string `json:"metadata,omitempty"`
+
 	// AgentType identifies the agent that created this session (e.g., "Claude Code", "Gemini CLI", "Cursor")
 	AgentType types.AgentType `json:"agent_type,omitempty"`
 
