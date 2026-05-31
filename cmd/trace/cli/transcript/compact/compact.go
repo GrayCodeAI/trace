@@ -33,6 +33,8 @@ type transcriptLine struct {
 	ID           string          `json:"id,omitempty"`
 	InputTokens  int             `json:"input_tokens,omitempty"`
 	OutputTokens int             `json:"output_tokens,omitempty"`
+	Model        string          `json:"model,omitempty"`
+	Provider     string          `json:"provider,omitempty"`
 	Content      json.RawMessage `json:"content"`
 }
 
@@ -678,4 +680,55 @@ func unquote(raw json.RawMessage) string {
 		return s
 	}
 	return ""
+}
+
+// OTelSpan represents an OpenTelemetry span derived from a compact transcript line.
+// The attributes use gen_ai.* semantic convention names as defined by the
+// OpenTelemetry Gen AI semantic conventions.
+type OTelSpan struct {
+	Name       string                 // gen_ai.completion (assistant) or gen_ai.user (user)
+	Attributes map[string]interface{} // OTel span attributes keyed by gen_ai.* names
+}
+
+// TranscriptToOTelSpan converts a parsed transcript line into an OTel span
+// representation with gen_ai.* semantic convention attributes.
+//
+// Attribute mapping:
+//   - gen_ai.usage.input_tokens  <- InputTokens
+//   - gen_ai.usage.output_tokens <- OutputTokens
+//   - gen_ai.request.model       <- Model
+//   - gen_ai.system              <- Provider
+//   - gen_ai.operation.name      <- Type ("user" or "assistant")
+//   - gen_ai.agent.name          <- Agent
+//   - gen_ai.completion.id       <- ID
+func TranscriptToOTelSpan(line transcriptLine) OTelSpan {
+	attrs := make(map[string]interface{})
+
+	if line.InputTokens != 0 {
+		attrs["gen_ai.usage.input_tokens"] = line.InputTokens
+	}
+	if line.OutputTokens != 0 {
+		attrs["gen_ai.usage.output_tokens"] = line.OutputTokens
+	}
+	if line.Model != "" {
+		attrs["gen_ai.request.model"] = line.Model
+	}
+	if line.Provider != "" {
+		attrs["gen_ai.system"] = line.Provider
+	}
+	if line.Type != "" {
+		attrs["gen_ai.operation.name"] = line.Type
+	}
+	if line.Agent != "" {
+		attrs["gen_ai.agent.name"] = line.Agent
+	}
+	if line.ID != "" {
+		attrs["gen_ai.completion.id"] = line.ID
+	}
+
+	spanName := "gen_ai." + line.Type
+	return OTelSpan{
+		Name:       spanName,
+		Attributes: attrs,
+	}
 }

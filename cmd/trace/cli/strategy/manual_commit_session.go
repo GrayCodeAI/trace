@@ -310,6 +310,9 @@ func (s *ManualCommitStrategy) initializeSession(ctx context.Context, repo *git.
 		untrackedFiles = nil
 	}
 
+	// Collect TRACE_TAG_* environment variables as session metadata.
+	tags := session.CollectSessionTags()
+
 	// Generate TurnID for the first turn
 	turnID, err := id.Generate()
 	if err != nil {
@@ -334,6 +337,7 @@ func (s *ManualCommitStrategy) initializeSession(ctx context.Context, repo *git.
 		ModelName:             model,
 		TranscriptPath:        transcriptPath,
 		LastPrompt:            truncatePromptForStorage(userPrompt),
+		Metadata:              tags,
 	}
 
 	if err := s.saveSessionState(ctx, state); err != nil {
