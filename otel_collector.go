@@ -93,7 +93,11 @@ func (sb *SpanBatch) IsFull(maxSize int) bool {
 
 // ToJSON serialises the batch to JSON bytes suitable for export.
 func (sb *SpanBatch) ToJSON() ([]byte, error) {
-	return json.Marshal(sb)
+	b, err := json.Marshal(sb)
+	if err != nil {
+		return nil, fmt.Errorf("otel: marshal span batch: %w", err)
+	}
+	return b, nil
 }
 
 // Size returns the number of spans currently in the batch.
