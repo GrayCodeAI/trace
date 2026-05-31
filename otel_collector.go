@@ -19,12 +19,12 @@ type RetryConfig struct {
 
 // OTelCollectorConfig holds configuration for the OpenTelemetry collector client.
 type OTelCollectorConfig struct {
-	Endpoint     string        `json:"endpoint"`
-	Insecure     bool          `json:"insecure"`
-	Timeout      time.Duration `json:"timeout"`
-	BatchSize    int           `json:"batch_size"`
+	Endpoint      string        `json:"endpoint"`
+	Insecure      bool          `json:"insecure"`
+	Timeout       time.Duration `json:"timeout"`
+	BatchSize     int           `json:"batch_size"`
 	FlushInterval time.Duration `json:"flush_interval"`
-	RetryConfig  RetryConfig   `json:"retry_config"`
+	RetryConfig   RetryConfig   `json:"retry_config"`
 }
 
 // DefaultOTelCollectorConfig returns a config with sensible production defaults:
