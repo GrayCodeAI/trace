@@ -193,6 +193,8 @@ func sessionPhaseLabel(s *strategy.SessionState) string {
 }
 
 func newListCmd() *cobra.Command {
+	var tagFilters []string
+
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all sessions",
@@ -201,16 +203,38 @@ func newListCmd() *cobra.Command {
 For active sessions only, use 'trace status'.
 
 Examples:
-  trace sessions list    List all sessions across all worktrees`,
+  trace sessions list                        List all sessions across all worktrees
+  trace sessions list --tag project=my-app   Filter sessions by tag key=value`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSessionList(cmd.Context(), cmd)
+			return runSessionList(cmd.Context(), cmd, tagFilters)
 		},
 	}
+
+	cmd.Flags().StringSliceVar(&tagFilters, "tag", nil, "Filter by tag (key=value); matches TRACE_TAG_ session metadata")
 
 	return cmd
 }
 
-func runSessionList(ctx context.Context, cmd *cobra.Command) error {
+// matchTagFilters reports whether a session's Metadata matches all provided
+// tag filters. Each filter is of the form "key=value" where key is matched
+// against the normalized metadata key (lowercase, underscores).
+func matchTagFilters(metadata map[string]string, filters []string) bool {
+	for _, f := range filters {
+		k, v, ok := strings.Cut(f, "=")
+		if !ok || k == "" {
+			continue // malformed filter; skip
+		}
+		k = strings.ToLower(k)
+		k = strings.ReplaceAll(k, "-", "_")
+		actual, exists := metadata[k]
+		if !exists || actual != v {
+			return false
+		}
+	}
+	return true
+}
+
+func runSessionList(ctx context.Context, cmd *cobra.Command, tagFilters []string) error {
 	states, err := strategy.ListSessionStates(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list sessions: %w", err)
@@ -218,9 +242,13 @@ func runSessionList(ctx context.Context, cmd *cobra.Command) error {
 
 	var filtered []*strategy.SessionState
 	for _, s := range states {
-		if s != nil {
-			filtered = append(filtered, s)
+		if s == nil {
+			continue
 		}
+		if len(tagFilters) > 0 && !matchTagFilters(s.Metadata, tagFilters) {
+			continue
+		}
+		filtered = append(filtered, s)
 	}
 
 	w := cmd.OutOrStdout()
@@ -294,6 +322,17 @@ func writeSessionCard(w io.Writer, s *strategy.SessionState, sty statusStyles) {
 	}
 	statsLine := strings.Join(stats, sty.render(sty.dim, " · "))
 	fmt.Fprintln(w, sty.render(sty.dim, statsLine))
+
+	// Line 4 (optional): tags from metadata
+	if len(s.Metadata) > 0 {
+		tagParts := make([]string, 0, len(s.Metadata))
+		for k, v := range s.Metadata {
+			tagParts = append(tagParts, k+"="+v)
+		}
+		sort.Strings(tagParts)
+		fmt.Fprintln(w, sty.render(sty.dim, "tags: "+strings.Join(tagParts, ", ")))
+	}
+
 	fmt.Fprintln(w)
 }
 
@@ -343,21 +382,22 @@ func runSessionInfo(ctx context.Context, cmd *cobra.Command, sessionID string, j
 
 // sessionInfoJSON is the JSON output structure for sessions info --json.
 type sessionInfoJSON struct {
-	SessionID      string         `json:"session_id"`
-	Agent          string         `json:"agent"`
-	Model          string         `json:"model,omitempty"`
-	Status         string         `json:"status"`
-	WorktreeID     string         `json:"worktree_id,omitempty"`
-	WorktreePath   string         `json:"worktree_path,omitempty"`
-	StartedAt      time.Time      `json:"started_at"`
-	EndedAt        *time.Time     `json:"ended_at,omitempty"`
-	LastActive     *time.Time     `json:"last_active,omitempty"`
-	Turns          int            `json:"turns"`
-	Checkpoints    int            `json:"checkpoints"`
-	LastCheckpoint string         `json:"last_checkpoint_id,omitempty"`
-	Tokens         *tokenInfoJSON `json:"tokens,omitempty"`
-	LastPrompt     string         `json:"last_prompt,omitempty"`
-	FilesTouched   []string       `json:"files_touched,omitempty"`
+	SessionID      string            `json:"session_id"`
+	Agent          string            `json:"agent"`
+	Model          string            `json:"model,omitempty"`
+	Status         string            `json:"status"`
+	WorktreeID     string            `json:"worktree_id,omitempty"`
+	WorktreePath   string            `json:"worktree_path,omitempty"`
+	StartedAt      time.Time         `json:"started_at"`
+	EndedAt        *time.Time        `json:"ended_at,omitempty"`
+	LastActive     *time.Time        `json:"last_active,omitempty"`
+	Turns          int               `json:"turns"`
+	Checkpoints    int               `json:"checkpoints"`
+	LastCheckpoint string            `json:"last_checkpoint_id,omitempty"`
+	Tokens         *tokenInfoJSON    `json:"tokens,omitempty"`
+	LastPrompt     string            `json:"last_prompt,omitempty"`
+	FilesTouched   []string          `json:"files_touched,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
 }
 
 type tokenInfoJSON struct {
@@ -388,6 +428,7 @@ func writeSessionInfoJSON(w io.Writer, state *strategy.SessionState, status stri
 		LastCheckpoint: string(state.LastCheckpointID),
 		LastPrompt:     state.LastPrompt,
 		FilesTouched:   state.FilesTouched,
+		Metadata:       state.Metadata,
 	}
 	if state.TokenUsage != nil {
 		info.Tokens = &tokenInfoJSON{
@@ -477,6 +518,19 @@ func writeSessionInfoText(w io.Writer, state *strategy.SessionState, status stri
 		fmt.Fprintln(w, "\nFiles touched:")
 		for _, f := range state.FilesTouched {
 			fmt.Fprintf(w, "  %s\n", f)
+		}
+	}
+
+	if len(state.Metadata) > 0 {
+		fmt.Fprintln(w, "\nTags:")
+		// Sort keys for deterministic output.
+		keys := make([]string, 0, len(state.Metadata))
+		for k := range state.Metadata {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintf(w, "  %s: %s\n", k, state.Metadata[k])
 		}
 	}
 
