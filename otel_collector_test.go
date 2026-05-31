@@ -21,7 +21,7 @@ func TestDefaultOTelCollectorConfig_SensibleValues(t *testing.T) {
 
 	// Retry config
 	assert.Equal(t, 3, cfg.RetryConfig.MaxRetries, "default max retries should be 3")
-	assert.Equal(t, 2.0, cfg.RetryConfig.BackoffMultiplier, "default backoff multiplier should be 2.0")
+	assert.InDelta(t, 2.0, cfg.RetryConfig.BackoffMultiplier, 0.001, "default backoff multiplier should be 2.0")
 	assert.Equal(t, 500*time.Millisecond, cfg.RetryConfig.InitialBackoff, "default initial backoff should be 500ms")
 }
 
@@ -31,7 +31,7 @@ func TestNewSpanBatch_CreatesWithNonEmptyID(t *testing.T) {
 	require.NotNil(t, batch)
 	assert.NotEmpty(t, batch.BatchID, "batch ID should be non-empty")
 	assert.NotNil(t, batch.Spans, "Spans slice should be initialised")
-	assert.Len(t, batch.Spans, 0, "new batch should have zero spans")
+	assert.Empty(t, batch.Spans, "new batch should have zero spans")
 	assert.False(t, batch.CreatedAt.IsZero(), "CreatedAt should be set")
 }
 
@@ -293,7 +293,7 @@ func TestOTelCollector_SendBatch_NilBatch_ReturnsError(t *testing.T) {
 	collector := NewOTelCollector(cfg)
 
 	err := collector.SendBatch(context.Background(), nil)
-	assert.Error(t, err, "SendBatch with nil batch should return an error")
+	require.Error(t, err, "SendBatch with nil batch should return an error")
 	assert.Contains(t, err.Error(), "must not be nil")
 }
 
@@ -303,6 +303,6 @@ func TestOTelCollector_SendBatch_EmptyBatch_ReturnsError(t *testing.T) {
 
 	batch := NewSpanBatch()
 	err := collector.SendBatch(context.Background(), batch)
-	assert.Error(t, err, "SendBatch with empty batch should return an error")
+	require.Error(t, err, "SendBatch with empty batch should return an error")
 	assert.Contains(t, err.Error(), "contains no spans")
 }
