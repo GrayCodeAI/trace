@@ -713,7 +713,7 @@ func TestCodeGraphSnapshotJSON(t *testing.T) {
 			]
 		}`)
 
-		var snapshot CodeGraphSnapshot
+		var snapshot CodeGraphData
 		err := json.Unmarshal(jsonData, &snapshot)
 		if err != nil {
 			t.Fatalf("JSON unmarshal failed: %v", err)
