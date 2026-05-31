@@ -14,6 +14,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/). This project ad
   of the hawk-eco ecosystem (`hawk`, `tok`, `eyrie`, `yaad`, `sight`,
   `inspect`).
 
+### Added
+- TRACE_TAG_* env var session metadata
+- gen_ai.* OTel span aliases
+- OpenTelemetry collector client with batching and retry
+
 ### Added — Production hygiene (top-50 OSS parity)
 - `.gitattributes` — LF line-ending normalization, binary detection,
   GitHub linguist hints (collapse `go.sum` in PR diffs, mark `docs/**`
