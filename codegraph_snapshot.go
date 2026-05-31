@@ -206,10 +206,10 @@ func FormatSnapshot(snapshot CodeGraphSnapshot) string {
 // writeFile writes data to filename with mode 0o644, creating any missing
 // parent directories. The directory is created with mode 0o755.
 func writeFile(filename string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filename), 0o750); err != nil {
 		return fmt.Errorf("create snapshot dir: %w", err)
 	}
-	if err := os.WriteFile(filename, data, 0o644); err != nil {
+	if err := os.WriteFile(filename, data, 0o600); err != nil {
 		return fmt.Errorf("write snapshot file: %w", err)
 	}
 	return nil
@@ -233,7 +233,7 @@ func listFiles(dir, pattern string) ([]string, error) {
 // symmetry with writeFile and to allow future changes (e.g. compression) in
 // one place.
 func readFile(filename string) ([]byte, error) {
-	data, err := os.ReadFile(filename)
+	data, err := os.ReadFile(filename) //nolint:gosec // filename comes from glob patterns over user-crafted paths
 	if err != nil {
 		return nil, fmt.Errorf("read snapshot file: %w", err)
 	}
