@@ -30,7 +30,7 @@ func TestNewSpanBatch_CreatesWithNonEmptyID(t *testing.T) {
 
 	require.NotNil(t, batch)
 	assert.NotEmpty(t, batch.BatchID, "batch ID should be non-empty")
-	assert.NotNil(t, batch.Spans, "Spans slice should be initialised")
+	assert.NotNil(t, batch.Spans, "Spans slice should be initialized")
 	assert.Empty(t, batch.Spans, "new batch should have zero spans")
 	assert.False(t, batch.CreatedAt.IsZero(), "CreatedAt should be set")
 }
