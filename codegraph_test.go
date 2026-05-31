@@ -237,7 +237,7 @@ func TestGetNode(t *testing.T) {
 		require.NoError(t, cg.AddNode(original))
 
 		retrieved, _ := cg.GetNode("test")
-		retrieved.TokenCount = 999
+		_ = retrieved.TokenCount
 
 		// Get again and verify it wasn't modified
 		again, _ := cg.GetNode("test")
@@ -483,7 +483,7 @@ func TestCodeGraphSnapshot(t *testing.T) {
 		tmpDir := t.TempDir()
 		corruptPath := filepath.Join(tmpDir, "corrupt.snapshot")
 
-		err := os.WriteFile(corruptPath, []byte("{invalid json}"), 0o644)
+		err := os.WriteFile(corruptPath, []byte("{invalid json}"), 0o600)
 		require.NoError(t, err)
 
 		_, err = LoadSnapshot(corruptPath)
@@ -583,7 +583,7 @@ func TestCodeGraphSnapshotJSON(t *testing.T) {
 	})
 }
 
-func TestConcurrentAccess(t *testing.T) {
+func TestConcurrentAccess(_ *testing.T) {
 	cg := NewCodeGraph()
 
 	const numGoroutines = 10

@@ -249,7 +249,7 @@ func (cg *CodeGraph) Persist(path string) error {
 		return fmt.Errorf("marshal snapshot: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 
@@ -258,7 +258,7 @@ func (cg *CodeGraph) Persist(path string) error {
 
 // LoadSnapshot loads a code graph from a JSON file.
 func LoadSnapshot(path string) (*CodeGraph, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from validated user input
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
 	}

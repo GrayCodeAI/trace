@@ -35,7 +35,8 @@ func TestRunInvestigateConfigPicker_NoEligibleAgents(t *testing.T) {
 // TestRunInvestigateConfigPicker_FiltersNonInstalled verifies that an
 // agent with a spawner but no hooks installed is filtered out.
 func TestRunInvestigateConfigPicker_FiltersNonInstalled(t *testing.T) {
-	t.Parallel()
+	// NOTE: must NOT run in parallel with other tests that call
+	// SetPickerFormFnForTest — the override is process-global.
 	cleanup := investigate.SetPickerFormFnForTest(func(_ context.Context, eligible []investigate.AgentChoice, picks *[]string, maxTurns, quorum *int) error {
 		// Capture eligible into picks for assertion via the cfg.Agents.
 		names := make([]string, 0, len(eligible))
@@ -85,7 +86,8 @@ func TestRunInvestigateConfigPicker_NoSpawnerForReturnsError(t *testing.T) {
 }
 
 func TestRunInvestigateConfigPicker_QuorumExceedsAgents(t *testing.T) {
-	t.Parallel()
+	// NOTE: must NOT run in parallel with other tests that call
+	// SetPickerFormFnForTest — the override is process-global.
 	cleanup := investigate.SetPickerFormFnForTest(func(_ context.Context, eligible []investigate.AgentChoice, picks *[]string, maxTurns, quorum *int) error {
 		_ = eligible
 		*picks = []string{"agent-a"}
