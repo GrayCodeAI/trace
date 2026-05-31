@@ -81,5 +81,5 @@ func (s *Server) handleToolsCall(params json.RawMessage) *Response {
 	if err != nil {
 		return &Response{Error: fmt.Sprintf("handler error: %v", err)}
 	}
-	return &Response{Result: json.RawMessage(result)}
+	return &Response{Result: result}
 }
