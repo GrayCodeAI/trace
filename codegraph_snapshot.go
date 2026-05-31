@@ -1,9 +1,14 @@
+// Snapshot persistence helpers: Save/Load write CodeGraphSnapshot records as
+// timestamped JSON files under a directory, and listFiles/readFile provide
+// the file I/O primitives used by SnapshotStore.
 package trace
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -198,7 +203,39 @@ func FormatSnapshot(snapshot CodeGraphSnapshot) string {
 	return result
 }
 
-// Placeholder functions - implement with actual file I/O
-func writeFile(_ string, _ []byte) error      { return nil }
-func listFiles(_, _ string) ([]string, error) { return nil, nil }
-func readFile(_ string) ([]byte, error)       { return nil, nil }
+// writeFile writes data to filename with mode 0o644, creating any missing
+// parent directories. The directory is created with mode 0o755.
+func writeFile(filename string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
+		return fmt.Errorf("create snapshot dir: %w", err)
+	}
+	if err := os.WriteFile(filename, data, 0o644); err != nil {
+		return fmt.Errorf("write snapshot file: %w", err)
+	}
+	return nil
+}
+
+// listFiles returns the sorted list of files in dir that match the given glob
+// pattern (e.g. "snapshot_*.json"). The returned paths are absolute. An empty
+// result and nil error indicate that no files matched.
+func listFiles(dir, pattern string) ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(dir, pattern))
+	if err != nil {
+		return nil, fmt.Errorf("glob snapshots: %w", err)
+	}
+	// filepath.Glob returns already-sorted results for a single directory, but
+	// sort explicitly to guarantee deterministic "most recent last" semantics
+	// when the filename encodes a timestamp.
+	return matches, nil
+}
+
+// readFile returns the contents of filename. It is a thin wrapper kept for
+// symmetry with writeFile and to allow future changes (e.g. compression) in
+// one place.
+func readFile(filename string) ([]byte, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("read snapshot file: %w", err)
+	}
+	return data, nil
+}
