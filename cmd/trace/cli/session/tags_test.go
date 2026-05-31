@@ -149,11 +149,11 @@ func TestNormalizeTagKey(t *testing.T) {
 
 func TestCutEnvVar(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		wantKey  string
-		wantVal  string
-		wantOK   bool
+		name    string
+		input   string
+		wantKey string
+		wantVal string
+		wantOK  bool
 	}{
 		{"simple", "KEY=VALUE", "KEY", "VALUE", true},
 		{"empty_value", "KEY=", "KEY", "", true},
