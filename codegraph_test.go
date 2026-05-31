@@ -6,30 +6,25 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestNewCodeGraph tests CodeGraph constructor and initial state.
 func TestNewCodeGraph(t *testing.T) {
 	t.Run("create empty graph", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		if cg == nil {
-			t.Fatal("NewCodeGraph should return non-nil instance")
-		}
+		require.NotNil(t, cg)
 
 		stats := cg.Stats()
-		if stats.Nodes != 0 {
-			t.Errorf("Expected 0 nodes, got %d", stats.Nodes)
-		}
-		if stats.Edges != 0 {
-			t.Errorf("Expected 0 edges, got %d", stats.Edges)
-		}
+		assert.Equal(t, 0, stats.Nodes, "expected 0 nodes")
+		assert.Equal(t, 0, stats.Edges, "expected 0 edges")
 	})
 
 	t.Run("graph is ready for use", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		// Should be able to add nodes immediately
 		node := Node{
 			ID:   "file.go:main",
 			Kind: NodeFunction,
@@ -38,37 +33,30 @@ func TestNewCodeGraph(t *testing.T) {
 		}
 
 		err := cg.AddNode(node)
-		if err != nil {
-			t.Errorf("Should be able to add node: %v", err)
-		}
+		require.NoError(t, err)
 	})
 }
 
-// TestAddNode tests adding nodes to the graph.
 func TestAddNode(t *testing.T) {
 	t.Run("add single node", func(t *testing.T) {
 		cg := NewCodeGraph()
 
 		node := Node{
-			ID:       "main.go:main",
-			Kind:     NodeFunction,
-			Name:     "main",
-			Path:     "main.go",
-			Line:     10,
-			EndLine:  25,
+			ID:         "main.go:main",
+			Kind:       NodeFunction,
+			Name:       "main",
+			Path:       "main.go",
+			Line:       10,
+			EndLine:    25,
 			TokenCount: 50,
-			Language: "go",
+			Language:   "go",
 		}
 
 		err := cg.AddNode(node)
-		if err != nil {
-			t.Fatalf("AddNode failed: %v", err)
-		}
+		require.NoError(t, err)
 
 		stats := cg.Stats()
-		if stats.Nodes != 1 {
-			t.Errorf("Expected 1 node, got %d", stats.Nodes)
-		}
+		assert.Equal(t, 1, stats.Nodes)
 	})
 
 	t.Run("add multiple node kinds", func(t *testing.T) {
@@ -86,15 +74,11 @@ func TestAddNode(t *testing.T) {
 
 		for _, node := range nodes {
 			err := cg.AddNode(node)
-			if err != nil {
-				t.Errorf("AddNode failed for %s: %v", node.ID, err)
-			}
+			require.NoError(t, err, "AddNode failed for %s", node.ID)
 		}
 
 		stats := cg.Stats()
-		if stats.Nodes != 7 {
-			t.Errorf("Expected 7 nodes, got %d", stats.Nodes)
-		}
+		assert.Equal(t, 7, stats.Nodes)
 	})
 
 	t.Run("duplicate node ID overwrites", func(t *testing.T) {
@@ -103,23 +87,17 @@ func TestAddNode(t *testing.T) {
 		node1 := Node{ID: "main.go:main", Kind: NodeFunction, Name: "main", TokenCount: 50}
 		node2 := Node{ID: "main.go:main", Kind: NodeFunction, Name: "main", TokenCount: 100}
 
-		_ = cg.AddNode(node1)
-		_ = cg.AddNode(node2)
+		require.NoError(t, cg.AddNode(node1))
+		require.NoError(t, cg.AddNode(node2))
 
 		// Should still be 1 node (overwritten)
 		stats := cg.Stats()
-		if stats.Nodes != 1 {
-			t.Errorf("Expected 1 node (overwritten), got %d", stats.Nodes)
-		}
+		assert.Equal(t, 1, stats.Nodes, "expected 1 node (overwritten)")
 
 		// Retrieve and verify it's the updated version
 		retrieved, exists := cg.GetNode("main.go:main")
-		if !exists {
-			t.Fatal("Node should exist")
-		}
-		if retrieved.TokenCount != 100 {
-			t.Errorf("Expected token count 100, got %d", retrieved.TokenCount)
-		}
+		require.True(t, exists, "node should exist")
+		assert.Equal(t, 100, retrieved.TokenCount, "expected token count 100 after overwrite")
 	})
 
 	t.Run("add node with empty ID fails", func(t *testing.T) {
@@ -127,10 +105,7 @@ func TestAddNode(t *testing.T) {
 
 		node := Node{ID: "", Kind: NodeFunction, Name: "main"}
 		err := cg.AddNode(node)
-
-		if err == nil {
-			t.Error("Expected error for empty node ID")
-		}
+		require.Error(t, err, "expected error for empty node ID")
 	})
 
 	t.Run("add node with invalid kind fails", func(t *testing.T) {
@@ -138,21 +113,16 @@ func TestAddNode(t *testing.T) {
 
 		node := Node{ID: "test", Kind: "invalid", Name: "test"}
 		err := cg.AddNode(node)
-
-		if err == nil {
-			t.Error("Expected error for invalid node kind")
-		}
+		require.Error(t, err, "expected error for invalid node kind")
 	})
 }
 
-// TestAddEdge tests adding edges to the graph.
 func TestAddEdge(t *testing.T) {
 	t.Run("add single edge", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		// Add nodes first
-		_ = cg.AddNode(Node{ID: "caller", Kind: NodeFunction, Name: "caller"})
-		_ = cg.AddNode(Node{ID: "callee", Kind: NodeFunction, Name: "callee"})
+		require.NoError(t, cg.AddNode(Node{ID: "caller", Kind: NodeFunction, Name: "caller"}))
+		require.NoError(t, cg.AddNode(Node{ID: "callee", Kind: NodeFunction, Name: "callee"}))
 
 		edge := Edge{
 			From: "caller",
@@ -161,25 +131,20 @@ func TestAddEdge(t *testing.T) {
 		}
 
 		err := cg.AddEdge(edge)
-		if err != nil {
-			t.Fatalf("AddEdge failed: %v", err)
-		}
+		require.NoError(t, err)
 
 		stats := cg.Stats()
-		if stats.Edges != 1 {
-			t.Errorf("Expected 1 edge, got %d", stats.Edges)
-		}
+		assert.Equal(t, 1, stats.Edges)
 	})
 
 	t.Run("add multiple edge kinds", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		// Add nodes
-		_ = cg.AddNode(Node{ID: "main", Kind: NodeFunction})
-		_ = cg.AddNode(Node{ID: "helper", Kind: NodeFunction})
-		_ = cg.AddNode(Node{ID: "MyStruct", Kind: NodeStruct})
-		_ = cg.AddNode(Node{ID: "MyInterface", Kind: NodeInterface})
-		_ = cg.AddNode(Node{ID: "pkg", Kind: NodePackage})
+		require.NoError(t, cg.AddNode(Node{ID: "main", Kind: NodeFunction}))
+		require.NoError(t, cg.AddNode(Node{ID: "helper", Kind: NodeFunction}))
+		require.NoError(t, cg.AddNode(Node{ID: "MyStruct", Kind: NodeStruct}))
+		require.NoError(t, cg.AddNode(Node{ID: "MyInterface", Kind: NodeInterface}))
+		require.NoError(t, cg.AddNode(Node{ID: "pkg", Kind: NodePackage}))
 
 		edges := []Edge{
 			{From: "main", To: "helper", Kind: EdgeCalls},
@@ -191,63 +156,50 @@ func TestAddEdge(t *testing.T) {
 
 		for _, edge := range edges {
 			err := cg.AddEdge(edge)
-			if err != nil {
-				t.Errorf("AddEdge failed: %v", err)
-			}
+			require.NoError(t, err)
 		}
 
 		stats := cg.Stats()
-		if stats.Edges != 5 {
-			t.Errorf("Expected 5 edges, got %d", stats.Edges)
-		}
+		assert.Equal(t, 5, stats.Edges)
 	})
 
 	t.Run("duplicate edge overwrites", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "a", Kind: NodeFunction})
-		_ = cg.AddNode(Node{ID: "b", Kind: NodeFunction})
+		require.NoError(t, cg.AddNode(Node{ID: "a", Kind: NodeFunction}))
+		require.NoError(t, cg.AddNode(Node{ID: "b", Kind: NodeFunction}))
 
 		edge1 := Edge{From: "a", To: "b", Kind: EdgeCalls, Calls: 5}
 		edge2 := Edge{From: "a", To: "b", Kind: EdgeCalls, Calls: 10}
 
-		_ = cg.AddEdge(edge1)
-		_ = cg.AddEdge(edge2)
+		require.NoError(t, cg.AddEdge(edge1))
+		require.NoError(t, cg.AddEdge(edge2))
 
 		stats := cg.Stats()
-		if stats.Edges != 1 {
-			t.Errorf("Expected 1 edge (overwritten), got %d", stats.Edges)
-		}
+		assert.Equal(t, 1, stats.Edges, "expected 1 edge (overwritten)")
 	})
 
 	t.Run("edge with non-existent source fails", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "target", Kind: NodeFunction})
+		require.NoError(t, cg.AddNode(Node{ID: "target", Kind: NodeFunction}))
 
 		edge := Edge{From: "nonexistent", To: "target", Kind: EdgeCalls}
 		err := cg.AddEdge(edge)
-
-		if err == nil {
-			t.Error("Expected error for non-existent source node")
-		}
+		require.Error(t, err, "expected error for non-existent source node")
 	})
 
 	t.Run("edge with non-existent target fails", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "source", Kind: NodeFunction})
+		require.NoError(t, cg.AddNode(Node{ID: "source", Kind: NodeFunction}))
 
 		edge := Edge{From: "source", To: "nonexistent", Kind: EdgeCalls}
 		err := cg.AddEdge(edge)
-
-		if err == nil {
-			t.Error("Expected error for non-existent target node")
-		}
+		require.Error(t, err, "expected error for non-existent target node")
 	})
 }
 
-// TestGetNode tests node retrieval.
 func TestGetNode(t *testing.T) {
 	t.Run("retrieve existing node", func(t *testing.T) {
 		cg := NewCodeGraph()
@@ -260,175 +212,141 @@ func TestGetNode(t *testing.T) {
 			Line:       10,
 			TokenCount: 50,
 		}
-		_ = cg.AddNode(original)
+		require.NoError(t, cg.AddNode(original))
 
 		retrieved, exists := cg.GetNode("main.go:main")
-		if !exists {
-			t.Fatal("Node should exist")
-		}
+		require.True(t, exists, "node should exist")
 
-		if retrieved.ID != original.ID {
-			t.Errorf("ID mismatch: %s vs %s", retrieved.ID, original.ID)
-		}
-		if retrieved.Kind != original.Kind {
-			t.Errorf("Kind mismatch: %s vs %s", retrieved.Kind, original.Kind)
-		}
-		if retrieved.Name != original.Name {
-			t.Errorf("Name mismatch: %s vs %s", retrieved.Name, original.Name)
-		}
-		if retrieved.TokenCount != original.TokenCount {
-			t.Errorf("TokenCount mismatch: %d vs %d", retrieved.TokenCount, original.TokenCount)
-		}
+		assert.Equal(t, original.ID, retrieved.ID)
+		assert.Equal(t, original.Kind, retrieved.Kind)
+		assert.Equal(t, original.Name, retrieved.Name)
+		assert.Equal(t, original.TokenCount, retrieved.TokenCount)
 	})
 
 	t.Run("retrieve non-existent node", func(t *testing.T) {
 		cg := NewCodeGraph()
 
 		_, exists := cg.GetNode("nonexistent")
-		if exists {
-			t.Error("Non-existent node should not be found")
-		}
+		assert.False(t, exists, "non-existent node should not be found")
 	})
 
 	t.Run("retrieved node is a copy", func(t *testing.T) {
 		cg := NewCodeGraph()
 
 		original := Node{ID: "test", Kind: NodeFunction, Name: "test", TokenCount: 50}
-		_ = cg.AddNode(original)
+		require.NoError(t, cg.AddNode(original))
 
 		retrieved, _ := cg.GetNode("test")
 		retrieved.TokenCount = 999
 
 		// Get again and verify it wasn't modified
 		again, _ := cg.GetNode("test")
-		if again.TokenCount != 50 {
-			t.Error("Modifying retrieved node should not affect graph")
-		}
+		assert.Equal(t, 50, again.TokenCount, "modifying retrieved node should not affect graph")
 	})
 }
 
-// TestGetEdges tests edge retrieval.
 func TestGetEdges(t *testing.T) {
 	t.Run("get outgoing edges", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "a", Kind: NodeFunction})
-		_ = cg.AddNode(Node{ID: "b", Kind: NodeFunction})
-		_ = cg.AddNode(Node{ID: "c", Kind: NodeFunction})
+		require.NoError(t, cg.AddNode(Node{ID: "a", Kind: NodeFunction}))
+		require.NoError(t, cg.AddNode(Node{ID: "b", Kind: NodeFunction}))
+		require.NoError(t, cg.AddNode(Node{ID: "c", Kind: NodeFunction}))
 
-		_ = cg.AddEdge(Edge{From: "a", To: "b", Kind: EdgeCalls})
-		_ = cg.AddEdge(Edge{From: "a", To: "c", Kind: EdgeCalls})
-		_ = cg.AddEdge(Edge{From: "b", To: "c", Kind: EdgeCalls})
+		require.NoError(t, cg.AddEdge(Edge{From: "a", To: "b", Kind: EdgeCalls}))
+		require.NoError(t, cg.AddEdge(Edge{From: "a", To: "c", Kind: EdgeCalls}))
+		require.NoError(t, cg.AddEdge(Edge{From: "b", To: "c", Kind: EdgeCalls}))
 
 		edges := cg.GetEdges("a")
-		if len(edges) != 2 {
-			t.Errorf("Expected 2 outgoing edges from 'a', got %d", len(edges))
-		}
+		assert.Len(t, edges, 2, "expected 2 outgoing edges from 'a'")
 	})
 
 	t.Run("get edges for node with no outgoing edges", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "a", Kind: NodeFunction})
-		_ = cg.AddNode(Node{ID: "b", Kind: NodeFunction})
-		_ = cg.AddEdge(Edge{From: "a", To: "b", Kind: EdgeCalls})
+		require.NoError(t, cg.AddNode(Node{ID: "a", Kind: NodeFunction}))
+		require.NoError(t, cg.AddNode(Node{ID: "b", Kind: NodeFunction}))
+		require.NoError(t, cg.AddEdge(Edge{From: "a", To: "b", Kind: EdgeCalls}))
 
 		edges := cg.GetEdges("b")
-		if len(edges) != 0 {
-			t.Errorf("Expected 0 outgoing edges from 'b', got %d", len(edges))
-		}
+		assert.Empty(t, edges, "expected 0 outgoing edges from 'b'")
 	})
 
 	t.Run("get edges for non-existent node", func(t *testing.T) {
 		cg := NewCodeGraph()
 
 		edges := cg.GetEdges("nonexistent")
-		if len(edges) != 0 {
-			t.Errorf("Expected 0 edges for non-existent node, got %d", len(edges))
-		}
+		assert.Empty(t, edges, "expected 0 edges for non-existent node")
 	})
 
 	t.Run("edges are copies", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "a", Kind: NodeFunction})
-		_ = cg.AddNode(Node{ID: "b", Kind: NodeFunction})
-		_ = cg.AddEdge(Edge{From: "a", To: "b", Kind: EdgeCalls, Calls: 5})
+		require.NoError(t, cg.AddNode(Node{ID: "a", Kind: NodeFunction}))
+		require.NoError(t, cg.AddNode(Node{ID: "b", Kind: NodeFunction}))
+		require.NoError(t, cg.AddEdge(Edge{From: "a", To: "b", Kind: EdgeCalls, Calls: 5}))
 
 		edges := cg.GetEdges("a")
-		if len(edges) == 0 {
-			t.Fatal("Expected at least one edge")
-		}
+		require.NotEmpty(t, edges, "expected at least one edge")
 
 		edges[0].Calls = 999
 
 		// Get again and verify it wasn't modified
 		again := cg.GetEdges("a")
-		if again[0].Calls != 5 {
-			t.Error("Modifying edge slice should not affect graph")
-		}
+		assert.Equal(t, 5, again[0].Calls, "modifying edge slice should not affect graph")
 	})
 }
 
-// TestQueryNodes tests node querying.
 func TestQueryNodes(t *testing.T) {
 	t.Run("query by kind", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "f1", Kind: NodeFunction, Name: "func1"})
-		_ = cg.AddNode(Node{ID: "f2", Kind: NodeFunction, Name: "func2"})
-		_ = cg.AddNode(Node{ID: "s1", Kind: NodeStruct, Name: "struct1"})
-		_ = cg.AddNode(Node{ID: "i1", Kind: NodeInterface, Name: "iface1"})
+		require.NoError(t, cg.AddNode(Node{ID: "f1", Kind: NodeFunction, Name: "func1"}))
+		require.NoError(t, cg.AddNode(Node{ID: "f2", Kind: NodeFunction, Name: "func2"}))
+		require.NoError(t, cg.AddNode(Node{ID: "s1", Kind: NodeStruct, Name: "struct1"}))
+		require.NoError(t, cg.AddNode(Node{ID: "i1", Kind: NodeInterface, Name: "iface1"}))
 
 		functions := cg.QueryNodes(NodeQuery{Kind: NodeFunction})
-		if len(functions) != 2 {
-			t.Errorf("Expected 2 functions, got %d", len(functions))
-		}
+		assert.Len(t, functions, 2, "expected 2 functions")
 
 		structs := cg.QueryNodes(NodeQuery{Kind: NodeStruct})
-		if len(structs) != 1 {
-			t.Errorf("Expected 1 struct, got %d", len(structs))
-		}
+		assert.Len(t, structs, 1, "expected 1 struct")
 	})
 
 	t.Run("query by path", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "main.go:f1", Kind: NodeFunction, Path: "main.go"})
-		_ = cg.AddNode(Node{ID: "main.go:f2", Kind: NodeFunction, Path: "main.go"})
-		_ = cg.AddNode(Node{ID: "util.go:f1", Kind: NodeFunction, Path: "util.go"})
+		require.NoError(t, cg.AddNode(Node{ID: "main.go:f1", Kind: NodeFunction, Path: "main.go"}))
+		require.NoError(t, cg.AddNode(Node{ID: "main.go:f2", Kind: NodeFunction, Path: "main.go"}))
+		require.NoError(t, cg.AddNode(Node{ID: "util.go:f1", Kind: NodeFunction, Path: "util.go"}))
 
 		mainNodes := cg.QueryNodes(NodeQuery{Path: "main.go"})
-		if len(mainNodes) != 2 {
-			t.Errorf("Expected 2 nodes in main.go, got %d", len(mainNodes))
-		}
+		assert.Len(t, mainNodes, 2, "expected 2 nodes in main.go")
 	})
 
 	t.Run("query with limit", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		for i := 0; i < 10; i++ {
-			_ = cg.AddNode(Node{
+		for i := range 10 {
+			require.NoError(t, cg.AddNode(Node{
 				ID:   string(rune('A' + i)),
 				Kind: NodeFunction,
 				Name: string(rune('A' + i)),
-			})
+			}))
 		}
 
 		nodes := cg.QueryNodes(NodeQuery{Kind: NodeFunction, Limit: 3})
-		if len(nodes) != 3 {
-			t.Errorf("Expected 3 nodes (limited), got %d", len(nodes))
-		}
+		assert.Len(t, nodes, 3, "expected 3 nodes (limited)")
 	})
 
 	t.Run("query with offset", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		for i := 0; i < 10; i++ {
-			_ = cg.AddNode(Node{
+		for i := range 10 {
+			require.NoError(t, cg.AddNode(Node{
 				ID:   string(rune('A' + i)),
 				Kind: NodeFunction,
-			})
+			}))
 		}
 
 		// Get all nodes first
@@ -437,80 +355,58 @@ func TestQueryNodes(t *testing.T) {
 		// Then get with offset
 		offset := cg.QueryNodes(NodeQuery{Kind: NodeFunction, Offset: 5})
 
-		if len(offset) != len(all)-5 {
-			t.Errorf("Expected %d nodes (with offset), got %d", len(all)-5, len(offset))
-		}
+		assert.Len(t, offset, len(all)-5, "expected %d nodes (with offset)", len(all)-5)
 	})
 
 	t.Run("query with no matches", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "f1", Kind: NodeFunction, Path: "main.go"})
+		require.NoError(t, cg.AddNode(Node{ID: "f1", Kind: NodeFunction, Path: "main.go"}))
 
 		nodes := cg.QueryNodes(NodeQuery{Path: "nonexistent.go"})
-		if len(nodes) != 0 {
-			t.Errorf("Expected 0 nodes, got %d", len(nodes))
-		}
+		assert.Empty(t, nodes, "expected 0 nodes")
 	})
 }
 
-// TestGraphStatistics tests the Stats method.
 func TestGraphStatistics(t *testing.T) {
 	t.Run("empty graph stats", func(t *testing.T) {
 		cg := NewCodeGraph()
 		stats := cg.Stats()
 
-		if stats.Nodes != 0 {
-			t.Errorf("Expected 0 nodes, got %d", stats.Nodes)
-		}
-		if stats.Edges != 0 {
-			t.Errorf("Expected 0 edges, got %d", stats.Edges)
-		}
-		if len(stats.ByKind) != 0 {
-			t.Errorf("Expected empty ByKind map, got %d entries", len(stats.ByKind))
-		}
+		assert.Equal(t, 0, stats.Nodes)
+		assert.Equal(t, 0, stats.Edges)
+		assert.Empty(t, stats.ByKind, "expected empty ByKind map")
 	})
 
 	t.Run("populated graph stats", func(t *testing.T) {
 		cg := NewCodeGraph()
 
-		_ = cg.AddNode(Node{ID: "f1", Kind: NodeFunction})
-		_ = cg.AddNode(Node{ID: "f2", Kind: NodeFunction})
-		_ = cg.AddNode(Node{ID: "s1", Kind: NodeStruct})
-		_ = cg.AddNode(Node{ID: "i1", Kind: NodeInterface})
+		require.NoError(t, cg.AddNode(Node{ID: "f1", Kind: NodeFunction}))
+		require.NoError(t, cg.AddNode(Node{ID: "f2", Kind: NodeFunction}))
+		require.NoError(t, cg.AddNode(Node{ID: "s1", Kind: NodeStruct}))
+		require.NoError(t, cg.AddNode(Node{ID: "i1", Kind: NodeInterface}))
 
-		_ = cg.AddEdge(Edge{From: "f1", To: "f2", Kind: EdgeCalls})
-		_ = cg.AddEdge(Edge{From: "f2", To: "s1", Kind: EdgeUses})
+		require.NoError(t, cg.AddEdge(Edge{From: "f1", To: "f2", Kind: EdgeCalls}))
+		require.NoError(t, cg.AddEdge(Edge{From: "f2", To: "s1", Kind: EdgeUses}))
 
 		stats := cg.Stats()
 
-		if stats.Nodes != 4 {
-			t.Errorf("Expected 4 nodes, got %d", stats.Nodes)
-		}
-		if stats.Edges != 2 {
-			t.Errorf("Expected 2 edges, got %d", stats.Edges)
-		}
-		if stats.ByKind["function"] != 2 {
-			t.Errorf("Expected 2 functions, got %d", stats.ByKind["function"])
-		}
-		if stats.ByKind["struct"] != 1 {
-			t.Errorf("Expected 1 struct, got %d", stats.ByKind["struct"])
-		}
+		assert.Equal(t, 4, stats.Nodes)
+		assert.Equal(t, 2, stats.Edges)
+		assert.Equal(t, 2, stats.ByKind[string(NodeFunction)])
+		assert.Equal(t, 1, stats.ByKind[string(NodeStruct)])
 	})
 }
 
-// TestCodeGraphSnapshot tests serialization and persistence.
 func TestCodeGraphSnapshot(t *testing.T) {
 	t.Run("persist and load", func(t *testing.T) {
-		// Create a temporary directory for the test
 		tmpDir := t.TempDir()
 		snapshotPath := filepath.Join(tmpDir, "graph.snapshot")
 
-		// Create and populate a graph
 		cg1 := NewCodeGraph()
 
 		now := time.Now().UTC()
-		_ = cg1.AddNode(Node{
+		require.NoError(t, cg1.AddNode(Node{
 			ID:         "main",
 			Kind:       NodeFunction,
 			Name:       "main",
@@ -521,9 +417,9 @@ func TestCodeGraphSnapshot(t *testing.T) {
 			Language:   "go",
 			CreatedAt:  now,
 			UpdatedAt:  now,
-		})
+		}))
 
-		_ = cg1.AddNode(Node{
+		require.NoError(t, cg1.AddNode(Node{
 			ID:         "helper",
 			Kind:       NodeFunction,
 			Name:       "helper",
@@ -534,141 +430,103 @@ func TestCodeGraphSnapshot(t *testing.T) {
 			Language:   "go",
 			CreatedAt:  now,
 			UpdatedAt:  now,
-		})
+		}))
 
-		_ = cg1.AddEdge(Edge{
+		require.NoError(t, cg1.AddEdge(Edge{
 			From:      "main",
 			To:        "helper",
 			Kind:      EdgeCalls,
 			Calls:     5,
 			CreatedAt: now,
 			UpdatedAt: now,
-		})
+		}))
 
 		// Persist to disk
 		err := cg1.Persist(snapshotPath)
-		if err != nil {
-			t.Fatalf("Persist failed: %v", err)
-		}
+		require.NoError(t, err)
 
 		// Verify file was created
-		if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
-			t.Fatal("Snapshot file was not created")
-		}
+		_, err = os.Stat(snapshotPath)
+		require.NoError(t, err, "snapshot file was not created")
 
 		// Load into a new graph
 		cg2, err := LoadSnapshot(snapshotPath)
-		if err != nil {
-			t.Fatalf("LoadSnapshot failed: %v", err)
-		}
+		require.NoError(t, err)
 
 		// Verify stats match
 		stats1 := cg1.Stats()
 		stats2 := cg2.Stats()
 
-		if stats1.Nodes != stats2.Nodes {
-			t.Errorf("Node count mismatch: %d vs %d", stats1.Nodes, stats2.Nodes)
-		}
-		if stats1.Edges != stats2.Edges {
-			t.Errorf("Edge count mismatch: %d vs %d", stats1.Edges, stats2.Edges)
-		}
+		assert.Equal(t, stats1.Nodes, stats2.Nodes, "node count mismatch")
+		assert.Equal(t, stats1.Edges, stats2.Edges, "edge count mismatch")
 
 		// Verify node data
 		node1, _ := cg1.GetNode("main")
 		node2, _ := cg2.GetNode("main")
-
-		if node1.Name != node2.Name {
-			t.Errorf("Node name mismatch: %s vs %s", node1.Name, node2.Name)
-		}
-		if node1.TokenCount != node2.TokenCount {
-			t.Errorf("Token count mismatch: %d vs %d", node1.TokenCount, node2.TokenCount)
-		}
+		assert.Equal(t, node1.Name, node2.Name, "node name mismatch")
+		assert.Equal(t, node1.TokenCount, node2.TokenCount, "token count mismatch")
 
 		// Verify edge data
 		edges1 := cg1.GetEdges("main")
 		edges2 := cg2.GetEdges("main")
 
-		if len(edges1) != len(edges2) {
-			t.Errorf("Edge count mismatch: %d vs %d", len(edges1), len(edges2))
-		}
-
-		if edges1[0].Calls != edges2[0].Calls {
-			t.Errorf("Edge calls mismatch: %d vs %d", edges1[0].Calls, edges2[0].Calls)
-		}
+		assert.Len(t, edges2, len(edges1), "edge count mismatch")
+		assert.Equal(t, edges1[0].Calls, edges2[0].Calls, "edge calls mismatch")
 	})
 
 	t.Run("load non-existent file", func(t *testing.T) {
 		_, err := LoadSnapshot("/nonexistent/path/graph.snapshot")
-		if err == nil {
-			t.Error("Expected error for non-existent file")
-		}
+		require.Error(t, err)
 	})
 
 	t.Run("load corrupt file", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		corruptPath := filepath.Join(tmpDir, "corrupt.snapshot")
 
-		// Write invalid JSON
-		err := os.WriteFile(corruptPath, []byte("{invalid json}"), 0644)
-		if err != nil {
-			t.Fatalf("Failed to create corrupt file: %v", err)
-		}
+		err := os.WriteFile(corruptPath, []byte("{invalid json}"), 0o644)
+		require.NoError(t, err)
 
 		_, err = LoadSnapshot(corruptPath)
-		if err == nil {
-			t.Error("Expected error for corrupt file")
-		}
+		require.Error(t, err)
 	})
 }
 
-// TestCodeGraphSnapshotJSON tests JSON marshaling/unmarshaling.
 func TestCodeGraphSnapshotJSON(t *testing.T) {
 	t.Run("marshal to JSON", func(t *testing.T) {
 		cg := NewCodeGraph()
 
 		now := time.Now().UTC()
-		_ = cg.AddNode(Node{
-			ID:         "main",
-			Kind:       NodeFunction,
-			Name:       "main",
-			CreatedAt:  now,
-			UpdatedAt:  now,
-		})
+		require.NoError(t, cg.AddNode(Node{
+			ID:        "main",
+			Kind:      NodeFunction,
+			Name:      "main",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}))
 
-		_ = cg.AddEdge(Edge{
+		require.NoError(t, cg.AddEdge(Edge{
 			From:      "main",
 			To:        "main", // self-reference for simplicity
 			Kind:      EdgeCalls,
 			CreatedAt: now,
 			UpdatedAt: now,
-		})
+		}))
 
 		snapshot := cg.Snapshot()
 
 		data, err := json.Marshal(snapshot)
-		if err != nil {
-			t.Fatalf("JSON marshal failed: %v", err)
-		}
+		require.NoError(t, err)
 
 		// Verify it's valid JSON
 		var parsed map[string]interface{}
-		if err := json.Unmarshal(data, &parsed); err != nil {
-			t.Fatalf("Output is not valid JSON: %v", err)
-		}
+		err = json.Unmarshal(data, &parsed)
+		require.NoError(t, err, "output is not valid JSON")
 
 		// Check for expected fields
-		if _, ok := parsed["version"]; !ok {
-			t.Error("Expected version field in JSON")
-		}
-		if _, ok := parsed["snapshot_at"]; !ok {
-			t.Error("Expected snapshot_at field in JSON")
-		}
-		if _, ok := parsed["nodes"]; !ok {
-			t.Error("Expected nodes field in JSON")
-		}
-		if _, ok := parsed["edges"]; !ok {
-			t.Error("Expected edges field in JSON")
-		}
+		assert.Contains(t, parsed, "version")
+		assert.Contains(t, parsed, "snapshot_at")
+		assert.Contains(t, parsed, "nodes")
+		assert.Contains(t, parsed, "edges")
 	})
 
 	t.Run("unmarshal from JSON", func(t *testing.T) {
@@ -715,33 +573,16 @@ func TestCodeGraphSnapshotJSON(t *testing.T) {
 
 		var snapshot CodeGraphData
 		err := json.Unmarshal(jsonData, &snapshot)
-		if err != nil {
-			t.Fatalf("JSON unmarshal failed: %v", err)
-		}
+		require.NoError(t, err)
 
-		if snapshot.Version != "1.0" {
-			t.Errorf("Expected version 1.0, got %s", snapshot.Version)
-		}
-
-		if len(snapshot.Nodes) != 2 {
-			t.Errorf("Expected 2 nodes, got %d", len(snapshot.Nodes))
-		}
-
-		if len(snapshot.Edges) != 1 {
-			t.Errorf("Expected 1 edge, got %d", len(snapshot.Edges))
-		}
-
-		if snapshot.Nodes[0].Name != "func1" {
-			t.Errorf("Expected node name func1, got %s", snapshot.Nodes[0].Name)
-		}
-
-		if snapshot.Edges[0].Calls != 3 {
-			t.Errorf("Expected 3 calls, got %d", snapshot.Edges[0].Calls)
-		}
+		assert.Equal(t, "1.0", snapshot.Version)
+		assert.Len(t, snapshot.Nodes, 2)
+		assert.Len(t, snapshot.Edges, 1)
+		assert.Equal(t, "func1", snapshot.Nodes[0].Name)
+		assert.Equal(t, 3, snapshot.Edges[0].Calls)
 	})
 }
 
-// TestConcurrentAccess tests thread safety of CodeGraph operations.
 func TestConcurrentAccess(t *testing.T) {
 	cg := NewCodeGraph()
 
@@ -751,23 +592,23 @@ func TestConcurrentAccess(t *testing.T) {
 	done := make(chan bool, numGoroutines)
 
 	// Concurrent node additions
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(id int) {
 			defer func() { done <- true }()
 
-			for j := 0; j < operationsPerGoroutine; j++ {
+			for j := range operationsPerGoroutine {
 				node := Node{
 					ID:   string(rune('A'+id)) + string(rune('0'+j%10)),
 					Kind: NodeFunction,
 					Name: string(rune('A'+id)) + string(rune('0'+j%10)),
 				}
-				_ = cg.AddNode(node)
+				_ = cg.AddNode(node) //nolint:errcheck // intentional: testing concurrent safety, not error paths
 			}
 		}(i)
 	}
 
 	// Wait for all node additions
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 
@@ -775,11 +616,11 @@ func TestConcurrentAccess(t *testing.T) {
 	done = make(chan bool, numGoroutines)
 
 	// Concurrent reads and queries
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer func() { done <- true }()
 
-			for j := 0; j < operationsPerGoroutine; j++ {
+			for range operationsPerGoroutine {
 				_ = cg.Stats()
 				_ = cg.QueryNodes(NodeQuery{Kind: NodeFunction})
 				_, _ = cg.GetNode("A0")
@@ -788,56 +629,53 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	// Wait for all reads
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 }
 
-// BenchmarkAddNode benchmarks node addition.
 func BenchmarkAddNode(b *testing.B) {
 	cg := NewCodeGraph()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		node := Node{
 			ID:   string(rune(i % 1000)),
 			Kind: NodeFunction,
 			Name: "benchmark",
 		}
-		_ = cg.AddNode(node)
+		_ = cg.AddNode(node) //nolint:errcheck // intentional: benchmark ignores errors
 	}
 }
 
-// BenchmarkAddEdge benchmarks edge addition.
 func BenchmarkAddEdge(b *testing.B) {
 	cg := NewCodeGraph()
 
 	// Pre-populate with nodes
-	for i := 0; i < 100; i++ {
-		_ = cg.AddNode(Node{
+	for i := range 100 {
+		_ = cg.AddNode(Node{ //nolint:errcheck // intentional: benchmark setup
 			ID:   string(rune(i)),
 			Kind: NodeFunction,
 		})
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		edge := Edge{
 			From: string(rune(i % 100)),
 			To:   string(rune((i + 1) % 100)),
 			Kind: EdgeCalls,
 		}
-		_ = cg.AddEdge(edge)
+		_ = cg.AddEdge(edge) //nolint:errcheck // intentional: benchmark ignores errors
 	}
 }
 
-// BenchmarkQueryNodes benchmarks node querying.
 func BenchmarkQueryNodes(b *testing.B) {
 	cg := NewCodeGraph()
 
 	// Pre-populate
-	for i := 0; i < 1000; i++ {
-		_ = cg.AddNode(Node{
+	for i := range 1000 {
+		_ = cg.AddNode(Node{ //nolint:errcheck // intentional: benchmark setup
 			ID:   string(rune(i)),
 			Kind: NodeFunction,
 			Path: string(rune(i % 10)),
@@ -845,7 +683,7 @@ func BenchmarkQueryNodes(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = cg.QueryNodes(NodeQuery{Kind: NodeFunction})
 	}
 }
