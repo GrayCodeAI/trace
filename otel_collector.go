@@ -1,3 +1,13 @@
+// Package trace is a git-native session capture and replay CLI for AI coding
+// agents. It records coding sessions as transcripts on orphan git branches,
+// supports a pluggable agent registry (Claude Code, Codex, Copilot, Cursor,
+// Gemini, OpenCode, Pi, and more), and exports spans to OpenTelemetry
+// collectors.
+//
+// This file (otel_collector.go) implements the OpenTelemetry export path:
+// converting transcript entries into OTel spans, batching them with
+// configurable size and flush intervals, and shipping batches to an OTLP
+// endpoint with exponential-backoff retry.
 package trace
 
 import (
