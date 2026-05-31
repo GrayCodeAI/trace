@@ -68,7 +68,7 @@ func TestCollectSessionTags(t *testing.T) {
 			"PATH=/usr/bin",
 		})
 		assert.NotNil(t, tags, "should return non-nil map")
-		assert.Len(t, tags, 0)
+		assert.Empty(t, tags)
 	})
 
 	t.Run("multiple_tags_preserved", func(t *testing.T) {
@@ -104,7 +104,7 @@ func TestCollectTagsFromEnv(t *testing.T) {
 	t.Run("handles_empty_env_list", func(t *testing.T) {
 		tags := collectTagsFromEnv(nil)
 		assert.NotNil(t, tags)
-		assert.Len(t, tags, 0)
+		assert.Empty(t, tags)
 	})
 
 	t.Run("case_insensitive_prefix_match", func(t *testing.T) {
@@ -173,6 +173,7 @@ func TestCutEnvVar(t *testing.T) {
 }
 
 func TestState_Metadata_Serialization(t *testing.T) {
+	t.Parallel()
 	t.Run("metadata_round_trips_through_json", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
@@ -226,6 +227,7 @@ func TestCollectSessionTags_Integration(t *testing.T) {
 		Metadata:  tags,
 	}
 
+	assert.Equal(t, "integration-test", state.SessionID)
 	assert.Equal(t, "my-app", state.Metadata["project"])
 	assert.Equal(t, "platform", state.Metadata["team"])
 }

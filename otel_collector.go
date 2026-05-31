@@ -3,6 +3,7 @@ package trace
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -227,15 +228,15 @@ func NewOTelCollector(cfg OTelCollectorConfig) *OTelCollector {
 // In a production implementation this would marshal the batch to OTLP protobuf
 // and POST to the configured endpoint, honouring config.Timeout and
 // config.RetryConfig.
-func (c *OTelCollector) SendBatch(ctx context.Context, batch *SpanBatch) error {
+func (c *OTelCollector) SendBatch(_ context.Context, batch *SpanBatch) error {
 	if batch == nil {
-		return fmt.Errorf("otel collector: batch must not be nil")
+		return errors.New("otel collector: batch must not be nil")
 	}
 	if len(batch.Spans) == 0 {
 		return fmt.Errorf("otel collector: batch %s contains no spans", batch.BatchID)
 	}
 	if c.config.Endpoint == "" {
-		return fmt.Errorf("otel collector: endpoint is not configured")
+		return errors.New("otel collector: endpoint is not configured")
 	}
 
 	// Stub: in production this would perform the actual OTLP export with
