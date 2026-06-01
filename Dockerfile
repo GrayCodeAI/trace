@@ -3,10 +3,8 @@ FROM golang:1.26.3-alpine AS builder
 RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /build
-COPY go.mod go.sum ./
-RUN go mod download && go mod verify
-
 COPY . .
+RUN go mod download && go mod verify
 ARG VERSION=dev
 ARG COMMIT=none
 ARG BUILD_DATE=unknown
