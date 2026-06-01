@@ -70,7 +70,10 @@ func TestDetectGitHubTokenBadChecksumUnverified(t *testing.T) {
 
 func TestDetectJWTVerified(t *testing.T) {
 	enc := func(v any) string {
-		b, _ := json.Marshal(v)
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
 		return base64.RawURLEncoding.EncodeToString(b)
 	}
 	header := enc(map[string]any{"alg": "HS256", "typ": "JWT"})
