@@ -26,4 +26,4 @@ COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
 USER trace
 ENTRYPOINT ["tini", "--", "trace"]
-CMD ["--help"]  # trigger rebuild
+CMD ["--help"]
