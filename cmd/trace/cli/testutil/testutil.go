@@ -52,6 +52,8 @@ func InitRepo(t *testing.T, repoDir string) {
 		cfg.Raw = config.New()
 	}
 	cfg.Raw.Section("commit").SetOption("gpgsign", "false")
+	cfg.Raw.Section("gc").SetOption("auto", "0")
+	cfg.Raw.Section("gc").SetOption("autoDetach", "false")
 	cfg.Core.AutoCRLF = "true"
 
 	if err := repo.SetConfig(cfg); err != nil {
