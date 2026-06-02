@@ -1911,6 +1911,13 @@ func TestRunExplainCheckpoint_V2CheckpointRemoteFallbackResolvesRawTranscript(t 
 
 	checkpointRepo, err := git.PlainOpen(checkpointDir)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		// Close the underlying storage to release file descriptors before
+		// t.TempDir() attempts to remove the directory.
+		if storer, ok := checkpointRepo.Storer.(interface{ Close() error }); ok {
+			_ = storer.Close()
+		}
+	})
 
 	cpID := id.MustCheckpointID("121212121212")
 	rawTranscript := []byte(`{"type":"user","message":{"content":[{"type":"text","text":"raw from checkpoint_remote"}]}}` + "\n")
