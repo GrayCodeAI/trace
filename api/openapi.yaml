@@ -1,0 +1,72 @@
+openapi: "3.1.0"
+info:
+  title: trace — Session Capture Tool Reference
+  description: |
+    trace is a git-native session capture CLI for AI coding agents.
+    It hooks into the git workflow to capture agent sessions alongside commits,
+    creating a searchable record of how code was written.
+
+    trace is a CLI tool — no HTTP server is exposed.
+    This document describes the CLI command surface as a machine-readable reference.
+  version: "0.1.0"
+  license:
+    name: MIT
+    url: https://github.com/GrayCodeAI/trace/blob/main/LICENSE
+  contact:
+    url: https://github.com/GrayCodeAI/trace
+
+# No servers — trace is a CLI tool, not a network service.
+
+x-cli-commands:
+  trace_enable:
+    description: Install git hooks to capture sessions in this repository
+    usage: trace enable
+    flags: []
+
+  trace_disable:
+    description: Remove git hooks and stop capturing sessions
+    usage: trace disable
+    flags: []
+
+  trace_status:
+    description: Show capture status and current session info
+    usage: trace status
+    flags: []
+
+  trace_checkpoint:
+    description: Create a checkpoint in the current session
+    usage: trace checkpoint [message]
+    subcommands:
+      rewind:
+        description: Rewind to a previous checkpoint
+        usage: trace checkpoint rewind <id>
+
+  trace_session:
+    description: Manage sessions
+    subcommands:
+      resume:
+        description: Resume a previous session
+        usage: trace session resume <id>
+      list:
+        description: List all sessions
+        usage: trace session list
+
+  trace_investigate:
+    description: Investigate a session or commit for AI agent activity
+    usage: trace investigate <ref>
+    flags:
+      - name: format
+        short: f
+        type: string
+        enum: [text, json, markdown]
+        default: text
+
+  trace_doctor:
+    description: Run diagnostics on trace installation
+    usage: trace doctor
+    flags: []
+
+  trace_agent:
+    description: Configure agent-specific integrations
+    usage: trace agent <agent-name>
+    flags: []
