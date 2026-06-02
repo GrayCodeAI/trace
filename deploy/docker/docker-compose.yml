@@ -1,0 +1,15 @@
+name: trace
+
+services:
+  trace:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    image: ghcr.io/graycodeai/trace:dev
+    entrypoint: ["trace"]
+    command: ["--help"]
+    volumes:
+      - type: bind
+        source: ${PWD}
+        target: /workspace
+    working_dir: /workspace
