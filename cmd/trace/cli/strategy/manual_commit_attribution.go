@@ -90,9 +90,7 @@ func getAllChangedFilesBetweenTreesSlow(ctx context.Context, tree1, tree2 *objec
 // which only makes sense for text files.
 //
 // Uses go-git's IsBinary() which implements git's binary detection algorithm.
-//
-// TODO: Consider tracking binary file counts separately (e.g., BinaryFilesChanged field)
-// to provide visibility into non-text file modifications.
+// Binary files are tracked via BinaryFilesChanged in the attribution result.
 func getFileContent(tree *object.Tree, path string) string {
 	if tree == nil {
 		return ""

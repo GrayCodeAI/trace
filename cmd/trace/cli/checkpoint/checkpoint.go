@@ -614,6 +614,7 @@ type InitialAttribution struct {
 	TotalLinesChanged int       `json:"total_lines_changed"`      // Total committed line changes (adds + modifies + removes)
 	AgentPercentage   float64   `json:"agent_percentage"`         // (agent_lines + agent_removed) / total_lines_changed * 100
 	MetricVersion     int       `json:"metric_version,omitempty"` // 0/absent = legacy (additions-only %), 2 = changed-lines %
+	BinaryFilesChanged int      `json:"binary_files_changed"`     // Number of binary files modified
 }
 
 // Info provides summary information for listing checkpoints.

@@ -13,8 +13,6 @@ import (
 // defaultFixAgent is the agent registry name used when FixDeps.FixAgent is
 // empty.
 //
-// TODO: layer on `trace investigate fix --agent <name>` and a settings
-// override.
 const defaultFixAgent = "claude-code"
 
 // FixDeps collects what RunFix needs that's injectable for tests.
