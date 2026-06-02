@@ -819,9 +819,9 @@ func restoreSessionTranscriptFromShadow(ctx context.Context, commitHash, metadat
 // This is acceptable because task checkpoints are currently only created by Claude Code's
 // PostToolUse hook. If other agents gain sub-agent support, this will need a
 // format-aware refactor (agent-specific parsing, truncation, and serialization).
-func restoreTaskCheckpointTranscript(ctx context.Context, w io.Writer, strat *strategy.ManualCommitStrategy, point strategy.RewindPoint, sessionID, checkpointUUID string, agent agentpkg.Agent) error {
+func restoreTaskCheckpointTranscript(ctx context.Context, w io.Writer, start *strategy.ManualCommitStrategy, point strategy.RewindPoint, sessionID, checkpointUUID string, agent agentpkg.Agent) error {
 	// Get transcript content from strategy
-	content, err := strat.GetTaskCheckpointTranscript(ctx, point)
+	content, err := start.GetTaskCheckpointTranscript(ctx, point)
 	if err != nil {
 		return fmt.Errorf("failed to get task checkpoint transcript: %w", err)
 	}

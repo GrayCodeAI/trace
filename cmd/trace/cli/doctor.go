@@ -180,7 +180,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 	}
 
 	// Get the current strategy for condense operations
-	strat := GetStrategy(ctx)
+	start := GetStrategy(ctx)
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Found %d stuck session(s):\n\n", len(stuck))
 
@@ -189,7 +189,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 
 		if force {
 			if ss.HasShadowBranch && ss.CheckpointCount > 0 {
-				if err := strat.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
+				if err := start.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to condense session %s: %v\n", ss.State.SessionID, err)
 				} else {
 					fmt.Fprintf(cmd.OutOrStdout(), "  ✓ Condensed session %s\n\n", ss.State.SessionID)
@@ -216,7 +216,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 
 		switch action {
 		case "condense":
-			if err := strat.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
+			if err := start.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to condense session %s: %v\n", ss.State.SessionID, err)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "  ✓ Condensed session %s\n\n", ss.State.SessionID)

@@ -64,6 +64,11 @@ linters:
           - unused
       - path: cmd/
         linters:
+          - errcheck
+          - noctx
+      - path: e2e/
+        linters:
+          - errcheck
           - noctx
 
 issues:

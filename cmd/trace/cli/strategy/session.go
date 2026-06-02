@@ -121,8 +121,8 @@ func ListSessions(ctx context.Context) ([]Session, error) {
 	}
 
 	// Check for additional sessions
-	strat := NewManualCommitStrategy()
-	if additionalSessions, err := strat.GetAdditionalSessions(ctx); err == nil {
+	start := NewManualCommitStrategy()
+	if additionalSessions, err := start.GetAdditionalSessions(ctx); err == nil {
 		for _, addSession := range additionalSessions {
 			if addSession == nil {
 				continue
