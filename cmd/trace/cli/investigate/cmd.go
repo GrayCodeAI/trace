@@ -187,7 +187,9 @@ func validateFlags(args []string, f runFlags) error {
 
 // newFixSubcommand wires `trace investigate fix [run-id]` to RunFix.
 func newFixSubcommand(deps Deps) *cobra.Command {
-	return &cobra.Command{
+	var agentName string
+	
+	cmd := &cobra.Command{
 		Use:   "fix [run-id]",
 		Short: "Launch a coding agent with a saved investigation as grounded context",
 		Args: func(_ *cobra.Command, args []string) error {
@@ -221,6 +223,7 @@ func newFixSubcommand(deps Deps) *cobra.Command {
 				ErrOut: cmd.ErrOrStderr(),
 			}, FixDeps{
 				ManifestStore: store,
+				FixAgent:      agentName,
 				Launch:        launch,
 			})
 			// Ctrl+C in the spawned fix agent surfaces as a wrapped
@@ -233,6 +236,10 @@ func newFixSubcommand(deps Deps) *cobra.Command {
 			return err
 		},
 	}
+	
+	cmd.Flags().StringVar(&agentName, "agent", "", "Agent to use for fix (default: claude-code)")
+	
+	return cmd
 }
 
 // newShowSubcommand wires `trace investigate show [run-id]` to RunShow.
