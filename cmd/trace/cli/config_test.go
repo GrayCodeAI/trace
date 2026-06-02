@@ -296,8 +296,8 @@ func TestLoadTraceSettings_RejectsUnknownKeysInBase(t *testing.T) {
 func TestGetStrategy_HasBlobFetcher(t *testing.T) {
 	t.Parallel()
 
-	strat := GetStrategy(context.Background())
-	if !strat.HasBlobFetcher() {
+	start := GetStrategy(context.Background())
+	if !start.HasBlobFetcher() {
 		t.Fatal("GetStrategy must return a strategy with a blob fetcher configured; " +
 			"without it, checkpoint reads fail after treeless fetches")
 	}

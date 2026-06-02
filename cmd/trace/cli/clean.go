@@ -83,8 +83,8 @@ func newCleanCmd() *cobra.Command {
 			}
 
 			if sessionFlag != "" {
-				strat := GetStrategy(ctx)
-				return runCleanSession(ctx, cmd, strat, sessionFlag, forceFlag, dryRunFlag, "Clean", "cleaned")
+				start := GetStrategy(ctx)
+				return runCleanSession(ctx, cmd, start, sessionFlag, forceFlag, dryRunFlag, "Clean", "cleaned")
 			}
 
 			return runCleanCurrentHead(ctx, cmd, forceFlag, dryRunFlag)
@@ -101,7 +101,7 @@ func newCleanCmd() *cobra.Command {
 
 // runCleanCurrentHead cleans session data for the current HEAD commit.
 func runCleanCurrentHead(ctx context.Context, cmd *cobra.Command, force, dryRun bool) error {
-	strat := GetStrategy(ctx)
+	start := GetStrategy(ctx)
 	w := cmd.OutOrStdout()
 
 	// Dry-run: show what would be cleaned
@@ -151,7 +151,7 @@ func runCleanCurrentHead(ctx context.Context, cmd *cobra.Command, force, dryRun 
 		}
 	}
 
-	if err := strat.Reset(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+	if err := start.Reset(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 		return fmt.Errorf("clean failed: %w", err)
 	}
 
@@ -187,8 +187,8 @@ func previewCurrentHead(ctx context.Context, w io.Writer) error {
 	hasShadowBranch := refErr == nil
 
 	// Find sessions for this commit
-	strat := GetStrategy(ctx)
-	sessions, err := strat.FindSessionsForCommit(ctx, head.Hash().String())
+	start := GetStrategy(ctx)
+	sessions, err := start.FindSessionsForCommit(ctx, head.Hash().String())
 	if err != nil {
 		sessions = nil
 	}
@@ -219,7 +219,7 @@ func previewCurrentHead(ctx context.Context, w io.Writer) error {
 // runCleanSession handles the --session flag: clean/reset a single session.
 // actionVerb is the capitalized verb (e.g., "Clean" or "Reset") and pastVerb
 // is the past tense (e.g., "cleaned" or "reset") used in user-facing messages.
-func runCleanSession(ctx context.Context, cmd *cobra.Command, strat *strategy.ManualCommitStrategy, sessionID string, force, dryRun bool, actionVerb, pastVerb string) error {
+func runCleanSession(ctx context.Context, cmd *cobra.Command, start *strategy.ManualCommitStrategy, sessionID string, force, dryRun bool, actionVerb, pastVerb string) error {
 	// Verify the session exists
 	state, err := strategy.LoadSessionState(ctx, sessionID)
 	if err != nil {
@@ -262,7 +262,7 @@ func runCleanSession(ctx context.Context, cmd *cobra.Command, strat *strategy.Ma
 		}
 	}
 
-	if err := strat.ResetSession(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), sessionID); err != nil {
+	if err := start.ResetSession(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), sessionID); err != nil {
 		return fmt.Errorf("%s session failed: %w", strings.ToLower(actionVerb), err)
 	}
 

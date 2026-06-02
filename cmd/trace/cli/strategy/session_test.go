@@ -164,10 +164,10 @@ func TestEmptySession(t *testing.T) {
 
 // TestManualCommitStrategyGetAdditionalSessions verifies that GetAdditionalSessions is callable
 func TestManualCommitStrategyGetAdditionalSessions(t *testing.T) {
-	strat := NewManualCommitStrategy()
+	start := NewManualCommitStrategy()
 
 	// GetAdditionalSessions should be callable
-	_, err := strat.GetAdditionalSessions(context.Background())
+	_, err := start.GetAdditionalSessions(context.Background())
 	if err != nil {
 		t.Logf("GetAdditionalSessions returned error: %v", err)
 	}

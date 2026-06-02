@@ -33,11 +33,11 @@ func newResetCmd() *cobra.Command {
 				defer logging.Close()
 			}
 
-			strat := GetStrategy(ctx)
+			start := GetStrategy(ctx)
 
 			// Handle --session flag: delegate to clean's session logic
 			if sessionFlag != "" {
-				return runCleanSession(ctx, cmd, strat, sessionFlag, forceFlag, false, "Reset", "reset")
+				return runCleanSession(ctx, cmd, start, sessionFlag, forceFlag, false, "Reset", "reset")
 			}
 
 			// Check for active sessions before bulk reset
@@ -79,7 +79,7 @@ func newResetCmd() *cobra.Command {
 				}
 			}
 
-			if err := strat.Reset(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+			if err := start.Reset(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 				return fmt.Errorf("reset failed: %w", err)
 			}
 
