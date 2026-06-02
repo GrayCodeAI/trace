@@ -86,7 +86,7 @@ func handleClaudeCodePostTodoFromReader(ctx context.Context, reader io.Reader) e
 	}
 
 	// Get the active strategy
-	strat := GetStrategy(ctx)
+	start := GetStrategy(ctx)
 
 	// Get the session ID from the transcript path or input, then transform to Trace session ID
 	sessionID := input.SessionID
@@ -138,7 +138,7 @@ func handleClaudeCodePostTodoFromReader(ctx context.Context, reader io.Reader) e
 	}
 
 	// Save incremental task step
-	if err := strat.SaveTaskStep(ctx, taskStepCtx); err != nil {
+	if err := start.SaveTaskStep(ctx, taskStepCtx); err != nil {
 		logging.Warn(logCtx, "failed to save incremental task step",
 			slog.String("error", err.Error()))
 		return nil

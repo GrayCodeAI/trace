@@ -90,11 +90,11 @@ vet: ## Run go vet.
 
 lint: ## Run golangci-lint.
 	@command -v $(GOLANGCI) >/dev/null 2>&1 || (echo "install: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest" && exit 1)
-	$(GOLANGCI) run ./... --timeout=5m
+	$(GOLANGCI) run ./... --config=.golangci.yml --timeout=5m
 
 lint-fix: ## Run golangci-lint with --fix.
 	@command -v $(GOLANGCI) >/dev/null 2>&1 || (echo "install: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest" && exit 1)
-	$(GOLANGCI) run ./... --fix --timeout=5m
+	$(GOLANGCI) run ./... --config=.golangci.yml --fix --timeout=5m
 
 security: ## Run govulncheck.
 	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || (echo "install: go install golang.org/x/vuln/cmd/govulncheck@latest" && exit 1)

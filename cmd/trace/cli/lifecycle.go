@@ -91,8 +91,8 @@ func handleLifecycleSessionStart(ctx context.Context, ag agent.Agent, event *age
 
 	// Check for concurrent sessions and append count if any
 	_, countSessionsSpan := perf.Start(ctx, "count_active_sessions")
-	strat := GetStrategy(ctx)
-	if count, err := strat.CountOtherActiveSessionsWithCheckpoints(ctx, event.SessionID); err == nil && count > 0 {
+	start := GetStrategy(ctx)
+	if count, err := start.CountOtherActiveSessionsWithCheckpoints(ctx, event.SessionID); err == nil && count > 0 {
 		if ag.Name() == agent.AgentNameCodex {
 			message += fmt.Sprintf(" %d other active conversation(s) in this workspace will also be included. Use 'trace status' for more information.", count)
 		} else {
@@ -315,8 +315,8 @@ func handleLifecycleTurnStart(ctx context.Context, ag agent.Agent, event *agent.
 			slog.String("error", err.Error()))
 	}
 
-	strat := GetStrategy(ctx)
-	if err := strat.InitializeSession(ctx, sessionID, ag.Type(), event.SessionRef, event.Prompt, event.Model); err != nil {
+	start := GetStrategy(ctx)
+	if err := start.InitializeSession(ctx, sessionID, ag.Type(), event.SessionRef, event.Prompt, event.Model); err != nil {
 		logging.Warn(logCtx, "failed to initialize session state",
 			slog.String("error", err.Error()))
 	}
@@ -581,7 +581,7 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 	}
 
 	// Get strategy and agent type
-	strat := GetStrategy(ctx)
+	start := GetStrategy(ctx)
 	agentType := ag.Type()
 
 	// Get transcript position/identifier from pre-prompt state
@@ -613,7 +613,7 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 		TokenUsage:               tokenUsage,
 	}
 
-	if err := strat.SaveStep(ctx, stepCtx); err != nil {
+	if err := start.SaveStep(ctx, stepCtx); err != nil {
 		return fmt.Errorf("failed to save step: %w", err)
 	}
 
@@ -706,8 +706,8 @@ func handleLifecycleSessionEnd(ctx context.Context, ag agent.Agent, event *agent
 	// This prevents zombie ENDED sessions from accumulating and causing O(N)
 	// overhead on every future commit (GitHub issue #591).
 	// Fail-open: if this fails, PostCommit will still process it on the next commit.
-	strat := GetStrategy(ctx)
-	if err := strat.CondenseAndMarkFullyCondensed(ctx, event.SessionID); err != nil {
+	start := GetStrategy(ctx)
+	if err := start.CondenseAndMarkFullyCondensed(ctx, event.SessionID); err != nil {
 		logging.Warn(logCtx, "eager condense on session stop failed",
 			slog.String("session_id", event.SessionID),
 			slog.String("error", err.Error()))
@@ -839,7 +839,7 @@ func handleLifecycleSubagentEnd(ctx context.Context, ag agent.Agent, event *agen
 	}
 
 	// Build task checkpoint context
-	strat := GetStrategy(ctx)
+	start := GetStrategy(ctx)
 	agentType := ag.Type()
 
 	taskStepCtx := strategy.TaskStepContext{
@@ -859,7 +859,7 @@ func handleLifecycleSubagentEnd(ctx context.Context, ag agent.Agent, event *agen
 		AgentType:              agentType,
 	}
 
-	if err := strat.SaveTaskStep(ctx, taskStepCtx); err != nil {
+	if err := start.SaveTaskStep(ctx, taskStepCtx); err != nil {
 		return fmt.Errorf("failed to save task step: %w", err)
 	}
 
@@ -927,8 +927,8 @@ func transitionSessionTurnEnd(ctx context.Context, sessionID string, event *agen
 
 	// Always dispatch to strategy for turn-end handling. The strategy reads
 	// work items from state (e.g. TurnCheckpointIDs), not the action list.
-	strat := GetStrategy(ctx)
-	if err := strat.HandleTurnEnd(ctx, turnState); err != nil {
+	start := GetStrategy(ctx)
+	if err := start.HandleTurnEnd(ctx, turnState); err != nil {
 		logging.Warn(logCtx, "turn-end action dispatch failed",
 			slog.String("error", err.Error()))
 	}
