@@ -1,76 +1,15 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# Binaries
+/trace
 *.exe
-*.exe~
 *.dll
 *.so
-*.dylib
 
-# Test binary, built with `go test -c`
-*.test
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
-*.prof
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
-.env
-.envrc
-
-.DS_Store
-
-# Editor/IDE
-# .idea/
-# .vscode/
-
-# Binary output (only in root)
-/trace
-/vogon
-/testreport
-/bin
-
-# Build output directory
-/dist/
-/completions/
-
-
-# E2E test artifacts
-e2e/artifacts/
-
-# worktrees
-.worktrees/
-.claude/worktrees/
-test-gemini.txt
-trace-main
-trace-test
-test_claude.txt
-cmd/trace/trace
-docs/requirements
-docs/plans
-docs/reviews
-docs/superpowers
-tmp/
-.tmp/
-.superpowers/
-
-# CodeGraph local index
+# Local state
+.claude/
 .codegraph/
 
-# AI/IDE tool configs
-.cursor/
-.openclaude/
-.commandcode/
-.antigravitycli/
-.pi/
+# Local DB / cache
+codegraph.db
+
+# Bailiwick-style runtime artifacts
+*.bailiwick

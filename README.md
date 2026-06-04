@@ -42,16 +42,17 @@ Trace hooks into your Git workflow to capture AI agent sessions as you work. Ses
 
 ## Quick Start
 
+Trace is designed to ship inside the **Hawk** binary (in development — no public Hawk install yet).
+
+**Contributors — from source:**
+
 ```bash
-# Install (macOS/Linux)
-curl -fsSL https://trace.graycode.ai/install.sh | bash
-
-# Or via Homebrew
-brew tap GrayCodeAI/tap && brew install --cask trace
-
-# Or via Go
-go install github.com/GrayCodeAI/trace/cmd/trace@latest
+git clone https://github.com/GrayCodeAI/trace && cd trace
+go build -o trace ./cmd/trace
+# or: go install github.com/GrayCodeAI/trace/cmd/trace@latest
 ```
+
+When Hawk releases, use `hawk trace` (same binary as the standalone trace CLI).
 
 ```bash
 # Enable in your project
