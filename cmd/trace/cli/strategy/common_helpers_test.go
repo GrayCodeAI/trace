@@ -18,7 +18,7 @@ import (
 // and uses minimal structs to avoid allocating large unused fields
 // (Summary, InitialAttribution, TokenUsage, etc.).
 //
-//nolint:unused // Test helper preserved for tests that need full deserialization
+//lint:ignore U1000 // Test helper preserved for tests that need full deserialization
 func readCheckpointMetadataFull(tree *object.Tree, checkpointPath string) (*CheckpointInfo, error) {
 	metadataPath := checkpointPath + "/metadata.json"
 	file, err := tree.File(metadataPath)
