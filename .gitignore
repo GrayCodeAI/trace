@@ -13,3 +13,4 @@ codegraph.db
 
 # Bailiwick-style runtime artifacts
 *.bailiwick
+coverage.out
