@@ -1196,7 +1196,7 @@ func formatCheckpointSummaryError(err error, deadline time.Duration) (string, []
 			if claudeErr.Message != "" {
 				rows = append([]explainRow{{Label: "message", Value: claudeErr.Message}}, rows...)
 			}
-			//lint:ignore ST1005 // Claude is a proper noun
+			//nolint:staticcheck // ST1005: Claude is a proper noun
 			return label, rows, fmt.Errorf("Claude authentication failed%s", formatMessageSuffix(claudeErr.Message))
 		case claudecode.ClaudeErrorRateLimit:
 			label := "Claude rejected the summary request due to rate limits or quota"
@@ -1206,7 +1206,7 @@ func formatCheckpointSummaryError(err error, deadline time.Duration) (string, []
 			if claudeErr.Message != "" {
 				rows = append([]explainRow{{Label: "message", Value: claudeErr.Message}}, rows...)
 			}
-			//lint:ignore ST1005 // Claude is a proper noun
+			//nolint:staticcheck // ST1005: Claude is a proper noun
 			return label, rows, fmt.Errorf("Claude rejected the summary request due to rate limits or quota%s", formatMessageSuffix(claudeErr.Message))
 		case claudecode.ClaudeErrorConfig:
 			label := "Claude rejected the summary request"
@@ -1216,11 +1216,11 @@ func formatCheckpointSummaryError(err error, deadline time.Duration) (string, []
 			if claudeErr.Message != "" {
 				rows = append([]explainRow{{Label: "message", Value: claudeErr.Message}}, rows...)
 			}
-			//lint:ignore ST1005 // Claude is a proper noun
+			//nolint:staticcheck // ST1005: Claude is a proper noun
 			return label, rows, fmt.Errorf("Claude rejected the summary request%s", formatMessageSuffix(claudeErr.Message))
 		case claudecode.ClaudeErrorCLIMissing:
 			label := "Claude CLI is not installed or not on PATH"
-			//lint:ignore ST1005 // Claude is a proper noun
+			//nolint:staticcheck // ST1005: Claude is a proper noun
 			return label, nil, errors.New("Claude CLI is not installed or not on PATH")
 		default:
 			label := "Claude failed to generate the summary"
@@ -1228,7 +1228,7 @@ func formatCheckpointSummaryError(err error, deadline time.Duration) (string, []
 			rows := []explainRow{
 				{Label: "detail", Value: strings.TrimPrefix(strings.TrimPrefix(suffix, ": "), " ")},
 			}
-			//lint:ignore ST1005 // Claude is a proper noun
+			//nolint:staticcheck // ST1005: Claude is a proper noun
 			return label, rows, fmt.Errorf("Claude failed to generate the summary%s", suffix)
 		}
 	case errors.Is(err, context.DeadlineExceeded):
