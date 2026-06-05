@@ -901,13 +901,6 @@ func findTrailByBranch(ctx context.Context, client *api.Client, host, owner, rep
 	})
 }
 
-// findTrailByNumber looks up a trail by numeric identifier via the list API.
-func findTrailByNumber(ctx context.Context, client *api.Client, host, owner, repo string, number int) (*api.TrailResource, error) { //nolint:unused // used by trail_watch when number is provided directly
-	return findTrail(ctx, client, host, owner, repo, func(t api.TrailResource) bool {
-		return t.Number == number
-	})
-}
-
 func findTrail(ctx context.Context, client *api.Client, host, owner, repo string, match func(api.TrailResource) bool) (*api.TrailResource, error) {
 	resp, err := client.Get(ctx, trailsBasePath(host, owner, repo))
 	if err != nil {
