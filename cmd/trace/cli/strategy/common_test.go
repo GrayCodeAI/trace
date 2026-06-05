@@ -773,7 +773,7 @@ func TestIsOnDefaultBranch(t *testing.T) {
 // manipulate the agent registry can get fresh results. Call this in any test
 // that registers/unregisters agents and then checks isProtectedPath behavior.
 //
-//nolint:unused // Intentionally kept as a test utility for future tests that mutate the agent registry.
+//lint:ignore U1000 // Intentionally kept as a test utility for future tests that mutate the agent registry.
 func resetProtectedDirsForTest() {
 	protectedDirsOnce = sync.Once{}
 	protectedDirsCache = nil

@@ -954,7 +954,8 @@ func readV2ContentFromMain(ctx context.Context, v2Reader *checkpoint.V2GitStore,
 	// session tree. Reset transcript offsets when compact data is present.
 	if len(content.Transcript) > 0 {
 		content.Metadata.CheckpointTranscriptStart = 0
-		content.Metadata.TranscriptLinesAtStart = 0 //nolint:staticcheck // Set for backward compat with older CLI readers
+		//lint:ignore SA1019 // Set for backward compat with older CLI readers
+		content.Metadata.TranscriptLinesAtStart = 0
 		return content, nil
 	}
 
@@ -1195,7 +1196,8 @@ func formatCheckpointSummaryError(err error, deadline time.Duration) (string, []
 			if claudeErr.Message != "" {
 				rows = append([]explainRow{{Label: "message", Value: claudeErr.Message}}, rows...)
 			}
-			return label, rows, fmt.Errorf("Claude authentication failed%s", formatMessageSuffix(claudeErr.Message)) //nolint:staticcheck // ST1005: Claude is a proper noun
+			//lint:ignore ST1005 // Claude is a proper noun
+			return label, rows, fmt.Errorf("Claude authentication failed%s", formatMessageSuffix(claudeErr.Message))
 		case claudecode.ClaudeErrorRateLimit:
 			label := "Claude rejected the summary request due to rate limits or quota"
 			rows := []explainRow{
@@ -1204,7 +1206,8 @@ func formatCheckpointSummaryError(err error, deadline time.Duration) (string, []
 			if claudeErr.Message != "" {
 				rows = append([]explainRow{{Label: "message", Value: claudeErr.Message}}, rows...)
 			}
-			return label, rows, fmt.Errorf("Claude rejected the summary request due to rate limits or quota%s", formatMessageSuffix(claudeErr.Message)) //nolint:staticcheck // ST1005
+			//lint:ignore ST1005 // Claude is a proper noun
+			return label, rows, fmt.Errorf("Claude rejected the summary request due to rate limits or quota%s", formatMessageSuffix(claudeErr.Message))
 		case claudecode.ClaudeErrorConfig:
 			label := "Claude rejected the summary request"
 			rows := []explainRow{
@@ -1213,17 +1216,20 @@ func formatCheckpointSummaryError(err error, deadline time.Duration) (string, []
 			if claudeErr.Message != "" {
 				rows = append([]explainRow{{Label: "message", Value: claudeErr.Message}}, rows...)
 			}
-			return label, rows, fmt.Errorf("Claude rejected the summary request%s", formatMessageSuffix(claudeErr.Message)) //nolint:staticcheck // ST1005
+			//lint:ignore ST1005 // Claude is a proper noun
+			return label, rows, fmt.Errorf("Claude rejected the summary request%s", formatMessageSuffix(claudeErr.Message))
 		case claudecode.ClaudeErrorCLIMissing:
 			label := "Claude CLI is not installed or not on PATH"
-			return label, nil, errors.New("Claude CLI is not installed or not on PATH") //nolint:staticcheck // ST1005
+			//lint:ignore ST1005 // Claude is a proper noun
+			return label, nil, errors.New("Claude CLI is not installed or not on PATH")
 		default:
 			label := "Claude failed to generate the summary"
 			suffix := formatClaudeErrorSuffix(claudeErr)
 			rows := []explainRow{
 				{Label: "detail", Value: strings.TrimPrefix(strings.TrimPrefix(suffix, ": "), " ")},
 			}
-			return label, rows, fmt.Errorf("Claude failed to generate the summary%s", suffix) //nolint:staticcheck // ST1005
+			//lint:ignore ST1005 // Claude is a proper noun
+			return label, rows, fmt.Errorf("Claude failed to generate the summary%s", suffix)
 		}
 	case errors.Is(err, context.DeadlineExceeded):
 		// Deliberately provider-neutral: explain --generate supports multiple
