@@ -218,6 +218,11 @@ type State struct {
 	// Example: TRACE_TAG_PROJECT=my-app -> metadata["project"]="my-app"
 	Metadata map[string]string `json:"metadata,omitempty"`
 
+	// Annotations holds free-form user comments attached to the session via
+	// `trace annotate`. Each entry may optionally reference a specific
+	// checkpoint. Stored in the session state JSON alongside other metadata.
+	Annotations []Annotation `json:"annotations,omitempty"`
+
 	// AgentType identifies the agent that created this session (e.g., "Claude Code", "Gemini CLI", "Cursor")
 	AgentType types.AgentType `json:"agent_type,omitempty"`
 
@@ -257,6 +262,24 @@ type State struct {
 	// PendingPromptAttribution holds attribution calculated at prompt start (before agent runs).
 	// This is moved to PromptAttributions when SaveStep is called.
 	PendingPromptAttribution *PromptAttribution `json:"pending_prompt_attribution,omitempty"`
+}
+
+// Annotation is a free-form user comment attached to a session (and optionally
+// a specific checkpoint within it) via `trace annotate`. It is persisted in the
+// session state JSON.
+type Annotation struct {
+	// Comment is the user-supplied note text.
+	Comment string `json:"comment"`
+
+	// CheckpointID optionally scopes the annotation to a specific checkpoint.
+	// Empty means the annotation applies to the session as a whole.
+	CheckpointID string `json:"checkpoint_id,omitempty"`
+
+	// CreatedAt is when the annotation was recorded.
+	CreatedAt time.Time `json:"created_at"`
+
+	// Author is the git author who wrote the annotation, when available.
+	Author string `json:"author,omitempty"`
 }
 
 // PromptAttribution captures line-level attribution data at the start of each prompt.

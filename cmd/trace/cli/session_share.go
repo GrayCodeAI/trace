@@ -58,6 +58,7 @@ type exportTokenUsage struct {
 
 func newSessionExportCmd() *cobra.Command {
 	var outputFlag string
+	var formatFlag string
 
 	cmd := &cobra.Command{
 		Use:   "export [session-id]",
@@ -68,18 +69,23 @@ The exported file can be shared with team members and imported with
 'trace session import'. Without a session ID, exports the most recent
 session in the current worktree.
 
+Use --format asciinema to render the transcript as an asciinema v2 cast
+(a .cast file playable with 'asciinema play') instead of the Trace export
+envelope.
+
 Examples:
   trace session export                          Export most recent session
   trace session export <session-id>             Export a specific session
   trace session export <session-id> -o out.json Export to a specific file
-  trace session export --json                   Export to stdout as JSON`,
+  trace session export --format asciinema       Export as an asciinema cast`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSessionExport(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), args, outputFlag)
+			return runSessionExport(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), args, outputFlag, formatFlag)
 		},
 	}
 
 	cmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Write export to file (default: <session-id>.json)")
+	cmd.Flags().StringVar(&formatFlag, "format", "json", "Export format: json (Trace envelope) or asciinema (cast)")
 
 	return cmd
 }
@@ -105,7 +111,7 @@ Examples:
 	return cmd
 }
 
-func runSessionExport(ctx context.Context, w, errW io.Writer, args []string, output string) error {
+func runSessionExport(ctx context.Context, w, errW io.Writer, args []string, output, format string) error {
 	if _, err := paths.WorktreeRoot(ctx); err != nil {
 		return errors.New("not a git repository")
 	}
@@ -129,6 +135,15 @@ func runSessionExport(ctx context.Context, w, errW io.Writer, args []string, out
 	if state == nil {
 		fmt.Fprintln(errW, "Session not found.")
 		return NewSilentError(fmt.Errorf("session not found: %s", sessionID))
+	}
+
+	switch format {
+	case "", "json":
+		// fall through to the default JSON envelope export below.
+	case "asciinema":
+		return runSessionExportAsciinema(ctx, w, state, output)
+	default:
+		return fmt.Errorf("unsupported export format %q (want json or asciinema)", format)
 	}
 
 	export := buildSessionExport(state)

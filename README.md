@@ -22,7 +22,9 @@ Trace hooks into your Git workflow to capture AI agent sessions as you work. Ses
 |---|---|
 | **Understand why code changed** | Full prompt/response transcripts, files touched, token usage |
 | **Rewind instantly** | Go back to any checkpoint when an agent goes sideways |
+| **Fork & A/B** | Branch a new independent session from any checkpoint to explore alternatives |
 | **Resume seamlessly** | Pick up where you or a coworker left off on any branch |
+| **Cost attribution** | USD cost broken down per session and per tool from recorded token usage |
 | **Clean git history** | All session data lives on a separate branch — zero noise |
 | **Audit & compliance** | Searchable, versioned record of every AI interaction |
 
@@ -146,9 +148,13 @@ trace disable   # Removes hooks, code untouched
 | `trace checkpoint` | List, explain, rewind, search checkpoints |
 | `trace checkpoint rewind` | Rewind to a previous checkpoint |
 | `trace checkpoint explain` | Explain a session or checkpoint |
+| `trace fork` | Clone a checkpoint into a new independent session for A/B testing |
+| `trace annotate` | Attach a comment to a session or checkpoint |
+| `trace ci-init` | Configure Trace to auto-capture sessions in CI |
 | `trace session` | View and manage sessions |
 | `trace session resume` | Restore session on a branch |
 | `trace session attach` | Attach to a detached session |
+| `trace session export` | Export a session (JSON envelope or asciinema cast) |
 | `trace clean` | Clean up orphaned session data |
 | `trace doctor` | Diagnose and fix issues |
 | `trace login` | Authenticate with Trace |
@@ -195,6 +201,11 @@ Personal, gitignored:
 | `strategy_options.push_sessions` | `true` / `false` | Auto-push checkpoints on git push |
 | `strategy_options.checkpoint_remote` | `{"provider": "github", "repo": "..."}` | Push checkpoints to separate repo |
 | `strategy_options.summarize.enabled` | `true` / `false` | AI summaries at commit time |
+| `attribution.attribute_co_authored_by` | `true` / `false` | Append `Co-authored-by: <agent>` trailer (default on) |
+| `attribution.attribute_author` | `true` / `false` | Set the git author to the agent (default off) |
+| `attribution.attribute_committer` | `true` / `false` | Set the git committer to the agent (default off) |
+| `dirty_commits` | `true` / `false` | Auto-commit a dirty working tree before an agent session (default on; `--no-dirty-commits` to skip) |
+| `webhooks` | `{"urls": ["..."], "events": ["..."]}` | POST a JSON notification on session lifecycle events (default off) |
 | `telemetry` | `true` / `false` | Anonymous usage analytics |
 
 ### Checkpoint Remote

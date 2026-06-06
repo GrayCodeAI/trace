@@ -26,6 +26,7 @@ import (
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/strategy"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/transcript"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/validation"
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/webhook"
 	"github.com/GrayCodeAI/trace/perf"
 )
 
@@ -147,6 +148,12 @@ func handleLifecycleSessionStart(ctx context.Context, ag agent.Agent, event *age
 				slog.String("error", saveErr.Error()))
 		}
 	}
+
+	// Best-effort webhook notification (non-blocking, never fails the hook).
+	webhook.LoadNotifier(ctx).NotifyAsync(webhook.EventSessionStart, event.SessionID, map[string]any{
+		"agent": string(ag.Type()),
+		"model": event.Model,
+	})
 
 	return nil
 }
@@ -277,6 +284,17 @@ func handleLifecycleTurnStart(ctx context.Context, ag agent.Agent, event *agent.
 		return err
 	}
 	captureSpan.End()
+
+	// Auto-commit any pre-existing uncommitted changes as a "work in progress"
+	// snapshot BEFORE the agent edits, so the agent's changes start from a clean
+	// tree and the user's prior work is preserved on its own commit. No-op when
+	// disabled (--no-dirty-commits / dirty_commits config) or when clean.
+	_, dirtySpan := perf.Start(ctx, "auto_commit_dirty_working_tree")
+	if _, dcErr := AutoCommitDirtyWorkingTree(ctx); dcErr != nil {
+		logging.Warn(logCtx, "failed to auto-commit dirty working tree",
+			slog.String("error", dcErr.Error()))
+	}
+	dirtySpan.End()
 
 	// Append prompt to prompt.txt on filesystem so it's available for
 	// mid-turn commits (before SaveStep writes it to the shadow branch).
@@ -584,6 +602,16 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 	start := GetStrategy(ctx)
 	agentType := ag.Type()
 
+	// Apply commit attribution (co-authored-by trailer + author/committer
+	// identity) per the configured attribution flags. Defaults match Aider:
+	// co-authored-by on, author/committer overrides off. The checkpoint commit
+	// records a single signature, so AuthorName/Email below carries the
+	// resolved author; the co-authored-by trailer carries the agent identity.
+	attribution := resolveCommitAttribution(ctx, agentType, *author, commitMessage)
+	commitMessage = attribution.CommitMessage
+	author.Name = attribution.AuthorName
+	author.Email = attribution.AuthorEmail
+
 	// Get transcript position/identifier from pre-prompt state
 	var transcriptIdentifierAtStart string
 	var transcriptLinesAtStart int
@@ -712,6 +740,11 @@ func handleLifecycleSessionEnd(ctx context.Context, ag agent.Agent, event *agent
 			slog.String("session_id", event.SessionID),
 			slog.String("error", err.Error()))
 	}
+
+	// Best-effort webhook notification (non-blocking, never fails the hook).
+	webhook.LoadNotifier(ctx).NotifyAsync(webhook.EventSessionEnd, event.SessionID, map[string]any{
+		"agent": string(ag.Type()),
+	})
 
 	return nil
 }
