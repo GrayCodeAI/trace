@@ -4,31 +4,31 @@ go 1.26.4
 
 require (
 	charm.land/bubbles/v2 v2.1.0
-	charm.land/bubbletea/v2 v2.0.6
+	charm.land/bubbletea/v2 v2.0.7
 	charm.land/glamour/v2 v2.0.0
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.3
-	github.com/betterleaks/betterleaks v1.1.2
+	github.com/betterleaks/betterleaks v1.4.0
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/creack/pty v1.1.24
 	github.com/denisbrodbeck/machineid v1.0.1
-	github.com/entireio/auth-go v0.3.4
+	github.com/entireio/auth-go v0.4.0
 	github.com/go-git/go-billy/v6 v6.0.0-alpha.1.0.20260519112248-0095b064a6c6
 	github.com/go-git/go-git/v6 v6.0.0-alpha.2
-	github.com/go-git/x/plugin/objectsigner/auto v0.0.0-20260330134459-33df49246da9
+	github.com/go-git/x/plugin/objectsigner/auto v0.1.0
 	github.com/go-git/x/plugin/objectsigner/program v0.0.0-20260509055934-990a63433b45
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-isatty v0.0.22
 	github.com/muesli/termenv v0.16.0
 	github.com/petermattis/goid v0.0.0-20260330135022-df67b199bc81
-	github.com/posthog/posthog-go v1.12.1
+	github.com/posthog/posthog-go v1.14.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.52.0
-	golang.org/x/mod v0.35.0
+	golang.org/x/mod v0.36.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.45.0
 	golang.org/x/term v0.43.0
@@ -44,17 +44,17 @@ require (
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/STARRY-S/zip v0.2.3 // indirect
 	github.com/alecthomas/chroma/v2 v2.14.0 // indirect
-	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bodgit/plumbing v1.3.0 // indirect
-	github.com/bodgit/sevenzip v1.6.1 // indirect
+	github.com/bodgit/sevenzip v1.6.2 // indirect
 	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260416155717-489999b90468 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260525132238-948f4557a654 // indirect
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
@@ -81,6 +81,8 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/cel-go v0.27.0 // indirect
+	github.com/google/go-github/v72 v72.0.0 // indirect
+	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/h2non/filetype v1.1.3 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
@@ -88,29 +90,31 @@ require (
 	github.com/hiddeco/sshsig v0.2.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
-	github.com/mholt/archives v0.1.5 // indirect
+	github.com/mholt/archives v0.1.6-0.20260429171216-ef71b7a32fae // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/mikelolasagasti/xz v1.0.1 // indirect
-	github.com/minio/minlz v1.0.1 // indirect
+	github.com/minio/minlz v1.1.1 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/nwaples/rardecode/v2 v2.2.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
-	github.com/pierrec/lz4/v4 v4.1.25 // indirect
+	github.com/pierrec/lz4/v4 v4.1.26 // indirect
 	github.com/pjbgf/sha1cd v0.5.0 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.8 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/zerolog v1.33.0 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
+	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed // indirect
+	github.com/shurcooL/graphql v0.0.0-20240915155400-7ee5256398cf // indirect
 	github.com/sorairolake/lzip-go v0.3.8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
