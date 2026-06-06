@@ -14,7 +14,7 @@ require (
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/entireio/auth-go v0.3.4
 	github.com/go-git/go-billy/v6 v6.0.0-alpha.1.0.20260519112248-0095b064a6c6
-	github.com/go-git/go-git/v6 v6.0.0-alpha.2
+	github.com/go-git/go-git/v6 v6.0.0-alpha.4
 	github.com/go-git/x/plugin/objectsigner/auto v0.0.0-20260330134459-33df49246da9
 	github.com/go-git/x/plugin/objectsigner/program v0.0.0-20260509055934-990a63433b45
 	github.com/google/uuid v1.6.0
@@ -105,7 +105,7 @@ require (
 	github.com/nwaples/rardecode/v2 v2.2.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
-	github.com/pjbgf/sha1cd v0.5.0 // indirect
+	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.8 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
