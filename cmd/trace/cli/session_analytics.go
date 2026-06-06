@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
+	"github.com/GrayCodeAI/trace/cmd/trace/cli/cost"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/strategy"
 	"github.com/GrayCodeAI/trace/cmd/trace/cli/transcript"
@@ -30,6 +32,7 @@ type sessionAnalytics struct {
 	ToolCalls       int              `json:"tool_calls"`
 	ToolUsage       map[string]int   `json:"tool_usage"`
 	TokenUsage      *analyticsTokens `json:"token_usage,omitempty"`
+	Cost            *analyticsCost   `json:"cost,omitempty"`
 	FilesTouched    int              `json:"files_touched"`
 	StepCount       int              `json:"step_count"`
 	StartedAt       time.Time        `json:"started_at"`
@@ -44,6 +47,19 @@ type analyticsTokens struct {
 	CacheRead  int `json:"cache_read"`
 	CacheWrite int `json:"cache_write"`
 	APICalls   int `json:"api_calls"`
+}
+
+// analyticsCost provides a USD cost summary for a session, decomposed by token
+// class. Costs are derived from recorded token usage and the model's pricing.
+type analyticsCost struct {
+	Model      string  `json:"model"`
+	Estimated  bool    `json:"estimated"` // true when fallback pricing was used (unknown model)
+	Total      float64 `json:"total_usd"`
+	Input      float64 `json:"input_usd"`
+	Output     float64 `json:"output_usd"`
+	CacheWrite float64 `json:"cache_write_usd"`
+	CacheRead  float64 `json:"cache_read_usd"`
+	Subagents  float64 `json:"subagents_usd,omitempty"`
 }
 
 func newSessionAnalyticsCmd() *cobra.Command {
@@ -150,6 +166,7 @@ func computeSessionAnalytics(ctx context.Context, state *strategy.SessionState) 
 			CacheWrite: state.TokenUsage.CacheCreationTokens,
 			APICalls:   state.TokenUsage.APICallCount,
 		}
+		a.Cost = computeSessionCost(*state.TokenUsage, state.ModelName)
 	}
 
 	// Parse transcript for message/tool counts
@@ -161,6 +178,33 @@ func computeSessionAnalytics(ctx context.Context, state *strategy.SessionState) 
 	}
 
 	return a
+}
+
+// computeSessionCost computes the USD cost breakdown for a session's token
+// usage under its model. Returns nil if there is no billable usage.
+func computeSessionCost(usage agent.TokenUsage, model string) *analyticsCost {
+	total, b := cost.ComputeCost(usage, model)
+	if total == 0 {
+		return nil
+	}
+	return &analyticsCost{
+		Model:      model,
+		Estimated:  !b.PricingMatched,
+		Total:      total,
+		Input:      b.Input,
+		Output:     b.Output,
+		CacheWrite: b.CacheWrite,
+		CacheRead:  b.CacheRead,
+		Subagents:  b.Subagents,
+	}
+}
+
+// formatUSD formats a dollar amount for display, e.g. "$0.0123" or "$12.34".
+func formatUSD(v float64) string {
+	if v > 0 && v < 0.01 {
+		return fmt.Sprintf("$%.4f", v)
+	}
+	return fmt.Sprintf("$%.2f", v)
 }
 
 // loadTranscriptForAnalytics loads transcript bytes for analytics computation.
@@ -300,6 +344,29 @@ func writeAnalyticsText(w io.Writer, a *sessionAnalytics) error {
 		fmt.Fprintln(w)
 	}
 
+	// Cost section
+	if a.Cost != nil {
+		heading := "  Cost"
+		if a.Cost.Estimated {
+			heading = "  Cost (estimated)"
+		}
+		fmt.Fprintln(w, sty.render(sty.bold, heading))
+		fmt.Fprintln(w)
+		writeLabelValue(w, "Total", formatUSD(a.Cost.Total), sty)
+		writeLabelValue(w, "Input", formatUSD(a.Cost.Input), sty)
+		writeLabelValue(w, "Output", formatUSD(a.Cost.Output), sty)
+		if a.Cost.CacheWrite > 0 {
+			writeLabelValue(w, "Cache write", formatUSD(a.Cost.CacheWrite), sty)
+		}
+		if a.Cost.CacheRead > 0 {
+			writeLabelValue(w, "Cache read", formatUSD(a.Cost.CacheRead), sty)
+		}
+		if a.Cost.Subagents > 0 {
+			writeLabelValue(w, "Subagents", formatUSD(a.Cost.Subagents), sty)
+		}
+		fmt.Fprintln(w)
+	}
+
 	// Files section
 	writeLabelValue(w, "Files touched", strconv.Itoa(a.FilesTouched), sty)
 	fmt.Fprintln(w)
@@ -381,6 +448,23 @@ func runAggregateAnalytics(ctx context.Context, w io.Writer, jsonOutput bool) er
 			agg.TokenUsage.CacheRead += s.TokenUsage.CacheReadTokens
 			agg.TokenUsage.CacheWrite += s.TokenUsage.CacheCreationTokens
 			agg.TokenUsage.APICalls += s.TokenUsage.APICallCount
+
+			// Each session may use a different model, so accumulate
+			// per-session cost rather than pricing the aggregate tokens.
+			if c := computeSessionCost(*s.TokenUsage, s.ModelName); c != nil {
+				if agg.Cost == nil {
+					agg.Cost = &analyticsCost{Model: "(mixed)"}
+				}
+				agg.Cost.Total += c.Total
+				agg.Cost.Input += c.Input
+				agg.Cost.Output += c.Output
+				agg.Cost.CacheWrite += c.CacheWrite
+				agg.Cost.CacheRead += c.CacheRead
+				agg.Cost.Subagents += c.Subagents
+				if c.Estimated {
+					agg.Cost.Estimated = true
+				}
+			}
 		}
 
 		if s.EndedAt != nil {
@@ -417,6 +501,25 @@ func runAggregateAnalytics(ctx context.Context, w io.Writer, jsonOutput bool) er
 		writeLabelValue(w, "Output", formatTokenCount(agg.TokenUsage.Output), sty)
 		if agg.TokenUsage.APICalls > 0 {
 			writeLabelValue(w, "API calls", strconv.Itoa(agg.TokenUsage.APICalls), sty)
+		}
+	}
+
+	if agg.Cost != nil {
+		heading := "  Cost (All Sessions)"
+		if agg.Cost.Estimated {
+			heading = "  Cost (All Sessions, estimated)"
+		}
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, sty.render(sty.bold, heading))
+		fmt.Fprintln(w)
+		writeLabelValue(w, "Total", formatUSD(agg.Cost.Total), sty)
+		writeLabelValue(w, "Input", formatUSD(agg.Cost.Input), sty)
+		writeLabelValue(w, "Output", formatUSD(agg.Cost.Output), sty)
+		if agg.Cost.CacheWrite > 0 {
+			writeLabelValue(w, "Cache write", formatUSD(agg.Cost.CacheWrite), sty)
+		}
+		if agg.Cost.CacheRead > 0 {
+			writeLabelValue(w, "Cache read", formatUSD(agg.Cost.CacheRead), sty)
 		}
 	}
 	fmt.Fprintln(w)

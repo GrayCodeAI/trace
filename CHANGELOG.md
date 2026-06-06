@@ -8,6 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/). This project ad
 
 ## [Unreleased]
 
+### Added — New features
+- `trace fork` — clone a checkpoint into a new independent session for A/B testing from any point.
+- Three-mode commit attribution — `Co-authored-by:` trailer (default on), plus opt-in `attribute_author` and `attribute_committer` to set the git author/committer to the agent.
+- Pre-edit dirty-working-tree auto-commit — saves work-in-progress before an agent session (default on; `--no-dirty-commits` to skip).
+- Per-session and per-tool USD cost attribution derived from recorded token usage and model pricing.
+- Webhook notifications on session lifecycle events via the `webhooks` config (default off).
+- `trace ci-init` — configure Trace to auto-capture sessions in CI.
+- `trace annotate` — attach a comment to a session or checkpoint.
+- asciinema export — `trace session export --format asciinema` renders a transcript as a playable v2 cast.
+
 ### Changed
 - **Version re-baselined to `0.1.0`** in
   `cmd/trace/cli/versioninfo/versioninfo.go`. Aligns trace with the rest

@@ -265,8 +265,16 @@ func IsTrailerLine(line string) bool {
 // If the message already ends with a trailer paragraph, append directly to it;
 // otherwise add a blank line before starting a new trailer block.
 func AppendCheckpointTrailer(message, checkpointID string) string {
+	return appendTrailerLine(message, fmt.Sprintf("%s: %s", CheckpointTrailerKey, checkpointID))
+}
+
+// appendTrailerLine appends a single "Key: value" trailer line to the message
+// in trailer-aware fashion: if the message already ends with a trailer
+// paragraph, the line is appended directly to it; otherwise a blank line is
+// inserted before starting a new trailer block. The trailer is placed above
+// any trailing git comment ("#") lines.
+func appendTrailerLine(message, trailer string) string {
 	trimmed := strings.TrimRight(message, "\n")
-	trailer := fmt.Sprintf("%s: %s", CheckpointTrailerKey, checkpointID)
 
 	lines := strings.Split(trimmed, "\n")
 	i := len(lines) - 1
@@ -299,4 +307,42 @@ func AppendCheckpointTrailer(message, checkpointID string) string {
 		return trimmed + "\n" + trailer + "\n"
 	}
 	return trimmed + "\n\n" + trailer + "\n"
+}
+
+// CoAuthoredByTrailerKey identifies a co-author on a commit, following the
+// widely-supported GitHub/GitLab convention. Value format: "Name <email>".
+const CoAuthoredByTrailerKey = "Co-authored-by"
+
+// coAuthoredByRegex matches a Co-authored-by trailer line, capturing the
+// "Name <email>" identity. Case-insensitive on the key to match git's own
+// case-insensitive trailer handling.
+var coAuthoredByRegex = regexp.MustCompile(`(?i)^Co-authored-by:\s*(.+)$`)
+
+// HasCoAuthoredBy reports whether the message already contains a
+// Co-authored-by trailer for the given "Name <email>" identity. The key match
+// is case-insensitive; the identity match is exact. This makes
+// AppendCoAuthoredBy idempotent for a given identity.
+func HasCoAuthoredBy(message, identity string) bool {
+	identity = strings.TrimSpace(identity)
+	if identity == "" {
+		return false
+	}
+	for _, line := range strings.Split(message, "\n") {
+		m := coAuthoredByRegex.FindStringSubmatch(strings.TrimSpace(line))
+		if len(m) > 1 && strings.TrimSpace(m[1]) == identity {
+			return true
+		}
+	}
+	return false
+}
+
+// AppendCoAuthoredBy appends a "Co-authored-by: <identity>" trailer in
+// trailer-aware format. The call is idempotent for a given identity, and an
+// empty identity returns the message unchanged.
+func AppendCoAuthoredBy(message, identity string) string {
+	identity = strings.TrimSpace(identity)
+	if identity == "" || HasCoAuthoredBy(message, identity) {
+		return message
+	}
+	return appendTrailerLine(message, fmt.Sprintf("%s: %s", CoAuthoredByTrailerKey, identity))
 }

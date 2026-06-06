@@ -44,6 +44,14 @@ func NewRootCmd() *cobra.Command {
 		CompletionOptions: cobra.CompletionOptions{
 			HiddenDefaultCmd: true,
 		},
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			// Apply the --no-dirty-commits override before any lifecycle hook
+			// runs. The flag defaults to false (dirty commits follow config);
+			// when set, it disables the pre-session WIP auto-commit globally.
+			if noDirty, err := cmd.Flags().GetBool("no-dirty-commits"); err == nil {
+				SetDirtyCommitsDisabled(noDirty)
+			}
+		},
 		PersistentPostRun: func(cmd *cobra.Command, _ []string) {
 			// Skip for hidden commands (walk parent chain — Cobra doesn't propagate Hidden)
 			for c := cmd; c != nil; c = c.Parent() {
@@ -81,6 +89,11 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 
+	// --no-dirty-commits disables the pre-session auto-commit of uncommitted
+	// changes for this invocation, overriding the dirty_commits config flag.
+	cmd.PersistentFlags().Bool("no-dirty-commits", false,
+		"do not auto-commit uncommitted changes before an agent session starts")
+
 	// Noun groups (canonical homes for subcommands).
 	cmd.AddCommand(newSessionsCmd())        // 'session' (with 'sessions' as Cobra alias)
 	cmd.AddCommand(newCheckpointGroupCmd()) // 'checkpoint' / 'cp' / 'checkpoints'
@@ -104,6 +117,9 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(cliReview.NewCommand(buildReviewDeps(newReviewAttachCmd()))) // hidden during maturation; runs configured review skills
 	cmd.AddCommand(cliInvestigate.NewCommand(buildInvestigateDeps()))           // investigate: multi-agent loop for code investigation
 	cmd.AddCommand(newRecapCmd())
+	cmd.AddCommand(newForkCmd())     // 'fork' — clone a checkpoint into a new session for A/B testing
+	cmd.AddCommand(newAnnotateCmd()) // 'annotate' — attach comments to a session/checkpoint
+	cmd.AddCommand(newCIInitCmd())   // 'ci-init' — configure CI session auto-capture
 
 	// Hidden top-level shortcuts. Functional but print a deprecation hint.
 	cmd.AddCommand(hideAsAlias(newRewindCmd(), "trace checkpoint rewind"))
