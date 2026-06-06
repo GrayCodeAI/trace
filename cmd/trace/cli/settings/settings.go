@@ -114,9 +114,131 @@ type TraceSettings struct {
 	// `trace investigate` triggers the first-run picker.
 	Investigate *InvestigateConfig `json:"investigate,omitempty"`
 
+	// Attribution controls how the agent identity is recorded on commits
+	// Trace creates. Nil means defaults (co-authored-by trailer on, author
+	// and committer overrides off — matching Aider's default behavior).
+	Attribution *AttributionSettings `json:"attribution,omitempty"`
+
+	// DirtyCommits controls whether Trace auto-commits a "work in progress"
+	// snapshot of uncommitted changes at the start of an agent session,
+	// before the agent makes any edits. nil/true = enabled (default, matching
+	// Aider), false = disabled. Can be overridden per-invocation with
+	// --no-dirty-commits.
+	DirtyCommits *bool `json:"dirty_commits,omitempty"`
+
+	// Webhooks configures best-effort HTTP notifications on session lifecycle
+	// events (session_start, checkpoint_created, session_end, error). Empty
+	// or nil disables notifications.
+	Webhooks *WebhookConfig `json:"webhooks,omitempty"`
+
+	// CI holds configuration written by `trace ci-init` to control session
+	// auto-capture and tagging when running inside a CI provider. Nil means
+	// no CI-specific configuration has been applied.
+	CI *CIConfig `json:"ci,omitempty"`
+
 	// Deprecated: no longer used. Exists to tolerate old settings files
 	// that still contain "strategy": "auto-commit" or similar.
 	Strategy string `json:"strategy,omitempty"`
+}
+
+// WebhookConfig configures outbound webhook notifications for session
+// lifecycle events. Notifications are best-effort: delivery failures are
+// logged but never propagated to the caller (a session is never failed
+// because a webhook endpoint was unreachable).
+type WebhookConfig struct {
+	// URLs is the list of endpoints that receive a JSON POST for each event.
+	// Empty disables webhook delivery.
+	URLs []string `json:"urls,omitempty"`
+
+	// Events optionally restricts which lifecycle events are delivered. When
+	// empty, all events are sent. Valid values match the event constants in
+	// the webhook package ("session_start", "checkpoint_created",
+	// "session_end", "error").
+	Events []string `json:"events,omitempty"`
+
+	// TimeoutSeconds bounds each individual POST. Zero or negative means the
+	// caller picks a short default.
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+}
+
+// IsZero reports whether the config has no deliverable endpoints.
+func (c *WebhookConfig) IsZero() bool {
+	return c == nil || len(c.URLs) == 0
+}
+
+// CIConfig records the CI auto-capture configuration applied by
+// `trace ci-init`. It is intentionally small: the run-time tags (run id, PR
+// number, branch) are read from the environment on each invocation rather
+// than persisted, so the committed config stays portable across runs.
+type CIConfig struct {
+	// AutoCapture indicates that sessions should be captured automatically
+	// when running inside a recognized CI provider.
+	AutoCapture bool `json:"auto_capture"`
+
+	// Provider records which CI provider was detected at init time
+	// (e.g. "github-actions", "gitlab-ci"). Empty when configured outside CI.
+	Provider string `json:"provider,omitempty"`
+
+	// Tags holds static key/value tags to attach to captured CI sessions, in
+	// addition to the dynamic env-derived tags resolved at run time.
+	Tags map[string]string `json:"tags,omitempty"`
+}
+
+// AttributionSettings holds the three independently-toggleable commit
+// attribution flags. Each defaults to the Aider-compatible behavior: the
+// co-authored-by trailer is on, while the author and committer identity
+// overrides are off. A nil *bool for any individual field falls back to that
+// default via the TraceSettings.Attribute* accessors.
+type AttributionSettings struct {
+	// AttributeAuthor, when true, sets the git author of Trace-created commits
+	// to the agent identity instead of the human's git user. Default off.
+	AttributeAuthor *bool `json:"attribute_author,omitempty"`
+
+	// AttributeCommitter, when true, sets the git committer of Trace-created
+	// commits to the agent identity instead of the human's git user.
+	// Default off.
+	AttributeCommitter *bool `json:"attribute_committer,omitempty"`
+
+	// AttributeCoAuthoredBy, when true, appends a
+	// "Co-authored-by: <agent> <email>" trailer to the commit message.
+	// Default on.
+	AttributeCoAuthoredBy *bool `json:"attribute_co_authored_by,omitempty"`
+}
+
+// AttributeAuthor reports whether the git author identity should be overridden
+// with the agent identity. Defaults to false when unset.
+func (s *TraceSettings) AttributeAuthor() bool {
+	if s == nil || s.Attribution == nil || s.Attribution.AttributeAuthor == nil {
+		return false
+	}
+	return *s.Attribution.AttributeAuthor
+}
+
+// AttributeCommitter reports whether the git committer identity should be
+// overridden with the agent identity. Defaults to false when unset.
+func (s *TraceSettings) AttributeCommitter() bool {
+	if s == nil || s.Attribution == nil || s.Attribution.AttributeCommitter == nil {
+		return false
+	}
+	return *s.Attribution.AttributeCommitter
+}
+
+// AttributeCoAuthoredBy reports whether a Co-authored-by trailer should be
+// appended to commit messages. Defaults to true when unset (Aider-compatible).
+func (s *TraceSettings) AttributeCoAuthoredBy() bool {
+	if s == nil || s.Attribution == nil || s.Attribution.AttributeCoAuthoredBy == nil {
+		return true
+	}
+	return *s.Attribution.AttributeCoAuthoredBy
+}
+
+// DirtyCommitsEnabled reports whether pre-session WIP auto-commits are enabled.
+// Defaults to true when unset (Aider-compatible).
+func (s *TraceSettings) DirtyCommitsEnabled() bool {
+	if s == nil || s.DirtyCommits == nil {
+		return true
+	}
+	return *s.DirtyCommits
 }
 
 // SummaryGenerationSettings configures provider selection for on-demand
@@ -430,6 +552,54 @@ func mergeJSON(settings *TraceSettings, data []byte) error {
 		}
 	}
 
+	// Merge attribution sub-fields independently so a local override can flip
+	// a single flag without resetting the other two to their defaults.
+	if attrRaw, ok := raw["attribution"]; ok {
+		if settings.Attribution == nil {
+			settings.Attribution = &AttributionSettings{}
+		}
+		if err := mergeAttribution(settings.Attribution, attrRaw); err != nil {
+			return fmt.Errorf("parsing attribution field: %w", err)
+		}
+	}
+
+	// Webhooks and CI configs merge wholesale (small, self-contained structs).
+	if webhooksRaw, ok := raw["webhooks"]; ok {
+		if settings.Webhooks == nil {
+			settings.Webhooks = &WebhookConfig{}
+		}
+		if err := json.Unmarshal(webhooksRaw, settings.Webhooks); err != nil {
+			return fmt.Errorf("parsing webhooks field: %w", err)
+		}
+	}
+	if ciRaw, ok := raw["ci"]; ok {
+		if settings.CI == nil {
+			settings.CI = &CIConfig{}
+		}
+		if err := json.Unmarshal(ciRaw, settings.CI); err != nil {
+			return fmt.Errorf("parsing ci field: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// mergeAttribution merges the three attribution flags field-by-field so that
+// each may be overridden independently by a local settings file.
+func mergeAttribution(attr *AttributionSettings, data json.RawMessage) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return fmt.Errorf("parsing attribution: %w", err)
+	}
+	if err := mergeRawBoolPtr(fields, "attribute_author", &attr.AttributeAuthor); err != nil {
+		return err
+	}
+	if err := mergeRawBoolPtr(fields, "attribute_committer", &attr.AttributeCommitter); err != nil {
+		return err
+	}
+	if err := mergeRawBoolPtr(fields, "attribute_co_authored_by", &attr.AttributeCoAuthoredBy); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -454,6 +624,9 @@ func mergeScalarFields(settings *TraceSettings, raw map[string]json.RawMessage) 
 		return err
 	}
 	if err := mergeRawBoolPtr(raw, "sign_checkpoint_commits", &settings.SignCheckpointCommits); err != nil {
+		return err
+	}
+	if err := mergeRawBoolPtr(raw, "dirty_commits", &settings.DirtyCommits); err != nil {
 		return err
 	}
 	if err := mergeRawStringNonEmpty(raw, "log_level", &settings.LogLevel); err != nil {
