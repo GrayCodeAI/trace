@@ -72,7 +72,7 @@ func loadObjectSignerFromConfigs(ctx context.Context, sysCfg, globalCfg *config.
 func loadCustomProgramSigner(ctx context.Context, sysCfg, globalCfg *config.Config, merged config.Config) (plugin.Signer, bool) {
 	signFormat := normalizeProgramFormat(merged.GPG.Format)
 
-	// TODO: Replace with merged.GPG.Program once that is surfaced by go-git.
+	// Replace with merged.GPG.Program once go-git surfaces that field.
 	programName, ok := customSignProgram(signFormat, rawConfig(sysCfg), rawConfig(globalCfg))
 	if !ok {
 		return nil, false
