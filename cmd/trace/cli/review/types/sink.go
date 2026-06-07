@@ -57,11 +57,10 @@ type AgentRun struct {
 	// Buffer accumulates the full event log per agent for post-hoc
 	// rendering (DumpSink, TUI dump, synthesis).
 	//
-	// TODO(memory): At review lengths typical today (~100s of events,
-	// ~few KB) this is fine. If profiling shows reviews regularly
-	// exceed ~10MB of buffered events or ~10000 events, swap to a
-	// token-budgeted ring or stream events to sinks incrementally
-	// and drop the buffer.
+	// At review lengths typical today (~100s of events, ~few KB) this is
+	// fine. If profiling shows reviews regularly exceed ~10MB of buffered
+	// events or ~10000 events, swap to a token-budgeted ring or stream
+	// events to sinks incrementally and drop the buffer.
 	Buffer []Event
 
 	StartedAt time.Time
