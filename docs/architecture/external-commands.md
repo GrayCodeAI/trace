@@ -57,7 +57,7 @@ Variables forwarded by default fall into a few categories:
 - **Windows essentials** — `SYSTEMROOT`, `WINDIR`, `APPDATA`, `LOCALAPPDATA`, `PROGRAMDATA`, `PROGRAMFILES`, `PROGRAMFILES(X86)`, `USERPROFILE`, `USERNAME`, `HOMEDRIVE`, `HOMEPATH`, `COMSPEC`, `PATHEXT`
 - **Namespace prefixes** — anything starting with `TRACE_`, `LC_`, or `XDG_`
 
-The full list lives in `pluginEnvAllowed` and `pluginEnvPrefixes` in `cmd/trace/cli/plugin_env.go`.
+The full list lives in `pluginEnvAllowed` and `pluginEnvPrefixes` in `cli/plugin_env.go`.
 
 ### Opting names back in: `TRACE_PLUGIN_ENV`
 
@@ -102,7 +102,7 @@ External commands are arbitrary executables. No SDK, no protocol, no manifest. T
 
 ## Telemetry
 
-External-command invocations are tracked only for names on a hardcoded allowlist (`officialPlugins` in `cmd/trace/cli/plugin_official.go`). Third-party command names are **never** sent — even with telemetry opted in. The reasoning matches gh's extension-telemetry posture: arbitrary command names can carry sensitive identifiers (project names, vendor names), and the safest default is silence.
+External-command invocations are tracked only for names on a hardcoded allowlist (`officialPlugins` in `cli/plugin_official.go`). Third-party command names are **never** sent — even with telemetry opted in. The reasoning matches gh's extension-telemetry posture: arbitrary command names can carry sensitive identifiers (project names, vendor names), and the safest default is silence.
 
 When an allowlisted command runs successfully, the CLI emits a `cli_plugin_executed` event with:
 
@@ -123,7 +123,7 @@ Telemetry fires only when:
 
 When publishing an Trace-owned external command (e.g. `trace-pgr`):
 
-1. Append the command name to `officialPlugins` in `cmd/trace/cli/plugin_official.go`.
+1. Append the command name to `officialPlugins` in `cli/plugin_official.go`.
 2. Match must be exact and case-sensitive — the binary on disk is `trace-<name>`.
 3. Update or add tests if the command has unusual telemetry shape.
 
@@ -144,14 +144,14 @@ Once allowlisted, `cli_plugin_executed` events for that command will flow throug
 
 ## Implementation
 
-The resolver lives in `cmd/trace/cli/plugin.go`. The entry point is `MaybeRunPlugin(ctx, rootCmd, args)`, called from `cmd/trace/main.go` before `rootCmd.ExecuteContext`. Returns `(handled bool, exitCode int)` — when `handled` is true, the caller exits with `exitCode`; otherwise it falls through to normal Cobra execution.
+The resolver lives in `cli/plugin.go`. The entry point is `MaybeRunPlugin(ctx, rootCmd, args)`, called from `cmd/trace/main.go` before `rootCmd.ExecuteContext`. Returns `(handled bool, exitCode int)` — when `handled` is true, the caller exits with `exitCode`; otherwise it falls through to normal Cobra execution.
 
 Key files:
 
-- `cmd/trace/cli/plugin.go` — entry point, `resolvePlugin`, `runPlugin`
-- `cmd/trace/cli/plugin_env.go` — `pluginEnv`, the allowlist, and `TRACE_PLUGIN_ENV` parsing
-- `cmd/trace/cli/plugin_official.go` — `officialPlugins` allowlist, `IsOfficialPlugin`
-- `cmd/trace/cli/plugin_store.go` — managed install directory, `PluginBinDir`, `PluginDataDir`, `InstallPluginFromPath`, `ListInstalledPlugins`, `RemoveInstalledPlugin`, `PrependPluginBinDirToPATH`
-- `cmd/trace/cli/plugin_group.go` — `trace plugin install/list/remove` Cobra commands
-- `cmd/trace/cli/telemetry/detached.go` — `BuildPluginEventPayload`, `TrackPluginDetached`
-- `cmd/trace/cli/integration_test/external_command_test.go` — end-to-end coverage of the resolution path
+- `cli/plugin.go` — entry point, `resolvePlugin`, `runPlugin`
+- `cli/plugin_env.go` — `pluginEnv`, the allowlist, and `TRACE_PLUGIN_ENV` parsing
+- `cli/plugin_official.go` — `officialPlugins` allowlist, `IsOfficialPlugin`
+- `cli/plugin_store.go` — managed install directory, `PluginBinDir`, `PluginDataDir`, `InstallPluginFromPath`, `ListInstalledPlugins`, `RemoveInstalledPlugin`, `PrependPluginBinDirToPATH`
+- `cli/plugin_group.go` — `trace plugin install/list/remove` Cobra commands
+- `cli/telemetry/detached.go` — `BuildPluginEventPayload`, `TrackPluginDetached`
+- `cli/integration_test/external_command_test.go` — end-to-end coverage of the resolution path

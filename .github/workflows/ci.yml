@@ -152,9 +152,15 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: deadcode
+        # Advisory, not blocking: trace is a library with no main() entrypoint,
+        # so plain `deadcode ./...` flags the entire public API as unreachable.
+        # We run with -test (tests count as roots) for a meaningful signal, but a
+        # hard gate would false-positive on legitimate exported API — review the
+        # output in the logs instead.
         run: |
           go install golang.org/x/tools/cmd/deadcode@latest
-          deadcode ./... 2>&1 | head -50
+          deadcode -test ./... 2>&1 | tee deadcode.txt
+          echo "deadcode reported $(grep -c 'unreachable func' deadcode.txt || echo 0) unreachable funcs (advisory)"
 
   # -------------------------------------------------------------------------
   # Duplication detection — jscpd.

@@ -121,7 +121,7 @@ Write tests that provide real value, not just coverage:
 - **Include edge cases and error conditions** - ensure error paths are properly tested
 - **When fixing bugs, write a test that surfaces the bug first** - then write the fix
 - **Unit tests**: Same directory as source, `*_test.go` files
-- **Integration tests**: `cmd/trace/cli/integration_test/`, require `//go:build integration` tag
+- **Integration tests**: `cli/integration_test/`, require `//go:build integration` tag
 
 Run `mise run test` for quick validation, `mise run test:ci` for full CI parity.
 
@@ -139,7 +139,7 @@ Run `mise run lint:full` to check all code (not just new issues).
 
 ## When Adding New Commands
 
-1. Add command in `cmd/trace/cli/` following existing patterns (look at similar commands)
+1. Add command in `cli/` following existing patterns (look at similar commands)
 2. Register in `root.go`
 3. Use `SilentError` for custom error messages
 4. Add meaningful tests that verify behavior

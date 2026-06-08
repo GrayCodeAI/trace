@@ -23,7 +23,7 @@ A few good places to look:
 
 - **The [issue tracker](https://github.com/GrayCodeAI/trace/issues).** Skim the open issues for something that looks small, well-scoped, or interesting to you. When you find one, comment on it (see [Claim the issue](#claim-the-issue) below) so a maintainer can confirm it's a good fit before you start.
 - **The [`#looking-for-contributors`](https://discord.com/channels/1468014954689855716/1499864669920297081) channel on [Discord](https://discord.gg/jZJs3Tue4S).** Maintainers post issues that they are ready for someone to pick up.
-- **Something you noticed yourself.** A typo, an unclear error message, a function in `cmd/trace/cli/` without test coverage. Small improvements like these are always welcome and don't need a prior issue.
+- **Something you noticed yourself.** A typo, an unclear error message, a function in `cli/` without test coverage. Small improvements like these are always welcome and don't need a prior issue.
 
 ---
 

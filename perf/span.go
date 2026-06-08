@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/GrayCodeAI/trace/cmd/trace/cli/logging"
+	"github.com/GrayCodeAI/trace/cli/logging"
 )
 
 // Span tracks timing for an operation and its substeps.

@@ -62,11 +62,7 @@ linters:
           - bodyclose
           - errcheck
           - unused
-      - path: cmd/
-        linters:
-          - errcheck
-          - noctx
-      - path: e2e/
+      - path: cli/
         linters:
           - errcheck
           - noctx

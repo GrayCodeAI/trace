@@ -6,7 +6,7 @@ set -eu
 
 shard="${usage_shard:-}"
 parallel="${GO_TEST_PARALLEL:-16}"
-pkg="./cmd/trace/cli/integration_test"
+pkg="./cli/integration_test"
 
 case "$shard" in
   a|b|c) ;;
