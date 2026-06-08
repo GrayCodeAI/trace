@@ -57,10 +57,10 @@ Every agent must implement all 19 methods on the `Agent` interface:
 
 ### Step 1: Create Package
 
-Create a new directory under `cmd/trace/cli/agent/`:
+Create a new directory under `cli/agent/`:
 
 ```
-cmd/trace/cli/agent/youragent/
+cli/agent/youragent/
 ├── youragent.go          # Core Agent implementation + init()
 ├── lifecycle.go          # ParseHookEvent + compile-time assertions
 ├── types.go              # Hook input structs, transcript types, tool constants
@@ -133,8 +133,8 @@ import (
     "os"
     "path/filepath"
 
-    "github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
-    "github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
+    "github.com/GrayCodeAI/trace/cli/agent"
+    "github.com/GrayCodeAI/trace/cli/paths"
 )
 
 //nolint:gochecknoinits // Agent self-registration is the intended pattern
@@ -235,7 +235,7 @@ import (
     "io"
     "time"
 
-    "github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
+    "github.com/GrayCodeAI/trace/cli/agent"
 )
 
 // Hook name constants - these become CLI subcommands
@@ -339,9 +339,9 @@ func init() {
 Then add a blank import in the CLI's command setup to ensure the package is loaded:
 
 ```go
-// In cmd/trace/cli/commands/ or wherever agents are imported
+// In cli/commands/ or wherever agents are imported
 import (
-    _ "github.com/GrayCodeAI/trace/cmd/trace/cli/agent/youragent"
+    _ "github.com/GrayCodeAI/trace/cli/agent/youragent"
 )
 ```
 
@@ -391,9 +391,9 @@ func (a *YourAgent) InstallHooks(localDev bool, force bool) (int, error) {
     // Other agents should use the git rev-parse approach instead.
     var cmdPrefix string
     if localDev {
-        cmdPrefix = `go run "$(git rev-parse --show-toplevel)"/cmd/trace/main.go hooks your-agent `
+        cmdPrefix = `go run "$(git rev-parse --show-toplevel)"/cmd/hawk hooks your-agent `
     } else {
-        cmdPrefix = "trace hooks your-agent "
+        cmdPrefix = "hawk trace hooks your-agent "
     }
 
     // 4. Add hooks if they don't exist (idempotent)
@@ -830,21 +830,21 @@ func TestInstallHooks_Idempotent(t *testing.T) {
 
 ### Test file references
 
-- Claude Code lifecycle tests: `cmd/trace/cli/agent/claudecode/lifecycle_test.go`
-- Claude Code hooks tests: `cmd/trace/cli/agent/claudecode/hooks_test.go`
-- Claude Code transcript tests: `cmd/trace/cli/agent/claudecode/transcript_test.go`
-- Gemini CLI lifecycle tests: `cmd/trace/cli/agent/geminicli/lifecycle_test.go`
-- Gemini CLI hooks tests: `cmd/trace/cli/agent/geminicli/hooks_test.go`
-- Gemini CLI transcript tests: `cmd/trace/cli/agent/geminicli/transcript_test.go`
-- Cursor IDE & CLI lifecycle tests: `cmd/trace/cli/agent/cursor/lifecycle_test.go`
-- Cursor IDE & CLI hooks tests: `cmd/trace/cli/agent/cursor/hooks_test.go`
-- Cursor IDE & CLI session tests: `cmd/trace/cli/agent/cursor/cursor_test.go`
-- OpenCode lifecycle tests: `cmd/trace/cli/agent/opencode/lifecycle_test.go`
-- OpenCode hooks tests: `cmd/trace/cli/agent/opencode/hooks_test.go`
-- OpenCode transcript tests: `cmd/trace/cli/agent/opencode/transcript_test.go`
-- Factory AI Droid lifecycle tests: `cmd/trace/cli/agent/factoryaidroid/lifecycle_test.go`
-- Factory AI Droid hooks tests: `cmd/trace/cli/agent/factoryaidroid/hooks_test.go`
-- Factory AI Droid transcript tests: `cmd/trace/cli/agent/factoryaidroid/transcript_test.go`
+- Claude Code lifecycle tests: `cli/agent/claudecode/lifecycle_test.go`
+- Claude Code hooks tests: `cli/agent/claudecode/hooks_test.go`
+- Claude Code transcript tests: `cli/agent/claudecode/transcript_test.go`
+- Gemini CLI lifecycle tests: `cli/agent/geminicli/lifecycle_test.go`
+- Gemini CLI hooks tests: `cli/agent/geminicli/hooks_test.go`
+- Gemini CLI transcript tests: `cli/agent/geminicli/transcript_test.go`
+- Cursor IDE & CLI lifecycle tests: `cli/agent/cursor/lifecycle_test.go`
+- Cursor IDE & CLI hooks tests: `cli/agent/cursor/hooks_test.go`
+- Cursor IDE & CLI session tests: `cli/agent/cursor/cursor_test.go`
+- OpenCode lifecycle tests: `cli/agent/opencode/lifecycle_test.go`
+- OpenCode hooks tests: `cli/agent/opencode/hooks_test.go`
+- OpenCode transcript tests: `cli/agent/opencode/transcript_test.go`
+- Factory AI Droid lifecycle tests: `cli/agent/factoryaidroid/lifecycle_test.go`
+- Factory AI Droid hooks tests: `cli/agent/factoryaidroid/hooks_test.go`
+- Factory AI Droid transcript tests: `cli/agent/factoryaidroid/transcript_test.go`
 
 ## Common Pitfalls
 
@@ -889,7 +889,7 @@ Use `//nolint:nilnil` to suppress the linter warning on intentional nil returns.
 - `AgentName` is the **registry key** used in code (`"claude-code"`, `"gemini"`, `"opencode"`, `"cursor"`, `"factoryai-droid"`, `"copilot-cli"`). It appears in CLI commands: `trace hooks cursor stop`.
 - `AgentType` is the **display name** stored in metadata and commit trailers (`"Claude Code"`, `"Gemini CLI"`, `"OpenCode"`, `"Cursor"`, `"Factory AI Droid"`, `"Copilot CLI"`). It's what users see.
 
-Register constants for both in `cmd/trace/cli/agent/registry.go` when adding a new agent.
+Register constants for both in `cli/agent/registry.go` when adding a new agent.
 
 ### Hook Names as CLI Subcommands
 
@@ -938,8 +938,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
-	"github.com/GrayCodeAI/trace/cmd/trace/cli/paths"
+	"github.com/GrayCodeAI/trace/cli/agent"
+	"github.com/GrayCodeAI/trace/cli/paths"
 )
 
 //nolint:gochecknoinits // Agent self-registration is the intended pattern
@@ -1013,7 +1013,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
+	"github.com/GrayCodeAI/trace/cli/agent"
 )
 
 const (
@@ -1101,7 +1101,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GrayCodeAI/trace/cmd/trace/cli/agent"
+	"github.com/GrayCodeAI/trace/cli/agent"
 )
 
 func TestParseHookEvent_SessionStart(t *testing.T) {

@@ -25,7 +25,7 @@
 
 <!--
   Trace records developer sessions. Any change that touches `redact/`,
-  `cmd/trace/cli/checkpoint/`, or transcript serialization can leak PII,
+  `cli/checkpoint/`, or transcript serialization can leak PII,
   secrets, or proprietary code if regressed.
 
   - Did you change `redact/redact.go`, `redact/pii.go`, the secret-pattern
@@ -73,7 +73,7 @@ $ golangci-lint run ./...
 - [ ] `go test -race -count=1 ./...` passes locally
 - [ ] e2e impact considered (relevant `e2e/` test added, updated, or
       verified) — n/a if change is contained to non-runtime code
-- [ ] Public APIs in `cmd/trace/cli/...` have godoc comments
+- [ ] Public APIs in `cli/...` have godoc comments
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]` if user-visible
 - [ ] No regression in `redact/` tests
 - [ ] No secrets, tokens, or PII added to the repo (test fixtures use

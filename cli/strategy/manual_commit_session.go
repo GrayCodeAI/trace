@@ -1,0 +1,354 @@
+package strategy
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/GrayCodeAI/trace/cli/agent/types"
+	"github.com/GrayCodeAI/trace/cli/checkpoint"
+	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
+	"github.com/GrayCodeAI/trace/cli/logging"
+	"github.com/GrayCodeAI/trace/cli/paths"
+	"github.com/GrayCodeAI/trace/cli/session"
+	"github.com/GrayCodeAI/trace/cli/versioninfo"
+
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+)
+
+// Shadow strategy session state methods.
+// Uses session.StateStore for persistence.
+
+// loadSessionState loads session state using the StateStore.
+func (s *ManualCommitStrategy) loadSessionState(ctx context.Context, sessionID string) (*SessionState, error) {
+	store, err := s.getStateStore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	state, err := store.Load(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load session state: %w", err)
+	}
+	return state, nil
+}
+
+// saveSessionState saves session state using the StateStore.
+func (s *ManualCommitStrategy) saveSessionState(ctx context.Context, state *SessionState) error {
+	store, err := s.getStateStore(ctx)
+	if err != nil {
+		return err
+	}
+	if err := store.Save(ctx, state); err != nil {
+		return fmt.Errorf("failed to save session state: %w", err)
+	}
+	return nil
+}
+
+// clearSessionState clears session state using the StateStore.
+func (s *ManualCommitStrategy) clearSessionState(ctx context.Context, sessionID string) error {
+	store, err := s.getStateStore(ctx)
+	if err != nil {
+		return err
+	}
+	if err := store.Clear(ctx, sessionID); err != nil {
+		return fmt.Errorf("failed to clear session state: %w", err)
+	}
+	return nil
+}
+
+// listAllSessionStates returns all active session states.
+// It filters out orphaned sessions whose shadow branch no longer exists.
+func (s *ManualCommitStrategy) listAllSessionStates(ctx context.Context) ([]*SessionState, error) {
+	store, err := s.getStateStore(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state store: %w", err)
+	}
+
+	sessionStates, err := store.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list session states: %w", err)
+	}
+
+	if len(sessionStates) == 0 {
+		return nil, nil
+	}
+
+	repo, err := OpenRepository(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open git repository: %w", err)
+	}
+
+	var states []*SessionState
+	for _, sessionState := range sessionStates {
+		state := sessionState
+
+		// Skip and cleanup orphaned sessions whose shadow branch no longer exists.
+		// Keep active sessions (shadow branch may not be created yet) and sessions
+		// with LastCheckpointID (needed for checkpoint ID reuse on subsequent commits).
+		// Clean up everything else: stale pre-state-machine sessions (empty phase),
+		// IDLE/ENDED sessions that were never condensed, etc.
+		shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+		refName := plumbing.NewBranchReferenceName(shadowBranch)
+		if _, err := repo.Reference(refName, true); err != nil {
+			if !state.Phase.IsActive() && state.LastCheckpointID.IsEmpty() {
+				if clearErr := store.Clear(ctx, state.SessionID); clearErr != nil {
+					logging.Warn(
+						ctx, "failed to clear orphaned session state",
+						slog.String("session_id", state.SessionID),
+						slog.Any("error", clearErr),
+					)
+				}
+				continue
+			}
+		}
+
+		states = append(states, state)
+	}
+	return states, nil
+}
+
+// isWarnableStaleEndedSession reports whether an ENDED session is still both
+// expensive in PostCommit and actionable via 'trace doctor'.
+func isWarnableStaleEndedSession(repo *git.Repository, state *SessionState) bool {
+	if state.Phase != session.PhaseEnded || state.FullyCondensed || state.StepCount <= 0 {
+		return false
+	}
+
+	// Re-check shadow branch existence even though listAllSessionStates already
+	// filters orphaned sessions. This is intentional: PostCommit deletes shadow
+	// branches during condensation, so a branch that existed at list-load time
+	// may be gone by the time we reach the warning check. Without this re-check
+	// we would warn about sessions that this commit just cleaned up.
+	shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	refName := plumbing.NewBranchReferenceName(shadowBranch)
+	_, err := repo.Reference(refName, true)
+	return err == nil
+}
+
+// countWarnableStaleEndedSessions returns the number of ENDED sessions that
+// still remain slow and fixable after PostCommit finishes processing.
+func countWarnableStaleEndedSessions(repo *git.Repository, sessions []*SessionState) int {
+	n := 0
+	for _, state := range sessions {
+		if isWarnableStaleEndedSession(repo, state) {
+			n++
+		}
+	}
+	return n
+}
+
+// findSessionsForWorktree finds all sessions for the given worktree path.
+func (s *ManualCommitStrategy) findSessionsForWorktree(ctx context.Context, worktreePath string) ([]*SessionState, error) {
+	allStates, err := s.listAllSessionStates(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var matching []*SessionState
+	for _, state := range allStates {
+		if state.WorktreePath == worktreePath {
+			matching = append(matching, state)
+		}
+	}
+	return matching, nil
+}
+
+type rewritePair struct {
+	OldSHA string
+	NewSHA string
+}
+
+func remapRewriteSHA(sha string, rewrites []rewritePair) (string, bool) {
+	for _, pair := range rewrites {
+		if sha == pair.OldSHA {
+			return pair.NewSHA, true
+		}
+	}
+	return sha, false
+}
+
+func shadowBranchExistsForBaseCommit(repo *git.Repository, baseCommit, worktreeID string) bool {
+	if repo == nil || baseCommit == "" {
+		return false
+	}
+
+	refName := plumbing.NewBranchReferenceName(checkpoint.ShadowBranchNameForCommit(baseCommit, worktreeID))
+	_, err := repo.Reference(refName, true)
+	return err == nil
+}
+
+func (s *ManualCommitStrategy) remapSessionForRewrite(ctx context.Context, repo *git.Repository, state *SessionState, rewrites []rewritePair) (bool, error) {
+	if state == nil {
+		return false, nil
+	}
+
+	newBaseCommit, baseChanged := remapRewriteSHA(state.BaseCommit, rewrites)
+	newAttrBaseCommit, attrChanged := remapRewriteSHA(state.AttributionBaseCommit, rewrites)
+	if !baseChanged && !attrChanged {
+		return false, nil
+	}
+
+	hadShadowBranch := shadowBranchExistsForBaseCommit(repo, state.BaseCommit, state.WorktreeID)
+	if baseChanged {
+		changed, err := s.migrateShadowBranchToBaseCommit(ctx, repo, state, newBaseCommit)
+		if err != nil {
+			return false, fmt.Errorf("failed to migrate rewritten shadow branch: %w", err)
+		}
+		baseChanged = changed
+	}
+
+	// If a shadow branch existed, preserve AttributionBaseCommit so future
+	// attribution still diffs against the original checkpoint base captured on
+	// that branch. Without a shadow branch, keep attribution in sync with the
+	// rewritten commit lineage.
+	if attrChanged && !hadShadowBranch {
+		state.AttributionBaseCommit = newAttrBaseCommit
+	}
+
+	return baseChanged || attrChanged, nil
+}
+
+// findSessionsForCommit finds all sessions where base_commit matches the given SHA.
+func (s *ManualCommitStrategy) findSessionsForCommit(ctx context.Context, baseCommitSHA string) ([]*SessionState, error) {
+	allStates, err := s.listAllSessionStates(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var matching []*SessionState
+	for _, state := range allStates {
+		if state.BaseCommit == baseCommitSHA {
+			matching = append(matching, state)
+		}
+	}
+	return matching, nil
+}
+
+// FindSessionsForCommit is the exported version of findSessionsForCommit.
+// Used by the rewind reset command to find sessions to clean up.
+func (s *ManualCommitStrategy) FindSessionsForCommit(ctx context.Context, baseCommitSHA string) ([]*SessionState, error) {
+	return s.findSessionsForCommit(ctx, baseCommitSHA)
+}
+
+// ClearSessionState is the exported version of clearSessionState.
+// Used by the rewind reset command to clean up session state files.
+func (s *ManualCommitStrategy) ClearSessionState(ctx context.Context, sessionID string) error {
+	return s.clearSessionState(ctx, sessionID)
+}
+
+// CountOtherActiveSessionsWithCheckpoints counts how many other active sessions
+// from the SAME worktree (different from currentSessionID) have created checkpoints
+// on the SAME base commit (current HEAD). This is used to show an informational message
+// about concurrent sessions that will be included in the next commit.
+// Returns 0, nil if no such sessions exist.
+func (s *ManualCommitStrategy) CountOtherActiveSessionsWithCheckpoints(ctx context.Context, currentSessionID string) (int, error) {
+	currentWorktree, err := paths.WorktreeRoot(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get worktree root: %w", err)
+	}
+
+	// Get current HEAD to compare with session base commits
+	repo, err := OpenRepository(ctx)
+	if err != nil {
+		return 0, err
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+	currentHead := head.Hash().String()
+
+	allStates, err := s.listAllSessionStates(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, state := range allStates {
+		// Only consider sessions from the same worktree with checkpoints
+		// AND based on the same commit (current HEAD)
+		// Sessions from different base commits are independent and shouldn't be counted
+		if state.SessionID != currentSessionID &&
+			state.WorktreePath == currentWorktree &&
+			state.StepCount > 0 &&
+			state.BaseCommit == currentHead {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// initializeSession creates a new session state or updates a partial one.
+// A partial state may exist if the concurrent session warning was shown.
+// agentType is the human-readable name of the agent (e.g., "Claude Code").
+// transcriptPath is the path to the live transcript file (for mid-session commit detection).
+// userPrompt is the user's prompt text (stored truncated as LastPrompt for display).
+// model is the LLM model identifier (e.g., "claude-sonnet-4-20250514"); empty if unknown.
+func (s *ManualCommitStrategy) initializeSession(ctx context.Context, repo *git.Repository, sessionID string, agentType types.AgentType, transcriptPath string, userPrompt string, model string) (*SessionState, error) {
+	head, err := repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	worktreePath, err := paths.WorktreeRoot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get worktree path: %w", err)
+	}
+
+	// Get worktree ID for shadow branch naming
+	worktreeID, err := paths.GetWorktreeID(worktreePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get worktree ID: %w", err)
+	}
+
+	// Capture untracked files at session start to preserve them during rewind
+	untrackedFiles, err := collectUntrackedFiles(ctx)
+	if err != nil {
+		// Non-fatal: continue even if we can't collect untracked files
+		untrackedFiles = nil
+	}
+
+	// Collect TRACE_TAG_* environment variables as session metadata.
+	tags := session.CollectSessionTags()
+
+	// Generate TurnID for the first turn
+	turnID, err := id.Generate()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate turn ID: %w", err)
+	}
+
+	now := time.Now()
+	headHash := head.Hash().String()
+	state := &SessionState{
+		SessionID:             sessionID,
+		CLIVersion:            versioninfo.Version,
+		BaseCommit:            headHash,
+		AttributionBaseCommit: headHash,
+		WorktreePath:          worktreePath,
+		WorktreeID:            worktreeID,
+		StartedAt:             now,
+		LastInteractionTime:   &now,
+		TurnID:                turnID.String(),
+		StepCount:             0,
+		UntrackedFilesAtStart: untrackedFiles,
+		AgentType:             agentType,
+		ModelName:             model,
+		TranscriptPath:        transcriptPath,
+		LastPrompt:            truncatePromptForStorage(userPrompt),
+		Metadata:              tags,
+	}
+
+	if err := s.saveSessionState(ctx, state); err != nil {
+		return nil, err
+	}
+
+	return state, nil
+}
+
+// getShadowBranchNameForCommit returns the shadow branch name for the given base commit and worktree ID.
+// worktreeID should be empty for the main worktree or the internal git worktree name for linked worktrees.
+func getShadowBranchNameForCommit(baseCommit, worktreeID string) string {
+	return checkpoint.ShadowBranchNameForCommit(baseCommit, worktreeID)
+}

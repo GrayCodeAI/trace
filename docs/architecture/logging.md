@@ -142,13 +142,13 @@ Logs are tagged with a `component` field indicating the logging source:
 
 | File | Purpose |
 |------|---------|
-| `cmd/trace/cli/logging/logger.go` | Core logging infrastructure |
-| `cmd/trace/cli/logging/context.go` | Context helpers (WithComponent, WithSession) |
-| `cmd/trace/cli/hooks_git_cmd.go` | Git hook logging (uses gitHookContext helper) |
-| `cmd/trace/cli/hooks_claudecode_handlers.go` | Claude Code hook logging |
-| `cmd/trace/cli/hook_registry.go` | Hook wrapper logging |
-| `cmd/trace/cli/strategy/manual_commit_git.go` | Manual-commit checkpoint logging |
-| `cmd/trace/cli/strategy/manual_commit_hooks.go` | Condensation and branch cleanup logging |
+| `cli/logging/logger.go` | Core logging infrastructure |
+| `cli/logging/context.go` | Context helpers (WithComponent, WithSession) |
+| `cli/hooks_git_cmd.go` | Git hook logging (uses gitHookContext helper) |
+| `cli/hooks_claudecode_handlers.go` | Claude Code hook logging |
+| `cli/hook_registry.go` | Hook wrapper logging |
+| `cli/strategy/manual_commit_git.go` | Manual-commit checkpoint logging |
+| `cli/strategy/manual_commit_hooks.go` | Condensation and branch cleanup logging |
 
 ### Log Entry Structure
 

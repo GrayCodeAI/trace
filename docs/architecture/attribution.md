@@ -252,6 +252,6 @@ Without per-file tracking, we would have incorrectly subtracted 3 from agent lin
 
 ## References
 
-- Implementation: `cmd/trace/cli/strategy/manual_commit_attribution.go`
-- Types: `cmd/trace/cli/strategy/manual_commit_types.go`
-- Tests: `cmd/trace/cli/strategy/manual_commit_attribution_test.go`
+- Implementation: `cli/strategy/manual_commit_attribution.go`
+- Types: `cli/strategy/manual_commit_types.go`
+- Tests: `cli/strategy/manual_commit_attribution_test.go`

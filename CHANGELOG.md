@@ -20,7 +20,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/). This project ad
 
 ### Changed
 - **Version re-baselined to `0.1.0`** in
-  `cmd/trace/cli/versioninfo/versioninfo.go`. Aligns trace with the rest
+  `cli/versioninfo/versioninfo.go`. Aligns trace with the rest
   of the hawk-eco ecosystem (`hawk`, `tok`, `eyrie`, `yaad`, `sight`,
   `inspect`).
 

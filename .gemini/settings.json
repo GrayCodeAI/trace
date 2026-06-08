@@ -9,7 +9,7 @@
           {
             "name": "trace-session-start",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini session-start"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini session-start"
           }
         ]
       }
@@ -21,7 +21,7 @@
           {
             "name": "trace-session-end-exit",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini session-end"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini session-end"
           }
         ]
       },
@@ -31,7 +31,7 @@
           {
             "name": "trace-session-end-logout",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini session-end"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini session-end"
           }
         ]
       }
@@ -42,7 +42,7 @@
           {
             "name": "trace-before-agent",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini before-agent"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini before-agent"
           }
         ]
       }
@@ -53,7 +53,7 @@
           {
             "name": "trace-after-agent",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini after-agent"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini after-agent"
           }
         ]
       }
@@ -64,7 +64,7 @@
           {
             "name": "trace-before-model",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini before-model"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini before-model"
           }
         ]
       }
@@ -75,7 +75,7 @@
           {
             "name": "trace-after-model",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini after-model"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini after-model"
           }
         ]
       }
@@ -86,7 +86,7 @@
           {
             "name": "trace-before-tool-selection",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini before-tool-selection"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini before-tool-selection"
           }
         ]
       }
@@ -98,7 +98,7 @@
           {
             "name": "trace-before-tool",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini before-tool"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini before-tool"
           }
         ]
       }
@@ -110,7 +110,7 @@
           {
             "name": "trace-after-tool",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini after-tool"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini after-tool"
           }
         ]
       }
@@ -121,7 +121,7 @@
           {
             "name": "trace-pre-compress",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini pre-compress"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini pre-compress"
           }
         ]
       }
@@ -132,7 +132,7 @@
           {
             "name": "trace-notification",
             "type": "command",
-            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/trace/main.go hooks gemini notification"
+            "command": "go run \"$(git rev-parse --show-toplevel)\"/cmd/hawk hooks gemini notification"
           }
         ]
       }

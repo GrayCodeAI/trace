@@ -11,17 +11,17 @@
 
 `trace` today captures AI coding sessions git-natively: transcripts and full-state checkpoints are
 written to git **orphan/shadow branches** rather than a database. Permanent checkpoints land on the
-`trace/checkpoints/v1` orphan branch (`cmd/trace/cli/checkpoint/committed.go:51`,
+`trace/checkpoints/v1` orphan branch (`cli/checkpoint/committed.go:51`,
 `committed.go:1594-1647`), while in-flight, intra-session rewind state lives on per-commit shadow
-branches keyed `trace/<commit-hash>` (`cmd/trace/cli/checkpoint/checkpoint.go:55-86`,
-`cmd/trace/cli/checkpoint/shadow_ref.go`). The OpenAPI contract is explicit that
+branches keyed `trace/<commit-hash>` (`cli/checkpoint/checkpoint.go:55-86`,
+`cli/checkpoint/shadow_ref.go`). The OpenAPI contract is explicit that
 **trace ships no HTTP server today** (`api/openapi.yaml`: *"trace is a CLI tool — no HTTP server is
 exposed"*).
 
 Replay today is a **terminal experience**: `trace session replay [session-id]` walks the recorded
-transcript step-by-step in the CLI (`cmd/trace/cli/session_replay.go:27-90`). It reads the raw
+transcript step-by-step in the CLI (`cli/session_replay.go:27-90`). It reads the raw
 transcript via the live path in session state, parses it with the shared transcript parser
-(`cmd/trace/cli/transcript/parse.go`), and renders `replayEntry{Index,Type,Content,ToolName,Timestamp}`
+(`cli/transcript/parse.go`), and renders `replayEntry{Index,Type,Content,ToolName,Timestamp}`
 rows (`session_replay.go:18-25`, `buildReplayEntries`). There is no timeline, no diff view, no
 sharing, and nothing a non-terminal user (PM, reviewer, teammate) can open.
 
@@ -133,7 +133,7 @@ Nothing new is persisted on disk. The viewer consumes a derived **read model** a
 time from the existing artifacts.
 
 **Source events** — parsed from the transcript with the existing parser. The on-the-wire transcript
-line is intentionally small (`cmd/trace/cli/transcript/types.go:22`):
+line is intentionally small (`cli/transcript/types.go:22`):
 
 ```go
 type Line struct {
@@ -164,14 +164,14 @@ CostBreakdown     { total, byCheckpoint[], byAgent[], byModel[] }
 ```
 
 - `TokenUsage` is read directly from the existing struct
-  (`cmd/trace/cli/agent/types.go:48`): `InputTokens`, `CacheCreationTokens`, `CacheReadTokens`,
+  (`cli/agent/types.go:48`): `InputTokens`, `CacheCreationTokens`, `CacheReadTokens`,
   `OutputTokens`, `APICallCount`, and crucially `SubagentTokens *TokenUsage` — the recursive
   subagent field is exactly what feeds nested spans in the waterfall.
 - `Span` is computed by walking the normalized event stream: each `tool_use` block opens a span,
   the matching `tool_result` (correlated by `tool_use_id`) closes it. Subagent token rollups
   (`SubagentTokens`) and any subagent transcript dirs become child spans. Per-span cost comes from
-  `cost.ComputeCost` / `ComputeCostWith` (`cmd/trace/cli/cost/compute.go:38-51`) against the active
-  model's pricing (`cmd/trace/cli/cost/pricing.go`).
+  `cost.ComputeCost` / `ComputeCostWith` (`cli/cost/compute.go:38-51`) against the active
+  model's pricing (`cli/cost/pricing.go`).
 
 **Checkpoint mapping for the timeline:** committed checkpoints (`trace/checkpoints/v1`) are the
 permanent timeline nodes; shadow-branch checkpoints (`trace/<commit-hash>`) are the rewind/scrub
@@ -200,8 +200,8 @@ Design constraints:
   doing so prints a redaction/exposure warning (§7).
 - **No write endpoints that mutate git history** in P0/P1. (`rewind` already exists as a CLI verb;
   exposing it over HTTP is deferred — the prior spec's `POST /rewind` is out of scope here.)
-- Handlers live in a new `cmd/trace/cli/serve/` package and reuse the existing internal API client
-  conventions in `cmd/trace/cli/api/` (`client.go`, `base_url.go`, `auth_tokens.go`).
+- Handlers live in a new `cli/serve/` package and reuse the existing internal API client
+  conventions in `cli/api/` (`client.go`, `base_url.go`, `auth_tokens.go`).
 
 ### 3.4 Key flows (sequences)
 
@@ -262,21 +262,21 @@ Everything below already exists in-tree and is reusable today. Citations are `pa
 
 | Need | Reuse | Notes |
 |---|---|---|
-| Parse transcript events | `cmd/trace/cli/transcript/parse.go` (`ParseFromBytes`, `ParseFromFileAtLine`, `normalizeLineType`) and `transcript/types.go:10-26` | Already handles gzip, arbitrarily long lines, multiple agent formats, and incremental parsing from a start line (perfect for SSE live tail and checkpoint slicing). The web read model is a thin adapter over this. |
-| Walk replay entries | `cmd/trace/cli/session_replay.go` (`replayEntry`, `buildReplayEntries`, `parseTranscriptToReplayEntries`) | The TUI replay already converts `Line` → display rows. Extract the agnostic conversion into a shared function consumed by *both* the TUI and the HTTP handlers so there's one event-normalization codepath. |
-| Token usage per session/subagent | `cmd/trace/cli/agent/token_usage.go` (`CalculateTokenUsage`, subagent-aware path) + `agent/types.go:48` (`TokenUsage` incl. `SubagentTokens`) | Directly feeds span token annotations and the cost chart. Subagent recursion already modeled. |
-| Cost attribution | `cmd/trace/cli/cost/compute.go:38-51` (`ComputeCost`, `ComputeCostWith`) + `cost/pricing.go` (`ModelPricing`, `Table`, `LoadTable`, `PricingFor`) | This is the "new cost-attribution work" the task says to reuse. Per-span, per-checkpoint, per-agent, per-model breakdowns all derive from these. No new pricing logic. |
-| Annotations / collaboration metadata | `cmd/trace/cli/annotate_cmd.go` (`trace annotate --comment/--checkpoint/--list`, persisted via `MutateSessionState`) | Annotations are already per-session and optionally per-checkpoint. Surface them on the timeline (pins on checkpoint nodes). Reuse the "annotate work" the task references — the web UI is a read view over the same session-state field. |
+| Parse transcript events | `cli/transcript/parse.go` (`ParseFromBytes`, `ParseFromFileAtLine`, `normalizeLineType`) and `transcript/types.go:10-26` | Already handles gzip, arbitrarily long lines, multiple agent formats, and incremental parsing from a start line (perfect for SSE live tail and checkpoint slicing). The web read model is a thin adapter over this. |
+| Walk replay entries | `cli/session_replay.go` (`replayEntry`, `buildReplayEntries`, `parseTranscriptToReplayEntries`) | The TUI replay already converts `Line` → display rows. Extract the agnostic conversion into a shared function consumed by *both* the TUI and the HTTP handlers so there's one event-normalization codepath. |
+| Token usage per session/subagent | `cli/agent/token_usage.go` (`CalculateTokenUsage`, subagent-aware path) + `agent/types.go:48` (`TokenUsage` incl. `SubagentTokens`) | Directly feeds span token annotations and the cost chart. Subagent recursion already modeled. |
+| Cost attribution | `cli/cost/compute.go:38-51` (`ComputeCost`, `ComputeCostWith`) + `cost/pricing.go` (`ModelPricing`, `Table`, `LoadTable`, `PricingFor`) | This is the "new cost-attribution work" the task says to reuse. Per-span, per-checkpoint, per-agent, per-model breakdowns all derive from these. No new pricing logic. |
+| Annotations / collaboration metadata | `cli/annotate_cmd.go` (`trace annotate --comment/--checkpoint/--list`, persisted via `MutateSessionState`) | Annotations are already per-session and optionally per-checkpoint. Surface them on the timeline (pins on checkpoint nodes). Reuse the "annotate work" the task references — the web UI is a read view over the same session-state field. |
 | Secret redaction | `trace/redact/` — `redact.go:165` `String`, `:474` `Bytes`, `:485` `JSONLBytes`, `:506` `JSONLContent`; `packs.go:184` `LoadPacks`; `redact/verify.go` | Mandatory on every publish/export path. JSONL-aware redaction matches the transcript format exactly. `LoadPacks` lets orgs add custom patterns. `verify.go` gives a post-redaction assertion. |
-| Checkpoint storage / refs | `cmd/trace/cli/checkpoint/` — `checkpoint.go:55-86` (shadow vs committed model), `committed.go:1594-1648` (`trace/checkpoints/v1` orphan branch + origin fallback), `shadow_ref.go` (CAS-safe ref updates) | The read API reads trees from these refs. The `origin/trace/checkpoints/v1` fallback (`committed.go:1648`) is precisely what makes §3.4-D team viewing work without new infra. |
+| Checkpoint storage / refs | `cli/checkpoint/` — `checkpoint.go:55-86` (shadow vs committed model), `committed.go:1594-1648` (`trace/checkpoints/v1` orphan branch + origin fallback), `shadow_ref.go` (CAS-safe ref updates) | The read API reads trees from these refs. The `origin/trace/checkpoints/v1` fallback (`committed.go:1648`) is precisely what makes §3.4-D team viewing work without new infra. |
 | Diff vs parent | checkpoint trees + go-git (`github.com/go-git/go-git/v6`, already a dep) | Diff is a tree-vs-tree git diff between checkpoint commits; no new diff engine. |
 | OTel export (observability tie-in) | `otel_collector.go` (`OTelCollectorConfig`, span batching/export) | Spans we compute for the waterfall are conceptually the same spans OTel export ships (comparison line 60). Unify the span model so the UI waterfall and the Langfuse/Phoenix export read one `Span` type. |
-| HTTP/CLI plumbing | `cmd/trace/cli/api/` (`client.go`, `base_url.go`, `auth_tokens.go`), cobra command pattern (`session_replay.go:27`, `annotate_cmd.go:20`) | New `trace serve` / `trace publish` / `trace export` commands follow the existing cobra `newXCmd()` + `runX()` pattern. |
+| HTTP/CLI plumbing | `cli/api/` (`client.go`, `base_url.go`, `auth_tokens.go`), cobra command pattern (`session_replay.go:27`, `annotate_cmd.go:20`) | New `trace serve` / `trace publish` / `trace export` commands follow the existing cobra `newXCmd()` + `runX()` pattern. |
 | TUI rendering stack | `charm.land/bubbletea/v2` (go.mod:7), `charmbracelet/x/ansi` | Used by the asciinema/GIF export renderer to "play" the transcript in a headless terminal buffer (§6). |
 
 **What is genuinely new (must be built):**
-- `cmd/trace/cli/serve/` — HTTP handlers, read-model assembly, SSE live tail.
-- `cmd/trace/cli/serve/spans.go` — tool_use/tool_result correlation → `Span[]` (shared with OTel).
+- `cli/serve/` — HTTP handlers, read-model assembly, SSE live tail.
+- `cli/serve/spans.go` — tool_use/tool_result correlation → `Span[]` (shared with OTel).
 - React SPA under `ui/` (`go:embed`-ed) — Timeline, TranscriptViewer, Waterfall, DiffViewer,
   CostChart, AnnotationPins.
 - `trace publish` / `trace export` static-bundle renderers.
@@ -335,7 +335,7 @@ documented but dormant.
 
 | Concern | Decision | Rationale / licensing |
 |---|---|---|
-| Web framework | **Build thin** on Go stdlib `net/http` + existing `cmd/trace/cli/api/` conventions | Avoids a heavy server dep; trace is a static-binary tool. SSE is trivial over stdlib. |
+| Web framework | **Build thin** on Go stdlib `net/http` + existing `cli/api/` conventions | Avoids a heavy server dep; trace is a static-binary tool. SSE is trivial over stdlib. |
 | Frontend framework | **React + Vite + TypeScript**, `go:embed` the built bundle | Matches the prior spec and the hawk daemon's embedded-frontend pattern. MIT-licensed toolchain. Single binary preserved. |
 | Diff rendering | **Buy (vendor JS): Monaco diff editor** OR a lighter diff lib | Monaco = MIT. Heavy; consider a lighter MIT diff renderer if bundle size matters. Diff *computation* stays server-side via go-git. |
 | Charts (cost/token) | **Buy: Recharts or uPlot** (MIT) | Standard, well-licensed. |
@@ -344,7 +344,7 @@ documented but dormant.
 | GIF/MP4 | **Buy: ffmpeg as optional external tool** (not linked, shelled out) | ffmpeg is LGPL/GPL depending on build — *shelling out* avoids linking/licensing entanglement. Feature gated on ffmpeg presence. |
 | rrweb | **Buy: rrweb + rrweb-player** (MIT) | Only pulled in if/when browser control ships (P2 conditional). |
 | Redaction | **Reuse `trace/redact`** | Already in-tree, already battle-tested (extensive `redact/*_test.go`). No new dep. |
-| Cost/pricing | **Reuse `cmd/trace/cli/cost`** | No new pricing source. |
+| Cost/pricing | **Reuse `cli/cost`** | No new pricing source. |
 | Search index | **Defer**: start linear-scan + in-memory cache; add SQLite FTS5 (CGO-free via modernc) only if needed | Avoid CGO (trace ships a static binary). The prior spec's FTS5 assumption needs validation against the no-CGO constraint. |
 
 **Static-binary constraint is load-bearing:** trace is distributed as a Go static binary. Any

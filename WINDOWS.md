@@ -1,36 +1,9 @@
 # Windows Support
 
-Trace is fully supported on Windows 10+ with no external dependencies beyond Git.
-
----
-
-## Installation
-
-### Scoop (recommended)
-
-```powershell
-scoop bucket add trace https://github.com/GrayCodeAI/scoop-bucket.git
-scoop install trace
-```
-
-### Go install
-
-```powershell
-go install github.com/GrayCodeAI/trace/cmd/trace@latest
-```
-
-### Build from source
-
-```powershell
-go build -o trace.exe ./cmd/trace/
-```
-
-Or cross-compile from macOS/Linux:
-
-```bash
-mise run build:windows        # amd64
-mise run build:windows-arm64  # arm64
-```
+Trace is a library consumed by **Hawk**; its Windows behaviour is exercised through the
+`hawk trace ...` commands. The trace packages are fully supported on Windows 10+ with no
+external dependencies beyond Git. This document covers the Windows-specific platform code in
+the library.
 
 ---
 
@@ -38,49 +11,30 @@ mise run build:windows-arm64  # arm64
 
 - **Windows 10 1809+** (ConPTY support)
 - **Git for Windows** (provides `git.exe` + bundled bash for hooks)
-- **Go 1.26+** (for building from source)
+- **Go 1.26+** (for building/testing from source)
 
 ---
 
-## Usage
-
-All commands work identically to macOS/Linux:
-
-```powershell
-cd your-project
-trace enable
-trace status
-```
-
----
-
-## How Hooks Work
+## Hooks on Windows
 
 | Hook type | Mechanism |
 |---|---|
 | Git hooks | `#!/bin/sh` via Git for Windows MSYS2 bash |
-| Agent hooks | JSON config, agents call `trace.exe` directly |
+| Agent hooks | JSON config; agents invoke the hawk binary directly |
 
 No batch file wrappers needed.
 
 ---
 
-## Testing
+## Testing the library on Windows
 
 ```powershell
 # Unit tests
 go test ./...
 
 # Integration tests
-go test -tags=integration ./cmd/trace/cli/integration_test/...
-
-# E2E tests
-set E2E_TRACE_BIN=trace.exe
-set E2E_AGENT=claude-code
-go test -tags=e2e -count=1 -timeout=30m ./e2e/tests/...
+go test -tags=integration ./cli/integration_test/...
 ```
-
-E2E uses native ConPTY — no tmux required.
 
 ---
 
@@ -89,8 +43,7 @@ E2E uses native ConPTY — no tmux required.
 | File | Purpose |
 |---|---|
 | `telemetry/detached_windows.go` | Process groups via `CREATE_NEW_PROCESS_GROUP` |
-| `integration_test/procattr_windows.go` | Test process detachment |
-| `e2e/agents/pty_session_windows.go` | Interactive sessions via ConPTY |
+| `cli/integration_test/procattr_windows.go` | Test process detachment |
 
 ### Cross-platform patterns
 
@@ -113,11 +66,10 @@ E2E uses native ConPTY — no tmux required.
 
 ## Smoke Test
 
-After building, verify:
+Via the `hawk` CLI on Windows, verify:
 
-1. `trace.exe version`
-2. `trace.exe enable` in a git repo
-3. Start agent session, make changes
-4. `git commit -m "test"` — hooks fire
-5. `trace checkpoint rewind` — shows checkpoints
-6. `trace checkpoint explain` — pager works
+1. `hawk trace enable` in a git repo
+2. Start agent session, make changes
+3. `git commit -m "test"` — hooks fire
+4. `hawk trace checkpoint rewind` — shows checkpoints
+5. `hawk trace checkpoint explain` — pager works
