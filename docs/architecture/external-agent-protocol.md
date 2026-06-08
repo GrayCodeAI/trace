@@ -381,7 +381,7 @@ Examples:
 {"v":1,"agent":"opencode","cli_version":"0.42.0","type":"assistant","ts":"2026-01-13T12:00:02Z","id":"msg_123","input_tokens":150,"output_tokens":42,"content":[{"type":"text","text":"I updated the file."},{"type":"tool_use","id":"toolu_123","name":"Read","input":{"file_path":"src/main.go"},"result":{"output":"package main","status":"success","file":{"filePath":"src/main.go","numLines":1}}}]}
 ```
 
-For complete examples of the expected output format, see the [compact transcript test fixtures](../../cmd/trace/cli/transcript/compact/testdata/).
+For complete examples of the expected output format, see the [compact transcript test fixtures](../../cli/transcript/compact/testdata/).
 
 The compact transcript should exclude agent-native envelope/progress/system noise and retain only the normalized content needed by Trace's checkpoint readers.
 

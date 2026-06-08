@@ -4,8 +4,8 @@ This document defines the manual validation pass for Copilot CLI token accountin
 
 Use it when changing:
 
-- `cmd/trace/cli/agent/copilotcli/transcript.go`
-- `cmd/trace/cli/strategy/manual_commit_condensation.go`
+- `cli/agent/copilotcli/transcript.go`
+- `cli/strategy/manual_commit_condensation.go`
 - Any code that affects `CheckpointTranscriptStart`, checkpoint metadata, or session token backfill
 
 ## Why Copilot Needs Its Own Validation

@@ -29,7 +29,7 @@ Review skills are configured per-agent in `.trace/settings.json`:
 }
 ```
 
-The key is the agent name. The value is a `ReviewConfig` with `skills` (skill invocations passed verbatim to the agent) and optional `prompt` (an always-prompt appended to the composed prompt). Settings field: `EntireSettings.Review` in `cmd/trace/cli/settings/settings.go`.
+The key is the agent name. The value is a `ReviewConfig` with `skills` (skill invocations passed verbatim to the agent) and optional `prompt` (an always-prompt appended to the composed prompt). Settings field: `EntireSettings.Review` in `cli/settings/settings.go`.
 
 ## How It Works (env-var handshake)
 
@@ -50,25 +50,25 @@ Review metadata is stored at two levels on `trace/checkpoints/v1`:
 
 ## Architecture
 
-- **`AgentReviewer` interface** (`cmd/trace/cli/review/types/reviewer.go`): per-agent contract with `Name() string` and `Start(ctx, RunConfig) (Process, error)`. Each launchable agent implements this in its own package.
-- **`ReviewerTemplate`** (`cmd/trace/cli/review/types/template.go`): shared scaffolding (Spawn → pipe stdout → run parser → forward events → close). Each agent supplies only its `BuildCmd` (argv/env) and `Parser` (stdout-to-Event stream).
+- **`AgentReviewer` interface** (`cli/review/types/reviewer.go`): per-agent contract with `Name() string` and `Start(ctx, RunConfig) (Process, error)`. Each launchable agent implements this in its own package.
+- **`ReviewerTemplate`** (`cli/review/types/template.go`): shared scaffolding (Spawn → pipe stdout → run parser → forward events → close). Each agent supplies only its `BuildCmd` (argv/env) and `Parser` (stdout-to-Event stream).
 - **`Sink` interface**: consumers of the event stream. Production sinks: `DumpSink` (post-run per-agent narrative), `TUISink` (Bubble Tea live dashboard with Ctrl+O drill-in), `SynthesisSink` (opt-in y/N cross-agent verdict). Sinks are composed by `composeMultiAgentSinks` based on TTY detection.
-- **`Run(ctx, reviewer, cfg, sinks)`** (`cmd/trace/cli/review/run.go`): single-agent orchestrator. Forwards events to all sinks via `AgentEvent`, calls `RunFinished` once at end with a populated `RunSummary`. Sink dispatch is serialized; sinks need not internally synchronize.
-- **`RunMulti(ctx, reviewers, cfg, sinks)`** (`cmd/trace/cli/review/run_multi.go`): N-agent orchestrator. Each agent runs concurrently in its own goroutine; events fan into a single dispatch loop so the serial-dispatch contract is preserved. Per-agent skills/prompts are injected via `perAgentConfiguredReviewer` adapter (each reviewer sees its own `RunConfig` despite the shared API surface).
-- **Env-var contract** (`cmd/trace/cli/review/env.go`): single source of truth for `ENTIRE_REVIEW_*` constants used by spawn-side and lifecycle adoption.
-- **Scope detection** (`cmd/trace/cli/review/scope.go`): `detectScopeBaseRef` returns the first existing ref from the fallback chain `origin/HEAD → origin/main → origin/master → main → master`. Overridable per-invocation via `--base <ref>` (validated through go-git's `ResolveRevision`). Banner output: "Reviewing feat/X vs main: 3 commits, 7 files changed, 2 uncommitted".
+- **`Run(ctx, reviewer, cfg, sinks)`** (`cli/review/run.go`): single-agent orchestrator. Forwards events to all sinks via `AgentEvent`, calls `RunFinished` once at end with a populated `RunSummary`. Sink dispatch is serialized; sinks need not internally synchronize.
+- **`RunMulti(ctx, reviewers, cfg, sinks)`** (`cli/review/run_multi.go`): N-agent orchestrator. Each agent runs concurrently in its own goroutine; events fan into a single dispatch loop so the serial-dispatch contract is preserved. Per-agent skills/prompts are injected via `perAgentConfiguredReviewer` adapter (each reviewer sees its own `RunConfig` despite the shared API surface).
+- **Env-var contract** (`cli/review/env.go`): single source of truth for `ENTIRE_REVIEW_*` constants used by spawn-side and lifecycle adoption.
+- **Scope detection** (`cli/review/scope.go`): `detectScopeBaseRef` returns the first existing ref from the fallback chain `origin/HEAD → origin/main → origin/master → main → master`. Overridable per-invocation via `--base <ref>` (validated through go-git's `ResolveRevision`). Banner output: "Reviewing feat/X vs main: 3 commits, 7 files changed, 2 uncommitted".
 
 ## Multi-Agent UI
 
 When `RunMulti` is dispatched in a TTY, the sink slice is `[TUISink, DumpSink, SynthesisSink?]`:
 
-- **`TUISink` / `reviewTUIModel`** (`cmd/trace/cli/review/tui_sink.go`, `tui_model.go`, `tui_detail.go`): live dashboard with one row per agent (name, status, tokens, last assistant preview, duration). `Ctrl+O` enters drill-in mode on the alt screen showing the full event buffer for the selected agent; `Esc` returns to the dashboard. `Ctrl+C` cancels the run via the shared `CancelFunc`. The model uses `tea.WithoutSignalHandler` so the cobra root retains SIGINT routing. After all agents finish, the user dismisses with any key — `RunFinished` blocks on dismissal so `DumpSink` renders below the TUI rather than overlapping it.
-- **`SynthesisSink`** (`cmd/trace/cli/review/synthesis_sink.go`): opt-in y/N prompt offered after the dump. On "y", composes a synthesis prompt covering all agent narratives + per-run user prompt, calls the configured summary provider, and prints the unified verdict. Skipped silently when stdin can't prompt, the run was cancelled, or fewer than 2 agents produced usable output. Provider failures degrade gracefully ("synthesis unavailable: <err>") so the user can still commit.
-- **Sink composition** (`composeMultiAgentSinks` in `cmd/trace/cli/review/cmd.go`): pure helper taking explicit `isTTY`/`canPrompt` so tests don't depend on real TTY detection. `findTUISink` picks the TUI out of the slice for `Start`/`Wait` lifecycle hooks.
+- **`TUISink` / `reviewTUIModel`** (`cli/review/tui_sink.go`, `tui_model.go`, `tui_detail.go`): live dashboard with one row per agent (name, status, tokens, last assistant preview, duration). `Ctrl+O` enters drill-in mode on the alt screen showing the full event buffer for the selected agent; `Esc` returns to the dashboard. `Ctrl+C` cancels the run via the shared `CancelFunc`. The model uses `tea.WithoutSignalHandler` so the cobra root retains SIGINT routing. After all agents finish, the user dismisses with any key — `RunFinished` blocks on dismissal so `DumpSink` renders below the TUI rather than overlapping it.
+- **`SynthesisSink`** (`cli/review/synthesis_sink.go`): opt-in y/N prompt offered after the dump. On "y", composes a synthesis prompt covering all agent narratives + per-run user prompt, calls the configured summary provider, and prints the unified verdict. Skipped silently when stdin can't prompt, the run was cancelled, or fewer than 2 agents produced usable output. Provider failures degrade gracefully ("synthesis unavailable: <err>") so the user can still commit.
+- **Sink composition** (`composeMultiAgentSinks` in `cli/review/cmd.go`): pure helper taking explicit `isTTY`/`canPrompt` so tests don't depend on real TTY detection. `findTUISink` picks the TUI out of the slice for `Start`/`Wait` lifecycle hooks.
 
 ## Skill Discovery (Claude Code)
 
-`DiscoverReviewSkills` (`cmd/trace/cli/agent/claudecode/discovery.go`) walks three roots: plugin cache (`~/.claude/plugins/cache/<market>/<plugin>/<version>/{skills,commands,agents}`), user skills (`~/.claude/skills`), user commands/agents (`~/.claude/commands`, `~/.claude/agents`).
+`DiscoverReviewSkills` (`cli/agent/claudecode/discovery.go`) walks three roots: plugin cache (`~/.claude/plugins/cache/<market>/<plugin>/<version>/{skills,commands,agents}`), user skills (`~/.claude/skills`), user commands/agents (`~/.claude/commands`, `~/.claude/agents`).
 
 For the plugin cache, `pickLatestVersion` picks ONE version directory per plugin: highest valid semver wins; if no entries parse as semver, the lexicographic max is picked (handles the `unknown` sentinel some plugins ship). Without this, multiple installed versions of a plugin produced duplicate skill entries in the picker and prompt.
 
@@ -88,18 +88,18 @@ The redesign eliminated several constructs from the prior implementation. None s
 
 ## Key Files
 
-- `cmd/trace/cli/review/cmd.go` — `NewCommand()`, `runReview` dispatch fork, `composeMultiAgentSinks`
-- `cmd/trace/cli/review/picker.go` / `multipicker.go` — config-edit picker, first-run setup, single- and multi-agent selection
-- `cmd/trace/cli/review/attach.go` + `cli/review_helpers.go:newReviewAttachCmd` — `trace review attach` subcommand
-- `cmd/trace/cli/review/marker_fallback.go` — non-launchable agent flow (single shared file)
-- `cmd/trace/cli/review/prompt.go` / `scope.go` / `run.go` / `dump.go` / `run_multi.go` — core machinery (single-agent + N-agent fan-in)
-- `cmd/trace/cli/review/tui_sink.go` / `tui_model.go` / `tui_detail.go` — Bubble Tea TUI sink
-- `cmd/trace/cli/review/synthesis_sink.go` / `synthesis_prompt.go` — opt-in cross-agent verdict
-- `cmd/trace/cli/review/types/{reviewer,sink,template}.go` — interface contracts (CU2 + CU4 + CU5b)
-- `cmd/trace/cli/review/env.go` — `ENTIRE_REVIEW_*` constants + `EncodeSkills`/`DecodeSkills` + `AppendReviewEnv`
-- `cmd/trace/cli/agent/{claudecode,codex,geminicli}/reviewer.go` — per-agent `AgentReviewer` implementations (claude-code, codex, gemini-cli)
-- `cmd/trace/cli/agent/claudecode/discovery.go` — skill discovery + `pickLatestVersion` plugin-cache dedupe
-- `cmd/trace/cli/lifecycle.go` — `adoptReviewEnv` reads `ENTIRE_REVIEW_*` from process env; replaces marker-file adoption
-- `cmd/trace/cli/review_bridge.go` / `review_helpers.go` — bridge code in `cli` package for cycle-bound functions (`headHasReviewCheckpoint`, `launchableReviewerFor`, `newReviewAttachCmd`, `lazySynthesisProvider`)
-- `cmd/trace/cli/checkpoint/checkpoint.go` — `Kind`, `ReviewSkills`, `ReviewPrompt` on `CommittedMetadata`; `HasReview` on `CheckpointSummary`
-- `cmd/trace/cli/settings/settings.go` — `EntireSettings.Review` field
+- `cli/review/cmd.go` — `NewCommand()`, `runReview` dispatch fork, `composeMultiAgentSinks`
+- `cli/review/picker.go` / `multipicker.go` — config-edit picker, first-run setup, single- and multi-agent selection
+- `cli/review/attach.go` + `cli/review_helpers.go:newReviewAttachCmd` — `trace review attach` subcommand
+- `cli/review/marker_fallback.go` — non-launchable agent flow (single shared file)
+- `cli/review/prompt.go` / `scope.go` / `run.go` / `dump.go` / `run_multi.go` — core machinery (single-agent + N-agent fan-in)
+- `cli/review/tui_sink.go` / `tui_model.go` / `tui_detail.go` — Bubble Tea TUI sink
+- `cli/review/synthesis_sink.go` / `synthesis_prompt.go` — opt-in cross-agent verdict
+- `cli/review/types/{reviewer,sink,template}.go` — interface contracts (CU2 + CU4 + CU5b)
+- `cli/review/env.go` — `ENTIRE_REVIEW_*` constants + `EncodeSkills`/`DecodeSkills` + `AppendReviewEnv`
+- `cli/agent/{claudecode,codex,geminicli}/reviewer.go` — per-agent `AgentReviewer` implementations (claude-code, codex, gemini-cli)
+- `cli/agent/claudecode/discovery.go` — skill discovery + `pickLatestVersion` plugin-cache dedupe
+- `cli/lifecycle.go` — `adoptReviewEnv` reads `ENTIRE_REVIEW_*` from process env; replaces marker-file adoption
+- `cli/review_bridge.go` / `review_helpers.go` — bridge code in `cli` package for cycle-bound functions (`headHasReviewCheckpoint`, `launchableReviewerFor`, `newReviewAttachCmd`, `lazySynthesisProvider`)
+- `cli/checkpoint/checkpoint.go` — `Kind`, `ReviewSkills`, `ReviewPrompt` on `CommittedMetadata`; `HasReview` on `CheckpointSummary`
+- `cli/settings/settings.go` — `EntireSettings.Review` field

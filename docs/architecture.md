@@ -24,29 +24,27 @@ trace hooks into your git workflow to capture AI agent sessions as you work. Ses
 ```
 trace/
 ├── api/openapi.yaml              📜 CLI command surface reference
-├── cmd/trace/                    🖥️ CLI entry point
-│   ├── main.go                   ⚡ Root cobra command
-│   └── cli/                      📂 Subcommand implementations
-│       ├── trace_cmd.go          🔧 Core commands (enable, disable, status)
-│       ├── hooks.go              🪝 Git hook management
-│       ├── checkpoint/           💾 Checkpoint storage & retrieval
-│       ├── recap/                📝 Session recap rendering
-│       ├── settings/             ⚙️ Configuration management
-│       └── agent/                🤖 Agent-specific integrations
-├── codegraph_snapshot.go         📊 CodeGraphSnapshot, GraphStats, GraphDelta
-├── strategy/                     📋 Checkpoint strategies
-├── session/                      📂 Session state management
+├── cli/                          📂 cobra command tree (package cli, NewRootCmd)
+│   ├── trace_cmd.go              🔧 Core commands (enable, disable, status)
+│   ├── hooks.go                  🪝 Git hook management
+│   ├── checkpoint/               💾 Checkpoint storage & retrieval
+│   ├── recap/                    📝 Session recap rendering
+│   ├── settings/                 ⚙️ Configuration management
+│   ├── strategy/                 📋 Checkpoint strategies
+│   ├── session/                  📂 Session state management
+│   └── agent/                    🤖 Agent-specific integrations
 ├── redact/
 │   ├── redact.go                 🔒 Secret redaction (entropy + pattern + keyword)
 │   ├── packs.go                  📦 Vendor-specific pattern packs
 │   ├── pii.go                    🔐 PII detection
 │   └── custom.go                 ⚙️ Custom redaction rules
-├── internal/
-│   └── agentlaunch/              🚀 Agent launch detection
-├── e2e/                          🧪 End-to-end test suite
+├── internal/                     🔒 Private support packages (git ops, launch detection)
 ├── perf/                         📈 Performance benchmarks
 └── docs/                         📖 Architecture and usage docs
 ```
+
+> Trace is a **library** consumed by Hawk — there is no standalone binary. The `cli`
+> package's command tree is mounted into Hawk and surfaced as `hawk trace ...`.
 
 ---
 
@@ -65,17 +63,19 @@ Each checkpoint has a stable **12-hex-char ID** linking user commits to metadata
 
 ## 🖥️ CLI Commands
 
+Surfaced under `hawk trace ...`:
+
 | Command | Description |
 |---------|-------------|
-| `trace enable` | 🪝 Install git hooks |
-| `trace disable` | 🧹 Remove hooks |
-| `trace status` | 📊 Show capture status |
-| `trace checkpoint "msg"` | 💾 Create checkpoint |
-| `trace checkpoint rewind <id>` | ⏪ Rewind to checkpoint |
-| `trace session resume <id>` | 🔄 Resume a session |
-| `trace investigate <ref>` | 🔍 Investigate AI activity on a commit |
-| `trace doctor` | 🩺 Run diagnostics |
-| `trace agent <name>` | 🤖 Configure agent integration |
+| `hawk trace enable` | 🪝 Install git hooks |
+| `hawk trace disable` | 🧹 Remove hooks |
+| `hawk trace status` | 📊 Show capture status |
+| `hawk trace checkpoint "msg"` | 💾 Create checkpoint |
+| `hawk trace checkpoint rewind <id>` | ⏪ Rewind to checkpoint |
+| `hawk trace session resume <id>` | 🔄 Resume a session |
+| `hawk trace investigate <ref>` | 🔍 Investigate AI activity on a commit |
+| `hawk trace doctor` | 🩺 Run diagnostics |
+| `hawk trace agent <name>` | 🤖 Configure agent integration |
 
 ---
 
@@ -97,16 +97,3 @@ Multi-layer secret redaction before storing any session data:
 | 🔑 **Pattern** | Regex matching | JWTs, base64, DB URIs, API keys |
 | 📝 **Keyword** | Key name detection | `password=`, `secret=` |
 | 🔐 **PII** | Personal data | Emails, phone numbers, SSNs |
-
----
-
-## 📊 Code Graph Snapshots
-
-`CodeGraphSnapshot` captures project structure at checkpoint time:
-
-| Type | Contains |
-|------|----------|
-| `SymbolInfo` | Functions, types, variables |
-| `ModuleInfo` | Package structure, imports |
-| `ComplexityMetrics` | Cyclomatic complexity, nesting |
-| `GraphDelta` | Diff between two snapshots (`CompareSnapshots()`) |

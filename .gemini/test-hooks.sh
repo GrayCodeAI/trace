@@ -28,7 +28,7 @@ SESSION_START_INPUT=$(cat <<EOF
 EOF
 )
 
-echo "$SESSION_START_INPUT" | go run ./cmd/trace/main.go hooks gemini session-start && echo "   ✓ session-start passed" || echo "   ✗ session-start failed"
+echo "$SESSION_START_INPUT" | go run ./cmd/hawk hooks gemini session-start && echo "   ✓ session-start passed" || echo "   ✗ session-start failed"
 
 # Test 2: Before Tool Hook
 echo ""
@@ -46,7 +46,7 @@ BEFORE_TOOL_INPUT=$(cat <<EOF
 EOF
 )
 
-echo "$BEFORE_TOOL_INPUT" | go run ./cmd/trace/main.go hooks gemini before-tool && echo "   ✓ before-tool passed" || echo "   ✗ before-tool failed"
+echo "$BEFORE_TOOL_INPUT" | go run ./cmd/hawk hooks gemini before-tool && echo "   ✓ before-tool passed" || echo "   ✗ before-tool failed"
 
 # Test 3: After Tool Hook
 echo ""
@@ -65,7 +65,7 @@ AFTER_TOOL_INPUT=$(cat <<EOF
 EOF
 )
 
-echo "$AFTER_TOOL_INPUT" | go run ./cmd/trace/main.go hooks gemini after-tool && echo "   ✓ after-tool passed" || echo "   ✗ after-tool failed"
+echo "$AFTER_TOOL_INPUT" | go run ./cmd/hawk hooks gemini after-tool && echo "   ✓ after-tool passed" || echo "   ✗ after-tool failed"
 
 # Test 4: Session End Hook
 echo ""
@@ -82,7 +82,7 @@ SESSION_END_INPUT=$(cat <<EOF
 EOF
 )
 
-echo "$SESSION_END_INPUT" | go run ./cmd/trace/main.go hooks gemini session-end && echo "   ✓ session-end passed" || echo "   ✗ session-end failed"
+echo "$SESSION_END_INPUT" | go run ./cmd/hawk hooks gemini session-end && echo "   ✓ session-end passed" || echo "   ✗ session-end failed"
 
 # Cleanup
 rm -rf "$TEMP_DIR"

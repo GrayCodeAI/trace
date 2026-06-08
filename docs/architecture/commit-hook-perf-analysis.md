@@ -142,7 +142,7 @@ This creates a **multiplicative** cost: N sessions × condensation cost per sess
 ## Reproducing
 
 ```bash
-go test -v -run TestCommitHookPerformance -tags hookperf -timeout 15m ./cmd/trace/cli/strategy/
+go test -v -run TestCommitHookPerformance -tags hookperf -timeout 15m ./cli/strategy/
 ```
 
 Requires GitHub access for cloning. Sessions are generated from repo commit history (no external templates needed).

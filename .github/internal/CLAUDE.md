@@ -52,7 +52,7 @@ Deprecated top-level alias (functional, prints cobra deprecation message):
 Hidden infrastructure commands: `hooks`, `migrate`, `trail`,
 `curl-bash-post-install`, `__send_analytics`.
 
-The `hideAsAlias(cmd, canonical)` helper in `cmd/trace/cli/aliascmd.go`
+The `hideAsAlias(cmd, canonical)` helper in `cli/aliascmd.go`
 marks a command Hidden and sets cobra's `Deprecated` field so the hint
 renders to stderr on every invocation while the command stays functional.
 Diagnostic subcommands live alongside `doctor.go` as `doctor_logs.go` and
@@ -85,7 +85,7 @@ mise run test:integration
 mise run test:ci
 ```
 
-This runs unit tests, integration tests, and the E2E canary (Vogon agent) in sequence. Integration tests use the `//go:build integration` build tag and are located in `cmd/trace/cli/integration_test/`.
+This runs unit tests, integration tests, and the E2E canary (Vogon agent) in sequence. Integration tests use the `//go:build integration` build tag and are located in `cli/integration_test/`.
 
 ### Running E2E Canary Tests (Vogon Agent)
 
@@ -99,7 +99,7 @@ mise run test:e2e:canary TestFoo   # Run a specific test
 - **Runs as part of `test:ci`** — canary failures block merges
 - **No API calls, no cost** — safe to run freely, unlike real agent E2E tests
 - **If a canary test fails, the bug is in the CLI or test infrastructure**, not in an agent
-- Located in `e2e/vogon/` (binary) and `cmd/trace/cli/agent/vogon/` (Agent interface)
+- Located in `e2e/vogon/` (binary) and `cli/agent/vogon/` (Agent interface)
 - The binary parses prompts via regex, creates/modifies/deletes files, and fires lifecycle hooks
 - **IMPORTANT: When changing E2E test prompt wording**, the Vogon binary (`e2e/vogon/main.go`) parses prompts with hardcoded regexes. New phrasing may not match existing patterns — always run `mise run test:e2e:canary` after changing prompt text and fix Vogon's parsing if tests fail.
 
@@ -190,7 +190,7 @@ Tests that spawn the real `trace` or `git` binary need the child to be non-inter
 For subprocesses spawning the real `trace` binary (e2e, integration tests, `trace` calling itself from a hook), prefer `execx.NonInteractive` over env-var plumbing:
 
 ```go
-import "github.com/GrayCodeAI/trace/cmd/trace/cli/execx"
+import "github.com/GrayCodeAI/trace/cli/execx"
 
 cmd := execx.NonInteractive(ctx, getTestBinary(), "status")
 cmd.Dir = repoDir
@@ -303,7 +303,7 @@ return fmt.Errorf("unknown strategy: %s", name)
 
 ### Settings
 
-All settings access should go through the `settings` package (`cmd/trace/cli/settings/`).
+All settings access should go through the `settings` package (`cli/settings/`).
 
 **Why a separate package:**
 The `settings` package exists to avoid import cycles. The `cli` package imports `strategy`, so `strategy` cannot import `cli`. The `settings` package provides shared settings loading that both can use.
@@ -311,7 +311,7 @@ The `settings` package exists to avoid import cycles. The `cli` package imports 
 **Usage:**
 
 ```go
-import "github.com/GrayCodeAI/trace/cmd/trace/cli/settings"
+import "github.com/GrayCodeAI/trace/cli/settings"
 
 // Load full settings object
 s, err := settings.Load()
@@ -341,7 +341,7 @@ if settings.IsSummarizeEnabled() {
 
 ### Logging vs User Output
 
-- **Internal/debug logging**: Use `logging.Debug/Info/Warn/Error(ctx, msg, attrs...)` from `cmd/trace/cli/logging/`. Writes to `.trace/logs/`.
+- **Internal/debug logging**: Use `logging.Debug/Info/Warn/Error(ctx, msg, attrs...)` from `cli/logging/`. Writes to `.trace/logs/`.
 - **Enabling debug/perf logs locally**: Prefer adding `"log_level": "DEBUG"` to `.trace/settings.local.json` when you need detailed hook/perf logs. This file is gitignored, so it is a low-risk local-only change. `TRACE_LOG_LEVEL=debug` also works and takes precedence.
 - **User-facing output**: Use `fmt.Fprint*(cmd.OutOrStdout(), ...)` or `cmd.ErrOrStderr()`.
 
@@ -410,7 +410,7 @@ relPath := paths.ToRelativePath("/repo/api/file.ts", repoRoot)  // returns "api/
 
 Test case in `state_test.go`: `TestFilterAndNormalizePaths_SiblingDirectories` documents this bug pattern.
 
-### Session Strategy (`cmd/trace/cli/strategy/`)
+### Session Strategy (`cli/strategy/`)
 
 The CLI uses a manual-commit strategy for managing session data and checkpoints. The strategy implements the `Strategy` interface defined in `strategy.go`.
 
@@ -463,14 +463,14 @@ The manual-commit strategy (`manual_commit*.go`) does not modify the active bran
 - `session_state.go` - Package-level session state functions (`LoadSessionState`, `SaveSessionState`, `ListSessionStates`, `FindMostRecentSession`)
 - `hooks.go` - Git hook installation
 
-#### Checkpoint Package (`cmd/trace/cli/checkpoint/`)
+#### Checkpoint Package (`cli/checkpoint/`)
 
 - `checkpoint.go` - Data types (`Checkpoint`, `TemporaryCheckpoint`, `CommittedCheckpoint`)
 - `store.go` - `GitStore` struct wrapping git repository
 - `temporary.go` - Shadow branch operations (`WriteTemporary`, `ReadTemporary`, `ListTemporary`)
 - `committed.go` - Metadata branch operations (`WriteCommitted`, `ReadCommitted`, `ListCommitted`)
 
-#### Session Package (`cmd/trace/cli/session/`)
+#### Session Package (`cli/session/`)
 
 - `session.go` - Session data types and interfaces
 - `state.go` - `StateStore` for managing `.git/trace-sessions/` files

@@ -72,9 +72,10 @@ linters:
         - G702 # command injection via taint - controlled CLI inputs
         - G705 # XSS not applicable to CLI stderr output
     dupl:
-      # Token threshold for duplication detection
-      # Lower = more sensitive (catches smaller duplicates)
-      # Default is 150. We use 75 for lint (blocks CI), `mise run dup` uses 50 (advisory)
+      # Token threshold for duplication detection.
+      # Lower = more sensitive (catches smaller duplicates).
+      # Default is 150. We use 75 for lint (blocks CI); `mise run dup` uses 50 (advisory).
+      threshold: 75
     goconst:
       min-occurrences: 6
     perfsprint:
@@ -82,7 +83,6 @@ linters:
       errorf: true
       sprintf1: true
       strconcat: false
-      threshold: 75
     errcheck:
       check-type-assertions: true
       check-blank: true
@@ -110,16 +110,15 @@ linters:
         - empty
         - stdlib
         - grpc.DialOption
-        - github.com/GrayCodeAI/trace/cmd/trace/cli/summarize.Generator
-        - github.com/GrayCodeAI/trace/cmd/trace/cli/agent\..+
-        - github.com/GrayCodeAI/trace/cmd/trace/cli/checkpoint.CommittedReader
-        - github.com/GrayCodeAI/trace/cmd/trace/cli/strategy.Strategy
+        - github.com/GrayCodeAI/trace/cli/summarize.Generator
+        - github.com/GrayCodeAI/trace/cli/agent\..+
+        - github.com/GrayCodeAI/trace/cli/checkpoint.CommittedReader
+        - github.com/GrayCodeAI/trace/cli/strategy.Strategy
         - github.com/go-git/go-git/v6/x/plugin.Signer
         - github.com/go-git/go-git/v6/plumbing/storer.ReferenceIter
         - github.com/go-git/go-git/v6/plumbing.EncodedObject
         - github.com/go-git/go-git/v6/storage.Storer
         - github.com/go-git/go-git/v6/plumbing/storer.EncodedObjectIter
-        - github.com/GrayCodeAI/trace/e2e/agents.Session
         - github.com/go-git/go-billy/v6.Filesystem
         - golang.org/x/crypto/ssh/agent.Agent
     nolintlint:
@@ -159,7 +158,7 @@ linters:
       - path: ^internal/sim/
         linters:
           - wrapcheck
-      - path: ^cmd/trace/cli/benchutil/
+      - path: ^cli/benchutil/
         linters:
           - usetesting
       - text: "`strat` is a misspelling"
