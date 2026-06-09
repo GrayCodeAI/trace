@@ -26,7 +26,7 @@ func TestBetterleaksDoesNotPoisonGitEnvironment(t *testing.T) {
 
 go 1.26.2
 
-require github.com/GrayCodeAI/trace v0.0.0
+require github.com/GrayCodeAI/trace v0.1.0
 
 replace github.com/GrayCodeAI/trace => ` + filepath.ToSlash(repoRoot) + `
 `
