@@ -49,7 +49,7 @@ jobs:
           cache: true
       - name: gofumpt diff
         run: |
-          go install mvdan.cc/gofumpt@latest
+          go install mvdan.cc/gofumpt@v0.10.0
           out=$(gofumpt -l .)
           if [ -n "$out" ]; then
             echo "::error::gofumpt would reformat the following files:"
@@ -73,7 +73,7 @@ jobs:
           cache: true
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1.0
+          version: v2.11.3
           install-mode: goinstall
           verify: false
           args: --timeout=5m
