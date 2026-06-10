@@ -41,10 +41,11 @@ func NewCheckpointID(s string) (CheckpointID, error) {
 
 // MustCheckpointID creates a CheckpointID from a string, panicking if invalid.
 // Use only when the ID is known to be valid (e.g., from trusted sources).
+// Returns an error if the input cannot be validated.
 func MustCheckpointID(s string) CheckpointID {
 	id, err := NewCheckpointID(s)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("invalid checkpoint ID %q: must be 12 lowercase hex characters", s))
 	}
 	return id
 }
