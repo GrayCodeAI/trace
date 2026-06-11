@@ -40,8 +40,12 @@ func NewCheckpointID(s string) (CheckpointID, error) {
 }
 
 // MustCheckpointID creates a CheckpointID from a string, panicking if invalid.
-// Use only when the ID is known to be valid (e.g., from trusted sources).
-// Returns an error if the input cannot be validated.
+//
+// It is intended exclusively for compile-time constants and test fixtures,
+// where an invalid literal is a programming error that should fail loudly.
+// All runtime inputs (user input, git data, JSON, network) must go through
+// NewCheckpointID, which returns an error instead of panicking. As of this
+// writing MustCheckpointID has no non-test callers; keep it that way.
 func MustCheckpointID(s string) CheckpointID {
 	id, err := NewCheckpointID(s)
 	if err != nil {
