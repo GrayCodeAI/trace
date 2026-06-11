@@ -18,6 +18,13 @@ are defined in <https://github.com/GrayCodeAI/hawk/blob/main/VERSIONING.md>.
 4. Open a pull request. CI will re-run the same checks plus security
    scanning, race-detector tests, and (where applicable) integration tests.
 
+## Toolchain requirements
+
+- **Go 1.26.4 or newer** — `go.mod` declares `go 1.26.4`, so older
+  toolchains will refuse to build the module. If you use
+  [mise](https://mise.jdx.dev/), `mise install` picks up the pinned
+  version from `mise.toml` automatically.
+
 ## Build & test
 
 This repo uses the standardised hawk-eco Makefile targets. Run `make help`
