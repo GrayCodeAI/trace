@@ -1,6 +1,6 @@
-# Your First Contribution to Entire
+# Your First Contribution to Trace
 
-If this is your first time contributing to an open source project, welcome! This guide walks you through making your first contribution to Entire, from finding an issue to opening a pull request.
+If this is your first time contributing to an open source project, welcome! This guide walks you through making your first contribution to Trace, from finding an issue to opening a pull request.
 
 If you've contributed to other projects and just want the workflow, jump to [CONTRIBUTING.md](../CONTRIBUTING.md) instead.
 
@@ -12,7 +12,7 @@ You're in the right place if any of this sounds like you:
 
 - You've never opened a pull request on someone else's project before.
 - You've used `git` for your own work but haven't navigated a fork-and-PR workflow.
-- You've contributed to other projects but want to know what's specific to Entire: the `Trace-Checkpoint` trailers, the `mise` toolchain, the agent integration tests.
+- You've contributed to other projects but want to know what's specific to Trace: the `Trace-Checkpoint` trailers, the `mise` toolchain, the agent integration tests.
 
 If you get stuck at any point, ask in [Discord](https://discord.gg/jZJs3Tue4S). First-time contributor questions are welcome.
 
@@ -72,7 +72,7 @@ When you pick a branch name, choose a prefix that reflects the kind of change yo
 
 ## Set up your dev environment
 
-Entire is a Go project managed by `mise`. Three commands and you're set up:
+Trace is a Go project managed by `mise`. Three commands and you're set up:
 
 ```bash
 # Install mise (skip if you already have it)
@@ -95,9 +95,9 @@ If `mise run test` passes, you're good to go. If something failed, see [Troubles
 
 ## Working with agents
 
-Entire exists to help you work with AI coding agents, so it would be odd if you weren't using one to contribute. There's no need to tell us you did. Our general thinking: use whatever agent and methodology you like, but until the robot revolution comes, you are responsible for the final code. Before submitting a PR for review, make sure you have reviewed it yourself. We'll close PRs that obviously skipped this step.
+Trace exists to help you work with AI coding agents, so it would be odd if you weren't using one to contribute. There's no need to tell us you did. Our general thinking: use whatever agent and methodology you like, but until the robot revolution comes, you are responsible for the final code. Before submitting a PR for review, make sure you have reviewed it yourself. We'll close PRs that obviously skipped this step.
 
-Trace supports agents including Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Factory AI Droid, Copilot CLI, and Pi, so feel free to use whichever one you're most comfortable with. Whichever you choose, your session will be captured the same way (see [Using Trace while you contribute](#using-entire-while-you-contribute) below).
+Trace supports agents including Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Factory AI Droid, Copilot CLI, and Pi, so feel free to use whichever one you're most comfortable with. Whichever you choose, your session will be captured the same way (see [Using Trace while you contribute](#using-trace-while-you-contribute) below).
 
 One thing to watch out for is LLM eagerness. Agents like to please and they're in a hurry. A few common failure modes to push back on:
 
@@ -127,11 +127,11 @@ git commit -m "Fix typo in README quickstart"
 
 ### Using Trace while you contribute
 
-We use Entire on Entire, and we encourage you to use it too. It helps maintainers see the agent context behind your change during review, which makes your PR easier to understand and approve.
+We use Trace on Trace, and we encourage you to use it too. It helps maintainers see the agent context behind your change during review, which makes your PR easier to understand and approve.
 
-You can install Entire as you work by following the [installation docs](https://docs.trace.io/cli/installation).
+You can install Trace as you work by following the [installation docs](https://docs.trace.io/cli/installation).
 
-If you have Entire installed and running, you may notice a line like `Trace-Checkpoint: a3b2c4d5e6f7` appended to your commit messages. That's the trailer in action, linking the commit to the session that produced it so maintainers can pull up the agent context during review.
+If you have Trace installed and running, you may notice a line like `Trace-Checkpoint: a3b2c4d5e6f7` appended to your commit messages. That's the trailer in action, linking the commit to the session that produced it so maintainers can pull up the agent context during review.
 
 ---
 
@@ -219,6 +219,6 @@ type -a trace
 
 Once you've landed your first PR:
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md): the full contribution guide, including PR conventions and the Entire-specific workflow notes.
+- [CONTRIBUTING.md](../CONTRIBUTING.md): the full contribution guide, including PR conventions and the Trace-specific workflow notes.
 - [AGENTS.md](../AGENTS.md): architecture and development reference. Read this before tackling a non-trivial change.
 - [Discord](https://discord.gg/jZJs3Tue4S): say hi, hang out, help the next first-time contributor.

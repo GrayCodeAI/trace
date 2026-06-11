@@ -521,7 +521,7 @@ func runExplainAutoAmbiguityGuard(ctx context.Context, target string, lookup *ex
 	}
 	hash, err := lookup.repo.ResolveRevision(plumbing.Revision(target))
 	if err != nil {
-		return nil //nolint:nilerr // target isn't a git ref
+		return nil //nolint:nilerr // target isn't a git ref, so no checkpoint/ref ambiguity is possible; fall through to normal resolution which reports the real error
 	}
 	if lookup == nil {
 		logging.Warn(ctx, "explain ambiguity guard degraded: checkpoint lookup unavailable",
@@ -1316,7 +1316,7 @@ func explainTemporaryCheckpoint(ctx context.Context, w, errW io.Writer, repo *gi
 	// This ensures we find checkpoints even if HEAD has advanced since the session started
 	tempCheckpoints, err := store.ListAllTemporaryCheckpoints(ctx, "", branchCheckpointsLimit)
 	if err != nil {
-		return "", false, nil //nolint:nilerr // best-effort: caller falls back to ErrCheckpointNotFound when no temp checkpoint is found
+		return "", false, nil //nolint:nilerr // best-effort: shadow-branch listing failure is reported as found=false; caller then falls back to ErrCheckpointNotFound with a user-facing hint instead of a raw git error
 	}
 
 	// Find checkpoints matching the SHA prefix - check for ambiguity
@@ -1354,12 +1354,12 @@ func explainTemporaryCheckpoint(ctx context.Context, w, errW io.Writer, repo *gi
 	// Get shadow commit and tree to read metadata
 	shadowCommit, commitErr := repo.CommitObject(tc.CommitHash)
 	if commitErr != nil {
-		return "", false, nil //nolint:nilerr // best-effort: missing shadow commit is treated as not-found
+		return "", false, nil //nolint:nilerr // best-effort: shadow commit may have been GC'd or pruned; treat as not-found so the caller reports ErrCheckpointNotFound rather than an internal git error
 	}
 
 	shadowTree, treeErr := shadowCommit.Tree()
 	if treeErr != nil {
-		return "", false, nil //nolint:nilerr // best-effort: missing shadow tree is treated as not-found
+		return "", false, nil //nolint:nilerr // best-effort: a shadow commit without a readable tree is corrupt/partial; treat as not-found so the caller reports ErrCheckpointNotFound rather than an internal git error
 	}
 
 	// Read agent type from shadow branch metadata (stored during checkpoint creation)

@@ -66,6 +66,9 @@ cover: ## Generate a coverage report (coverage.out + coverage.html).
 bench: ## Run benchmarks.
 	go test ./... -bench=. -benchmem -count=3 -timeout=300s
 
+bench-hooks: ## Run hook latency benchmarks (integration-tagged; spawns real git repos).
+	go test -tags=integration ./cli/integration_test/ -run='^$$' -bench=BenchmarkHook -benchmem -timeout=600s
+
 # ---------------------------------------------------------------------------
 # Quality gates.
 # ---------------------------------------------------------------------------
