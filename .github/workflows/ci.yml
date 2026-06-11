@@ -161,6 +161,13 @@ jobs:
           go install golang.org/x/tools/cmd/deadcode@latest
           deadcode -test ./... 2>&1 | tee deadcode.txt
           echo "deadcode reported $(grep -c 'unreachable func' deadcode.txt || echo 0) unreachable funcs (advisory)"
+      - name: upload deadcode report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deadcode-report
+          path: deadcode.txt
+          if-no-files-found: ignore
 
   # -------------------------------------------------------------------------
   # Duplication detection — jscpd.
