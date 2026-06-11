@@ -15,6 +15,12 @@ codegraph.db
 # Bailiwick-style runtime artifacts
 *.bailiwick
 coverage.out
+coverage.html
+
+# Local AI assistant state
+/.opencode/
+/.codex/
+/.gemini/
 
 # macOS
 .DS_Store
