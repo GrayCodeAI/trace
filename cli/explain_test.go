@@ -1962,6 +1962,7 @@ esac
 exec git-upload-pack "$repo"
 `), 0o755))
 	t.Setenv("GIT_SSH", sshScript)
+	t.Setenv("GIT_SSH_COMMAND", sshScript) // GIT_SSH_COMMAND takes priority over GIT_SSH on systems where it's set globally.
 	t.Setenv("CHECKPOINT_REPO", checkpointDir)
 
 	require.NoError(t, os.MkdirAll(filepath.Join(localDir, ".trace"), 0o755))
