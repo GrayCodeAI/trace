@@ -31,6 +31,8 @@ import (
 //
 // Not parallel: uses t.Chdir() (required for OpenRepository).
 func TestFetchAndRebase_URLTarget_ReconcilesFetchedTempRef(t *testing.T) {
+	acquireGitCLITest(t)
+
 	ctx := context.Background()
 	branchName := paths.MetadataBranchName
 
@@ -66,8 +68,7 @@ func TestFetchAndRebase_URLTarget_ReconcilesFetchedTempRef(t *testing.T) {
 	gitRun(setupDir, "push", "origin", branchName)
 	gitRun(setupDir, "checkout", "main")
 
-	cloneDir := filepath.Join(t.TempDir(), "clone")
-	require.NoError(t, os.MkdirAll(cloneDir, 0o755))
+	cloneDir := t.TempDir()
 	gitRun(cloneDir, "clone", bareDir, ".")
 	gitRun(cloneDir, "config", "user.email", "test@test.com")
 	gitRun(cloneDir, "config", "user.name", "Test User")
@@ -128,6 +129,8 @@ func TestFetchAndRebase_URLTarget_ReconcilesFetchedTempRef(t *testing.T) {
 //
 // Not parallel: uses t.Chdir() (required for OpenRepository).
 func TestFetchAndRebase_FlaggedOriginTarget_UsesTempRef(t *testing.T) {
+	acquireGitCLITest(t)
+
 	ctx := context.Background()
 	branchName := paths.MetadataBranchName
 
@@ -163,8 +166,7 @@ func TestFetchAndRebase_FlaggedOriginTarget_UsesTempRef(t *testing.T) {
 	gitRun(setupDir, "push", "origin", branchName)
 	gitRun(setupDir, "checkout", "main")
 
-	cloneDir := filepath.Join(t.TempDir(), "clone")
-	require.NoError(t, os.MkdirAll(cloneDir, 0o755))
+	cloneDir := t.TempDir()
 	gitRun(cloneDir, "clone", bareDir, ".")
 	gitRun(cloneDir, "config", "user.email", "test@test.com")
 	gitRun(cloneDir, "config", "user.name", "Test User")
