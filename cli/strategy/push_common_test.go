@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
@@ -18,6 +19,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// gitCLITestMu serializes git CLI tests that call t.Chdir(). Parallel tests in
+// this package can otherwise race on process cwd and temp-repo cleanup under -race.
+var gitCLITestMu sync.Mutex
+
+func acquireGitCLITest(t *testing.T) {
+	t.Helper()
+	gitCLITestMu.Lock()
+	t.Cleanup(gitCLITestMu.Unlock)
+}
 
 func TestHasUnpushedSessionsCommon(t *testing.T) {
 	t.Parallel()
@@ -183,6 +194,8 @@ func TestPushBranchIfNeeded_LocalBareRepo_PushesSuccessfully(t *testing.T) {
 //
 // Not parallel: uses t.Chdir() (required for OpenRepository).
 func TestFetchAndRebase_DivergedBranches(t *testing.T) {
+	acquireGitCLITest(t)
+
 	ctx := context.Background()
 	branchName := paths.MetadataBranchName
 
@@ -221,10 +234,8 @@ func TestFetchAndRebase_DivergedBranches(t *testing.T) {
 	gitRun(workDir, "checkout", "main")
 
 	// 2. Clone into two separate working directories
-	cloneA := filepath.Join(t.TempDir(), "cloneA")
-	cloneB := filepath.Join(t.TempDir(), "cloneB")
-	require.NoError(t, os.MkdirAll(cloneA, 0o755))
-	require.NoError(t, os.MkdirAll(cloneB, 0o755))
+	cloneA := t.TempDir()
+	cloneB := t.TempDir()
 
 	gitRun(cloneA, "clone", bareDir, ".")
 	gitRun(cloneA, "config", "user.email", "a@test.com")
@@ -307,6 +318,8 @@ func TestFetchAndRebase_DivergedBranches(t *testing.T) {
 //
 // Not parallel: uses t.Chdir() (required for OpenRepository).
 func TestFetchAndRebase_LocalBehind(t *testing.T) {
+	acquireGitCLITest(t)
+
 	ctx := context.Background()
 	branchName := paths.MetadataBranchName
 
@@ -343,8 +356,7 @@ func TestFetchAndRebase_LocalBehind(t *testing.T) {
 	gitRun(workDir, "checkout", "main")
 
 	// Clone
-	cloneDir := filepath.Join(t.TempDir(), "clone")
-	require.NoError(t, os.MkdirAll(cloneDir, 0o755))
+	cloneDir := t.TempDir()
 	gitRun(cloneDir, "clone", bareDir, ".")
 	gitRun(cloneDir, "config", "user.email", "test@test.com")
 	gitRun(cloneDir, "config", "user.name", "Test User")
@@ -387,6 +399,8 @@ func TestFetchAndRebase_LocalBehind(t *testing.T) {
 //
 // Not parallel: uses t.Chdir() (required for OpenRepository).
 func TestFetchAndRebase_MergeBaseOnSecondParent_DoesNotReplayAncestors(t *testing.T) {
+	acquireGitCLITest(t)
+
 	ctx := context.Background()
 	branchName := paths.MetadataBranchName
 
@@ -425,10 +439,8 @@ func TestFetchAndRebase_MergeBaseOnSecondParent_DoesNotReplayAncestors(t *testin
 	gitRun(setupDir, "checkout", "main")
 
 	// Clone twice: local gets the old merge-commit history, remote advances later.
-	cloneLocal := filepath.Join(t.TempDir(), "clone-local")
-	cloneRemote := filepath.Join(t.TempDir(), "clone-remote")
-	require.NoError(t, os.MkdirAll(cloneLocal, 0o755))
-	require.NoError(t, os.MkdirAll(cloneRemote, 0o755))
+	cloneLocal := t.TempDir()
+	cloneRemote := t.TempDir()
 
 	for _, dir := range []string{cloneLocal, cloneRemote} {
 		gitRun(dir, "clone", bareDir, ".")
@@ -518,6 +530,8 @@ func TestFetchAndRebase_MergeBaseOnSecondParent_DoesNotReplayAncestors(t *testin
 //
 // Not parallel: uses t.Chdir() (required for OpenRepository).
 func TestFetchAndRebase_DoesNotResurrectRemoteOnlyCheckpointFromMerge(t *testing.T) {
+	acquireGitCLITest(t)
+
 	ctx := context.Background()
 	branchName := paths.MetadataBranchName
 
@@ -553,10 +567,8 @@ func TestFetchAndRebase_DoesNotResurrectRemoteOnlyCheckpointFromMerge(t *testing
 	gitRun(setupDir, "push", "origin", branchName)
 	gitRun(setupDir, "checkout", "main")
 
-	cloneLocal := filepath.Join(t.TempDir(), "clone-local")
-	cloneRemote := filepath.Join(t.TempDir(), "clone-remote")
-	require.NoError(t, os.MkdirAll(cloneLocal, 0o755))
-	require.NoError(t, os.MkdirAll(cloneRemote, 0o755))
+	cloneLocal := t.TempDir()
+	cloneRemote := t.TempDir()
 
 	for _, dir := range []string{cloneLocal, cloneRemote} {
 		gitRun(dir, "clone", bareDir, ".")
@@ -633,6 +645,8 @@ func TestFetchAndRebase_DoesNotResurrectRemoteOnlyCheckpointFromMerge(t *testing
 //
 // Not parallel: uses t.Chdir() (required for OpenRepository).
 func TestFetchAndRebase_NonOriginRemote_ReconcilesFetchedRef(t *testing.T) {
+	acquireGitCLITest(t)
+
 	ctx := context.Background()
 	branchName := paths.MetadataBranchName
 
@@ -668,8 +682,7 @@ func TestFetchAndRebase_NonOriginRemote_ReconcilesFetchedRef(t *testing.T) {
 	gitRun(setupDir, "push", "origin", branchName)
 	gitRun(setupDir, "checkout", "main")
 
-	cloneDir := filepath.Join(t.TempDir(), "clone")
-	require.NoError(t, os.MkdirAll(cloneDir, 0o755))
+	cloneDir := t.TempDir()
 	gitRun(cloneDir, "clone", bareDir, ".")
 	gitRun(cloneDir, "config", "user.email", "test@test.com")
 	gitRun(cloneDir, "config", "user.name", "Test User")
