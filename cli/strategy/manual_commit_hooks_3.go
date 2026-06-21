@@ -15,6 +15,8 @@ import (
 	"github.com/GrayCodeAI/trace/cli/interactive"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
+	"github.com/GrayCodeAI/trace/cli/provenance"
+	"github.com/GrayCodeAI/trace/cli/review"
 	"github.com/GrayCodeAI/trace/cli/session"
 	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/trailers"
@@ -636,6 +638,28 @@ func addCheckpointTrailerWithComment(message string, checkpointID id.CheckpointI
 	return userContent + "\n\n" + trailer + "\n" + comment + "\n\n" + gitComments
 }
 
+func applyProvenanceEnvToState(state *SessionState) {
+	if os.Getenv(provenance.ReviewSession) != "" {
+		state.Kind = session.KindAgentReview
+		if skills, err := review.DecodeSkills(os.Getenv(provenance.ReviewSkills)); err == nil {
+			state.ReviewSkills = skills
+		}
+		if prompt := strings.TrimSpace(os.Getenv(provenance.ReviewPrompt)); prompt != "" {
+			state.ReviewPrompt = prompt
+		}
+	}
+
+	if os.Getenv(provenance.InvestigateSession) != "" {
+		state.Kind = session.KindAgentInvestigate
+		if runID := strings.TrimSpace(os.Getenv(provenance.InvestigateRunID)); provenance.IsValidRunID(runID) {
+			state.InvestigateRunID = runID
+		}
+		if topic := strings.TrimSpace(os.Getenv(provenance.InvestigateTopic)); topic != "" {
+			state.InvestigateTopic = topic
+		}
+	}
+}
+
 // InitializeSession creates session state for a new session or updates an existing one.
 // This implements the optional SessionInitializer interface.
 // Called during UserPromptSubmit to allow git hooks to detect active sessions.
@@ -697,6 +721,8 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 		if model != "" {
 			state.ModelName = model
 		}
+
+		applyProvenanceEnvToState(state)
 
 		// Update LastPrompt on every turn so condensation always has the current prompt
 		if userPrompt != "" {
@@ -764,6 +790,8 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 	if err != nil {
 		return fmt.Errorf("failed to initialize session: %w", err)
 	}
+
+	applyProvenanceEnvToState(state)
 
 	// Apply phase transition: new session starts as ACTIVE.
 	if transErr := TransitionAndLog(ctx, state, session.EventTurnStart, session.TransitionContext{}, session.NoOpActionHandler{}); transErr != nil {

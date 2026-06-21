@@ -73,6 +73,24 @@ func (r *HookRunner) SimulateUserPromptSubmitWithPrompt(sessionID, prompt string
 	return r.runHookWithInput("user-prompt-submit", input)
 }
 
+func (r *HookRunner) SimulateUserPromptSubmitWithReviewEnvVars(sessionID, prompt string, extraEnv []string) error {
+	r.T.Helper()
+	input := map[string]string{
+		"session_id":      sessionID,
+		"transcript_path": "",
+		"prompt":          prompt,
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("failed to marshal hook input: %w", err)
+	}
+	out := r.runAgentHookWithOutput("claude-code", "user-prompt-submit", inputJSON, extraEnv...)
+	if out.Err != nil {
+		return fmt.Errorf("hook user-prompt-submit failed: %w\nInput: %s\nOutput: %s%s", out.Err, inputJSON, out.Stdout, out.Stderr)
+	}
+	return nil
+}
+
 // SimulateUserPromptSubmitWithTranscriptPath simulates the UserPromptSubmit hook
 // with an explicit transcript path. This is needed for mid-session commit detection
 // which reads the live transcript to detect ongoing sessions.
@@ -318,6 +336,12 @@ func (env *TestEnv) SimulateUserPromptSubmitWithPrompt(sessionID, prompt string)
 	env.T.Helper()
 	runner := NewHookRunner(env.RepoDir, env.ClaudeProjectDir, env.T)
 	return runner.SimulateUserPromptSubmitWithPrompt(sessionID, prompt)
+}
+
+func (env *TestEnv) SimulateUserPromptSubmitWithReviewEnvVars(sessionID, prompt string, extraEnv []string) error {
+	env.T.Helper()
+	runner := NewHookRunner(env.RepoDir, env.ClaudeProjectDir, env.T)
+	return runner.SimulateUserPromptSubmitWithReviewEnvVars(sessionID, prompt, extraEnv)
 }
 
 // SimulateUserPromptSubmitWithTranscriptPath is a convenience method on TestEnv.

@@ -62,6 +62,9 @@ const (
 	// distinct Kind values AND added to Kind.IsReview so the checkpoint's
 	// HasReview umbrella flag keeps covering them.
 	KindAgentReview Kind = "agent_review"
+
+	// KindAgentInvestigate tags a session created by `trace investigate`.
+	KindAgentInvestigate Kind = "agent_investigate"
 )
 
 // IsReview reports whether this Kind counts as "a review happened" for the
@@ -70,6 +73,11 @@ const (
 // accurate without string-literal coupling across packages.
 func (k Kind) IsReview() bool {
 	return k == KindAgentReview
+}
+
+// IsInvestigation reports whether this Kind counts as an investigation session.
+func (k Kind) IsInvestigation() bool {
+	return k == KindAgentInvestigate
 }
 
 // State represents the state of an active session.
@@ -124,6 +132,12 @@ type State struct {
 	// prompt sent to the agent (spawn path) or the session's first user
 	// prompt (attach path). Always populated when Kind is a review kind.
 	ReviewPrompt string `json:"review_prompt,omitempty"`
+
+	// InvestigateRunID is the 12-hex-char ID of the parent investigation run.
+	InvestigateRunID string `json:"investigate_run_id,omitempty"`
+
+	// InvestigateTopic is the human-readable topic for the investigation run.
+	InvestigateTopic string `json:"investigate_topic,omitempty"`
 
 	// TurnID is a unique identifier for the current agent turn.
 	// Lifecycle:
