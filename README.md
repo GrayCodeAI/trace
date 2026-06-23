@@ -16,6 +16,14 @@
 
 Trace hooks into your Git workflow to capture AI agent sessions as you work. Sessions are indexed alongside commits, creating a searchable record of *how* code was written — not just *what* changed.
 
+## Ecosystem Boundaries
+
+Trace is a Hawk support engine. Keep the dependency edge one-way:
+
+- depend on `hawk-core-contracts` when a stable cross-repo contract is needed
+- do not import `hawk/internal/*`
+- do not import removed legacy path `hawk/shared/types`; use `hawk-core-contracts/types`
+
 ### What you get
 
 | Capability | Description |

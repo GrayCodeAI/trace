@@ -48,6 +48,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+      - name: Boundary guard
+        run: bash ./scripts/check-ecosystem-boundaries.sh
       - name: gofumpt diff
         run: |
           go install mvdan.cc/gofumpt@v0.10.0
@@ -72,6 +74,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+      - name: Boundary guard
+        run: bash ./scripts/check-ecosystem-boundaries.sh
       - uses: golangci/golangci-lint-action@v9.2.1
         with:
           version: v2.11.3
@@ -91,6 +95,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+      - name: Boundary guard
+        run: bash ./scripts/check-ecosystem-boundaries.sh
       - name: Tidy check
         run: |
           go mod tidy
