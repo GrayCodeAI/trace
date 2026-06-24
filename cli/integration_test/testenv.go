@@ -380,6 +380,28 @@ func (env *TestEnv) initTraceInternal(strategyOptions map[string]any) {
 	}
 }
 
+func (env *TestEnv) WriteSettings(settings map[string]any) {
+	env.T.Helper()
+	traceDir := filepath.Join(env.RepoDir, paths.TraceDir)
+	if err := os.MkdirAll(traceDir, 0o755); err != nil {
+		env.T.Fatalf("failed to create .trace directory: %v", err)
+	}
+	data, err := jsonutil.MarshalIndentWithNewline(settings, "", "  ")
+	if err != nil {
+		env.T.Fatalf("failed to marshal settings: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(traceDir, paths.SettingsFileName), data, 0o644); err != nil {
+		env.T.Fatalf("failed to write %s: %v", paths.SettingsFileName, err)
+	}
+}
+
+func composeReviewPromptForTest(skills []string) string {
+	if len(skills) == 0 {
+		return "Review the current branch changes and report actionable findings."
+	}
+	return strings.Join(skills, "\n") + "\n\nReview the current branch changes and report actionable findings."
+}
+
 // WriteFile creates a file with the given content in the test repo.
 // It creates parent directories as needed.
 func (env *TestEnv) WriteFile(path, content string) {
