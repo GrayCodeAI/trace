@@ -570,6 +570,7 @@ func (env *TestEnv) GitCheckoutBranch(branchName string) {
 
 	err = worktree.Checkout(&git.CheckoutOptions{
 		Branch: plumbing.NewBranchReferenceName(branchName),
+		Force:  true,
 	})
 	if err != nil {
 		env.T.Fatalf("failed to checkout branch %s: %v", branchName, err)

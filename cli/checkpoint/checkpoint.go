@@ -273,6 +273,21 @@ type WriteCommittedOptions struct {
 	// TurnID correlates checkpoints from the same agent turn.
 	TurnID string
 
+	// Kind tags the session purpose (e.g., "agent_review", "agent_investigate").
+	Kind string
+
+	// ReviewSkills is the snapshot of configured review skills at session start.
+	ReviewSkills []string
+
+	// ReviewPrompt is the actual text of the review request.
+	ReviewPrompt string
+
+	// InvestigateRunID is the 12-hex-char ID of the parent investigation run.
+	InvestigateRunID string
+
+	// InvestigateTopic is the human-readable topic for the investigation run.
+	InvestigateTopic string
+
 	// Transcript position at checkpoint start - tracks what was added during this checkpoint
 	TranscriptIdentifierAtStart string // Last identifier when checkpoint started (UUID for Claude, message ID for Gemini)
 	CheckpointTranscriptStart   int    // Transcript line offset at start of this checkpoint's data
@@ -469,6 +484,9 @@ type CommittedMetadata struct {
 	// InvestigateRunID is the 12-hex-char ID of the parent investigation
 	// run. Only set when Kind is an investigate kind.
 	InvestigateRunID string `json:"investigate_run_id,omitempty"`
+
+	// InvestigateTopic is the human-readable topic for the investigation run.
+	InvestigateTopic string `json:"investigate_topic,omitempty"`
 
 	// Task checkpoint fields (only populated for task checkpoints)
 	IsTask    bool   `json:"is_task,omitempty"`

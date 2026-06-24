@@ -414,6 +414,11 @@ func (s *GitStore) writeSessionToSubdirectory(ctx context.Context, opts WriteCom
 		Agent:                       opts.Agent,
 		Model:                       opts.Model,
 		TurnID:                      opts.TurnID,
+		Kind:                        opts.Kind,
+		ReviewSkills:                opts.ReviewSkills,
+		ReviewPrompt:                opts.ReviewPrompt,
+		InvestigateRunID:            opts.InvestigateRunID,
+		InvestigateTopic:            opts.InvestigateTopic,
 		IsTask:                      opts.IsTask,
 		ToolUseID:                   opts.ToolUseID,
 		TranscriptIdentifierAtStart: opts.TranscriptIdentifierAtStart,
@@ -474,6 +479,8 @@ func (s *GitStore) writeCheckpointSummary(opts WriteCommittedOptions, basePath s
 		Sessions:            sessions,
 		TokenUsage:          tokenUsage,
 		CombinedAttribution: combinedAttribution,
+		HasReview:           opts.Kind == "agent_review",
+		HasInvestigation:    opts.Kind == "agent_investigate",
 	}
 
 	metadataJSON, err := jsonutil.MarshalIndentWithNewline(summary, "", "  ")
