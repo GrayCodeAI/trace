@@ -22,5 +22,9 @@ coverage.html
 /.codex/
 /.gemini/
 
+# Go workspace (local dev only — each developer creates their own)
+go.work
+go.work.sum
+
 # macOS
 .DS_Store
