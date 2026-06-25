@@ -20,9 +20,10 @@ Trace hooks into your Git workflow to capture AI agent sessions as you work. Ses
 
 Trace is a Hawk support engine. Keep the dependency edge one-way:
 
-- depend on `hawk-core-contracts` when a stable cross-repo contract is needed
+- trace uses local-only types (trace/redaction event types are trace-scoped, not shared contracts)
 - do not import `hawk/internal/*`
-- do not import removed legacy path `hawk/shared/types`; use `hawk-core-contracts/types`
+- do not import removed legacy path `hawk/shared/types`
+- do not import other engines (`eyrie`, `yaad`, `tok`, `sight`, `inspect`) — engines are peers, not dependencies
 
 ### What you get
 
