@@ -3,8 +3,7 @@ package transcript
 import (
 	"bytes"
 	"compress/gzip"
-	"os"
-	"path/filepath"
+	"io"
 	"testing"
 )
 
@@ -46,10 +45,14 @@ func FuzzParseFromBytes(f *testing.F) {
 		_ = SliceFromLine(data, 1)
 		_ = SliceFromLine(data, len(data)+1)
 
-		// gz path: write the same bytes gzip-compressed and parse via the file
-		// reader, which transparently decompresses the .gz variant. Must not panic.
-		dir := t.TempDir()
-		base := filepath.Join(dir, "transcript.jsonl")
+		// gz path: exercise the same decompress-then-parse logic openTranscriptReader
+		// uses for a ".gz" transcript, entirely in memory. Must not panic or hang.
+		// (The thin disk-based path lookup/fallback in openTranscriptReader itself
+		// is covered by TestParseFromFileAtLine_* in parse_test.go; doing real
+		// filesystem I/O on every one of millions of fuzz iterations here made this
+		// target orders of magnitude slower than the other Fuzz* targets in this
+		// repo, up to the point of colliding with the fuzz engine's own per-run
+		// deadline and failing with a spurious "context deadline exceeded".)
 		var buf bytes.Buffer
 		gw := gzip.NewWriter(&buf)
 		if _, werr := gw.Write(data); werr != nil {
@@ -58,12 +61,16 @@ func FuzzParseFromBytes(f *testing.F) {
 		if cerr := gw.Close(); cerr != nil {
 			t.Fatalf("gzip close: %v", cerr)
 		}
-		if werr := os.WriteFile(base+".gz", buf.Bytes(), 0o600); werr != nil {
-			t.Fatalf("write gz file: %v", werr)
+		gzReader, gzErr := gzip.NewReader(&buf)
+		if gzErr != nil {
+			t.Fatalf("gzip.NewReader on our own compressed output: %v", gzErr)
 		}
-		// base does not exist, so openTranscriptReader falls back to base+".gz".
-		if _, gerr := ParseFromFileAtLine(base, 0); gerr != nil {
-			t.Fatalf("ParseFromFileAtLine (gz) returned error: %v", gerr)
+		decompressed, readErr := io.ReadAll(gzReader)
+		if readErr != nil {
+			t.Fatalf("decompressing our own gzip output: %v", readErr)
+		}
+		if _, gerr := ParseFromBytes(decompressed); gerr != nil {
+			t.Fatalf("ParseFromBytes (decompressed) returned error on arbitrary input: %v", gerr)
 		}
 	})
 }

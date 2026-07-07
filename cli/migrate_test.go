@@ -590,7 +590,7 @@ func TestMigrateCmd_RepairsArchivedGenerationMetadata(t *testing.T) {
 	repo := initMigrateTestRepo(t)
 	wt, err := repo.Worktree()
 	require.NoError(t, err)
-	t.Chdir(wt.Filesystem.Root())
+	t.Chdir(wt.Filesystem().Root())
 	paths.ClearWorktreeRootCache()
 
 	cpID := id.MustCheckpointID("123456789abc")

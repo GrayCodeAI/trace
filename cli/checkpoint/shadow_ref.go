@@ -40,7 +40,7 @@ func (s *GitStore) repoDirs(ctx context.Context) (worktreeRoot, commonDir string
 	if err != nil {
 		return "", "", fmt.Errorf("open worktree: %w", err)
 	}
-	worktreeRoot = wt.Filesystem.Root()
+	worktreeRoot = wt.Filesystem().Root()
 	if worktreeRoot == "" {
 		return "", "", errors.New("repository worktree filesystem has no root path")
 	}

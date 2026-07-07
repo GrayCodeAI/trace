@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/GrayCodeAI/trace/cli/api"
 	"github.com/entireio/auth-go/tokens"
@@ -13,6 +14,28 @@ import (
 )
 
 const keyringService = "trace-cli"
+
+// keyringTimeout bounds a single OS keyring operation. zalando/go-keyring
+// does not accept a context or deadline, so a stuck keyring daemon (seen in
+// practice with Linux secret-service backends) would otherwise hang login/
+// logout indefinitely. The goroutine is not killed when the timeout fires —
+// its result is simply discarded — but the caller is freed to move on.
+const keyringTimeout = 10 * time.Second
+
+// keyringDo runs fn on its own goroutine and returns its error, or
+// context.DeadlineExceeded-equivalent behavior if it exceeds keyringTimeout.
+func keyringDo(fn func() error) error {
+	ch := make(chan error, 1)
+	go func() { ch <- fn() }()
+	timer := time.NewTimer(keyringTimeout)
+	defer timer.Stop()
+	select {
+	case err := <-ch:
+		return err
+	case <-timer.C:
+		return fmt.Errorf("keyring operation timed out after %s", keyringTimeout)
+	}
+}
 
 // Store manages CLI authentication tokens in the OS keyring.
 // Implements tokenstore.Store for use with the tokenmanager library.
@@ -38,7 +61,7 @@ func (s *Store) SaveToken(baseURL, token string) error {
 		return errors.New("refusing to save empty token")
 	}
 
-	if err := keyring.Set(s.service, baseURL, token); err != nil {
+	if err := keyringDo(func() error { return keyring.Set(s.service, baseURL, token) }); err != nil {
 		return fmt.Errorf("save token to keyring: %w", err)
 	}
 
@@ -49,7 +72,12 @@ func (s *Store) SaveToken(baseURL, token string) error {
 // Returns an empty string (and no error) if no token is stored.
 // Legacy method for backward compatibility with plain-string tokens.
 func (s *Store) GetToken(baseURL string) (string, error) {
-	token, err := keyring.Get(s.service, baseURL)
+	var token string
+	err := keyringDo(func() error {
+		var innerErr error
+		token, innerErr = keyring.Get(s.service, baseURL)
+		return innerErr
+	})
 	if errors.Is(err, keyring.ErrNotFound) {
 		return "", nil
 	}
@@ -63,7 +91,7 @@ func (s *Store) GetToken(baseURL string) (string, error) {
 // DeleteToken removes a stored token for the given base URL.
 // Legacy method for backward compatibility with plain-string tokens.
 func (s *Store) DeleteToken(baseURL string) error {
-	err := keyring.Delete(s.service, baseURL)
+	err := keyringDo(func() error { return keyring.Delete(s.service, baseURL) })
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}
@@ -92,7 +120,7 @@ func (s *Store) SaveTokens(profile string, t tokens.TokenSet) error {
 		return fmt.Errorf("marshal token set: %w", err)
 	}
 
-	if err := keyring.Set(s.service, profile, string(data)); err != nil {
+	if err := keyringDo(func() error { return keyring.Set(s.service, profile, string(data)) }); err != nil {
 		return fmt.Errorf("save tokens to keyring: %w", err)
 	}
 
@@ -104,7 +132,12 @@ func (s *Store) SaveTokens(profile string, t tokens.TokenSet) error {
 // Handles legacy plain-string entries by wrapping them in a TokenSet.
 // Implements tokenstore.Store.
 func (s *Store) LoadTokens(profile string) (tokens.TokenSet, error) {
-	raw, err := keyring.Get(s.service, profile)
+	var raw string
+	err := keyringDo(func() error {
+		var innerErr error
+		raw, innerErr = keyring.Get(s.service, profile)
+		return innerErr
+	})
 	if errors.Is(err, keyring.ErrNotFound) {
 		return tokens.TokenSet{}, tokenstore.ErrNotFound
 	}
@@ -125,7 +158,7 @@ func (s *Store) LoadTokens(profile string) (tokens.TokenSet, error) {
 // DeleteTokens removes a stored TokenSet for the given profile.
 // Treats missing profiles as a no-op. Implements tokenstore.Store.
 func (s *Store) DeleteTokens(profile string) error {
-	err := keyring.Delete(s.service, profile)
+	err := keyringDo(func() error { return keyring.Delete(s.service, profile) })
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}
