@@ -13,6 +13,7 @@ import (
 func ReadRawHooks(t *testing.T, tempDir, settingsDir string) map[string]json.RawMessage {
 	t.Helper()
 	settingsPath := filepath.Join(tempDir, settingsDir, "settings.json")
+	// #nosec G304 -- test utility; path is constructed from the test's own tempDir, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // Test utility, path constructed from test tempDir
 	if err != nil {
 		t.Fatalf("failed to read settings.json: %v", err)

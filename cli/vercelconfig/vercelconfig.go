@@ -73,7 +73,7 @@ func ResetSettingsCache() {
 // Load reads a Vercel config file if present.
 func Load(path string) (map[string]any, bool, error) {
 	//nolint:gosec // path is provided by repository-local callers and intentionally supports arbitrary locations in tests
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is repo-local, provided by callers within this tool, not remote/untrusted input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return make(map[string]any), false, nil

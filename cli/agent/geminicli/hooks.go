@@ -69,6 +69,7 @@ func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force 
 
 	var hooksConfig GeminiHooksConfig
 
+	// #nosec G304 -- settingsPath is constructed from cwd + fixed path, not external input
 	existingData, readErr := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from cwd + fixed path
 	if readErr == nil {
 		if err := json.Unmarshal(existingData, &rawSettings); err != nil {
@@ -295,7 +296,7 @@ func writeGeminiSettingsFile(rawSettings map[string]json.RawMessage, rawHooks ma
 func parseGeminiHookType(rawHooks map[string]json.RawMessage, hookType string, target *[]GeminiHookMatcher) {
 	if data, ok := rawHooks[hookType]; ok {
 		//nolint:errcheck,gosec // Intentionally ignoring parse errors - leave target as nil/empty
-		json.Unmarshal(data, target)
+		json.Unmarshal(data, target) // #nosec G104 -- intentionally ignoring parse errors, leave target as nil/empty
 	}
 }
 
@@ -321,6 +322,7 @@ func (g *GeminiCLIAgent) UninstallHooks(ctx context.Context) error {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".gemini", GeminiSettingsFileName)
+	// #nosec G304 -- settingsPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return nil //nolint:nilerr // No settings file means nothing to uninstall
@@ -418,6 +420,7 @@ func (g *GeminiCLIAgent) AreHooksInstalled(ctx context.Context) bool {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".gemini", GeminiSettingsFileName)
+	// #nosec G304 -- settingsPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return false

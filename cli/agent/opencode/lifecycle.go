@@ -197,7 +197,7 @@ func (a *OpenCodeAgent) fetchAndCacheExport(ctx context.Context, sessionID strin
 	}
 
 	//nolint:gosec // tmpFile is constructed from validated session ID under repo .trace/tmp
-	data, err := os.ReadFile(tmpFile)
+	data, err := os.ReadFile(tmpFile) // #nosec G304 -- tmpFile is constructed from a validated session ID under repo .trace/tmp, not external input
 	if err != nil {
 		return "", fmt.Errorf("failed to read export file: %w", err)
 	}

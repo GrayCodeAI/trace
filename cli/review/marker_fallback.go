@@ -90,7 +90,7 @@ func ReadPendingReviewMarker(ctx context.Context) (PendingReviewMarker, bool, er
 	if err != nil {
 		return PendingReviewMarker{}, false, err
 	}
-	data, err := os.ReadFile(path) //nolint:gosec // path derived from git dir
+	data, err := os.ReadFile(path) // #nosec G304 -- path derived from git dir, not external input
 	if errors.Is(err, os.ErrNotExist) {
 		return PendingReviewMarker{}, false, nil
 	}

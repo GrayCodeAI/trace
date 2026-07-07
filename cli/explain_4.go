@@ -187,7 +187,7 @@ func buildPagerCmd(ctx context.Context) (*exec.Cmd, string) {
 		}
 	}
 
-	cmd := exec.CommandContext(ctx, pager)
+	cmd := exec.CommandContext(ctx, pager) // #nosec G204 -- pager comes from the PAGER env var (or a hardcoded default), a standard trusted user-configuration mechanism
 	if pager == lessPagerName && pagerLookupEnv(pagerEnvVar) == "" && pagerLookupEnv(lessEnvVar) == "" {
 		cmd.Env = upsertEnv(os.Environ(), lessEnvVar, "-R")
 	}

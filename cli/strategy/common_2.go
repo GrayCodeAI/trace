@@ -185,6 +185,7 @@ func GetMainRepoRoot(ctx context.Context) (string, error) {
 
 	// Worktree .git file contains: "gitdir: /path/to/main/.git/worktrees/<id>"
 	gitFilePath := filepath.Join(repoRoot, gitDir)
+	// #nosec G304 -- gitFilePath is constructed from repo root, not user input
 	content, err := os.ReadFile(gitFilePath) //nolint:gosec // G304: gitFilePath is constructed from repo root, not user input
 	if err != nil {
 		return "", fmt.Errorf("failed to read .git file: %w", err)
@@ -206,7 +207,7 @@ func GetMainRepoRoot(ctx context.Context) (string, error) {
 // In a worktree, this is the main repo's .git/ (not .git/worktrees/<name>/)
 // Uses git rev-parse --git-common-dir for reliable handling of worktrees.
 func GetGitCommonDir(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-common-dir")
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-common-dir") // #nosec G204 -- fixed "git" binary with fixed args, no variable input
 	cmd.Dir = "."
 	output, err := cmd.Output()
 	if err != nil {
@@ -235,6 +236,7 @@ func EnsureTraceGitignore(ctx context.Context) error {
 
 	// Read existing content
 	var content string
+	// #nosec G304 -- path is from AbsPath or a constant, not external input
 	if data, err := os.ReadFile(gitignoreAbs); err == nil { //nolint:gosec // path is from AbsPath or constant
 		content = string(data)
 	}
@@ -272,6 +274,7 @@ func EnsureTraceGitignore(ctx context.Context) error {
 	}
 	content += sb.String()
 
+	// #nosec G306 -- gitignoreAbs is from AbsPath or a constant; .gitignore is intentionally a normal readable text file
 	if err := os.WriteFile(gitignoreAbs, []byte(content), 0o644); err != nil { //nolint:gosec // path is from AbsPath or constant
 		return fmt.Errorf("failed to write gitignore: %w", err)
 	}
@@ -351,6 +354,7 @@ func checkCanRewindWithWarning(ctx context.Context) (bool, string, error) {
 			change.status = "added"
 			// New file - count all lines as added
 			absPath := filepath.Join(repoRoot, file)
+			// #nosec G304 -- absPath is repo root + relative path from git status, not external input
 			if content, err := os.ReadFile(absPath); err == nil { //nolint:gosec // absPath is repo root + relative path from git status
 				change.added = countLines(content)
 			}
@@ -372,6 +376,7 @@ func checkCanRewindWithWarning(ctx context.Context) (bool, string, error) {
 				}
 			}
 			absPath := filepath.Join(repoRoot, file)
+			// #nosec G304 -- absPath is repo root + relative path from git status, not external input
 			if content, err := os.ReadFile(absPath); err == nil { //nolint:gosec // absPath is repo root + relative path from git status
 				workContent = content
 			}
@@ -605,7 +610,7 @@ func DeleteBranchCLI(ctx context.Context, branchName string) error {
 	// git show-ref exits 1 for "not found" and 128+ for fatal errors (corrupt
 	// repo, permissions, not a git directory). Only map exit code 1 to
 	// ErrBranchNotFound; propagate other failures as-is.
-	check := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName)
+	check := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName) // #nosec G204 -- fixed "git" binary; branchName is an internally managed shadow/checkpoint branch name, not remote input
 	if err := check.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
@@ -644,7 +649,7 @@ func DeleteRefCLI(ctx context.Context, refName string, expectedOID string) error
 	if expectedOID != "" {
 		args = append(args, expectedOID)
 	}
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed "git" binary; refName/expectedOID are internally resolved ref name and object hash, not remote input
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return classifyDeleteRefFailure(ctx, refName, expectedOID, output, err)
 	}
@@ -690,7 +695,7 @@ func refStateCLI(ctx context.Context, refName string) (exists bool, oid string, 
 // branchExistsCLI checks if a branch exists using git CLI.
 // Returns nil if the branch exists, or an error if it does not.
 func branchExistsCLI(ctx context.Context, branchName string) error {
-	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName)
+	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName) // #nosec G204 -- fixed "git" binary; branchName is an internally managed shadow/checkpoint branch name, not remote input
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("branch %s not found: %w", branchName, err)
 	}
@@ -703,7 +708,7 @@ func branchExistsCLI(ctx context.Context, branchName string) error {
 // Returns the short commit ID (7 chars) on success for display purposes.
 func HardResetWithProtection(ctx context.Context, commitHash plumbing.Hash) (shortID string, err error) {
 	hashStr := commitHash.String()
-	cmd := exec.CommandContext(ctx, "git", "reset", "--hard", hashStr)
+	cmd := exec.CommandContext(ctx, "git", "reset", "--hard", hashStr) // #nosec G204 -- fixed "git" binary; hashStr is an internally resolved commit hash, not remote input
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("reset failed: %s: %w", strings.TrimSpace(string(output)), err)
 	}

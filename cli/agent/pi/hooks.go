@@ -74,7 +74,7 @@ func (a *PiAgent) InstallHooks(ctx context.Context, localDev bool, force bool) (
 	content := renderExtension(localDev)
 
 	if !force {
-		//nolint:gosec // path constructed from validated repo root
+		// #nosec G304 -- path constructed from validated repo root
 		existing, readErr := os.ReadFile(path)
 		switch {
 		case readErr == nil && string(existing) == content:
@@ -84,12 +84,10 @@ func (a *PiAgent) InstallHooks(ctx context.Context, localDev bool, force bool) (
 		}
 	}
 
-	//nolint:gosec // G301: pi reads the directory; standard 0755 permissions
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return 0, fmt.Errorf("create extension dir: %w", err)
 	}
-	//nolint:gosec // G306: pi reads the file; standard 0644 permissions
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		return 0, fmt.Errorf("write extension: %w", err)
 	}
 	return 1, nil
@@ -115,7 +113,7 @@ func (a *PiAgent) AreHooksInstalled(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	//nolint:gosec // path from validated repo root
+	// #nosec G304 -- path from validated repo root
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false

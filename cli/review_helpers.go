@@ -44,7 +44,7 @@ func headHasReviewCheckpoint(ctx context.Context) (bool, string) {
 		logging.Debug(ctx, "head review check: locate worktree root", slog.String("error", err.Error()))
 		return false, ""
 	}
-	execCmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "log", "-1", "--format=%B")
+	execCmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "log", "-1", "--format=%B") // #nosec G204 -- repoRoot is the resolved worktree root, not user input
 	output, err := execCmd.Output()
 	if err != nil {
 		logging.Debug(ctx, "head review check: read HEAD commit message", slog.String("error", err.Error()))

@@ -406,8 +406,7 @@ func saveToFile(ctx context.Context, settings *TraceSettings, filePath string) e
 		return fmt.Errorf("marshaling settings: %w", err)
 	}
 
-	//nolint:gosec // G306: settings file is config, not secrets; 0o644 is appropriate
-	if err := os.WriteFile(filePathAbs, data, 0o644); err != nil {
+	if err := os.WriteFile(filePathAbs, data, 0o600); err != nil {
 		return fmt.Errorf("writing settings file: %w", err)
 	}
 	return nil
@@ -434,7 +433,7 @@ func LoadProjectRaw(ctx context.Context) (path string, raw map[string]json.RawMe
 	if err != nil {
 		path = TraceSettingsFile
 	}
-	data, readErr := os.ReadFile(path) //nolint:gosec
+	data, readErr := os.ReadFile(path) // #nosec G304 -- path is project settings file derived from AbsPath/constant, not external input
 	if readErr != nil {
 		if os.IsNotExist(readErr) {
 			return path, map[string]json.RawMessage{}, false, nil
@@ -454,7 +453,7 @@ func LoadLocalRaw(ctx context.Context) (path string, raw map[string]json.RawMess
 	if err != nil {
 		path = TraceSettingsLocalFile
 	}
-	data, readErr := os.ReadFile(path) //nolint:gosec
+	data, readErr := os.ReadFile(path) // #nosec G304 -- path is local settings file derived from AbsPath/constant, not external input
 	if readErr != nil {
 		if os.IsNotExist(readErr) {
 			return path, map[string]json.RawMessage{}, false, nil
@@ -509,7 +508,7 @@ func SaveClonePreferences(ctx context.Context, prefs *ClonePreferences) error {
 
 func loadClonePreferencesFromFile(filePath string) (*ClonePreferences, error) {
 	prefs := &ClonePreferences{}
-	data, err := os.ReadFile(filePath) //nolint:gosec
+	data, err := os.ReadFile(filePath) // #nosec G304 -- path is clone preferences file derived from git common dir, not external input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return prefs, nil

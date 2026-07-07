@@ -221,6 +221,7 @@ func (s *ManualCommitStrategy) extractSessionData(ctx context.Context, repo *git
 		if isActive {
 			prepareTranscriptIfNeeded(ctx, ag, liveTranscriptPath)
 		}
+		// #nosec G304 -- liveTranscriptPath comes from session state, not external input
 		if liveData, readErr := os.ReadFile(liveTranscriptPath); readErr == nil && len(liveData) > 0 { //nolint:gosec // path from session state
 			fullTranscript = string(liveData)
 		}
@@ -284,6 +285,7 @@ func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(ctx context.
 		return nil, resolveErr
 	}
 
+	// #nosec G304 -- transcriptPath validated by resolveTranscriptPath
 	liveData, err := os.ReadFile(transcriptPath) //nolint:gosec // path validated by resolveTranscriptPath
 	if err != nil {
 		return nil, fmt.Errorf("failed to read live transcript: %w", err)
@@ -510,6 +512,7 @@ func readPromptsFromFilesystem(ctx context.Context, sessionID string) []string {
 	if err != nil {
 		return nil
 	}
+	// #nosec G304 -- path constructed from internal session ID, not external input
 	data, err := os.ReadFile(filepath.Join(sessionDirAbs, paths.PromptFileName)) //nolint:gosec // path from session ID
 	if err != nil || len(data) == 0 {
 		return nil

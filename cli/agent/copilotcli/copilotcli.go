@@ -147,6 +147,7 @@ func (c *CopilotCLIAgent) FormatResumeCommand(sessionID string) string {
 
 // ReadTranscript reads the raw JSONL transcript bytes for a session.
 func (c *CopilotCLIAgent) ReadTranscript(sessionRef string) ([]byte, error) {
+	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read transcript: %w", err)

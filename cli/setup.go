@@ -682,6 +682,7 @@ Examples:
 	}
 
 	cmd.Flags().BoolVar(&opts.LocalDev, flagLocalDev, false, "Use go run instead of trace binary for hooks")
+	// #nosec G104 -- only fails if the flag is not defined; defined directly above
 	cmd.Flags().MarkHidden(flagLocalDev) //nolint:errcheck,gosec // flag is defined above
 	cmd.Flags().BoolVar(&opts.UseLocalSettings, "local", false, "Write settings to .trace/settings.local.json instead of .trace/settings.json")
 	cmd.Flags().BoolVar(&opts.UseProjectSettings, "project", false, "Write settings to .trace/settings.json even if it already exists")

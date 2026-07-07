@@ -209,7 +209,7 @@ func openBrowser(ctx context.Context, browserURL string) error {
 		return fmt.Errorf("unsupported platform %s", runtime.GOOS)
 	}
 
-	cmd := exec.CommandContext(ctx, command, args...)
+	cmd := exec.CommandContext(ctx, command, args...) // #nosec G204 -- command is a fixed OS-specific opener chosen by switch on runtime.GOOS, args carry only the already-validated https/http browserURL
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start browser command %q: %w", command, err)
 	}

@@ -25,7 +25,7 @@ func GetWorktreeID(worktreePath string) (string, error) {
 	}
 
 	// Linked worktree has .git as a file with content: "gitdir: /path/to/.git/worktrees/<name>"
-	content, err := os.ReadFile(gitPath) //nolint:gosec // gitPath is constructed from worktreePath + ".git"
+	content, err := os.ReadFile(gitPath) // #nosec G304 -- gitPath is constructed from worktreePath + ".git", not external input
 	if err != nil {
 		return "", fmt.Errorf("failed to read .git file: %w", err)
 	}

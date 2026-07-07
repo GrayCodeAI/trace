@@ -136,6 +136,7 @@ func resolveDotGitPath(repoRoot string) (string, error) {
 		return gitPath, nil
 	}
 
+	// #nosec G304 -- gitPath is resolved from the git worktree root, not external input
 	content, err := os.ReadFile(gitPath) //nolint:gosec // gitPath is resolved from the git worktree root.
 	if err != nil {
 		return "", fmt.Errorf("read .git file: %w", err)
@@ -155,6 +156,7 @@ func resolveDotGitPath(repoRoot string) (string, error) {
 }
 
 func resolveCommonGitPath(dotGitPath string) (string, error) {
+	// #nosec G304 -- dotGitPath is resolved from the git worktree root, not external input
 	content, err := os.ReadFile(filepath.Join(dotGitPath, "commondir")) //nolint:gosec // dotGitPath is resolved from the git worktree root.
 	if errors.Is(err, os.ErrNotExist) {
 		return "", nil

@@ -173,12 +173,12 @@ func writeTranscript(path string, lines []transcriptLine) error {
 
 	raw := buf.Bytes()
 	if len(raw) >= compressGzipThreshold {
-		if err := os.WriteFile(path+".gz", gzipCompress(raw), 0o644); err != nil { //nolint:gosec // Writing to controlled git metadata path
+		if err := os.WriteFile(path+".gz", gzipCompress(raw), 0o600); err != nil {
 			return fmt.Errorf("writing compressed transcript: %w", err)
 		}
 		return nil
 	}
-	if err := os.WriteFile(path, raw, 0o644); err != nil { //nolint:gosec // Writing to controlled git metadata path
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		return fmt.Errorf("writing transcript: %w", err)
 	}
 	return nil
@@ -212,7 +212,8 @@ func gzipDecompress(data []byte) ([]byte, error) {
 func readTranscriptBytes(path string) ([]byte, bool, error) {
 	// Try compressed path first.
 	gzPath := path + ".gz"
-	data, err := os.ReadFile(gzPath) //nolint:gosec // Reading from controlled transcript path
+	// #nosec G304 -- internally constructed transcript path under git metadata, not external input
+	data, err := os.ReadFile(gzPath)
 	if err == nil {
 		decompressed, dErr := gzipDecompress(data)
 		if dErr != nil {
@@ -222,7 +223,8 @@ func readTranscriptBytes(path string) ([]byte, bool, error) {
 	}
 
 	// Fall back to uncompressed path.
-	data, err = os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
+	// #nosec G304 -- internally constructed transcript path under git metadata, not external input
+	data, err = os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, false, nil

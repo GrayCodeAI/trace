@@ -205,7 +205,8 @@ func traceStepChildIndex(parentName, childName string) (int, bool) {
 // ordered newest first. If hookFilter is non-empty, only entries with a matching
 // Op field are included.
 func collectTraceEntries(logFile string, last int, hookFilter string) ([]traceEntry, error) {
-	f, err := os.Open(logFile) //nolint:gosec // logFile is a CLI-resolved path, not user-supplied input
+	// #nosec G304 -- logFile is a CLI-resolved log path, not external input
+	f, err := os.Open(logFile)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil

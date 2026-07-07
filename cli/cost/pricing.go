@@ -94,7 +94,7 @@ func LoadTable() (*Table, error) {
 		return t, nil //nolint:nilerr // missing home dir falls back to defaults
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is either a fixed ~/.hawk/trace-pricing.json location or the TRACE_PRICING_CONFIG env var set by the operator running the CLI, not remote/untrusted input
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return t, nil

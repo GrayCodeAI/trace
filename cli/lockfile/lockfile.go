@@ -27,6 +27,7 @@ type Lock struct {
 // diagnostic only — see ReadHolderPID. FD_CLOEXEC is set so
 // subprocesses don't inherit the lock FD.
 func Acquire(path string) (*Lock, error) {
+	// #nosec G304 -- lock path is supplied by the caller (trusted internal path)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // G304: lock path is supplied by the caller (trusted)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file %s: %w", path, err)
@@ -104,6 +105,7 @@ func (l *Lock) Release() error {
 // file is empty/unreadable/contains garbage. Best-effort; for diagnostic
 // messages only.
 func ReadHolderPID(path string) int {
+	// #nosec G304 -- lock path is supplied by the caller (trusted internal path)
 	data, err := os.ReadFile(path) //nolint:gosec // G304: lock path is supplied by the caller (trusted)
 	if err != nil {
 		return 0

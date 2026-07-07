@@ -78,7 +78,7 @@ func casUpdateShadowBranchRef(ctx context.Context, repoRoot, branchName string, 
 		oldValue = expectedHash.String()
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "update-ref", refName, newValue, oldValue)
+	cmd := exec.CommandContext(ctx, "git", "update-ref", refName, newValue, oldValue) // #nosec G204 -- fixed "git" binary; refName/newValue/oldValue are internally resolved ref names and object hashes, not remote input
 	cmd.Dir = repoRoot
 	// Force English diagnostics so the CAS-conflict pattern match below
 	// isn't defeated by a translated stderr message in a non-C locale.
@@ -90,7 +90,7 @@ func casUpdateShadowBranchRef(ctx context.Context, repoRoot, branchName string, 
 		// objects reachable through these refs, even without a reflog entry.
 		// Best-effort: failure here is non-fatal — the shadow branch still exists.
 		keepRef := "refs/keep-around/" + newValue
-		keepCmd := exec.CommandContext(ctx, "git", "update-ref", keepRef, newValue)
+		keepCmd := exec.CommandContext(ctx, "git", "update-ref", keepRef, newValue) // #nosec G204 -- fixed "git" binary; keepRef/newValue are internally resolved ref name and object hash, not remote input
 		keepCmd.Dir = repoRoot
 		keepCmd.Env = cmd.Env
 		_ = keepCmd.Run() //nolint:errcheck // Best-effort keep-around ref; failure is non-fatal
@@ -117,7 +117,8 @@ func shadowRefBackoff(ctx context.Context, attempt int) error {
 	}
 	// Add a 1ms floor so the chosen sleep is always non-trivial, even when
 	// rand.Int64N happens to return 0.
-	d := time.Duration(rand.Int64N(int64(base))) + time.Millisecond //nolint:gosec // jitter, not security-sensitive
+	// #nosec G404 -- non-cryptographic use (retry backoff jitter)
+	d := time.Duration(rand.Int64N(int64(base))) + time.Millisecond  //nolint:gosec // jitter, not security-sensitive
 	select {
 	case <-time.After(d):
 		return nil

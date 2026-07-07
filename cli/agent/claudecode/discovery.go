@@ -184,6 +184,7 @@ func readSkillsDir(ctx context.Context, dir, pluginName string) []agent.Discover
 		}
 		skillDir := filepath.Join(dir, skillEntry.Name())
 		skillFile := filepath.Join(skillDir, "SKILL.md")
+		// #nosec G304 -- skillFile is constructed from a ReadDir walk under HOME, not user input
 		data, err := os.ReadFile(skillFile) //nolint:gosec // G304: skillFile is constructed from a ReadDir walk under HOME, not user input
 		if err != nil {
 			continue
@@ -232,6 +233,7 @@ func scanFlatMarkdownDir(ctx context.Context, dir, pluginName string) []agent.Di
 			continue
 		}
 		filePath := filepath.Join(dir, entry.Name())
+		// #nosec G304 -- filePath is constructed from a ReadDir walk under HOME, not user input
 		data, err := os.ReadFile(filePath) //nolint:gosec // G304: filePath is constructed from a ReadDir walk under HOME, not user input
 		if err != nil {
 			continue

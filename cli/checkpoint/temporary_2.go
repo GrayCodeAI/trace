@@ -160,6 +160,7 @@ func createBlobFromFile(repo *git.Repository, filePath string) (plumbing.Hash, f
 	}
 
 	// Read file contents
+	// #nosec G304 -- filePath comes from walking the repository tree, not external input
 	content, err := os.ReadFile(filePath) //nolint:gosec // filePath comes from walking the repository
 	if err != nil {
 		return plumbing.ZeroHash, 0, fmt.Errorf("failed to read file: %w", err)

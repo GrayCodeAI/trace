@@ -53,6 +53,7 @@ Use --follow to stream new lines as they are written (Ctrl+C to exit).`,
 }
 
 func printTail(w io.Writer, path string, n int) error {
+	// #nosec G304 -- path is .trace/logs/trace.log under repo root, not external input
 	f, err := os.Open(path) //nolint:gosec // path is .trace/logs/trace.log under repo root
 	if err != nil {
 		return fmt.Errorf("open log: %w", err)
@@ -112,6 +113,7 @@ func readLastNLines(r io.Reader, n int) ([]string, error) {
 // followFile polls the log file for appended bytes. It exits cleanly when the
 // command's context is cancelled (Ctrl+C in a TTY).
 func followFile(ctx context.Context, w io.Writer, path string) error {
+	// #nosec G304 -- path is .trace/logs/trace.log under repo root, not external input
 	f, err := os.Open(path) //nolint:gosec // path is .trace/logs/trace.log under repo root
 	if err != nil {
 		return fmt.Errorf("open log: %w", err)

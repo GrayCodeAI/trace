@@ -61,6 +61,7 @@ func (a *OpenCodeAgent) InstallHooks(ctx context.Context, localDev bool, force b
 
 	// Check if already installed with identical content (idempotent) unless force
 	if !force {
+		// #nosec G304 -- pluginPath is constructed from repo root + fixed subpath, not external input
 		if existing, readErr := os.ReadFile(pluginPath); readErr == nil { //nolint:gosec // Path constructed from repo root
 			if string(existing) == content {
 				return 0, nil // Already up-to-date
@@ -71,12 +72,14 @@ func (a *OpenCodeAgent) InstallHooks(ctx context.Context, localDev bool, force b
 	// Ensure directory exists
 	pluginDir := filepath.Dir(pluginPath)
 	//nolint:gosec // G301: Plugin directory needs standard permissions
+	// #nosec G301 -- plugin directory under .opencode/ must be traversable/readable by the OpenCode tool itself, not private data
 	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
 		return 0, fmt.Errorf("failed to create plugin directory: %w", err)
 	}
 
 	// Write plugin file
 	//nolint:gosec // G306: Plugin file needs standard permissions for OpenCode to read
+	// #nosec G306 -- plugin file must be world-readable so the OpenCode tool can load it, not private data
 	if err := os.WriteFile(pluginPath, []byte(content), 0o644); err != nil {
 		return 0, fmt.Errorf("failed to write plugin file: %w", err)
 	}
@@ -105,6 +108,7 @@ func (a *OpenCodeAgent) AreHooksInstalled(ctx context.Context) bool {
 		return false
 	}
 
+	// #nosec G304 -- pluginPath is constructed from repo root + fixed subpath, not external input
 	data, err := os.ReadFile(pluginPath) //nolint:gosec // Path constructed from repo root
 	if err != nil {
 		return false

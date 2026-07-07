@@ -155,6 +155,7 @@ func IsGitHookInstalledInDir(ctx context.Context, repoDir string) bool {
 func isGitHookInstalledInHooksDir(hooksDir string) bool {
 	for _, hook := range gitHookNames {
 		hookPath := filepath.Join(hooksDir, hook)
+		// #nosec G304 -- hookPath is constructed from constants (hooksDir + known hook name), not external input
 		data, err := os.ReadFile(hookPath) //nolint:gosec // Path is constructed from constants
 		if err != nil {
 			return false
@@ -224,6 +225,7 @@ func InstallGitHook(ctx context.Context, silent, localDev, absolutePath bool) (i
 		return 0, err
 	}
 
+	// #nosec G301 -- git hooks directory must be traversable/executable (standard git hooks dir mode), not private data
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil { //nolint:gosec // Git hooks require executable permissions
 		return 0, fmt.Errorf("failed to create hooks directory: %w", err)
 	}
@@ -241,6 +243,7 @@ func InstallGitHook(ctx context.Context, silent, localDev, absolutePath bool) (i
 		backupExists := fileExists(backupPath)
 
 		// Back up existing non-Trace hooks
+		// #nosec G304 -- hookPath is constructed from constants (hooksDir + known hook name), not external input
 		existing, existingErr := os.ReadFile(hookPath) //nolint:gosec // path is controlled
 		if existingErr == nil && !strings.Contains(string(existing), traceHookMarker) {
 			if !backupExists {
@@ -281,12 +284,14 @@ func InstallGitHook(ctx context.Context, silent, localDev, absolutePath bool) (i
 // Returns true if the file was written, false if it already had the same content.
 func writeHookFile(path, content string) (bool, error) {
 	// Check if file already exists with same content
+	// #nosec G304 -- path is constructed from constants (hooksDir + known hook name), not external input
 	existing, err := os.ReadFile(path) //nolint:gosec // path is controlled
 	if err == nil && string(existing) == content {
 		return false, nil // Already up to date
 	}
 
 	// Git hooks must be executable (0o755)
+	// #nosec G306 -- git hooks must be executable (0755) to run as shell scripts, not private data
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil { //nolint:gosec // Git hooks require executable permissions
 		return false, fmt.Errorf("failed to write hook file %s: %w", path, err)
 	}
@@ -310,6 +315,7 @@ func RemoveGitHook(ctx context.Context) (int, error) {
 		backupPath := hookPath + backupSuffix
 
 		// Remove the hook if it contains our marker
+		// #nosec G304 -- hookPath is constructed from constants (hooksDir + known hook name), not external input
 		data, err := os.ReadFile(hookPath) //nolint:gosec // path is controlled
 		hookIsOurs := err == nil && strings.Contains(string(data), traceHookMarker)
 		hookExists := err == nil

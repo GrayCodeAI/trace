@@ -72,6 +72,7 @@ func (f *FactoryAIDroidAgent) InstallHooks(ctx context.Context, localDev bool, f
 	// rawPermissions preserves unknown permission fields (e.g., "ask")
 	var rawPermissions map[string]json.RawMessage
 
+	// #nosec G304 -- settingsPath is constructed from cwd + fixed path, not external input
 	existingData, readErr := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from cwd + fixed path
 	if readErr == nil {
 		if err := json.Unmarshal(existingData, &rawSettings); err != nil {
@@ -247,7 +248,7 @@ func (f *FactoryAIDroidAgent) InstallHooks(ctx context.Context, localDev bool, f
 func parseHookType(rawHooks map[string]json.RawMessage, hookType string, target *[]FactoryHookMatcher) {
 	if data, ok := rawHooks[hookType]; ok {
 		//nolint:errcheck,gosec // Intentionally ignoring parse errors - leave target as nil/empty
-		json.Unmarshal(data, target)
+		json.Unmarshal(data, target) // #nosec G104 -- intentionally ignoring parse errors, leave target as nil/empty
 	}
 }
 
@@ -273,6 +274,7 @@ func (f *FactoryAIDroidAgent) UninstallHooks(ctx context.Context) error {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".factory", FactorySettingsFileName)
+	// #nosec G304 -- settingsPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return nil //nolint:nilerr // No settings file means nothing to uninstall
@@ -395,6 +397,7 @@ func (f *FactoryAIDroidAgent) AreHooksInstalled(ctx context.Context) bool {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".factory", FactorySettingsFileName)
+	// #nosec G304 -- settingsPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return false

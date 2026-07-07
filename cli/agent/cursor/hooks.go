@@ -72,6 +72,7 @@ func (c *CursorAgent) InstallHooks(ctx context.Context, localDev bool, force boo
 	var rawFile map[string]json.RawMessage
 	var rawHooks map[string]json.RawMessage
 
+	// #nosec G304 -- hooksPath is constructed from repo root + fixed path, not external input
 	existingData, readErr := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if readErr == nil {
 		if err := json.Unmarshal(existingData, &rawFile); err != nil {
@@ -218,6 +219,7 @@ func (c *CursorAgent) UninstallHooks(ctx context.Context) error {
 		worktreeRoot = "."
 	}
 	hooksPath := filepath.Join(worktreeRoot, ".cursor", HooksFileName)
+	// #nosec G304 -- hooksPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return nil //nolint:nilerr // No hooks file means nothing to uninstall
@@ -297,6 +299,7 @@ func (c *CursorAgent) AreHooksInstalled(ctx context.Context) bool {
 		worktreeRoot = "."
 	}
 	hooksPath := filepath.Join(worktreeRoot, ".cursor", HooksFileName)
+	// #nosec G304 -- hooksPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return false
@@ -333,7 +336,7 @@ func (c *CursorAgent) GetSupportedHooks() []agent.HookType {
 func parseCursorHookType(rawHooks map[string]json.RawMessage, hookType string, target *[]CursorHookEntry) {
 	if data, ok := rawHooks[hookType]; ok {
 		//nolint:errcheck,gosec // Intentionally ignoring parse errors - leave target as nil/empty
-		json.Unmarshal(data, target)
+		json.Unmarshal(data, target) // #nosec G104 -- intentionally ignoring parse errors, leave target as nil/empty
 	}
 }
 

@@ -31,7 +31,7 @@ func NewSpawner() spawn.Spawner { //nolint:ireturn // factory returns interface 
 func (codexSpawner) Name() string { return string(agent.AgentNameCodex) }
 
 func (codexSpawner) BuildCmd(ctx context.Context, env []string, prompt string) *exec.Cmd {
-	cmd := exec.CommandContext(
+	cmd := exec.CommandContext( // #nosec G204 -- fixed "codex" binary name and fixed argv flags; prompt is piped via stdin, not an argument
 		ctx, string(agent.AgentNameCodex),
 		codexExecCommand,
 		"--skip-git-repo-check",

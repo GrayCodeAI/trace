@@ -259,7 +259,7 @@ func reviewContextCommitMessages(ctx context.Context, repoRoot string, scopeBase
 
 func reviewContextGitRecords(ctx context.Context, repoRoot string, args ...string) ([]string, error) {
 	full := append([]string{"-C", repoRoot}, args...)
-	output, err := exec.CommandContext(ctx, "git", full...).Output()
+	output, err := exec.CommandContext(ctx, "git", full...).Output() // #nosec G204 -- args are fixed git subcommand flags plus repoRoot/ref values from internal callers, not raw user input
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}

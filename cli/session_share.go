@@ -247,6 +247,7 @@ func runSessionImport(ctx context.Context, w, errW io.Writer, filePath string) e
 	}
 
 	// Read the export file
+	// #nosec G304 -- filePath is a user-provided CLI argument, standard trusted CLI input
 	data, err := os.ReadFile(filePath) //nolint:gosec // user-specified file path
 	if err != nil {
 		return fmt.Errorf("failed to read import file: %w", err)

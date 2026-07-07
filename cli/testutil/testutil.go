@@ -70,13 +70,11 @@ func WriteFile(t *testing.T, repoDir, path, content string) {
 
 	// Create parent directories
 	dir := filepath.Dir(fullPath)
-	//nolint:gosec // test code, permissions are intentionally standard
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("failed to create directory %s: %v", dir, err)
 	}
 
-	//nolint:gosec // test code, permissions are intentionally standard
-	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("failed to write file %s: %v", path, err)
 	}
 }
@@ -86,7 +84,7 @@ func ReadFile(t *testing.T, repoDir, path string) string {
 	t.Helper()
 
 	fullPath := filepath.Join(repoDir, path)
-	//nolint:gosec // test code, path is from test setup
+	// #nosec G304 -- test code, path is from test setup (test's own tempDir), not external input
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		t.Fatalf("failed to read file %s: %v", path, err)
@@ -99,7 +97,7 @@ func TryReadFile(t *testing.T, repoDir, path string) string {
 	t.Helper()
 
 	fullPath := filepath.Join(repoDir, path)
-	//nolint:gosec // test code, path is from test setup
+	// #nosec G304 -- test code, path is from test setup (test's own tempDir), not external input
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		return ""
@@ -228,8 +226,8 @@ func BranchExists(t *testing.T, repoDir, branchName string) bool {
 	}
 
 	found := false
-	//nolint:errcheck,gosec // ForEach callback doesn't return errors we need to handle
-	refs.ForEach(func(ref *plumbing.Reference) error {
+	// Best-effort iteration in a test helper; the callback never returns an error.
+	_ = refs.ForEach(func(ref *plumbing.Reference) error {
 		if ref.Name().Short() == branchName {
 			found = true
 		}
@@ -279,8 +277,8 @@ func GetLatestCheckpointIDFromHistory(t *testing.T, repoDir string) (string, err
 	}
 
 	var checkpointID string
-	//nolint:errcheck,gosec // ForEach callback returns error to stop iteration
-	commitIter.ForEach(func(c *object.Commit) error {
+	// Best-effort iteration in a test helper; the callback only returns an error to stop early.
+	_ = commitIter.ForEach(func(c *object.Commit) error {
 		// Look for Trace-Checkpoint trailer
 		for line := range strings.SplitSeq(c.Message, "\n") {
 			line = strings.TrimSpace(line)

@@ -356,7 +356,8 @@ func filterToUncommittedFiles(ctx context.Context, files []string, repoRoot stri
 
 		// File is in HEAD — compare content with working tree
 		absPath := filepath.Join(repoRoot, relPath)
-		workingContent, err := os.ReadFile(absPath) //nolint:gosec // path from controlled source
+		// #nosec G304 -- path joined from repo root and a git index entry, not external input
+		workingContent, err := os.ReadFile(absPath)
 		if err != nil {
 			// Can't read working tree file (deleted?) — keep it
 			result = append(result, relPath)

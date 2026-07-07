@@ -113,8 +113,7 @@ func ensureGlobalConfigDir() error {
 		return err
 	}
 
-	//nolint:gosec // ~/.config/trace is user home directory, 0o755 is appropriate
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o750); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
@@ -138,6 +137,7 @@ func loadCache() (*VersionCache, error) {
 		return nil, err
 	}
 
+	// #nosec G304 -- filePath is derived from os.UserHomeDir()/~/.config/trace, not user/remote input
 	data, err := os.ReadFile(filePath) //nolint:gosec // cacheFilePath is safe
 	if err != nil {
 		return nil, fmt.Errorf("reading cache file: %w", err)

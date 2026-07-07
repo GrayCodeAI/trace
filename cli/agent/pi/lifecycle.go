@@ -213,7 +213,7 @@ func cacheSessionID(ctx context.Context, id string) {
 
 func readCachedSessionID(ctx context.Context) string {
 	dir := resolveSessionDir(ctx)
-	//nolint:gosec // path constructed from validated repo root
+	// #nosec G304 -- path constructed from validated repo root
 	data, err := os.ReadFile(filepath.Join(dir, activeSessionFile))
 	if err != nil {
 		return ""
@@ -242,7 +242,7 @@ func captureTranscript(ctx context.Context, sessionID, piSessionFile string) str
 		return ""
 	}
 	dst := filepath.Join(dir, sessionID+".json")
-	//nolint:gosec // G703: piSessionFile from trusted Pi extension stdin payload
+	// #nosec G304 -- piSessionFile from trusted Pi extension stdin payload
 	data, err := os.ReadFile(piSessionFile)
 	if err != nil {
 		logging.Warn(ctx, "pi: capture transcript read failed",

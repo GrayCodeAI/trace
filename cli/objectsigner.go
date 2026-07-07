@@ -29,6 +29,7 @@ func RegisterObjectSigner() {
 		}
 
 		//nolint:errcheck,gosec // best-effort; if registration fails, commits are left unsigned
+		// #nosec G104 -- best-effort registration; if it fails, commits are left unsigned rather than the process aborting
 		plugin.Register(plugin.ObjectSigner(), func() plugin.Signer {
 			return signer
 		})

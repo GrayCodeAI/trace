@@ -113,6 +113,7 @@ func saveCommitLinkingAlways(ctx context.Context) error {
 	// Read existing file as raw JSON map to preserve all existing fields.
 	// If the file doesn't exist, start with an empty map so we only write commit_linking.
 	var raw map[string]json.RawMessage
+	// #nosec G304 -- localPath is from AbsPath (internal settings.local.json location), not external input
 	data, readErr := os.ReadFile(localPath) //nolint:gosec // path is from AbsPath
 	if readErr == nil {
 		if err := json.Unmarshal(data, &raw); err != nil {
@@ -136,8 +137,7 @@ func saveCommitLinkingAlways(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o750); err != nil {
 		return fmt.Errorf("creating settings directory: %w", err)
 	}
-	//nolint:gosec // G306: settings file is config, not secrets; 0o644 is appropriate
-	if err := os.WriteFile(localPath, out, 0o644); err != nil {
+	if err := os.WriteFile(localPath, out, 0o600); err != nil {
 		return fmt.Errorf("writing local settings: %w", err)
 	}
 	return nil
@@ -148,6 +148,7 @@ func saveCommitLinkingAlways(ctx context.Context) error {
 // so git will abort the commit due to empty message.
 
 func (s *ManualCommitStrategy) CommitMsg(_ context.Context, commitMsgFile string) error { //nolint:unparam // error return is part of the hook contract; callers check it
+	// #nosec G304 -- commitMsgFile is the path git passes to the commit-msg hook, a trusted local git invocation, not external input
 	content, err := os.ReadFile(commitMsgFile) //nolint:gosec // Path comes from git hook
 	if err != nil {
 		return nil //nolint:nilerr // Hook must be silent on failure
@@ -437,6 +438,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 
 	// Read current commit message
 	_, readCommitMessageSpan := perf.Start(ctx, "read_commit_message")
+	// #nosec G304 -- commitMsgFile is the path git passes to the commit-msg hook, a trusted local git invocation, not external input
 	content, err := os.ReadFile(commitMsgFile) //nolint:gosec // commitMsgFile is provided by git hook
 	if err != nil {
 		readCommitMessageSpan.RecordError(err)
@@ -560,6 +562,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 func (s *ManualCommitStrategy) handleAmendCommitMsg(ctx context.Context, commitMsgFile string) error {
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 	// Read current commit message
+	// #nosec G304 -- commitMsgFile is the path git passes to the commit-msg hook, a trusted local git invocation, not external input
 	content, err := os.ReadFile(commitMsgFile) //nolint:gosec // commitMsgFile is provided by git hook
 	if err != nil {
 		return nil //nolint:nilerr // Hook must be silent on failure

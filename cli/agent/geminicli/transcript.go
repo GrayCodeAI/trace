@@ -198,6 +198,7 @@ func GetLastMessageIDFromFile(path string) (string, error) {
 		return "", nil
 	}
 
+	// #nosec G304 -- reading from controlled transcript path, not remote/untrusted input
 	data, err := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
 	if err != nil {
 		if os.IsNotExist(err) {

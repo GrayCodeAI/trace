@@ -169,6 +169,7 @@ func createRedactedBlobFromFile(repo *git.Repository, filePath, treePath string)
 		mode = filemode.Executable
 	}
 
+	// #nosec G304 -- filePath comes from walking the metadata directory, not external input
 	content, err := os.ReadFile(filePath) //nolint:gosec // filePath comes from walking the metadata directory
 	if err != nil {
 		return plumbing.ZeroHash, 0, fmt.Errorf("failed to read file: %w", err)

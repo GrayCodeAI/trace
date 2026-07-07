@@ -240,7 +240,8 @@ func LoadPacks(dir string) ([]*Pack, error) {
 			return nil
 		}
 
-		data, err := os.ReadFile(path) //nolint:gosec // path comes from WalkDir under a configured dir
+		// #nosec G304 -- path comes from WalkDir under a configured redactor pack dir, not external input
+		data, err := os.ReadFile(path)
 		if err != nil {
 			slog.Warn("skipping unreadable redactor pack",
 				componentAttr,

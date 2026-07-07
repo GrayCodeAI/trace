@@ -278,6 +278,7 @@ func (c *ClaudeCodeAgent) GetTranscriptPosition(path string) (int, error) {
 		return 0, nil
 	}
 
+	// #nosec G304 -- path comes from Claude Code transcript location, not remote/untrusted input
 	file, err := os.Open(path) //nolint:gosec // Path comes from Claude Code transcript location
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -319,6 +320,7 @@ func (c *ClaudeCodeAgent) ExtractModifiedFilesFromOffset(path string, startOffse
 		return nil, 0, nil
 	}
 
+	// #nosec G304 -- path comes from Claude Code transcript location, not remote/untrusted input
 	file, openErr := os.Open(path) //nolint:gosec // Path comes from Claude Code transcript location
 	if openErr != nil {
 		return nil, 0, fmt.Errorf("failed to open transcript file: %w", openErr)
@@ -381,7 +383,7 @@ func (c *ClaudeCodeAgent) LaunchCmd(ctx context.Context, initialPrompt string) (
 	if err != nil {
 		return nil, fmt.Errorf("claude binary not on PATH: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, bin, initialPrompt)
+	cmd := exec.CommandContext(ctx, bin, initialPrompt) // #nosec G204 -- bin is resolved via exec.LookPath("claude"); initialPrompt is passed as a single argument, not shell-interpreted
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
