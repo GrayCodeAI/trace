@@ -105,7 +105,7 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 		return result
 	}
 
-	worktreeRoot := worktree.Filesystem.Root()
+	worktreeRoot := worktree.Filesystem().Root()
 
 	// Build map of changed files with their worktree content
 	// IMPORTANT: We read from worktree (not staging area) to match what WriteTemporary

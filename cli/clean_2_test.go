@@ -75,7 +75,7 @@ func TestCleanCmd_All_InvalidSettingsWarnsAndContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true,`)
 
@@ -109,9 +109,9 @@ func TestCleanCmd_All_Subdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 	subDir := filepath.Join(repoRoot, "subdir")
-	if err := wt.Filesystem.MkdirAll("subdir", 0o755); err != nil {
+	if err := wt.Filesystem().MkdirAll("subdir", 0o755); err != nil {
 		t.Fatalf("failed to create subdir: %v", err)
 	}
 
@@ -144,7 +144,7 @@ func TestCleanCmd_All_FindsSessionWithShadowBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	worktreePath := wt.Filesystem.Root()
+	worktreePath := wt.Filesystem().Root()
 	worktreeID, err := paths.GetWorktreeID(worktreePath)
 	if err != nil {
 		t.Fatalf("failed to get worktree ID: %v", err)
@@ -196,7 +196,7 @@ func TestCleanCmd_All_DryRunListsEligibleV2Generations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 	createArchivedGenerationRef(t, repo, "0000000000001", time.Now().AddDate(0, 0, -20), time.Now().AddDate(0, 0, -15))
@@ -227,7 +227,7 @@ func TestCleanCmd_All_DryRunListsRemoteOnlyEligibleV2Generations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 	addCleanBareOrigin(t, repoRoot)
@@ -265,7 +265,7 @@ func TestCleanCmd_All_UsesRawTranscriptTimeForV2GenerationRetention(t *testing.T
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 
@@ -301,7 +301,7 @@ func TestCleanCmd_All_ForceDeletesRemoteOnlyEligibleV2Generations(t *testing.T) 
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 	addCleanBareOrigin(t, repoRoot)
@@ -336,7 +336,7 @@ func TestCleanCmd_All_ForceDeletesEligibleV2Generations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 	createCleanV2Ref(t, repo, plumbing.ReferenceName(paths.V2MainRefName))
@@ -371,7 +371,7 @@ func TestCleanCmd_All_DryRunSkipsV2GenerationsWithinRetention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 	createArchivedGenerationRef(t, repo, "0000000000003", time.Now().AddDate(0, 0, -5), time.Now().AddDate(0, 0, -1))
@@ -402,7 +402,7 @@ func TestCleanCmd_All_ForceSkipsV2GenerationMissingMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 	createArchivedGenerationRefWithoutMetadata(t, repo, "0000000000001")
@@ -432,7 +432,7 @@ func TestCleanCmd_All_ForceSkipsV2GenerationWithInvalidTimestamps(t *testing.T) 
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 	createArchivedGenerationRef(t, repo, "0000000000004", time.Now().AddDate(0, 0, -1), time.Now().AddDate(0, 0, -20))
@@ -462,7 +462,7 @@ func TestCleanCmd_All_ForceWarnsWithErrorDetailsForUnreadableV2Ref(t *testing.T)
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 

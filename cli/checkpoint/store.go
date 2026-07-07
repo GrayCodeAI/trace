@@ -32,7 +32,7 @@ func NewGitStore(repo *git.Repository) *GitStore {
 	wt, err := repo.Worktree()
 	var repoPath string
 	if err == nil {
-		repoPath = wt.Filesystem.Root()
+		repoPath = wt.Filesystem().Root()
 	}
 	return &GitStore{repo: repo, repoPath: repoPath}
 }
