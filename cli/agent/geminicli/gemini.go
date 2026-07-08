@@ -216,6 +216,7 @@ func (g *GeminiCLIAgent) GetTranscriptPosition(path string) (int, error) {
 		return 0, nil
 	}
 
+	// #nosec G304 -- reading from controlled transcript path, not remote/untrusted input
 	data, err := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -247,6 +248,7 @@ func (g *GeminiCLIAgent) ExtractModifiedFilesFromOffset(path string, startOffset
 		return nil, 0, nil
 	}
 
+	// #nosec G304 -- reading from controlled transcript path, not remote/untrusted input
 	data, readErr := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
 	if readErr != nil {
 		if os.IsNotExist(readErr) {

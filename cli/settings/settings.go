@@ -420,7 +420,7 @@ func loadMergedSettings(settingsFileAbs, localSettingsFileAbs string) (*TraceSet
 	}
 
 	// Apply local overrides if they exist
-	localData, err := os.ReadFile(localSettingsFileAbs) //nolint:gosec // path is from AbsPath or constant
+	localData, err := os.ReadFile(localSettingsFileAbs) // #nosec G304 -- path is from AbsPath or constant, not external input
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("reading local settings file: %w", err)
@@ -469,7 +469,7 @@ func loadFromFile(filePath string) (*TraceSettings, error) {
 		Enabled: true, // Default to enabled
 	}
 
-	data, err := os.ReadFile(filePath) //nolint:gosec // path is from caller
+	data, err := os.ReadFile(filePath) // #nosec G304 -- path is from AbsPath or constant, not external input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return settings, nil

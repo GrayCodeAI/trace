@@ -559,6 +559,7 @@ func filesWithRemainingAgentChanges(
 // Returns true if the working tree is clean for this file (no remaining changes).
 func workingTreeMatchesCommit(worktreeRoot, filePath string, commitHash plumbing.Hash) bool {
 	absPath := filepath.Join(worktreeRoot, filePath)
+	// #nosec G304 -- filePath is from git status, not external input
 	diskContent, err := os.ReadFile(absPath) //nolint:gosec // filePath is from git status, not user input
 	if err != nil {
 		return false

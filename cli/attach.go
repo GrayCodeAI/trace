@@ -625,7 +625,7 @@ func promptAmendCommit(ctx context.Context, w io.Writer, headCommit *object.Comm
 
 	newMessage := trailers.AppendCheckpointTrailer(headCommit.Message, checkpointIDStr)
 
-	cmd := exec.CommandContext(ctx, "git", "commit", "--amend", "--only", "-m", newMessage)
+	cmd := exec.CommandContext(ctx, "git", "commit", "--amend", "--only", "-m", newMessage) // #nosec G204 -- fixed git subcommand; newMessage is passed as a single argument, not shell-interpreted
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to amend commit: %w\n%s", err, output)
 	}

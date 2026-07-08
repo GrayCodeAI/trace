@@ -225,7 +225,7 @@ func loadLocalReviewManifests(ctx context.Context, worktreeRoot string) ([]Local
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		b, readErr := os.ReadFile(filepath.Join(dir, entry.Name())) //nolint:gosec // entry names come directly from os.ReadDir(dir).
+		b, readErr := os.ReadFile(filepath.Join(dir, entry.Name())) // #nosec G304 -- entry names come directly from os.ReadDir(dir), not external input
 		if readErr != nil {
 			return nil, fmt.Errorf("read review manifest %s: %w", entry.Name(), readErr)
 		}

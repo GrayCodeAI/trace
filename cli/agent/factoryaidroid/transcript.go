@@ -38,6 +38,7 @@ type droidMessageRole struct {
 // shared transcript.Line format (type="assistant"/"user", message=inner content).
 // Non-message entries (session_start, etc.) are skipped.
 func ParseDroidTranscript(path string, startLine int) ([]transcript.Line, int, error) {
+	// #nosec G304 -- path is a controlled transcript file path, not remote/untrusted input
 	file, err := os.Open(path) //nolint:gosec // path is a controlled transcript file path
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to open transcript: %w", err)
@@ -298,6 +299,7 @@ func ExtractModelFromTranscript(transcriptPath string) string {
 	}
 
 	settingsPath := strings.TrimSuffix(transcriptPath, ".jsonl") + ".settings.json"
+	// #nosec G304 -- settingsPath derived from agent hook input transcriptPath, not remote/untrusted input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // Path derived from agent hook input
 	if err != nil {
 		return ""

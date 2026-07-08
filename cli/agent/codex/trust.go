@@ -68,6 +68,7 @@ func codexConfigPath() string {
 // whether the read+parse succeeded — false on missing/malformed file so
 // callers can stay silent rather than mid-flow noise.
 func declaredCodexEvents(hooksJSONPath string) ([]string, bool) {
+	// #nosec G304 -- hooksJSONPath constructed from caller-controlled repo root, not remote/untrusted input
 	data, err := os.ReadFile(hooksJSONPath) //nolint:gosec // path constructed from caller-controlled repo root
 	if err != nil {
 		return nil, false
@@ -103,6 +104,7 @@ func declaredCodexEvents(hooksJSONPath string) ([]string, bool) {
 // are "Codex isn't enabled here", which is a different problem.
 func MissingEntireHooks(repoRoot string) []string {
 	hooksJSONPath := filepath.Join(repoRoot, ".codex", "hooks.json")
+	// #nosec G304 -- hooksJSONPath constructed from caller-controlled repo root, not remote/untrusted input
 	data, err := os.ReadFile(hooksJSONPath) //nolint:gosec // path constructed from caller-controlled repo root
 	if err != nil {
 		return nil
@@ -131,6 +133,7 @@ func MissingEntireHooks(repoRoot string) []string {
 var codexTrustStateHeaderRegex = regexp.MustCompile(`(?m)^\[hooks\.state\."([^"]+)"\]`)
 
 func readCodexTrustedKeys(configPath string) (map[string]struct{}, bool) {
+	// #nosec G304 -- configPath resolved from CODEX_HOME env var or user home dir, a standard trusted config location
 	data, err := os.ReadFile(configPath) //nolint:gosec // path resolved from CODEX_HOME or HOME
 	if err != nil {
 		return nil, false

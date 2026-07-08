@@ -752,7 +752,7 @@ func (s *GitStore) DeleteShadowBranch(ctx context.Context, baseCommit, worktreeI
 	defer StorerMu.Unlock()
 
 	shadowBranchName := ShadowBranchNameForCommit(baseCommit, worktreeID)
-	cmd := exec.CommandContext(ctx, "git", "branch", "-D", "--", shadowBranchName)
+	cmd := exec.CommandContext(ctx, "git", "branch", "-D", "--", shadowBranchName) // #nosec G204 -- fixed "git" binary; shadowBranchName is internally derived from a commit hash and worktree ID, not remote input
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to delete shadow branch %s: %s: %w", shadowBranchName, strings.TrimSpace(string(output)), err)
 	}

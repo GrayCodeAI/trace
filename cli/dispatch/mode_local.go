@@ -113,7 +113,7 @@ func resolveRepoRoots(ctx context.Context, repoPaths []string) ([]string, error)
 
 	roots := make([]string, 0, len(repoPaths))
 	for _, repoPath := range repoPaths {
-		cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rev-parse", "--show-toplevel")
+		cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rev-parse", "--show-toplevel") // #nosec G204 -- fixed "git" binary; repoPath is a CLI-provided repo path, not remote/untrusted input
 		output, err := cmd.Output()
 		if err != nil {
 			return nil, fmt.Errorf("resolve repo root for %q: %w", repoPath, err)
@@ -219,6 +219,7 @@ func enumerateRepoCandidates(ctx context.Context, repoRoot string, opts Options,
 }
 
 func reachableCheckpointIDsInRange(ctx context.Context, repoRoot, revRange string, since time.Time) (map[string]struct{}, error) {
+	// #nosec G204 -- fixed "git" binary; repoRoot/revRange are internally resolved repo paths and refs, not remote input
 	cmd := exec.CommandContext(
 		ctx,
 		"git",
@@ -291,7 +292,7 @@ func isAncestorOfHEAD(ctx context.Context, repoRoot, ref string) bool {
 
 func runGitOutput(ctx context.Context, repoRoot string, args ...string) (string, bool) {
 	fullArgs := append([]string{"-C", repoRoot}, args...)
-	out, err := exec.CommandContext(ctx, "git", fullArgs...).Output()
+	out, err := exec.CommandContext(ctx, "git", fullArgs...).Output() // #nosec G204 -- fixed "git" binary; args are internally constructed rev/ref names, not remote input
 	if err != nil {
 		return "", false
 	}
@@ -352,6 +353,7 @@ func localBranchNames(repo *git.Repository) ([]string, error) {
 }
 
 func loadCommitSubjectsByCheckpoint(ctx context.Context, repoRoot string, since time.Time) (map[string]string, error) {
+	// #nosec G204 -- fixed "git" binary; repoRoot is an internally resolved repo path, not remote input
 	cmd := exec.CommandContext(
 		ctx,
 		"git",

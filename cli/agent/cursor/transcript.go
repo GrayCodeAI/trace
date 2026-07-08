@@ -24,6 +24,7 @@ func (c *CursorAgent) GetTranscriptPosition(path string) (int, error) {
 		return 0, nil
 	}
 
+	// #nosec G304 -- path comes from Cursor transcript location, not remote/untrusted input
 	file, err := os.Open(path) //nolint:gosec // Path comes from Cursor transcript location
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -77,6 +78,7 @@ func (c *CursorAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]strin
 
 // ExtractSummary extracts the last assistant message as a session summary.
 func (c *CursorAgent) ExtractSummary(sessionRef string) (string, error) {
+	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return "", fmt.Errorf("failed to read transcript: %w", err)

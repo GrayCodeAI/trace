@@ -36,7 +36,7 @@ func init() {
 	// package init. This runs afterwards because this package imports x/plugin,
 	// and before any plugin.Get call (which only happens at command runtime).
 	//nolint:errcheck,gosec // Best-effort: Register only fails after a plugin.Get, which cannot precede init; go-git's default loader remains as fallback.
-	registerSymlinkConfigLoader()
+	registerSymlinkConfigLoader() // #nosec G104 -- best-effort: Register only fails after a plugin.Get, which cannot precede init; go-git default loader remains as fallback
 }
 
 // registerSymlinkConfigLoader registers the symlink-following config loader as
@@ -48,6 +48,7 @@ func registerSymlinkConfigLoader() error {
 }
 
 func (osSymlinkFS) Open(name string) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
+	// #nosec G304 -- name comes from git's own config-path resolution, not user input
 	f, err := os.Open(name) //nolint:gosec // G304: name comes from git's own config-path resolution, not user input.
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", name, err)
@@ -60,6 +61,7 @@ func (osSymlinkFS) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (osSymlinkFS) OpenFile(name string, flag int, perm fs.FileMode) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
+	// #nosec G304 -- name comes from git's own config-path resolution, not user input
 	f, err := os.OpenFile(name, flag, perm) //nolint:gosec // G304: name comes from git's own config-path resolution, not user input.
 	if err != nil {
 		return nil, fmt.Errorf("openfile %s: %w", name, err)

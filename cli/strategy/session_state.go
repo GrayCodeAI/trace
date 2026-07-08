@@ -266,6 +266,7 @@ func LoadModelHint(ctx context.Context, sessionID string) string {
 	}
 
 	hintPath := filepath.Join(stateDir, sessionID+".model")
+	// #nosec G304 -- sessionID is validated above
 	data, err := os.ReadFile(hintPath) //nolint:gosec // sessionID is validated above
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -318,6 +319,7 @@ func StoreAgentTypeHint(ctx context.Context, sessionID string, agentType types.A
 	}
 
 	hintFile := filepath.Join(stateDir, sessionID+".agent")
+	// #nosec G304 -- hintFile path is built from validated sessionID
 	f, oErr := os.OpenFile(hintFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // hintFile path is built from validated sessionID
 	if oErr != nil {
 		if errors.Is(oErr, os.ErrExist) {
@@ -348,6 +350,7 @@ func ClaimSessionStartBanner(ctx context.Context, sessionID string) (claimed boo
 	}
 
 	markerFile := filepath.Join(stateDir, sessionID+".banner")
+	// #nosec G304 -- markerFile path is built from validated sessionID
 	f, oErr := os.OpenFile(markerFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // markerFile path is built from validated sessionID
 	if oErr != nil {
 		if errors.Is(oErr, os.ErrExist) {
@@ -375,6 +378,7 @@ func LoadAgentTypeHint(ctx context.Context, sessionID string) types.AgentType {
 	}
 
 	hintPath := filepath.Join(stateDir, sessionID+".agent")
+	// #nosec G304 -- sessionID is validated above
 	data, err := os.ReadFile(hintPath) //nolint:gosec // sessionID is validated above
 	if err != nil {
 		if !os.IsNotExist(err) {

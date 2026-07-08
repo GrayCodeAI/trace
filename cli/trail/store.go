@@ -181,8 +181,8 @@ func (s *Store) Read(trailID ID) (*Metadata, *Discussion, *Checkpoints, error) {
 		if blobErr == nil {
 			discussionReader, readerErr := discussionBlob.Reader()
 			if readerErr == nil {
-				//nolint:errcheck,gosec // best-effort decode of optional discussion
-				json.NewDecoder(discussionReader).Decode(&discussion)
+				// Best-effort decode of optional discussion data.
+				_ = json.NewDecoder(discussionReader).Decode(&discussion)
 				_ = discussionReader.Close()
 			}
 		}
@@ -196,8 +196,8 @@ func (s *Store) Read(trailID ID) (*Metadata, *Discussion, *Checkpoints, error) {
 		if blobErr == nil {
 			checkpointsReader, readerErr := checkpointsBlob.Reader()
 			if readerErr == nil {
-				//nolint:errcheck,gosec // best-effort decode of optional checkpoints
-				json.NewDecoder(checkpointsReader).Decode(&checkpoints)
+				// Best-effort decode of optional checkpoints data.
+				_ = json.NewDecoder(checkpointsReader).Decode(&checkpoints)
 				_ = checkpointsReader.Close()
 			}
 		}

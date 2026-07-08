@@ -18,6 +18,7 @@ import (
 // runs — flock state is held by the file descriptor, not by the inode on
 // disk — so the lockfile contents are immaterial.
 func Acquire(path string) (release func(), err error) {
+	// #nosec G304 -- caller is responsible for path validation; path is an internal lock file location, not external input
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // caller is responsible for path validation
 	if err != nil {
 		return nil, fmt.Errorf("open flock: %w", err)

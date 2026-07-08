@@ -544,6 +544,7 @@ func fileFingerprint(ctx context.Context, path string) string {
 			slog.String("path", path), sErr(err))
 		return ""
 	}
+	// #nosec G304 -- path is the findings doc, internally computed from runID + git common dir
 	f, err := os.Open(path) //nolint:gosec // path is the findings doc the caller already validated
 	if err != nil {
 		// Fall back to size+mtime when content cannot be read; better than

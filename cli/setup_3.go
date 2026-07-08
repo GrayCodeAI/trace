@@ -175,8 +175,7 @@ func setupTraceDirectory(ctx context.Context) (bool, error) { //nolint:unparam /
 	}
 
 	// Create .trace directory
-	//nolint:gosec // G301: Project directory needs standard permissions for git
-	if err := os.MkdirAll(traceDirAbs, 0o755); err != nil {
+	if err := os.MkdirAll(traceDirAbs, 0o750); err != nil {
 		return false, fmt.Errorf("failed to create .trace directory: %w", err)
 	}
 
@@ -295,6 +294,7 @@ func promptShellCompletion(w io.Writer) error {
 // isCompletionConfigured checks if shell completion is already in the rc file.
 func isCompletionConfigured(rcFile string) bool {
 	//nolint:gosec // G304: rcFile is constructed from home dir + known filename, not user input
+	// #nosec G304 -- rcFile is constructed from home dir + known filename, not user input
 	content, err := os.ReadFile(rcFile)
 	if err != nil {
 		return false // File doesn't exist or can't read, treat as not configured
@@ -308,6 +308,7 @@ func appendShellCompletion(rcFile, completionLine string) error {
 		return fmt.Errorf("creating directory: %w", err)
 	}
 	//nolint:gosec // G302: Shell rc files need 0644 for user readability
+	// #nosec G302,G304 -- shell rc files (.zshrc/.bashrc/config.fish) are intentionally user-readable/editable at the standard 0644 mode; rcFile is derived from home dir + known filename, not external input
 	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("opening file: %w", err)

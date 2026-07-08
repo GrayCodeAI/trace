@@ -19,7 +19,7 @@ func spawnDetachedAnalytics(payloadJSON string) {
 		return
 	}
 
-	cmd := exec.CommandContext(context.Background(), executable, "__send_analytics", payloadJSON)
+	cmd := exec.CommandContext(context.Background(), executable, "__send_analytics", payloadJSON) // #nosec G204 -- executable is os.Executable() (this binary), args are fixed/internal payload
 
 	// Detach from parent process group so subprocess survives parent exit
 	cmd.SysProcAttr = &syscall.SysProcAttr{

@@ -38,6 +38,7 @@ func (c *CodexAgent) InstallHooks(ctx context.Context, localDev bool, force bool
 
 	// Read existing hooks.json if present
 	var rawHooks map[string]json.RawMessage
+	// #nosec G304 -- hooksPath is constructed from repo root + fixed subpath, not external input
 	existingData, readErr := os.ReadFile(hooksPath) //nolint:gosec // path constructed from repo root
 	if readErr == nil {
 		var hooksFile map[string]json.RawMessage
@@ -163,6 +164,7 @@ func (c *CodexAgent) UninstallHooks(ctx context.Context) error {
 	}
 
 	hooksPath := filepath.Join(repoRoot, ".codex", HooksFileName)
+	// #nosec G304 -- hooksPath is constructed from repo root + fixed subpath, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path constructed from repo root
 	if err != nil {
 		return nil //nolint:nilerr // No hooks.json means nothing to uninstall
@@ -230,6 +232,7 @@ func (c *CodexAgent) AreHooksInstalled(ctx context.Context) bool {
 	}
 
 	hooksPath := filepath.Join(repoRoot, ".codex", HooksFileName)
+	// #nosec G304 -- hooksPath is constructed from repo root + fixed subpath, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path constructed from repo root
 	if err != nil {
 		return false
@@ -342,6 +345,7 @@ const featureLine = "codex_hooks = true"
 func ensureProjectFeatureEnabled(repoRoot string) error {
 	configPath := filepath.Join(repoRoot, ".codex", configFileName)
 
+	// #nosec G304 -- configPath is constructed from repo root + fixed subpath, not external input
 	data, err := os.ReadFile(configPath) //nolint:gosec // path constructed from repo root
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read config.toml: %w", err)

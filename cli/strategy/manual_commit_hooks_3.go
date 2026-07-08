@@ -559,6 +559,7 @@ func (s *ManualCommitStrategy) addTrailerForAgentCommit(logCtx context.Context, 
 		return nil //nolint:nilerr // Hook must be silent on failure
 	}
 
+	// #nosec G304 -- commitMsgFile is the path git passes to the commit-msg hook, a trusted local git invocation, not external input
 	content, err := os.ReadFile(commitMsgFile) //nolint:gosec // commitMsgFile is provided by git hook
 	if err != nil {
 		return nil //nolint:nilerr // Hook must be silent on failure

@@ -174,7 +174,7 @@ func (t *FetchingTree) collectMissingBlobs(tree *object.Tree) []plumbing.Hash {
 // disk but invisible to go-git's storer (filtered out, or in a packfile
 // not in the cached index). We'd rather skip a wasted network round-trip.
 func (t *FetchingTree) blobOnDisk(hash plumbing.Hash) bool {
-	cmd := exec.CommandContext(t.ctx, "git", "cat-file", "-e", hash.String())
+	cmd := exec.CommandContext(t.ctx, "git", "cat-file", "-e", hash.String()) // #nosec G204 -- fixed "git" binary; hash.String() is an internally resolved object hash, not remote input
 	return cmd.Run() == nil
 }
 
@@ -182,7 +182,7 @@ func (t *FetchingTree) blobOnDisk(hash plumbing.Hash) bool {
 // in-memory *object.File. This bypasses go-git's storer which may have a
 // stale packfile index after external git commands fetched new objects.
 func (t *FetchingTree) readFileViaGit(path string, entry *object.TreeEntry) (*object.File, error) {
-	cmd := exec.CommandContext(t.ctx, "git", "cat-file", "-p", entry.Hash.String())
+	cmd := exec.CommandContext(t.ctx, "git", "cat-file", "-p", entry.Hash.String()) // #nosec G204 -- fixed "git" binary; entry.Hash.String() is an internally resolved object hash, not remote input
 	content, cmdErr := cmd.Output()
 	if cmdErr != nil {
 		logging.Warn(

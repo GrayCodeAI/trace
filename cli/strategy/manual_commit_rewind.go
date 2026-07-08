@@ -432,6 +432,7 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 		dir := filepath.Dir(absPath)
 		if dir != "." {
 			//nolint:gosec // G301: Need 0o755 for user directories during rewind
+			// #nosec G301 -- restoring the user's project working tree during rewind; directories must match standard project directory permissions (0o755), not private data
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", dir, err)
 			}

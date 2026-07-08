@@ -36,9 +36,11 @@ func warnStaleEndedSessionsTo(ctx context.Context, count int, w io.Writer) {
 		}
 	}
 	//nolint:errcheck,gosec // G104: Best-effort warning — fail-open if file ops fail
+	// #nosec G104 -- best-effort directory creation; fails open if file ops fail
 	os.MkdirAll(warnDir, 0o750)
 	//nolint:errcheck,gosec // G104: Best-effort sentinel file write
-	os.WriteFile(warnFile, []byte{}, 0o644)
+	// #nosec G104 -- best-effort sentinel file write; failure is non-fatal (rate-limit warning skipped)
+	os.WriteFile(warnFile, []byte{}, 0o600)
 	fmt.Fprintf(
 		w,
 		"\ntrace: %d ended session(s) are accumulating and slowing down commits.\n"+

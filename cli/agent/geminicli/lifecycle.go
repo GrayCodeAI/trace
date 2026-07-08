@@ -75,6 +75,7 @@ func (g *GeminiCLIAgent) ParseHookEvent(_ context.Context, hookName string, stdi
 
 // ReadTranscript reads the raw JSON transcript bytes for a session.
 func (g *GeminiCLIAgent) ReadTranscript(sessionRef string) ([]byte, error) {
+	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read transcript: %w", err)
