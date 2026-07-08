@@ -227,7 +227,7 @@ func resolveGitCommonDir(ctx context.Context, repo *git.Repository) (string, err
 	if err != nil {
 		return "", fmt.Errorf("open worktree for pending v2 full generation publications: %w", err)
 	}
-	root := worktree.Filesystem.Root()
+	root := worktree.Filesystem().Root()
 	if root == "" {
 		return "", errors.New("resolve worktree root for pending v2 full generation publications")
 	}

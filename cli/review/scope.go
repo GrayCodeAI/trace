@@ -276,7 +276,7 @@ func repoWorktreePath(repo *git.Repository) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve worktree: %w", err)
 	}
-	return wt.Filesystem.Root(), nil
+	return wt.Filesystem().Root(), nil
 }
 
 // fallbackScopeRef returns the first existing ref from the fallback chain:
