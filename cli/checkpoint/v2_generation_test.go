@@ -131,7 +131,7 @@ func TestAddGenerationJSONToTree(t *testing.T) {
 	shardEntries["aa/bbccddeeff/0/"+paths.V2RawTranscriptFileName] = object.TreeEntry{
 		Name: paths.V2RawTranscriptFileName,
 		Mode: 0o100644,
-		Hash: plumbing.ZeroHash, // dummy
+		Hash: storeBlob(t, repo, "dummy"),
 	}
 	rootTreeHash, err := BuildTreeFromEntries(context.Background(), repo, shardEntries)
 	require.NoError(t, err)

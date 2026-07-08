@@ -155,7 +155,7 @@ func TestCleanLongDescription_DefaultIsGeneric(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {}}`)
 
@@ -175,7 +175,7 @@ func TestCleanLongDescription_IncludesV2CleanupWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := wt.Filesystem().Root()
 
 	writeCleanSettingsFile(t, repoRoot, `{"enabled": true, "strategy_options": {"checkpoints_v2": true, "full_transcript_generation_retention_days": 14}}`)
 
@@ -460,7 +460,7 @@ func TestCleanCmd_DefaultMode_WithForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	worktreePath := wt.Filesystem.Root()
+	worktreePath := wt.Filesystem().Root()
 	worktreeID, err := paths.GetWorktreeID(worktreePath)
 	if err != nil {
 		t.Fatalf("failed to get worktree ID: %v", err)
@@ -506,7 +506,7 @@ func TestCleanCmd_DefaultMode_DryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	worktreePath := wt.Filesystem.Root()
+	worktreePath := wt.Filesystem().Root()
 	worktreeID, err := paths.GetWorktreeID(worktreePath)
 	if err != nil {
 		t.Fatalf("failed to get worktree ID: %v", err)
@@ -581,7 +581,7 @@ func TestCleanCmd_DefaultMode_SessionsWithoutShadowBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	worktreePath := wt.Filesystem.Root()
+	worktreePath := wt.Filesystem().Root()
 
 	// Create session state files WITHOUT a shadow branch
 	sessionFile := createSessionStateFile(t, worktreePath, "2026-02-02-orphaned", commitHash)
@@ -610,7 +610,7 @@ func TestCleanCmd_DefaultMode_MultipleSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get worktree: %v", err)
 	}
-	worktreePath := wt.Filesystem.Root()
+	worktreePath := wt.Filesystem().Root()
 	worktreeID, err := paths.GetWorktreeID(worktreePath)
 	if err != nil {
 		t.Fatalf("failed to get worktree ID: %v", err)

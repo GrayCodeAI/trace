@@ -1,95 +1,168 @@
-# AGENTS.md — Trace
+---
+description: Extending hawk-eco — how to write AGENTS.md files, custom specialists, skills, hooks, MCP servers, and plugins.
+globs: "*.go, *.js, *.md, *.json, *.toml, *.yaml, *.yml"
+alwaysApply: false
+---
 
-Git-native session capture for AI coding agents. Hooks into your Git workflow to capture AI agent sessions as you work. Sessions are indexed alongside commits, creating a searchable record of how code was written.
+# Extending hawk-eco
 
-## Design Principles
+hawk-eco is an open-source code intelligence platform. This document describes how to extend it with custom tools, skills, hooks, and integrations.
 
-- **Git-native** — sessions stored as git objects, searchable with standard tools
-- **Non-intrusive** — hooks into git without modifying your workflow
-- **Replayable** — reconstruct any session from captured data
+## 1. Drop a project `AGENTS.md`
 
-## Build & Test
+When hawk-eco starts in a directory, it looks for project-level instructions and injects them into the system prompt. The lookup walks from your current working directory **up to the nearest git root** and reads the first matching file at each level — general rules at the repo root, more specific rules in sub-trees. Files are labeled with their directory in the prompt (e.g. `## Project guidelines (services/api/AGENTS.md)`).
 
-```bash
-go test ./...                    # Run all tests
-go test -race ./...              # Race detector
-go test -coverprofile=c.out ./... # Coverage
-go vet ./...                     # Static analysis
-gofumpt -w .                     # Format
+Accepted file names, in priority order at each level:
+
+| Path | Notes |
+| --- | --- |
+| `./AGENTS.md` | The classic spot — committed to your repo, shared with the team. |
+| `./ZERO.md` | Brand-specific alias. Same format, lower priority. |
+| `./.zero/AGENTS.md` | Project-local, hidden, gitignored. Personal notes that stay out of git. |
+
+Matching is **case-insensitive** on the basename, so `AGENTS.md`, `Agents.md`, and `agents.md` resolve to the same file on Windows and macOS. The git-tracked filename in this repo is `AGENTS.md` — keep that on case-sensitive filesystems (Linux, the WSL filesystem, or a CI runner) to match what the loader looks for.
+
+Both files use the same format. YAML frontmatter is optional; the markdown body is loaded as instructions for the agent. hawk-eco reads the file once at session start, so changes take effect on the next launch — not mid-session.
+
+```markdown
+# Project conventions for <your project>
+
+- Build with `make`, not `go build` directly.
+- Tests live next to the source file (`foo_test.go` next to `foo.go`).
+- Run `make lint` before opening a PR.
+- Never edit files under `third_party/` — those are vendored.
 ```
 
-## Architecture
+Tips:
 
-- `cli/` — the cobra command tree (capture, list, search, replay, investigate, …),
-  built by `cli.NewRootCmd()` and mounted by Hawk as `hawk trace ...`
-- `redact/` — secret/PII detection and redaction
-- `internal/` — private support packages (git ops, agent launch tracking, etc.)
-- `perf/` — performance benchmarks
+- Keep each file under ~8 KiB. hawk-eco caps the **total** across all matched files at 32 KiB; everything past the cap is dropped.
+- Re-state rules in the imperative voice: "Run `make lint`", not "you should consider running the linter".
+- Don't put secrets, model IDs, or environment-specific paths in `AGENTS.md`. Use config files for those.
+- In a monorepo, drop a narrower `AGENTS.md` in each sub-tree (e.g. `services/api/AGENTS.md`). hawk-eco picks those up automatically when you launch from inside the sub-tree.
+- A YAML frontmatter block (`---\n...\n---`) at the top is preserved verbatim in the injected prompt but is not parsed for `globs:` or `alwaysApply:` scoping today — keep the body self-contained.
 
-## Conventions
+### Personal guidelines, across every project
 
-- Go 1.26+, pure Go, no CGO
-- Table-driven tests
-- Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`
-- No `Co-authored-by:` trailers (auto-stripped by githook)
-- `gofumpt` formatting enforced in CI
-- Investigate command has its own docs in `docs/`
+For preferences that follow *you*, not a specific repo (tone, tooling habits, workflow), drop a `ZERO.md` in your user config directory: `~/.config/hawk-eco/ZERO.md` on Linux/macOS, `%AppData%\Roaming\hawk-eco\ZERO.md` on Windows — the same directory as config files and your personal specialists. Same format and 8 KiB cap as the project files above, and the same case-insensitive basename match.
 
-## Common Pitfalls
+This file is injected as its own `## User guidelines` section, before the project's `AGENTS.md`/`ZERO.md`, and is labeled as personal preference in the prompt: project guidelines are the later, more specific instruction and take precedence over it when the two conflict.
 
-- Agent launch tests need careful nil handling (nilnil pattern)
-- Perfsprint linter is strict — use `fmt.Errorf` not `errors.New(fmt.Sprintf(...))`
-- Session storage uses git objects — don't modify `.git/` directly in tests
+## 2. Custom specialists
 
-## Naming Conventions
+Specialists are hawk-eco's sub-agents. Three scopes, in priority order:
 
-- **CLI commands use cobra**: `cli/` contains the command root (`NewRootCmd`) and subcommands
-- **Error sentinels**: `Err` prefix, package-level `var` with `errors.New()`
-- **JSON tags on all exported fields**: `json:"timestamp"`, `json:"session_id"` — snake_case in JSON, CamelCase in Go
-- **Time formatting**: use `time.RFC3339` for display, `"20060102_150405"` for filenames
-- **Redaction package**: `redact/` handles secret detection — pattern names use `Pattern` suffix: `secretPattern`, `credentialedURIPattern`
+| Scope | Path | Shared? |
+| --- | --- | --- |
+| Built-in | compiled into hawk-eco | yes |
+| User | `~/.config/hawk-eco/specialists/*.md` | no — your machine only |
+| Project | `./.zero/specialists/*.md` | yes — the repo team |
 
-## API Patterns
+Project overrides user overrides built-in when names collide.
 
-- **Library, not a binary**: trace ships inside Hawk; there is no standalone `trace` binary
-- **Git-native storage**: sessions stored as git objects on `trace/checkpoints/v1` orphan branch — never on the working branch
-- **Config in `.trace/` directory**: `settings.json` (committed) + `settings.local.json` (gitignored)
-- **Redaction is multi-layered**: entropy-based (`entropyThreshold = 4.5`), pattern-based (JWT, base64, DB URIs), keyword-based (password, secret)
-- **Mise-based dev tooling**: `mise.toml` defines tasks — `mise run test`, `mise run test:ci`, `mise run lint`
+A specialist is a markdown manifest with frontmatter and a system prompt:
 
-## Testing Patterns
+```markdown
+---
+description: Reviews API changes for breaking-change risk and missing tests.
+tools: read-only,plan
+---
 
-- **Integration tests**: `cli/integration_test/` (build tag `integration`) — full command flows
-- **Nilnil pattern**: agent launch functions return `(T, error)` where both can be nil — test with explicit nil checks
-- **Git-dependent tests**: some tests need a real git repo — use `t.TempDir()` + `git init` for isolation
-- **Redaction tests**: `redact/redact_test.go` tests secret detection patterns — cover entropy edge cases, placeholder exclusion
-- **Bench tests**: `redact/redact_bench_test.go` — performance-critical path, benchmark before changing regex patterns
-- **Perfsprint linter**: enforced in CI — `errors.New(fmt.Sprintf(...))` must be `fmt.Errorf(...)` instead
+You review API changes. For every changed hunk in `internal/api/` or any file
+that ends in `_api.go`:
 
-## Refactoring Guidelines
+1. Confirm the public signature is backward-compatible, or note the breaking
+   change explicitly with the migration path.
+2. Confirm a corresponding test exists in `internal/api/*_test.go` and that
+   the new behaviour is exercised.
+3. Flag any new exported symbol without a doc comment.
 
-- **Safe to refactor**: redaction patterns in `redact/` — add new patterns, tune entropy threshold
-- **Safe to refactor**: commands in `cli/` — cobra command structure, add subcommands freely
-- **Do not touch**: `trace/checkpoints/v1` branch name — hardcoded in consumers and git hooks
-- **Do not touch**: `.trace/settings.json` schema — committed config, changing breaks existing repos
-- **Do not touch**: the `cli` package import path — Hawk imports `github.com/GrayCodeAI/trace/cli`
-- **When adding agents**: update `cli/agent/` — each agent has its own integration file
-- **When adding redaction patterns**: add to `redact/redact.go` with corresponding test in `redact/redact_test.go`
+Reply with one JSON object per finding: `{"file", "line", "severity", "message", "fix"}`.
+```
 
-## Key File Locations
+CLI management:
 
-| What | Where |
-|---|---|
-| Command tree root | `cli/` (`NewRootCmd`); mounted by Hawk as `hawk trace ...` |
-| CLI commands | `cli/` (enable, disable, status, checkpoint, session, agent, doctor) |
-| Secret redaction | `redact/redact.go` (entropy, patterns, DB URIs, JWT, base64) |
-| Redaction pattern packs | `redact/packs.go` (vendor-specific patterns) |
-| PII detection | `redact/pii.go` |
-| Custom redaction rules | `redact/custom.go` |
-| Agent launch detection | `internal/` subpackages |
-| Git operations | `internal/` subdirectories |
-| Integration tests | `cli/integration_test/` (build tag `integration`) |
-| Perf benchmarks | `perf/` directory |
-| Mise task definitions | `mise.toml` |
-| Docs | `docs/` (investigate command, security, privacy) |
-| Linter config | `.golangci.yaml` (very strict: 40+ linters including perfsprint, nilnil, wrapcheck, gosec) |
+```bash
+hawk-eco specialist list
+hawk-eco specialist show api-reviewer
+hawk-eco specialist create api-reviewer \
+    --project \
+    --description "Reviews API changes" \
+    --tools read-only,plan \
+    --prompt "$(cat api-reviewer.md)"
+hawk-eco specialist edit api-reviewer --project
+hawk-eco specialist delete api-reviewer --project
+hawk-eco specialist path                       # prints the resolved specialists directory
+```
+
+## 3. Skills
+
+Skills are markdown instruction files that extend agent capabilities. They can be:
+- Project-scoped: dropped in `./.zero/skills/` or `./skills/`
+- User-scoped: dropped in `~/.config/hawk-eco/skills/`
+
+A skill manifest:
+
+```markdown
+---
+description: How to review Go code for security issues
+globs: "*.go"
+alwaysApply: true
+---
+
+When reviewing Go code for security:
+
+1. Check for SQL injection patterns
+2. Verify error handling doesn't expose sensitive data
+3. Confirm secrets are not hardcoded
+4. Validate input sanitization
+```
+
+## 4. Hooks
+
+Hooks allow custom commands to run at specific lifecycle points:
+- `beforeReview` — runs before code review starts
+- `afterReview` — runs after code review completes
+- `sessionStart` — runs at session initialization
+- `sessionEnd` — runs at session teardown
+
+```bash
+hawk-eco hook add beforeReview --command "lint-check"
+hawk-eco hook remove beforeReview
+hawk-eco hook list
+```
+
+## 5. MCP integration
+
+MCP (Model Context Protocol) servers can expose tools to hawk-eco:
+
+```bash
+hawk-eco mcp add --name server --url http://localhost:8080
+hawk-eco mcp remove server
+hawk-eco mcp list
+```
+
+## 6. Plugins
+
+Plugins extend hawk-eco with custom tools and capabilities:
+
+```bash
+hawk-eco plugin add --name my-plugin --path ./my-plugin
+hawk-eco plugin remove my-plugin
+hawk-eco plugin list
+```
+
+## 7. Verification
+
+hawk-eco includes a self-verification system to validate local changes before contributing:
+
+```bash
+hawk-eco verify
+hawk-eco verify --fix
+```
+
+## Development
+
+```bash
+make lint
+hawk-eco verify
+```
