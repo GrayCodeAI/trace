@@ -79,6 +79,7 @@ that path is printed to stdout. Use --out to choose a specific path.`,
 }
 
 func writeDoctorBundle(ctx context.Context, repoRoot, outPath string, raw bool) error {
+	// #nosec G304 -- outPath is user-provided via --out flag, a standard trusted CLI argument
 	out, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // user-provided output path is intentional
 	if err != nil {
 		return fmt.Errorf("create bundle: %w", err)
@@ -191,6 +192,7 @@ func zipEntryName(parts ...string) string {
 }
 
 func addFileToZip(zw *zip.Writer, src, archivePath string, raw bool) error {
+	// #nosec G304 -- src comes from repo-internal walk (settings files, logs dir), not external input
 	f, err := os.Open(src) //nolint:gosec // path comes from repo-internal walk
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

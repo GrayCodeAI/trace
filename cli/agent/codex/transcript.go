@@ -83,6 +83,7 @@ func (c *CodexAgent) GetTranscriptPosition(path string) (int, error) {
 		return 0, nil
 	}
 
+	// #nosec G304 -- path comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	file, err := os.Open(path) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -116,6 +117,7 @@ func (c *CodexAgent) ExtractModifiedFilesFromOffset(path string, startOffset int
 		return nil, 0, nil
 	}
 
+	// #nosec G304 -- path comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	file, openErr := os.Open(path) //nolint:gosec // Path comes from agent hook input
 	if openErr != nil {
 		return nil, 0, fmt.Errorf("failed to open transcript: %w", openErr)
@@ -262,6 +264,7 @@ func (c *CodexAgent) CalculateTokenUsage(transcriptData []byte, fromOffset int) 
 
 // ExtractPrompts returns user prompts from the transcript starting at the given offset.
 func (c *CodexAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]string, error) {
+	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		if os.IsNotExist(err) {

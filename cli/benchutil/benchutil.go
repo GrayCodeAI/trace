@@ -481,23 +481,23 @@ func GenerateFileContent(seed, sizeBytes int) string {
 	return buf.String()
 }
 
-//nolint:gosec // G301/G306: benchmark fixtures use standard permissions in temp dirs
+// benchmark fixtures written to temp dirs with tightened permissions
 func writeFile(b *testing.B, dir, relPath, content string) {
 	b.Helper()
 	abs := filepath.Join(dir, relPath)
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
 		b.Fatalf("mkdir %s: %v", filepath.Dir(relPath), err)
 	}
-	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(abs, []byte(content), 0o600); err != nil {
 		b.Fatalf("write %s: %v", relPath, err)
 	}
 }
 
-//nolint:gosec // G301/G306: benchmark fixtures use standard permissions in temp dirs
+// benchmark fixtures written to temp dirs with tightened permissions
 func initTraceSettings(b *testing.B, dir, strategy string) {
 	b.Helper()
 	traceDir := filepath.Join(dir, ".trace")
-	if err := os.MkdirAll(filepath.Join(traceDir, "tmp"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(traceDir, "tmp"), 0o750); err != nil {
 		b.Fatalf("mkdir .trace: %v", err)
 	}
 
@@ -509,7 +509,7 @@ func initTraceSettings(b *testing.B, dir, strategy string) {
 	if err != nil {
 		b.Fatalf("marshal settings: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(traceDir, paths.SettingsFileName), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(traceDir, paths.SettingsFileName), data, 0o600); err != nil {
 		b.Fatalf("write settings: %v", err)
 	}
 }

@@ -34,6 +34,7 @@ func ParseExportSession(data []byte) (*ExportSession, error) {
 
 // parseExportSessionFromFile reads a file and parses its contents as an ExportSession.
 func parseExportSessionFromFile(path string) (*ExportSession, error) {
+	// #nosec G304 -- path comes from agent hook/session state, not remote/untrusted input
 	data, err := os.ReadFile(path) //nolint:gosec // path from agent hook/session state
 	if err != nil {
 		return nil, err //nolint:wrapcheck // caller adds context or checks os.IsNotExist
@@ -284,6 +285,7 @@ func ExtractAllUserPrompts(data []byte) ([]string, error) {
 // ExtractPrompts extracts user prompts from an OpenCode export transcript starting
 // at the given message offset.
 func (a *OpenCodeAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]string, error) {
+	// #nosec G304 -- sessionRef comes from validated agent session state, not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // path comes from validated agent session state
 	if err != nil {
 		return nil, fmt.Errorf("failed to read opencode transcript for prompt extraction: %w", err)

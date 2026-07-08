@@ -472,6 +472,7 @@ func saveInvestigateConfig(ctx context.Context, cfg *settings.InvestigateConfig)
 	}
 
 	local := &settings.TraceSettings{}
+	// #nosec G304 -- localPath is derived from AbsPath for the internal settings.local.json location, not external input
 	data, readErr := os.ReadFile(localPath) //nolint:gosec // path is from AbsPath
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return fmt.Errorf("read local settings: %w", readErr)

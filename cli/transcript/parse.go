@@ -103,6 +103,7 @@ func ParseFromFileAtLine(path string, startLine int) ([]Line, error) {
 // and a cleanup function that must be called when done.
 func openTranscriptReader(path string) (*bufio.Reader, func(), error) {
 	// Try the exact path first.
+	// #nosec G304 -- path is an internally resolved transcript file path, not remote/untrusted input
 	file, err := os.Open(path) //nolint:gosec // path is a controlled transcript file path
 	if err == nil {
 		return bufio.NewReader(file), func() { _ = file.Close() }, nil
@@ -110,6 +111,7 @@ func openTranscriptReader(path string) (*bufio.Reader, func(), error) {
 
 	// Try the gzip-compressed variant.
 	gzPath := path + ".gz"
+	// #nosec G304 -- gzPath is derived from the same internally resolved transcript path, not remote/untrusted input
 	gzFile, gzErr := os.Open(gzPath) //nolint:gosec // path is a controlled transcript file path
 	if gzErr != nil {
 		return nil, func() {}, fmt.Errorf("failed to open transcript: %w", err)

@@ -163,6 +163,7 @@ func (s *LocalManifestStore) List(ctx context.Context) ([]LocalManifest, error) 
 		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".tmp") {
 			continue
 		}
+		// #nosec G304 -- name from os.ReadDir(s.dir), not external input
 		b, readErr := os.ReadFile(filepath.Join(s.dir, name)) //nolint:gosec // names from os.ReadDir(s.dir)
 		if readErr != nil {
 			return nil, fmt.Errorf("read manifest %s: %w", name, readErr)
@@ -310,6 +311,7 @@ func (s *LocalManifestStore) Latest(ctx context.Context) (LocalManifest, bool, e
 	if latest == "" {
 		return LocalManifest{}, false, nil
 	}
+	// #nosec G304 -- name from os.ReadDir(s.dir), not external input
 	b, err := os.ReadFile(filepath.Join(s.dir, latest)) //nolint:gosec // name from os.ReadDir(s.dir)
 	if err != nil {
 		return LocalManifest{}, false, fmt.Errorf("read manifest %s: %w", latest, err)

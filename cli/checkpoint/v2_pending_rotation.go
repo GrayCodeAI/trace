@@ -141,6 +141,7 @@ func (s *V2GitStore) readPendingFullGenerationPublicationState(ctx context.Conte
 	if err != nil {
 		return pendingV2FullGenerationPublicationState{}, err
 	}
+	// #nosec G304 -- path is under git common dir, not external input
 	data, err := os.ReadFile(path) //nolint:gosec // path is under git common dir
 	if os.IsNotExist(err) {
 		return pendingV2FullGenerationPublicationState{Version: pendingV2FullGenerationPublicationVersion}, nil
@@ -232,7 +233,7 @@ func resolveGitCommonDir(ctx context.Context, repo *git.Repository) (string, err
 		return "", errors.New("resolve worktree root for pending v2 full generation publications")
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--git-common-dir")
+	cmd := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--git-common-dir") // #nosec G204 -- fixed "git" binary; root is the resolved worktree filesystem root, not remote input
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("resolve git common dir for pending v2 full generation publications: %w", err)

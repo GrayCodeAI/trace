@@ -27,11 +27,13 @@ Simply type '` + rootCmd.Name() + ` help [command]' for full details.`,
 			if err != nil || targetCmd == nil {
 				targetCmd = rootCmd
 			}
+			// #nosec G104 -- Help() only fails on write errors to stdout, non-actionable
 			targetCmd.Help() //nolint:errcheck,gosec // Help() only fails on write errors to stdout
 		},
 	}
 
 	helpCmd.Flags().BoolVarP(&showTree, "tree", "t", false, "Show full command tree")
+	// #nosec G104 -- MarkHidden error is only returned for an undefined flag, which cannot happen here
 	helpCmd.Flags().MarkHidden("tree") //nolint:errcheck,gosec // flag is defined above
 
 	return helpCmd

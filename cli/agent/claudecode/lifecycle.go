@@ -75,6 +75,7 @@ func (c *ClaudeCodeAgent) ParseHookEvent(_ context.Context, hookName string, std
 
 // ReadTranscript reads the raw JSONL transcript bytes for a session.
 func (c *ClaudeCodeAgent) ReadTranscript(sessionRef string) ([]byte, error) {
+	// #nosec G304 -- path comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read transcript: %w", err)
@@ -244,6 +245,7 @@ func waitForTranscriptFlush(ctx context.Context, transcriptPath string, hookStar
 
 // checkStopSentinel reads the tail of the transcript file and looks for the sentinel.
 func checkStopSentinel(path string, tailBytes int64, hookStartTime time.Time, maxSkew time.Duration) bool {
+	// #nosec G304 -- path comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	f, err := os.Open(path) //nolint:gosec // path comes from agent hook input
 	if err != nil {
 		return false

@@ -122,6 +122,7 @@ func (s *ManualCommitStrategy) CondenseSession(ctx context.Context, repo *git.Re
 	// Re-resolve transcript path before any reads — handles agents that relocate
 	// transcripts mid-session (e.g., Cursor CLI flat → nested layout change).
 	// Errors are ignored; downstream readers handle missing transcripts gracefully.
+	// #nosec G104 -- best-effort call; downstream readers handle missing/unresolved transcript files gracefully
 	resolveTranscriptPath(state) //nolint:errcheck,gosec // best-effort; downstream readers handle missing files
 
 	extractStart := time.Now()

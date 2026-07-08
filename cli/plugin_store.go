@@ -467,6 +467,7 @@ func copyFileStreaming(src, dest string, srcInfo os.FileInfo) error {
 	if mode == 0 {
 		mode = 0o755
 	}
+	// #nosec G304 -- src is the user-provided plugin executable; reading it is the point
 	in, err := os.Open(src) //nolint:gosec // src is the user-provided plugin executable; reading it is the point
 	if err != nil {
 		return fmt.Errorf("open source for copy fallback: %w", err)
@@ -476,6 +477,7 @@ func copyFileStreaming(src, dest string, srcInfo os.FileInfo) error {
 	// G304: dest is always inside the managed bin dir. The basename comes
 	// from a validated plugin name (validatePluginName ran upstream), and
 	// the parent dir comes from EnsurePluginBinDir.
+	// #nosec G304 -- dest is constrained to the managed bin dir with a validated plugin name
 	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode) //nolint:gosec // dest is constrained to the managed bin dir
 	if err != nil {
 		return fmt.Errorf("open destination for copy fallback: %w", err)

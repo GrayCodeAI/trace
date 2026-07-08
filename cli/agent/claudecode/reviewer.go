@@ -29,7 +29,7 @@ func NewReviewer() *reviewtypes.ReviewerTemplate {
 // Exposed at package level for test inspection of argv and env.
 func buildReviewCmd(ctx context.Context, cfg reviewtypes.RunConfig) *exec.Cmd {
 	prompt := review.ComposeReviewPrompt(cfg)
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt)
+	cmd := exec.CommandContext(ctx, "claude", "-p", prompt) // #nosec G204 -- fixed "claude" binary; prompt is passed as a single argument, not shell-interpreted
 	cmd.Env = review.AppendReviewEnv(os.Environ(), "claude-code", cfg, prompt)
 	return cmd
 }

@@ -56,6 +56,7 @@ func (c *CopilotCLIAgent) InstallHooks(ctx context.Context, localDev bool, force
 	var rawFile map[string]json.RawMessage
 	var rawHooks map[string]json.RawMessage
 
+	// #nosec G304 -- hooksPath is constructed from repo root + fixed path, not external input
 	existingData, readErr := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	switch {
 	case readErr == nil:
@@ -172,6 +173,7 @@ func (c *CopilotCLIAgent) UninstallHooks(ctx context.Context) error {
 		worktreeRoot = "."
 	}
 	hooksPath := filepath.Join(worktreeRoot, hooksDir, HooksFileName)
+	// #nosec G304 -- hooksPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -238,6 +240,7 @@ func (c *CopilotCLIAgent) AreHooksInstalled(ctx context.Context) bool {
 		worktreeRoot = "."
 	}
 	hooksPath := filepath.Join(worktreeRoot, hooksDir, HooksFileName)
+	// #nosec G304 -- hooksPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {

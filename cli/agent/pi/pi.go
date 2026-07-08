@@ -84,7 +84,7 @@ func (a *PiAgent) ReadTranscript(sessionRef string) ([]byte, error) {
 	if sessionRef == "" {
 		return nil, errors.New("empty session ref")
 	}
-	//nolint:gosec // SessionRef from validated lifecycle hook input
+	// #nosec G304 -- SessionRef from validated lifecycle hook input
 	data, err := os.ReadFile(sessionRef)
 	if err != nil {
 		return nil, fmt.Errorf("read pi transcript %s: %w", sessionRef, err)

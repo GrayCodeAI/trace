@@ -341,6 +341,7 @@ func ExtractModelFromTranscript(ctx context.Context, transcriptPath string) stri
 		return ""
 	}
 
+	// #nosec G304 -- transcriptPath derived from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(transcriptPath) //nolint:gosec // Path derived from agent hook input
 	if err != nil {
 		logging.Debug(ctx, "copilot-cli: failed to read transcript for model extraction",
@@ -374,6 +375,7 @@ func (c *CopilotCLIAgent) GetTranscriptPosition(path string) (int, error) {
 		return 0, nil
 	}
 
+	// #nosec G304 -- path comes from Copilot CLI transcript location, not remote/untrusted input
 	file, err := os.Open(path) //nolint:gosec // Path comes from Copilot CLI transcript location
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -415,6 +417,7 @@ func (c *CopilotCLIAgent) ExtractModifiedFilesFromOffset(path string, startOffse
 		return nil, 0, nil
 	}
 
+	// #nosec G304 -- path comes from Copilot CLI transcript location, not remote/untrusted input
 	file, openErr := os.Open(path) //nolint:gosec // Path comes from Copilot CLI transcript location
 	if openErr != nil {
 		return nil, 0, fmt.Errorf("failed to open transcript file: %w", openErr)
@@ -452,6 +455,7 @@ func (c *CopilotCLIAgent) ExtractModifiedFilesFromOffset(path string, startOffse
 
 // ExtractPrompts extracts user prompts from the transcript starting at the given offset.
 func (c *CopilotCLIAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]string, error) {
+	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read transcript: %w", err)
@@ -466,6 +470,7 @@ func (c *CopilotCLIAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]s
 
 // ExtractSummary extracts the last assistant message as a session summary.
 func (c *CopilotCLIAgent) ExtractSummary(sessionRef string) (string, error) {
+	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return "", fmt.Errorf("failed to read transcript: %w", err)

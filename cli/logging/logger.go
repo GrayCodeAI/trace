@@ -125,6 +125,7 @@ func Init(ctx context.Context, sessionID string) error {
 	}
 
 	logFilePath := filepath.Join(logsPath, "trace.log")
+	// #nosec G304 -- logFilePath is a fixed filename under the repo's .trace/logs dir, not user-controlled
 	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // fixed filename, not user-controlled
 	if err != nil {
 		// Fall back to stderr

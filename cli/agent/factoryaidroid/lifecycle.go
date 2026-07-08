@@ -119,6 +119,7 @@ func (f *FactoryAIDroidAgent) ExtractPrompts(sessionRef string, fromOffset int) 
 
 // ExtractSummary extracts the last assistant message as a session summary.
 func (f *FactoryAIDroidAgent) ExtractSummary(sessionRef string) (string, error) {
+	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return "", fmt.Errorf("failed to read transcript: %w", err)

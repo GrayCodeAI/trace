@@ -190,6 +190,7 @@ func (c *CodexAgent) FormatResumeCommand(sessionID string) string {
 
 // ReadTranscript reads the raw JSONL transcript bytes for a session.
 func (c *CodexAgent) ReadTranscript(sessionRef string) ([]byte, error) {
+	// #nosec G304 -- path comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read transcript: %w", err)
@@ -256,7 +257,7 @@ func (c *CodexAgent) LaunchCmd(ctx context.Context, initialPrompt string) (*exec
 	if err != nil {
 		return nil, fmt.Errorf("codex binary not on PATH: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, bin, initialPrompt)
+	cmd := exec.CommandContext(ctx, bin, initialPrompt) // #nosec G204 -- bin is resolved via exec.LookPath("codex"); initialPrompt is passed as a single argument, not shell-interpreted
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

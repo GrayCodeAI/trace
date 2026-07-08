@@ -124,6 +124,7 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 		// Always read from worktree to match checkpoint behavior
 		fullPath := filepath.Join(worktreeRoot, filePath)
 		var content string
+		// #nosec G304 -- fullPath is worktreeRoot + filePath from git worktree status, not external input
 		if data, err := os.ReadFile(fullPath); err == nil { //nolint:gosec // filePath is from git worktree status
 			// Use git's binary detection algorithm (matches getFileContent behavior).
 			// Binary files are excluded from line-based attribution calculations.
@@ -358,6 +359,7 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 		return 1 // Count as error - all checkpoints will be skipped
 	}
 
+	// #nosec G304 -- transcriptPath validated by resolveTranscriptPath
 	fullTranscript, err := os.ReadFile(transcriptPath) //nolint:gosec // path validated by resolveTranscriptPath
 	if err != nil || len(fullTranscript) == 0 {
 		msg := "finalize: empty transcript, skipping"

@@ -12,7 +12,7 @@ import (
 // and extracts the timestamp field. Returns zero time if file doesn't exist
 // or no valid timestamp is found.
 func GetLastTimestampFromFile(path string) time.Time {
-	file, err := os.Open(path) //nolint:gosec // path is from controlled session directory
+	file, err := os.Open(path) // #nosec G304 -- path is from controlled session directory, not external input
 	if err != nil {
 		return time.Time{}
 	}

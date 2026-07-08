@@ -401,7 +401,8 @@ func resolveWorktreeBranch(ctx context.Context, worktreePath string) string {
 		headPath = filepath.Join(gitPath, "HEAD")
 	} else {
 		// Worktree: .git is a file containing "gitdir: <path>"
-		data, err := os.ReadFile(gitPath) //nolint:gosec // path derived from known worktree dir
+		// #nosec G304 -- .git file path derived from a known worktree dir, not external input
+		data, err := os.ReadFile(gitPath)
 		if err != nil {
 			return ""
 		}
@@ -416,7 +417,8 @@ func resolveWorktreeBranch(ctx context.Context, worktreePath string) string {
 		headPath = filepath.Join(gitdirPath, "HEAD")
 	}
 
-	data, err := os.ReadFile(headPath) //nolint:gosec // path constructed from .git/HEAD
+	// #nosec G304 -- path constructed internally to point at .git/HEAD, not external input
+	data, err := os.ReadFile(headPath)
 	if err != nil {
 		return ""
 	}

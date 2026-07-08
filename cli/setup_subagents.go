@@ -51,6 +51,7 @@ func scaffoldSearchSubagent(ctx context.Context, ag agent.Agent) (searchSubagent
 }
 
 func writeManagedSearchSubagent(targetPath, relPath string, content []byte) (searchSubagentScaffoldResult, error) {
+	// #nosec G304 -- targetPath is derived from repo root + a fixed relative path, not external input
 	existingData, err := os.ReadFile(targetPath) //nolint:gosec // target path is derived from repo root + fixed relative path
 	if err == nil {
 		if !bytes.Contains(existingData, []byte(traceManagedSearchSubagentMarker)) {

@@ -276,7 +276,7 @@ func BranchExistsOnRemote(ctx context.Context, branchName string) (bool, error) 
 	lsCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	lsCmd := exec.CommandContext(lsCtx, "git", "ls-remote", "--heads", "origin", "refs/heads/"+branchName)
+	lsCmd := exec.CommandContext(lsCtx, "git", "ls-remote", "--heads", "origin", "refs/heads/"+branchName) // #nosec G204 -- branchName is passed as a single argument (not shell-interpreted); fixed git subcommand
 	output, lsErr := lsCmd.Output()
 	if lsErr != nil {
 		// ls-remote failed (no network, no remote, etc.) — treat as not found

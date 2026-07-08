@@ -67,6 +67,7 @@ func resolveTopicAndSeed(ctx context.Context, args []string, f runFlags, pickerP
 	switch {
 	case len(args) == 1:
 		seedDoc = args[0]
+		// #nosec G304 -- seedDoc is a user-supplied positional CLI argument, standard trusted CLI input
 		body, readErr := os.ReadFile(seedDoc) //nolint:gosec // path is user-supplied positional arg
 		if readErr != nil {
 			return "", "", nil, "", fmt.Errorf("read seed doc %s: %w", seedDoc, readErr)
@@ -221,6 +222,7 @@ func writeRunManifest(
 	findingsContent := ""
 	captured := false
 	if terminal && findingsDoc != "" {
+		// #nosec G304 -- path computed from runID + git common dir, not external input
 		data, readErr := os.ReadFile(findingsDoc) //nolint:gosec // path computed from runID + git common dir
 		if readErr != nil {
 			logging.Debug(ctx, "investigate: read findings for manifest capture",

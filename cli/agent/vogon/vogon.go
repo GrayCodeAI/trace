@@ -50,6 +50,7 @@ func (v *Agent) IsTestOnly() bool { return true }
 // --- Transcript Storage ---
 
 func (v *Agent) ReadTranscript(sessionRef string) ([]byte, error) {
+	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path from hook input
 	if err != nil {
 		return nil, fmt.Errorf("read transcript: %w", err)

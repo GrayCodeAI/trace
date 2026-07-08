@@ -421,7 +421,7 @@ func (s *V2GitStore) fetchRemoteFullRefs(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	lsCmd := exec.CommandContext(ctx, "git", "ls-remote", s.FetchRemote, paths.V2FullRefPrefix+"*")
+	lsCmd := exec.CommandContext(ctx, "git", "ls-remote", s.FetchRemote, paths.V2FullRefPrefix+"*") // #nosec G204 -- fixed "git" binary; s.FetchRemote is an internally configured remote name, not remote/untrusted input
 	output, err := lsCmd.Output()
 	if err != nil {
 		return fmt.Errorf("ls-remote failed: %w", err)
@@ -451,7 +451,7 @@ func (s *V2GitStore) fetchRemoteFullRefs(ctx context.Context) error {
 	}
 
 	args := append([]string{"fetch", "--no-tags", s.FetchRemote}, refSpecs...)
-	fetchCmd := exec.CommandContext(ctx, "git", args...)
+	fetchCmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed "git" binary; args are internally constructed fetch flags/refspecs, not remote/untrusted input
 	if fetchOutput, fetchErr := fetchCmd.CombinedOutput(); fetchErr != nil {
 		return fmt.Errorf("fetch failed: %s", fetchOutput)
 	}

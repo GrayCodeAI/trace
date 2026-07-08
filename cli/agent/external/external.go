@@ -430,7 +430,7 @@ func (e *Agent) run(ctx context.Context, stdin []byte, args ...string) ([]byte, 
 		ctx, cancel = context.WithTimeout(ctx, defaultRunTimeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, e.binaryPath, args...)
+	cmd := exec.CommandContext(ctx, e.binaryPath, args...) // #nosec G204 -- e.binaryPath is the user-configured external agent binary, a trusted operator-provided path; args are internally constructed
 	// Ensure I/O goroutines are released shortly after the process is killed,
 	// so cmd.Run() doesn't block waiting for pipe reads.
 	cmd.WaitDelay = 3 * time.Second

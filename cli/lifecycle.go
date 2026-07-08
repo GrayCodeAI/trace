@@ -301,6 +301,7 @@ func handleLifecycleTurnStart(ctx context.Context, ag agent.Agent, event *agent.
 		if sessionDirAbs, absErr := paths.AbsPath(ctx, sessionDir); absErr == nil {
 			if mkErr := os.MkdirAll(sessionDirAbs, 0o750); mkErr == nil {
 				promptPath := filepath.Join(sessionDirAbs, paths.PromptFileName)
+				// #nosec G304 -- promptPath is internal session metadata path, not external input
 				existing, readErr := os.ReadFile(promptPath) //nolint:gosec // session metadata path
 				var content string
 				if readErr == nil && len(existing) > 0 {
@@ -450,6 +451,7 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 	// update session state after SaveStep (which may reinitialize state).
 	var backfilledPrompt string
 	promptPath := filepath.Join(sessionDirAbs, paths.PromptFileName)
+	// #nosec G304 -- promptPath is internal session metadata path, not external input
 	existingPrompt, readPromptErr := os.ReadFile(promptPath) //nolint:gosec // file content is safe session metadata
 	if readPromptErr != nil && !os.IsNotExist(readPromptErr) {
 		logging.Warn(logCtx, "failed to read prompt.txt, skipping backfill",
