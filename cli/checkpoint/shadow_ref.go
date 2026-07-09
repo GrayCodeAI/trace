@@ -118,7 +118,7 @@ func shadowRefBackoff(ctx context.Context, attempt int) error {
 	// Add a 1ms floor so the chosen sleep is always non-trivial, even when
 	// rand.Int64N happens to return 0.
 	// #nosec G404 -- non-cryptographic use (retry backoff jitter)
-	d := time.Duration(rand.Int64N(int64(base))) + time.Millisecond  //nolint:gosec // jitter, not security-sensitive
+	d := time.Duration(rand.Int64N(int64(base))) + time.Millisecond //nolint:gosec // jitter, not security-sensitive
 	select {
 	case <-time.After(d):
 		return nil
