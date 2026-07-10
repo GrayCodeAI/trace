@@ -70,8 +70,8 @@ const (
 	ToolEdit         = "Edit"
 	ToolNotebookEdit = "NotebookEdit"
 	// #nosec G101 -- not a credential: this is an MCP tool name constant
-	ToolMCPWrite     = "mcp__acp__Write" //nolint:gosec // G101: This is a tool name, not a credential
-	ToolMCPEdit      = "mcp__acp__Edit"
+	ToolMCPWrite = "mcp__acp__Write" //nolint:gosec // G101: This is a tool name, not a credential
+	ToolMCPEdit  = "mcp__acp__Edit"
 )
 
 // FileModificationTools lists tools that create or modify files
