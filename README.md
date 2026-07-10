@@ -25,6 +25,11 @@ Trace is a Hawk support engine. Keep the dependency edge one-way:
 - do not import removed legacy path `hawk/shared/types`
 - do not import other engines (`eyrie`, `yaad`, `tok`, `sight`, `inspect`) — engines are peers, not dependencies
 
+Hawk embeds Trace through one supported composition surface:
+`cli.NewRootCmd()`. Hawk must not import Trace's `cli/internal` collaborators or
+individual strategy, checkpoint, agent, storage, or UI packages. Changes to
+`NewRootCmd` are therefore cross-repository compatibility changes.
+
 ### What you get
 
 | Capability | Description |
