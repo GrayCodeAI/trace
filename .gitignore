@@ -5,6 +5,9 @@ bin/
 *.dll
 *.so
 
+# Go build cache
+.gocache/
+
 # Local state
 .claude/
 .codegraph/
