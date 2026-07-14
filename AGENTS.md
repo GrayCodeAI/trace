@@ -8,6 +8,10 @@ alwaysApply: false
 
 Git-native session capture for AI coding agents.
 
+## Development workflow
+
+When starting any new work (feature, fix, refactor, chore), always create a feature branch from `main` first. Never commit directly to `main`. Use branch naming conventions like `feat/<description>`, `fix/<description>`, or `chore/<description>`. Open a PR, ensure CI is green, then merge.
+
 ## Build & Test
 
 ```bash
