@@ -14,6 +14,7 @@ import (
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/logging"
+	"github.com/GrayCodeAI/trace/cli/oplog"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
 	"github.com/GrayCodeAI/trace/cli/settings"
@@ -340,6 +341,13 @@ func DeleteOrphanedCheckpoints(ctx context.Context, checkpointIDs []string) (del
 	newRef := plumbing.NewHashReference(refName, commitHash)
 	if err := repo.Storer.SetReference(newRef); err != nil {
 		return nil, nil, fmt.Errorf("failed to update branch: %w", err)
+	}
+
+	if logErr := RecordOplogEntry(
+		ctx, repo, oplog.OpCleanup, refName.String(), ref.Hash(), commitHash,
+		strings.Join(checkpointIDs, ","),
+	); logErr != nil {
+		logging.Warn(ctx, "failed to record oplog entry for cleanup", "error", logErr.Error())
 	}
 
 	// All checkpoints deleted successfully
