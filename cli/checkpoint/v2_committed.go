@@ -33,7 +33,11 @@ import (
 // determined from the /main ref and passed to the /full/current write to
 // keep both refs consistent.
 func (s *V2GitStore) WriteCommitted(ctx context.Context, opts WriteCommittedOptions) error {
-	_, err := s.WriteCommittedWithSessionIndex(ctx, opts)
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+	// writeCommittedWithSessionIndexLocked (not the public wrapper) because we
+	// already hold StorerMu — re-entering the non-reentrant mutex would deadlock.
+	_, err := s.writeCommittedWithSessionIndexLocked(ctx, opts)
 	return err
 }
 
@@ -41,6 +45,14 @@ func (s *V2GitStore) WriteCommitted(ctx context.Context, opts WriteCommittedOpti
 // v2 session index used for the write. The index may point at an existing
 // session when the checkpoint already contains the same session ID.
 func (s *V2GitStore) WriteCommittedWithSessionIndex(ctx context.Context, opts WriteCommittedOptions) (int, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+	return s.writeCommittedWithSessionIndexLocked(ctx, opts)
+}
+
+// writeCommittedWithSessionIndexLocked is the unlocked implementation shared by
+// WriteCommitted and WriteCommittedWithSessionIndex. Callers MUST hold StorerMu.
+func (s *V2GitStore) writeCommittedWithSessionIndexLocked(ctx context.Context, opts WriteCommittedOptions) (int, error) {
 	// Validate upfront before any writes to avoid partial ref updates
 	if err := validateWriteOpts(opts); err != nil {
 		return 0, err
@@ -68,6 +80,9 @@ func (s *V2GitStore) WriteCommittedWithSessionIndex(ctx context.Context, opts Wr
 //
 // Returns ErrCheckpointNotFound if the checkpoint doesn't exist on /main.
 func (s *V2GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOptions) error {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if opts.CheckpointID.IsEmpty() {
 		return errors.New("invalid update options: checkpoint ID is required")
 	}
@@ -98,6 +113,8 @@ type fullSessionArtifacts struct {
 // HasFullSessionArtifacts reports whether the raw transcript and content hash
 // for a checkpoint session exist in any local v2 /full/* ref.
 func (s *V2GitStore) HasFullSessionArtifacts(checkpointID id.CheckpointID, sessionIndex int) (bool, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
 	artifacts, err := s.findFullSessionArtifacts(checkpointID, sessionIndex)
 	if err != nil {
 		return false, err
@@ -138,7 +155,9 @@ func (s *V2GitStore) findFullSessionArtifacts(checkpointID id.CheckpointID, sess
 func (s *V2GitStore) fullRefSearchOrder() ([]plumbing.ReferenceName, error) {
 	refNames := []plumbing.ReferenceName{plumbing.ReferenceName(paths.V2FullCurrentRefName)}
 
-	archived, err := s.ListArchivedGenerations()
+	// listArchivedGenerationsLocked (not the public wrapper) — this private
+	// helper is only reached from other public methods that already hold StorerMu.
+	archived, err := s.listArchivedGenerationsLocked()
 	if err != nil {
 		return nil, err
 	}
@@ -705,7 +724,9 @@ func (s *V2GitStore) writeCommittedFullTranscript(ctx context.Context, opts Writ
 }
 
 func (s *V2GitStore) rotateCurrentIfNeeded(ctx context.Context, treeHash plumbing.Hash) {
-	checkpointCount, countErr := s.CountCheckpointsInTree(treeHash)
+	// countCheckpointsInTreeLocked (not the public wrapper) — we already hold
+	// StorerMu via the writing public method that invoked writeCommittedFullTranscript.
+	checkpointCount, countErr := s.countCheckpointsInTreeLocked(treeHash)
 	if countErr != nil {
 		logging.Warn(
 			ctx, "failed to count checkpoints for rotation check",
@@ -716,7 +737,9 @@ func (s *V2GitStore) rotateCurrentIfNeeded(ctx context.Context, treeHash plumbin
 	if checkpointCount < s.maxCheckpoints() {
 		return
 	}
-	if rotErr := s.rotateGeneration(ctx); rotErr != nil {
+	// rotateGenerationLocked (not the public wrapper) — we already hold StorerMu
+	// via the writing public method that invoked writeCommittedFullTranscript.
+	if rotErr := s.rotateGenerationLocked(ctx); rotErr != nil {
 		logging.Warn(
 			ctx, "generation rotation failed",
 			slog.String("error", rotErr.Error()),
@@ -802,6 +825,9 @@ func validateWriteOpts(opts WriteCommittedOptions) error {
 // UpdateSummary persists an AI-generated summary into the latest session's
 // metadata on the v2 /main ref. Mirrors GitStore.UpdateSummary for v1.
 func (s *V2GitStore) UpdateSummary(ctx context.Context, checkpointID id.CheckpointID, summary *Summary) error {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -875,6 +901,9 @@ func (s *V2GitStore) UpdateSummary(ctx context.Context, checkpointID id.Checkpoi
 // Older CLI versions wrote these before the rename to raw_transcript.
 // Returns nil if /full/current doesn't exist or no v1 files were found.
 func (s *V2GitStore) CleanupV1TranscriptFiles(ctx context.Context, checkpointID id.CheckpointID, sessionCount int) error {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	refName := plumbing.ReferenceName(paths.V2FullCurrentRefName)
 	parentHash, rootTreeHash, err := s.GetRefState(refName)
 	if err != nil {
