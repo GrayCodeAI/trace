@@ -16,6 +16,7 @@ import (
 	cpkg "github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/logging"
+	"github.com/GrayCodeAI/trace/cli/oplog"
 	"github.com/GrayCodeAI/trace/cli/osroot"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/settings"
@@ -488,10 +489,22 @@ func (s *ManualCommitStrategy) resetShadowBranchToCheckpoint(ctx context.Context
 	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 
+	// Record the ref's current hash before mutating it, so 'trace undo' can
+	// restore it — this SetReference doesn't touch HEAD, so it never shows
+	// up in git's own reflog either.
+	var beforeHash plumbing.Hash
+	if existing, existErr := repo.Reference(refName, true); existErr == nil {
+		beforeHash = existing.Hash()
+	}
+
 	// Update the reference to point to the checkpoint commit
 	ref := plumbing.NewHashReference(refName, commit.Hash)
 	if err := repo.Storer.SetReference(ref); err != nil {
 		return fmt.Errorf("failed to update shadow branch: %w", err)
+	}
+
+	if logErr := RecordOplogEntry(ctx, repo, oplog.OpRewind, refName.String(), beforeHash, commit.Hash, sessionID); logErr != nil {
+		logging.Warn(ctx, "failed to record oplog entry for rewind", "error", logErr.Error())
 	}
 
 	fmt.Fprintf(os.Stderr, "[trace] Reset shadow branch %s to checkpoint %s\n", shadowBranchName, commit.Hash.String()[:7])

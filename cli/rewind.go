@@ -686,6 +686,8 @@ func handleLogsOnlyResetNonInteractive(ctx context.Context, w, errW io.Writer, s
 		return fmt.Errorf("failed to reset branch: %w", err)
 	}
 
+	recordResetOplogEntry(logCtx, currentHead, point.ID)
+
 	logging.Debug(
 		logCtx, "logs-only reset completed",
 		slog.String("checkpoint_id", point.ID),
