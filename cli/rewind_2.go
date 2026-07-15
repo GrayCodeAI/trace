@@ -14,6 +14,7 @@ import (
 
 	agentpkg "github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/logging"
+	"github.com/GrayCodeAI/trace/cli/oplog"
 	"github.com/GrayCodeAI/trace/cli/strategy"
 	"github.com/GrayCodeAI/trace/cli/transcript"
 
@@ -310,6 +311,8 @@ func handleLogsOnlyReset(ctx context.Context, w, errW io.Writer, start *strategy
 		return fmt.Errorf("failed to reset branch: %w", err)
 	}
 
+	recordResetOplogEntry(logCtx, currentHead, point.ID)
+
 	logging.Debug(
 		logCtx, "logs-only reset (interactive) completed",
 		slog.String("checkpoint_id", point.ID),
@@ -444,6 +447,34 @@ func performGitResetHard(ctx context.Context, commitHash string) error {
 		return fmt.Errorf("reset failed: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	return nil
+}
+
+// recordResetOplogEntry appends an oplog entry for a completed git reset
+// --hard, resolving the reset branch's ref name via HEAD (reset --hard
+// moves whatever ref HEAD currently points to, branch or detached).
+// Best-effort: failures are logged, not propagated — the reset itself
+// already succeeded by the time this is called.
+func recordResetOplogEntry(ctx context.Context, beforeHex, afterHex string) {
+	if beforeHex == "" {
+		// getCurrentHeadHash() failed before the reset; nothing to record.
+		return
+	}
+	repo, err := openRepository(ctx)
+	if err != nil {
+		logging.Warn(ctx, "failed to open repository for oplog entry", "error", err.Error())
+		return
+	}
+	head, err := repo.Head()
+	if err != nil {
+		logging.Warn(ctx, "failed to resolve HEAD for oplog entry", "error", err.Error())
+		return
+	}
+	if err := strategy.RecordOplogEntry(
+		ctx, repo, oplog.OpResetHard, head.Name().String(),
+		plumbing.NewHash(beforeHex), plumbing.NewHash(afterHex), "",
+	); err != nil {
+		logging.Warn(ctx, "failed to record oplog entry for reset --hard", "error", err.Error())
+	}
 }
 
 // sanitizeForTerminal removes or replaces characters that cause rendering issues
