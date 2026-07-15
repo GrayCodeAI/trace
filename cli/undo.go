@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/oplog"
 	"github.com/GrayCodeAI/trace/cli/paths"
@@ -74,6 +75,9 @@ func runUndo(ctx context.Context, w io.Writer) error {
 		// files on disk in the post-reset state while the branch pointer
 		// claims otherwise, a real desync. Reuse the exact same code path
 		// the original operation used so the semantics match precisely.
+		// (performGitResetHard shells out to the `git` CLI, which serializes
+		// against other git processes on the same repo via its own locking,
+		// so it does not need StorerMu here.)
 		if err := performGitResetHard(ctx, entry.BeforeHash); err != nil {
 			return fmt.Errorf("failed to reset %s back to %s: %w", refName, beforeHash.String()[:7], err)
 		}
@@ -81,23 +85,35 @@ func runUndo(ctx context.Context, w io.Writer) error {
 	case beforeHash.IsZero():
 		// The operation created this ref from nothing (e.g. fork's new
 		// branch) — undo removes it rather than trying to point it "back"
-		// somewhere that never existed.
+		// somewhere that never existed. Direct repo.Storer access, so
+		// serialize it against concurrent V2GitStore writes under
+		// StorerMu (go-git's storer is not concurrency-safe).
+		checkpoint.StorerMu.Lock()
 		if err := repo.Storer.RemoveReference(refName); err != nil {
+			checkpoint.StorerMu.Unlock()
 			return fmt.Errorf("failed to remove ref %s: %w", refName, err)
 		}
+		checkpoint.StorerMu.Unlock()
 		summary = fmt.Sprintf("Removed %s (created by %s, nothing to restore it to).", refName.Short(), entry.Op)
 	default:
+		checkpoint.StorerMu.Lock()
 		if err := repo.Storer.SetReference(plumbing.NewHashReference(refName, beforeHash)); err != nil {
+			checkpoint.StorerMu.Unlock()
 			return fmt.Errorf("failed to restore ref %s: %w", refName, err)
 		}
+		checkpoint.StorerMu.Unlock()
 		summary = fmt.Sprintf("Restored %s to %s (undoing a %s).", refName.Short(), beforeHash.String()[:7], entry.Op)
 	}
 
 	// Record the undo itself, matching jj's operation-log symmetry: undoing
 	// is itself an operation, so it's visible in 'trace log' and could in
 	// principle be undone too (deliberately not automated, per the guard
-	// above).
-	if logErr := strategy.RecordOplogEntry(ctx, repo, oplog.OpUndo, entry.Ref, originalAfterHash, beforeHash, entry.CheckpointID); logErr != nil {
+	// above). Held under StorerMu so this oplog ref write lands together with
+	// the ref mutation above from the perspective of other storer writers.
+	checkpoint.StorerMu.Lock()
+	logErr := strategy.RecordOplogEntry(ctx, repo, oplog.OpUndo, entry.Ref, originalAfterHash, beforeHash, entry.CheckpointID)
+	checkpoint.StorerMu.Unlock()
+	if logErr != nil {
 		logging.Warn(ctx, "failed to record oplog entry for undo", "error", logErr.Error())
 	}
 

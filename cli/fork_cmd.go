@@ -216,7 +216,12 @@ func forkSession(
 	if !commitHash.IsZero() {
 		refName := plumbing.NewBranchReferenceName(branchName)
 		ref := plumbing.NewHashReference(refName, commitHash)
+		// Serialize against concurrent V2GitStore storer access (and any
+		// other StorerMu-guarded writer) — go-git's storer is not
+		// concurrency-safe. fork/undo already cooperate via the same mutex.
+		checkpoint.StorerMu.Lock()
 		if err := repo.Storer.SetReference(ref); err != nil {
+			checkpoint.StorerMu.Unlock()
 			return forkResult{}, fmt.Errorf("failed to create fork branch %s: %w", branchName, err)
 		}
 		result.ForkBranch = branchName
@@ -224,9 +229,11 @@ func forkSession(
 
 		// New branch, so before-hash is the zero hash — 'trace undo' deletes
 		// the branch rather than trying to point it "back" anywhere.
-		if logErr := strategy.RecordOplogEntry(
+		logErr := strategy.RecordOplogEntry(
 			ctx, repo, oplog.OpFork, refName.String(), plumbing.ZeroHash, commitHash, cpID.String(),
-		); logErr != nil {
+		)
+		checkpoint.StorerMu.Unlock()
+		if logErr != nil {
 			logging.Warn(ctx, "failed to record oplog entry for fork", "error", logErr.Error())
 		}
 	}
