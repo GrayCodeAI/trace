@@ -75,6 +75,70 @@ func TestRunUndo_RestoresRewrittenRef(t *testing.T) {
 	}
 }
 
+func TestRunUndo_RestoresWorkingTreeAfterResetHard(t *testing.T) {
+	dir := t.TempDir()
+	testutil.InitRepo(t, dir)
+	t.Chdir(dir)
+
+	testutil.WriteFile(t, dir, "a.txt", "one")
+	testutil.GitAdd(t, dir, "a.txt")
+	testutil.GitCommit(t, dir, "commit A")
+	commitA := testutil.GetHeadHash(t, dir)
+
+	testutil.WriteFile(t, dir, "a.txt", "two")
+	testutil.GitAdd(t, dir, "a.txt")
+	testutil.GitCommit(t, dir, "commit B")
+	commitB := testutil.GetHeadHash(t, dir)
+
+	repo, err := openRepository(context.Background())
+	if err != nil {
+		t.Fatalf("openRepository: %v", err)
+	}
+	headRef, err := repo.Head()
+	if err != nil {
+		t.Fatalf("repo.Head: %v", err)
+	}
+	branchRefName := headRef.Name()
+
+	// Simulate the reset --hard that a real 'trace rewind --reset' would
+	// have already performed: moves ref + index + working tree from B back
+	// to A, exactly like performGitResetHard (which this test also uses).
+	if err := performGitResetHard(context.Background(), commitA); err != nil {
+		t.Fatalf("performGitResetHard: %v", err)
+	}
+	if got := testutil.ReadFile(t, dir, "a.txt"); got != "one" {
+		t.Fatalf("setup: a.txt = %q after simulated reset, want %q", got, "one")
+	}
+
+	// Record the operation as rewind.go/rewind_2.go actually do: before is
+	// the state prior to the reset (B), after is the state the reset
+	// produced (A).
+	if err := strategy.RecordOplogEntry(
+		context.Background(), repo, oplog.OpResetHard, branchRefName.String(),
+		plumbing.NewHash(commitB), plumbing.NewHash(commitA), "",
+	); err != nil {
+		t.Fatalf("RecordOplogEntry: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := runUndo(context.Background(), &out); err != nil {
+		t.Fatalf("runUndo: %v", err)
+	}
+
+	// Both the ref AND the working tree must be back at B — this is the
+	// bug this test guards against: undo previously only restored the ref.
+	ref, err := repo.Reference(branchRefName, true)
+	if err != nil {
+		t.Fatalf("repo.Reference: %v", err)
+	}
+	if ref.Hash().String() != commitB {
+		t.Errorf("branch ref = %s, want %s (commit B)", ref.Hash().String(), commitB)
+	}
+	if got := testutil.ReadFile(t, dir, "a.txt"); got != "two" {
+		t.Errorf("a.txt = %q after undo, want %q (working tree must be restored, not just the ref)", got, "two")
+	}
+}
+
 func TestRunUndo_EmptyOplog(t *testing.T) {
 	dir := t.TempDir()
 	testutil.InitRepo(t, dir)

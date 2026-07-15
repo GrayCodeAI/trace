@@ -67,7 +67,18 @@ func runUndo(ctx context.Context, w io.Writer) error {
 	originalAfterHash := plumbing.NewHash(entry.AfterHash)
 
 	var summary string
-	if beforeHash.IsZero() {
+	switch {
+	case entry.Op == oplog.OpResetHard:
+		// git reset --hard moves the ref, the index, AND the working tree
+		// together — restoring only the ref via SetReference would leave
+		// files on disk in the post-reset state while the branch pointer
+		// claims otherwise, a real desync. Reuse the exact same code path
+		// the original operation used so the semantics match precisely.
+		if err := performGitResetHard(ctx, entry.BeforeHash); err != nil {
+			return fmt.Errorf("failed to reset %s back to %s: %w", refName, beforeHash.String()[:7], err)
+		}
+		summary = fmt.Sprintf("Reset %s back to %s (undoing a reset --hard) — working tree and index restored.", refName.Short(), beforeHash.String()[:7])
+	case beforeHash.IsZero():
 		// The operation created this ref from nothing (e.g. fork's new
 		// branch) — undo removes it rather than trying to point it "back"
 		// somewhere that never existed.
@@ -75,7 +86,7 @@ func runUndo(ctx context.Context, w io.Writer) error {
 			return fmt.Errorf("failed to remove ref %s: %w", refName, err)
 		}
 		summary = fmt.Sprintf("Removed %s (created by %s, nothing to restore it to).", refName.Short(), entry.Op)
-	} else {
+	default:
 		if err := repo.Storer.SetReference(plumbing.NewHashReference(refName, beforeHash)); err != nil {
 			return fmt.Errorf("failed to restore ref %s: %w", refName, err)
 		}
