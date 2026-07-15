@@ -47,6 +47,14 @@ type GenerationMetadata struct {
 // ReadGeneration reads generation.json from the given tree hash.
 // Returns a zero-value GenerationMetadata if the file doesn't exist (new/empty generation).
 func (s *V2GitStore) ReadGeneration(treeHash plumbing.Hash) (GenerationMetadata, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+	return s.readGenerationLocked(treeHash)
+}
+
+// readGenerationLocked is the unlocked implementation of ReadGeneration.
+// Callers MUST hold StorerMu.
+func (s *V2GitStore) readGenerationLocked(treeHash plumbing.Hash) (GenerationMetadata, error) {
 	if treeHash == plumbing.ZeroHash {
 		return GenerationMetadata{}, nil
 	}
@@ -79,11 +87,13 @@ func (s *V2GitStore) ReadGeneration(treeHash plumbing.Hash) (GenerationMetadata,
 
 // ReadGenerationFromRef reads generation.json from the tree pointed to by the given ref.
 func (s *V2GitStore) ReadGenerationFromRef(refName plumbing.ReferenceName) (GenerationMetadata, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
 	_, treeHash, err := s.GetRefState(refName)
 	if err != nil {
 		return GenerationMetadata{}, fmt.Errorf("failed to get ref state: %w", err)
 	}
-	return s.ReadGeneration(treeHash)
+	return s.readGenerationLocked(treeHash)
 }
 
 // marshalGenerationBlob marshals gen as generation.json and stores it as a git blob.
@@ -120,6 +130,14 @@ func (s *V2GitStore) writeGeneration(gen GenerationMetadata, entries map[string]
 // The tree structure is <id[:2]>/<id[2:]>/ — we count second-level directories
 // across all shard prefixes. Returns 0 for an empty tree.
 func (s *V2GitStore) CountCheckpointsInTree(treeHash plumbing.Hash) (int, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+	return s.countCheckpointsInTreeLocked(treeHash)
+}
+
+// countCheckpointsInTreeLocked is the unlocked implementation of
+// CountCheckpointsInTree. Callers MUST hold StorerMu.
+func (s *V2GitStore) countCheckpointsInTreeLocked(treeHash plumbing.Hash) (int, error) {
 	if treeHash == plumbing.ZeroHash {
 		return 0, nil
 	}
@@ -396,6 +414,14 @@ var GenerationRefPattern = regexp.MustCompile(`^\d{13}$`)
 // listArchivedGenerations returns the names of all archived generation refs
 // (everything under V2FullRefPrefix matching the expected numeric format), sorted ascending.
 func (s *V2GitStore) ListArchivedGenerations() ([]string, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+	return s.listArchivedGenerationsLocked()
+}
+
+// listArchivedGenerationsLocked is the unlocked implementation of
+// ListArchivedGenerations. Callers MUST hold StorerMu.
+func (s *V2GitStore) listArchivedGenerationsLocked() ([]string, error) {
 	refs, err := s.repo.References()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list references: %w", err)
@@ -425,7 +451,15 @@ func (s *V2GitStore) ListArchivedGenerations() ([]string, error) {
 // NextGenerationNumber returns the next sequential generation number for archiving.
 // Scans existing archived refs and returns max+1. Returns 1 if no archives exist.
 func (s *V2GitStore) NextGenerationNumber() (int, error) {
-	archived, err := s.ListArchivedGenerations()
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+	return s.nextGenerationNumberLocked()
+}
+
+// nextGenerationNumberLocked is the unlocked implementation of
+// NextGenerationNumber. Callers MUST hold StorerMu.
+func (s *V2GitStore) nextGenerationNumberLocked() (int, error) {
+	archived, err := s.listArchivedGenerationsLocked()
 	if err != nil {
 		return 0, err
 	}
@@ -451,6 +485,14 @@ func (s *V2GitStore) NextGenerationNumber() (int, error) {
 //  2. Reset: create a fresh orphan commit with an empty tree + seed generation.json,
 //     point /full/current at it.
 func (s *V2GitStore) rotateGeneration(ctx context.Context) error {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+	return s.rotateGenerationLocked(ctx)
+}
+
+// rotateGenerationLocked is the unlocked implementation of rotateGeneration.
+// Callers MUST hold StorerMu.
+func (s *V2GitStore) rotateGenerationLocked(ctx context.Context) error {
 	refName := plumbing.ReferenceName(paths.V2FullCurrentRefName)
 
 	// Guard against concurrent rotation: re-read /full/current and check if
@@ -459,7 +501,7 @@ func (s *V2GitStore) rotateGeneration(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("rotation: failed to read /full/current: %w", err)
 	}
-	checkpointCount, err := s.CountCheckpointsInTree(currentTreeHash)
+	checkpointCount, err := s.countCheckpointsInTreeLocked(currentTreeHash)
 	if err != nil {
 		return fmt.Errorf("rotation: failed to count checkpoints: %w", err)
 	}
@@ -472,7 +514,7 @@ func (s *V2GitStore) rotateGeneration(ctx context.Context) error {
 		return fmt.Errorf("rotation: failed to read /full/current ref: %w", err)
 	}
 
-	archiveNumber, err := s.NextGenerationNumber()
+	archiveNumber, err := s.nextGenerationNumberLocked()
 	if err != nil {
 		return fmt.Errorf("rotation: failed to determine next generation number: %w", err)
 	}

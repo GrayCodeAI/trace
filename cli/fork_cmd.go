@@ -13,9 +13,11 @@ import (
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/logging"
+	"github.com/GrayCodeAI/trace/cli/oplog"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
 	"github.com/GrayCodeAI/trace/cli/settings"
+	"github.com/GrayCodeAI/trace/cli/strategy"
 	"github.com/GrayCodeAI/trace/cli/trailers"
 	"github.com/GrayCodeAI/trace/cli/versioninfo"
 	"github.com/google/uuid"
@@ -212,12 +214,28 @@ func forkSession(
 	// gives the fork an independent starting point without copying a worktree.
 	commitHash, branchName := forkCodeCommit(ctx, repo, cpID, meta, newSessionID)
 	if !commitHash.IsZero() {
-		ref := plumbing.NewHashReference(plumbing.NewBranchReferenceName(branchName), commitHash)
+		refName := plumbing.NewBranchReferenceName(branchName)
+		ref := plumbing.NewHashReference(refName, commitHash)
+		// Serialize against concurrent V2GitStore storer access (and any
+		// other StorerMu-guarded writer) — go-git's storer is not
+		// concurrency-safe. fork/undo already cooperate via the same mutex.
+		checkpoint.StorerMu.Lock()
 		if err := repo.Storer.SetReference(ref); err != nil {
+			checkpoint.StorerMu.Unlock()
 			return forkResult{}, fmt.Errorf("failed to create fork branch %s: %w", branchName, err)
 		}
 		result.ForkBranch = branchName
 		result.BaseCommit = commitHash.String()
+
+		// New branch, so before-hash is the zero hash — 'trace undo' deletes
+		// the branch rather than trying to point it "back" anywhere.
+		logErr := strategy.RecordOplogEntry(
+			ctx, repo, oplog.OpFork, refName.String(), plumbing.ZeroHash, commitHash, cpID.String(),
+		)
+		checkpoint.StorerMu.Unlock()
+		if logErr != nil {
+			logging.Warn(ctx, "failed to record oplog entry for fork", "error", logErr.Error())
+		}
 	}
 
 	if err := writeForkSessionState(ctx, newSessionID, result.BaseCommit, meta); err != nil {

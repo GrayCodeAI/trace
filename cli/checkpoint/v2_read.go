@@ -24,6 +24,14 @@ import (
 // ReadCommitted reads the checkpoint summary from the v2 /main ref.
 // Returns nil, nil if the checkpoint doesn't exist (same contract as GitStore.ReadCommitted).
 func (s *V2GitStore) ReadCommitted(ctx context.Context, checkpointID id.CheckpointID) (*CheckpointSummary, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+	return s.readCommittedLocked(ctx, checkpointID)
+}
+
+// readCommittedLocked is the unlocked implementation of ReadCommitted.
+// Callers MUST hold StorerMu.
+func (s *V2GitStore) readCommittedLocked(ctx context.Context, checkpointID id.CheckpointID) (*CheckpointSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -66,6 +74,9 @@ func (s *V2GitStore) ReadCommitted(ctx context.Context, checkpointID id.Checkpoi
 // ListCommitted lists all committed checkpoints from the v2 /main ref.
 // Scans sharded paths: <id[:2]>/<id[2:]>/ directories containing metadata.json.
 func (s *V2GitStore) ListCommitted(ctx context.Context) ([]CommittedInfo, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -140,6 +151,9 @@ func (s *V2GitStore) ListCommitted(ctx context.Context) ([]CommittedInfo, error)
 // ReadSessionCompactTranscript reads transcript.jsonl for a session from the v2
 // /main ref. Returns ErrNoTranscript when compact transcript is missing.
 func (s *V2GitStore) ReadSessionCompactTranscript(ctx context.Context, checkpointID id.CheckpointID, sessionIndex int) ([]byte, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -186,6 +200,9 @@ func (s *V2GitStore) ReadSessionCompactTranscript(ctx context.Context, checkpoin
 // ReadSessionMetadata reads only the metadata.json for a specific session within a v2 checkpoint.
 // Returns ErrCheckpointNotFound if the checkpoint or session doesn't exist on /main.
 func (s *V2GitStore) ReadSessionMetadata(ctx context.Context, checkpointID id.CheckpointID, sessionIndex int) (*CommittedMetadata, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -234,6 +251,9 @@ func (s *V2GitStore) ReadSessionMetadata(ctx context.Context, checkpointID id.Ch
 // (transcript.jsonl) on /main can substitute for display.
 // Returns ErrCheckpointNotFound if the checkpoint or session doesn't exist on /main.
 func (s *V2GitStore) ReadSessionMetadataAndPrompts(ctx context.Context, checkpointID id.CheckpointID, sessionIndex int) (*SessionContent, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -294,6 +314,14 @@ func (s *V2GitStore) ReadSessionMetadataAndPrompts(ctx context.Context, checkpoi
 // Returns ErrNoTranscript if the session exists but no raw transcript is available.
 // Returns ErrCheckpointNotFound if the checkpoint or session doesn't exist on /main.
 func (s *V2GitStore) ReadSessionContent(ctx context.Context, checkpointID id.CheckpointID, sessionIndex int) (*SessionContent, error) {
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+	return s.readSessionContentLocked(ctx, checkpointID, sessionIndex)
+}
+
+// readSessionContentLocked is the unlocked implementation of ReadSessionContent.
+// Callers MUST hold StorerMu.
+func (s *V2GitStore) readSessionContentLocked(ctx context.Context, checkpointID id.CheckpointID, sessionIndex int) (*SessionContent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err //nolint:wrapcheck // Propagating context cancellation
 	}
@@ -365,7 +393,7 @@ func (s *V2GitStore) readTranscriptFromFullRefs(ctx context.Context, checkpointI
 		return transcript, nil
 	}
 
-	archived, err := s.ListArchivedGenerations()
+	archived, err := s.listArchivedGenerationsLocked()
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +415,7 @@ func (s *V2GitStore) readTranscriptFromFullRefs(ctx context.Context, checkpointI
 	}
 
 	// Search newly fetched refs only
-	newArchived, err := s.ListArchivedGenerations()
+	newArchived, err := s.listArchivedGenerationsLocked()
 	if err != nil {
 		return nil, nil //nolint:nilerr // Best-effort: fetch-on-demand failure shouldn't block resume
 	}
@@ -551,7 +579,10 @@ func readTranscriptFromObjectTree(tree *object.Tree, agentType types.AgentType) 
 // non-wrapped error (containing the session ID and checkpoint ID for context)
 // if no session in the checkpoint matches sessionID.
 func (s *V2GitStore) ReadSessionContentByID(ctx context.Context, checkpointID id.CheckpointID, sessionID string) (*SessionContent, error) {
-	summary, err := s.ReadCommitted(ctx, checkpointID)
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
+	summary, err := s.readCommittedLocked(ctx, checkpointID)
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +591,7 @@ func (s *V2GitStore) ReadSessionContentByID(ctx context.Context, checkpointID id
 	}
 
 	for i := range summary.Sessions {
-		content, readErr := s.ReadSessionContent(ctx, checkpointID, i)
+		content, readErr := s.readSessionContentLocked(ctx, checkpointID, i)
 		if readErr != nil {
 			continue
 		}
@@ -575,7 +606,10 @@ func (s *V2GitStore) ReadSessionContentByID(ctx context.Context, checkpointID id
 // GetSessionLog reads the latest session's raw transcript and session ID from v2 refs.
 // Convenience wrapper matching the GitStore.GetSessionLog signature.
 func (s *V2GitStore) GetSessionLog(ctx context.Context, cpID id.CheckpointID) ([]byte, string, error) {
-	summary, err := s.ReadCommitted(ctx, cpID)
+	StorerMu.Lock()
+	defer StorerMu.Unlock()
+
+	summary, err := s.readCommittedLocked(ctx, cpID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -587,7 +621,7 @@ func (s *V2GitStore) GetSessionLog(ctx context.Context, cpID id.CheckpointID) ([
 	}
 
 	latestIndex := len(summary.Sessions) - 1
-	content, err := s.ReadSessionContent(ctx, cpID, latestIndex)
+	content, err := s.readSessionContentLocked(ctx, cpID, latestIndex)
 	if err != nil {
 		return nil, "", err
 	}

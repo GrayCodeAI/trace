@@ -120,6 +120,8 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newForkCmd())     // 'fork' — clone a checkpoint into a new session for A/B testing
 	cmd.AddCommand(newAnnotateCmd()) // 'annotate' — attach comments to a session/checkpoint
 	cmd.AddCommand(newCIInitCmd())   // 'ci-init' — configure CI session auto-capture
+	cmd.AddCommand(newUndoCmd())     // 'undo' — revert the most recent rewind/reset/fork/cleanup
+	cmd.AddCommand(newOplogCmd())    // 'log' — show trace's operation log
 
 	// Hidden top-level shortcuts. Functional but print a deprecation hint.
 	cmd.AddCommand(hideAsAlias(newRewindCmd(), "trace checkpoint rewind"))
