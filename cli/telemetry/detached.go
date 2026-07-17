@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	// PostHogAPIKey is set at build time for production
-	PostHogAPIKey = "phc_development_key"
+	// PostHogAPIKey is set at build time for production.
+	// Empty by default to prevent telemetry during IDE builds and local development.
+	PostHogAPIKey = ""
 	// PostHogEndpoint is set at build time for production
 	PostHogEndpoint = "https://eu.i.posthog.com"
 )
