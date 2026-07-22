@@ -275,18 +275,20 @@ export ACCESSIBLE=1   # Screen reader friendly mode
 ## Development
 
 ```bash
-# Prerequisites: mise (https://mise.jdx.dev/)
 git clone https://github.com/GrayCodeAI/trace.git
-cd trace && mise install && mise trust
+cd trace
 
-# Build
+# With make (recommended — consistent with all other hawk-eco repos)
+make build
+make test
+make ci             # lint + test + security
+make cover          # coverage report
+
+# With mise (alternative)
+mise install && mise trust
 mise run build
-
-# Test
-mise run test          # Unit tests
-mise run test:ci       # Full suite (unit + integration)
-
-# Lint & format
+mise run test
+mise run test:ci
 mise run fmt && mise run lint
 ```
 
