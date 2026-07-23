@@ -194,6 +194,7 @@ func sessionPhaseLabel(s *strategy.SessionState) string {
 
 func newListCmd() *cobra.Command {
 	var tagFilters []string
+	var jsonFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -204,13 +205,15 @@ For active sessions only, use 'trace status'.
 
 Examples:
   trace sessions list                        List all sessions across all worktrees
-  trace sessions list --tag project=my-app   Filter sessions by tag key=value`,
+  trace sessions list --tag project=my-app   Filter sessions by tag key=value
+  trace sessions list --json                 Output as JSON`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSessionList(cmd.Context(), cmd, tagFilters)
+			return runSessionList(cmd.Context(), cmd, tagFilters, jsonFlag)
 		},
 	}
 
 	cmd.Flags().StringSliceVar(&tagFilters, "tag", nil, "Filter by tag (key=value); matches TRACE_TAG_ session metadata")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output sessions as JSON")
 
 	return cmd
 }
@@ -234,7 +237,7 @@ func matchTagFilters(metadata map[string]string, filters []string) bool {
 	return true
 }
 
-func runSessionList(ctx context.Context, cmd *cobra.Command, tagFilters []string) error {
+func runSessionList(ctx context.Context, cmd *cobra.Command, tagFilters []string, jsonOutput bool) error {
 	states, err := strategy.ListSessionStates(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list sessions: %w", err)
@@ -252,6 +255,12 @@ func runSessionList(ctx context.Context, cmd *cobra.Command, tagFilters []string
 	}
 
 	w := cmd.OutOrStdout()
+
+	if jsonOutput {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(filtered)
+	}
 
 	if len(filtered) == 0 {
 		fmt.Fprintln(w, "No sessions.")
