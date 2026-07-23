@@ -75,9 +75,9 @@ func NewRootCmd() *cobra.Command {
 				telemetry.TrackCommandDetached(cmd, agentStr, settings.Enabled, versioninfo.Version)
 			}
 
-			// Version check and notification (synchronous with 2s timeout)
+			// Version check and notification (async to avoid adding latency)
 			// Runs AFTER command completes to avoid interfering with interactive modes
-			versioncheck.CheckAndNotify(cmd.Context(), cmd.OutOrStdout(), versioninfo.Version)
+			go versioncheck.CheckAndNotify(cmd.Context(), cmd.OutOrStdout(), versioninfo.Version)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
