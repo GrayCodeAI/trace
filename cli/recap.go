@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ type recapFlags struct {
 	color                 string
 	static                bool
 	insecureHTTP          bool
+	json                  bool
 }
 
 const (
@@ -55,6 +57,7 @@ func newRecapCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.color, "color", recapColorAuto, "Color output: auto, always, or never")
 	cmd.Flags().BoolVar(&f.static, "static", false, "Print static output instead of opening the interactive recap")
 	cmd.Flags().BoolVar(&f.insecureHTTP, "insecure-http-auth", false, "Allow plain-HTTP auth (local dev only)")
+	cmd.Flags().BoolVar(&f.json, "json", false, "output recap as JSON")
 	cmd.MarkFlagsMutuallyExclusive("day", "week", "month", "90")
 	return cmd
 }
@@ -151,6 +154,11 @@ func runRecap(ctx context.Context, w, errW io.Writer, f *recapFlags) error {
 	resp, err := recap.FetchMeRecap(ctx, client, start, end, repoSlug, 0)
 	if err != nil {
 		return handleRecapFetchError(errW, err)
+	}
+	if f.json {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(resp)
 	}
 	fmt.Fprint(w, recap.RenderStaticRecap(resp, recap.RenderOptions{
 		Range: rangeKey,
