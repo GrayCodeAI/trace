@@ -169,7 +169,7 @@ func (g *JournalGraph) ToGraphSpec() *graphcontracts.GraphSpec {
 
 		nodes = append(nodes, graphcontracts.NodeSpec{
 			ID:     id,
-			Type:   graphcontracts.NodeExecution,
+			Type:   graphcontracts.NodeTypeExecution,
 			Name:   node.Name,
 			Config: config,
 		})
