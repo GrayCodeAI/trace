@@ -8,6 +8,7 @@ require (
 	charm.land/glamour/v2 v2.0.0
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.3
+	github.com/GrayCodeAI/hawk-core-contracts v0.1.8
 	github.com/betterleaks/betterleaks v1.4.1
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/creack/pty v1.1.24
@@ -34,6 +35,8 @@ require (
 	golang.org/x/term v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/GrayCodeAI/hawk-core-contracts => ../hawk-core-contracts
 
 require (
 	cel.dev/expr v0.25.2 // indirect

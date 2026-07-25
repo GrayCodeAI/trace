@@ -97,6 +97,7 @@ func NewRootCmd() *cobra.Command {
 	// Noun groups (canonical homes for subcommands).
 	cmd.AddCommand(newSessionsCmd())        // 'session' (with 'sessions' as Cobra alias)
 	cmd.AddCommand(newCheckpointGroupCmd()) // 'checkpoint' / 'cp' / 'checkpoints'
+	cmd.AddCommand(newGraphCmd())           // 'graph' (portable execution-graph export)
 	cmd.AddCommand(newAgentGroupCmd())      // 'agent'
 	cmd.AddCommand(newAuthCmd())            // 'auth'
 	cmd.AddCommand(newDoctorCmd())          // 'doctor' (group: trace/logs/bundle)
