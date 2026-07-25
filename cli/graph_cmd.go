@@ -17,8 +17,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const traceGraphSchemaVersion = "hawk.graph/v1"
-const traceCorrelationSchemaVersion = "trace.correlation/v1"
+const (
+	traceGraphSchemaVersion       = "hawk.graph/v1"
+	traceCorrelationSchemaVersion = "trace.correlation/v1"
+)
 
 const hawkSessionMetadataKey = "hawk_session_id"
 
