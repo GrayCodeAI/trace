@@ -36,8 +36,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/GrayCodeAI/hawk-core-contracts => ../hawk-core-contracts
-
 require (
 	cel.dev/expr v0.25.2 // indirect
 	dario.cat/mergo v1.0.2 // indirect
