@@ -234,6 +234,19 @@ func TestCheckpointSearchIsVisibleButTopLevelSearchIsHidden(t *testing.T) {
 	}
 }
 
+func TestGraphExportCommandIsVisible(t *testing.T) {
+	t.Parallel()
+
+	root := NewRootCmd()
+	graphExport, _, err := root.Find([]string{"graph", "export"})
+	if err != nil {
+		t.Fatalf("find graph export: %v", err)
+	}
+	if graphExport.Hidden {
+		t.Fatal("graph export should be visible in graph help")
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
