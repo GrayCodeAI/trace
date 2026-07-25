@@ -28,11 +28,11 @@ type JournalEntry struct {
 // JournalGraph represents an execution journal as a graph.
 type JournalGraph struct {
 	mu      sync.RWMutex
-	ID      string           `json:"id"`
-	Name    string           `json:"name"`
-	Entries []*JournalEntry  `json:"entries"`
+	ID      string                  `json:"id"`
+	Name    string                  `json:"name"`
+	Entries []*JournalEntry         `json:"entries"`
 	Nodes   map[string]*JournalNode `json:"nodes"`
-	Edges   []JournalEdge    `json:"edges"`
+	Edges   []JournalEdge           `json:"edges"`
 }
 
 // JournalNode represents a node in the execution journal graph.
@@ -49,11 +49,11 @@ type JournalNode struct {
 
 // JournalEdge represents an edge in the execution journal graph.
 type JournalEdge struct {
-	From     string        `json:"from"`
-	To       string        `json:"to"`
-	Kind     string        `json:"kind"`   // "calls", "produces", "depends_on"
-	Weight   float64       `json:"weight"`
-	Attrs    map[string]interface{} `json:"attrs,omitempty"`
+	From   string                 `json:"from"`
+	To     string                 `json:"to"`
+	Kind   string                 `json:"kind"` // "calls", "produces", "depends_on"
+	Weight float64                `json:"weight"`
+	Attrs  map[string]interface{} `json:"attrs,omitempty"`
 }
 
 // NewJournalGraph creates a new journal graph.
@@ -185,9 +185,9 @@ func (g *JournalGraph) ToGraphSpec() *graphcontracts.GraphSpec {
 	}
 
 	return &graphcontracts.GraphSpec{
-		ID:     g.ID,
-		Name:   g.Name,
-		Nodes:  nodes,
-		Edges:  edges,
+		ID:    g.ID,
+		Name:  g.Name,
+		Nodes: nodes,
+		Edges: edges,
 	}
 }
