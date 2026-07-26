@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -106,19 +107,27 @@ func warnIfShadowsBuiltin(cmd *cobra.Command, name string) {
 }
 
 func newPluginListCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOut bool
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List plugins installed in the managed directory",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runPluginList(cmd.OutOrStdout())
+			return runPluginList(cmd.OutOrStdout(), jsonOut)
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "output plugin list as JSON")
+	return cmd
 }
 
-func runPluginList(w io.Writer) error {
+func runPluginList(w io.Writer, jsonOut bool) error {
 	plugins, err := ListInstalledPlugins()
 	if err != nil {
 		return fmt.Errorf("list plugins: %w", err)
+	}
+	if jsonOut {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(plugins)
 	}
 	dir, err := PluginBinDir()
 	if err != nil {

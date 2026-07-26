@@ -3,16 +3,19 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/GrayCodeAI/trace/cli/api"
 	"github.com/GrayCodeAI/trace/cli/recap"
+	"github.com/GrayCodeAI/trace/cli/testutil"
 )
 
 const recapTestAgentCodex = "codex"
@@ -66,7 +69,7 @@ func TestRecapFlags_Mode(t *testing.T) {
 func TestRecapCmd_RegistersStaticFlags(t *testing.T) {
 	t.Parallel()
 	cmd := newRecapCmd()
-	for _, name := range []string{"day", "week", "month", "90", "agent", "view", "color", "static", "insecure-http-auth"} {
+	for _, name := range []string{"day", "week", "month", "90", "agent", "view", "color", "static", "insecure-http-auth", "json"} {
 		if flag := cmd.Flag(name); flag == nil {
 			t.Errorf("flag --%s not registered", name)
 		}
@@ -385,5 +388,46 @@ func TestRecapLoadErrorMessage_ContextDeadlineExceeded(t *testing.T) {
 	}
 	if !strings.Contains(got, "Recap request timed out") {
 		t.Fatalf("message missing timeout explanation:\n%s", got)
+	}
+}
+
+func TestRunRecap_JSONOutput(t *testing.T) { //nolint:paralleltest // t.Chdir is incompatible with t.Parallel()
+	dir := t.TempDir()
+	testutil.InitRepo(t, dir)
+	t.Chdir(dir)
+
+	// nolint:paralleltest // t.Chdir is incompatible with t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"timeframe": "day",
+			"since": "2026-05-08T00:00:00Z",
+			"until": "2026-05-09T00:00:00Z",
+			"agents": {},
+			"summary": {"me": {"sessions": 1, "checkpoints": 2, "tokens": 3}, "repoCount": 1, "activeDays": 1, "analysis": {"complete": 1, "pending": 0, "failed": 0}},
+			"daily": [],
+			"updated_at": "2026-05-08T12:00:00Z"
+		}`))
+	}))
+	defer server.Close()
+	t.Setenv(api.BaseURLEnvVar, server.URL)
+	t.Setenv("TRACE_TOKEN", "test-token")
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	err := runRecap(context.Background(), &out, &errOut, &recapFlags{json: true, insecureHTTP: true})
+	if err != nil {
+		t.Fatalf("runRecap --json: %v\nstderr: %s", err, errOut.String())
+	}
+
+	var resp recap.MeRecapResponse
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, out.String())
+	}
+	if resp.Timeframe != "day" {
+		t.Errorf("timeframe = %q, want day", resp.Timeframe)
+	}
+	if resp.Summary.Me.Sessions != 1 {
+		t.Errorf("summary.me.sessions = %d, want 1", resp.Summary.Me.Sessions)
 	}
 }

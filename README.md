@@ -20,7 +20,8 @@ Trace hooks into your Git workflow to capture AI agent sessions as you work. Ses
 
 Trace is a Hawk support engine. Keep the dependency edge one-way:
 
-- trace uses local-only types (trace/redaction event types are trace-scoped, not shared contracts)
+- trace keeps redaction and storage types local; portable graph exports use
+  `hawk-core-contracts/graph`
 - do not import `hawk/internal/*`
 - do not import removed legacy path `hawk/shared/types`
 - do not import other engines (`eyrie`, `yaad`, `tok`, `sight`, `inspect`) — engines are peers, not dependencies
@@ -164,6 +165,8 @@ trace disable   # Removes hooks, code untouched
 | `trace checkpoint` | List, explain, rewind, search checkpoints |
 | `trace checkpoint rewind` | Rewind to a previous checkpoint |
 | `trace checkpoint explain` | Explain a session or checkpoint |
+| `trace graph export` | Export sessions and checkpoints as portable graph nodes, edges, and events |
+| `trace graph correlation --hawk-session <id>` | Resolve exact Trace session/checkpoint IDs captured for a Hawk persisted session |
 | `trace fork` | Clone a checkpoint into a new independent session for A/B testing |
 | `trace annotate` | Attach a comment to a session or checkpoint |
 | `trace ci-init` | Configure Trace to auto-capture sessions in CI |
@@ -175,6 +178,26 @@ trace disable   # Removes hooks, code untouched
 | `trace doctor` | Diagnose and fix issues |
 | `trace login` | Authenticate with Trace |
 | `trace version` | Show CLI version |
+
+### Hawk correlation
+
+Set `TRACE_TAG_HAWK_SESSION_ID` to the Hawk persisted-session ID before Trace's
+session-start hook runs. Trace stores it through the existing session-tag
+mechanism:
+
+```bash
+TRACE_TAG_HAWK_SESSION_ID=hawk-session-123 <start-agent-command>
+trace graph correlation --hawk-session hawk-session-123
+```
+
+The correlation command is read-only. It returns `trace.correlation/v1` JSON
+with every exact Trace session match and its committed checkpoint IDs.
+`checkpoint_lookup_complete` states whether checkpoint enumeration succeeded;
+session identity remains usable when it is false, but consumers must ignore
+the checkpoint list. A missing mapping produces `"matches": []`; Trace never
+guesses from a branch, commit, timestamp, prompt, or similar-looking session
+ID. The response exposes only correlation IDs and lifecycle fields, not
+arbitrary session metadata.
 
 Run `trace <command> --help` for detailed usage.
 
