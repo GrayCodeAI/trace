@@ -226,13 +226,13 @@ func pathEntriesEqual(a, b string) bool {
 type InstalledPlugin struct {
 	// Name is the bare plugin name (without the `trace-` prefix and any
 	// platform-specific extension).
-	Name string
+	Name string `json:"name"`
 	// Path is the absolute path inside the managed bin dir.
-	Path string
+	Path string `json:"path"`
 	// Symlink is true when Path is a symlink to a source location elsewhere
 	// (the typical local-dev install). LinkTarget is populated in that case.
-	Symlink    bool
-	LinkTarget string
+	Symlink    bool   `json:"symlink"`
+	LinkTarget string `json:"linkTarget,omitempty"`
 }
 
 // ListInstalledPlugins enumerates entries in the managed bin dir whose name
