@@ -415,7 +415,7 @@ func TestRunRecap_JSONOutput(t *testing.T) { //nolint:paralleltest // t.Chdir is
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	err := runRecap(context.Background(), &out, &errOut, &recapFlags{json: true})
+	err := runRecap(context.Background(), &out, &errOut, &recapFlags{json: true, insecureHTTP: true})
 	if err != nil {
 		t.Fatalf("runRecap --json: %v\nstderr: %s", err, errOut.String())
 	}

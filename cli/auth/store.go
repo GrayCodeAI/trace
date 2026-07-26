@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -103,7 +104,11 @@ func (s *Store) DeleteToken(baseURL string) error {
 }
 
 // LookupCurrentToken retrieves the token for the current base URL.
+// It first checks the TRACE_TOKEN environment variable, then falls back to the keyring.
 func LookupCurrentToken() (string, error) {
+	if token := os.Getenv("TRACE_TOKEN"); token != "" {
+		return token, nil
+	}
 	store := NewStore()
 	return store.GetToken(api.BaseURL())
 }
