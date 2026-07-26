@@ -391,12 +391,12 @@ func TestRecapLoadErrorMessage_ContextDeadlineExceeded(t *testing.T) {
 	}
 }
 
-func TestRunRecap_JSONOutput(t *testing.T) {
-	// t.Chdir cannot coexist with t.Parallel; this test mutates process CWD.
+func TestRunRecap_JSONOutput(t *testing.T) { //nolint:paralleltest // t.Chdir is incompatible with t.Parallel()
 	dir := t.TempDir()
 	testutil.InitRepo(t, dir)
 	t.Chdir(dir)
 
+	// nolint:paralleltest // t.Chdir is incompatible with t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
