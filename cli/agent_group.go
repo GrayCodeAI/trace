@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -56,16 +57,19 @@ func runAgentMenu(ctx context.Context, w io.Writer) error {
 }
 
 func newAgentListCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOut bool
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List installed and available agents",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runAgentList(cmd.Context(), cmd.OutOrStdout())
+			return runAgentList(cmd.Context(), cmd.OutOrStdout(), jsonOut)
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "output agent list as JSON")
+	return cmd
 }
 
-func runAgentList(ctx context.Context, w io.Writer) error {
+func runAgentList(ctx context.Context, w io.Writer, jsonOut bool) error {
 	installed := GetAgentsWithHooksInstalled(ctx)
 	installedSet := make(map[types.AgentName]struct{}, len(installed))
 	for _, name := range installed {
@@ -73,6 +77,21 @@ func runAgentList(ctx context.Context, w io.Writer) error {
 	}
 
 	all := agent.StringList()
+
+	if jsonOut {
+		type agentEntry struct {
+			Name      string `json:"name"`
+			Installed bool   `json:"installed"`
+		}
+		entries := make([]agentEntry, 0, len(all))
+		for _, name := range all {
+			_, ok := installedSet[types.AgentName(name)]
+			entries = append(entries, agentEntry{Name: name, Installed: ok})
+		}
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(entries)
+	}
 
 	fmt.Fprintln(w, "Agents:")
 	for _, name := range all {

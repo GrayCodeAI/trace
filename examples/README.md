@@ -2,21 +2,24 @@
 
 Trace captures AI coding sessions as git-native checkpoints.
 
+> **Note:** Trace is surfaced through hawk as `hawk trace ...`. The commands
+> below use `trace` for brevity; prefix with `hawk` when running inside hawk.
+
 ## Basic Usage
 
-### Start a tracing session
+### Enable tracing
 
 ```bash
-trace start
-# Work with your AI coding assistant
-trace stop
+trace enable
+# Work with your AI coding assistant — checkpoints are captured automatically
+trace status
 ```
 
 ### View captured sessions
 
 ```bash
-trace list
-trace show <session-id>
+trace session list
+trace session info <session-id>
 ```
 
 ### Investigate what happened
@@ -30,28 +33,42 @@ trace investigate <session-id>
 ### Rewind to a checkpoint
 
 ```bash
-trace checkpoints <session-id>
-trace rewind <session-id> --checkpoint 3
+trace checkpoint list <session-id>
+trace checkpoint rewind <session-id> --checkpoint 3
 ```
 
 ### Resume a session
 
 ```bash
-trace resume <session-id>
+trace session resume <session-id>
 ```
 
 ### Export session data
 
 ```bash
-trace export <session-id> --format json
+trace session export <session-id> --format json
+```
+
+### Fork a session for A/B testing
+
+```bash
+trace fork <session-id> --checkpoint 3
+```
+
+### Replay a session
+
+```bash
+trace session replay <session-id>
 ```
 
 ## Integration with Agents
 
 Trace works with:
 - Claude Code
+- Codex CLI
+- Gemini CLI
 - Cursor
-- GitHub Copilot
+- GitHub Copilot CLI
 - Any MCP-compatible agent
 
 See the [main README](../README.md) for full documentation.
