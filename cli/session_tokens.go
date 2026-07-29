@@ -241,6 +241,13 @@ func buildSessionTokensUsage(usage *agent.TokenUsage) *sessionTokensUsage {
 	}
 }
 
+func saturatingIntAdd(a, b int) int {
+	if a > 0 && b > 0 && a > (1<<31-1)-b {
+		return 1<<31 - 1
+	}
+	return a + b
+}
+
 func topLevelSessionTokenTotal(tokens *sessionTokensUsage) int {
 	if tokens == nil {
 		return 0
