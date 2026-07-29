@@ -31,18 +31,6 @@ type tokensProfileSignal struct {
 	CheckpointIDs []string `json:"checkpoint_ids,omitempty"`
 }
 
-type tokensProfileSignalDefinition struct {
-	id    string
-	label string
-}
-
-var tokensProfileSignalDefinitions = []tokensProfileSignalDefinition{
-	{id: "context-replay-hotspot", label: "Cache/context replay hotspot"},
-	{id: "api-call-amplification", label: "API call amplification"},
-	{id: "subagent-heavy", label: "Subagent-heavy sessions"},
-	{id: "missing-token-data", label: "Missing token data"},
-}
-
 const tokensProfileUsageScopeCheckpointObserved = "checkpoint_observed"
 
 func newTokensGroupCmd() *cobra.Command {

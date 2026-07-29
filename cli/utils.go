@@ -173,10 +173,3 @@ func writeJSONPretty(w io.Writer, v any) error {
 	}
 	return nil
 }
-
-func saturatingIntAdd(a, b int) int {
-	if a > 0 && b > 0 && a > (1<<31-1)-b {
-		return 1<<31 - 1
-	}
-	return a + b
-}
