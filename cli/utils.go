@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -162,4 +163,13 @@ func appendResolved(dirs []string, dir string) []string {
 		return append(dirs, resolved)
 	}
 	return append(dirs, dir)
+}
+
+func writeJSONPretty(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return fmt.Errorf("encode json: %w", err)
+	}
+	return nil
 }

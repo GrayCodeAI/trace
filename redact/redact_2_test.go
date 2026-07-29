@@ -154,7 +154,7 @@ func TestShouldSkipJSONLObject_RedactionBehavior(t *testing.T) {
 		testFieldType: "image",
 		"data":        highEntropySecret,
 	}
-	repls := collectJSONLReplacements(obj)
+	repls := collectJSONLReplacements(obj, String)
 
 	// expect no replacements, it's an image which is skipped.
 	var wantRepls []jsonReplacement
@@ -167,7 +167,7 @@ func TestShouldSkipJSONLObject_RedactionBehavior(t *testing.T) {
 		testFieldType:    "text",
 		testFieldContent: highEntropySecret,
 	}
-	repls2 := collectJSONLReplacements(obj2)
+	repls2 := collectJSONLReplacements(obj2, String)
 	wantRepls2 := []jsonReplacement{{key: testFieldContent, original: highEntropySecret, redacted: wantRedacted}}
 	if !slices.Equal(repls2, wantRepls2) {
 		t.Errorf("got %q, want %q", repls2, wantRepls2)
