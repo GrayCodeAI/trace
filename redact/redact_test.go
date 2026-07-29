@@ -228,7 +228,7 @@ func TestCollectJSONLReplacements_Succeeds(t *testing.T) {
 	obj := map[string]any{
 		testFieldContent: "token=" + highEntropySecret,
 	}
-	repls := collectJSONLReplacements(obj)
+	repls := collectJSONLReplacements(obj, String)
 	// expect one replacement for high-entropy secret
 	want := []jsonReplacement{{key: testFieldContent, original: "token=" + highEntropySecret, redacted: wantRedacted}}
 	if !slices.Equal(repls, want) {
@@ -293,7 +293,7 @@ func TestShouldSkipJSONLField_RedactionBehavior(t *testing.T) {
 		testFieldSessionID: highEntropySecret,
 		testFieldContent:   highEntropySecret,
 	}
-	repls := collectJSONLReplacements(obj)
+	repls := collectJSONLReplacements(obj, String)
 	// Only "content" should produce a replacement; "session_id" should be skipped.
 	if len(repls) != 1 {
 		t.Fatalf("expected 1 replacement, got %d", len(repls))

@@ -2,6 +2,7 @@ package redact
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/betterleaks/betterleaks/detect"
 )
@@ -157,12 +159,17 @@ var connectionStringRules = []connectionStringRule{
 // String replaces secrets and PII in s using layered detection:
 // 1. Entropy-based: high-entropy alphanumeric sequences (threshold 4.5)
 // 2. Pattern-based: betterleaks regex rules (260+ known secret formats)
-// 3. Credentialed URIs: URLs containing userinfo passwords
-// 4. Database connection strings: JDBC, keyword DSNs, and semicolon strings
-// 5. Bounded credential key/value pairs: DB_PASSWORD=...
-// 6. PII detection: email, phone, address patterns (only when configured via ConfigurePII)
+// 3. Provider-specific token prefixes: e.g. Supabase sb_secret_
+// 4. Credentialed URIs: URLs containing userinfo passwords
+// 5. Database connection strings: JDBC, keyword DSNs, and semicolon strings
+// 6. Bounded credential key/value pairs: DB_PASSWORD=...
+// 7. PII detection: email, phone, address patterns (only when configured via ConfigurePII)
 // A string is redacted if ANY method flags it.
 func String(s string) string {
+	return applyRegions(s, detectAllLayers(s))
+}
+
+func detectAllLayers(s string) []taggedRegion {
 	var regions []taggedRegion
 
 	// 1. Entropy-based detection (secrets — always on).
@@ -170,11 +177,6 @@ func String(s string) string {
 		start, end := loc[0], loc[1]
 
 		// Don't consume characters that are part of JSON/string escape sequences.
-		// Example: in "controller.go\nmodel.go", the regex could match "nmodel"
-		// (consuming the 'n' from '\n'), and after replacement the '\' would be
-		// followed by 'R' from "REDACTED", creating invalid escape '\R'.
-		// Only skip for known JSON escape letters to avoid trimming real secrets
-		// that happen to follow a literal backslash in decoded content.
 		if start > 0 && s[start-1] == '\\' {
 			switch s[start] {
 			case 'n', 't', 'r', 'b', 'f', 'u', '"', '\\', '/':
@@ -209,25 +211,31 @@ func String(s string) string {
 		}
 	}
 
-	// 3. Credentialed URIs (secrets — always on).
+	// 3. Provider-specific deterministic token prefixes (secrets — always on).
+	regions = append(regions, detectProviderTokens(s)...)
+
+	// 4. Credentialed URIs (secrets — always on).
 	for _, loc := range credentialedURIPattern.FindAllStringIndex(s, -1) {
 		regions = append(regions, taggedRegion{region: region{loc[0], loc[1]}})
 	}
 
-	// 4. Database and connection-string detection (secrets — always on).
+	// 5. Database and connection-string detection (secrets — always on).
 	regions = append(regions, detectConnectionStrings(s)...)
 
-	// 5. Bounded credential key/value detection (secrets — always on).
+	// 6. Bounded credential key/value detection (secrets — always on).
 	regions = append(regions, detectCredentialValues(s)...)
 
-	// 6. PII detection (opt-in — only runs when configured).
+	// 7. PII detection (opt-in — only runs when configured).
 	regions = append(regions, detectPII(getPIIConfig(), s)...)
 
+	return regions
+}
+
+func applyRegions(s string, regions []taggedRegion) string {
 	if len(regions) == 0 {
 		return s
 	}
 
-	// Merge overlapping regions and build result.
 	sort.Slice(regions, func(i, j int) bool {
 		if regions[i].start != regions[j].start {
 			return regions[i].start < regions[j].start
@@ -244,7 +252,6 @@ func String(s string) string {
 			if r.end > last.end {
 				last.end = r.end
 			}
-			// Keep the existing label (first/larger region wins)
 		} else {
 			merged = append(merged, r)
 		}
@@ -497,24 +504,17 @@ func JSONLBytes(b []byte) (RedactedBytes, error) {
 // JSONLContent parses each line as JSON to determine which string values
 // need redaction, then performs targeted replacements on the raw JSON bytes.
 // Lines with no secrets are returned unchanged, preserving original formatting.
-//
-// For multi-line JSON content (e.g., pretty-printed single JSON objects like
-// OpenCode export), the function first attempts to parse the trace content as
-// a single JSON value. This ensures field-aware redaction (which skips ID fields)
-// is used instead of falling back to entropy-based detection on raw text lines,
-// which would corrupt high-entropy identifiers.
 func JSONLContent(content string) (string, error) {
-	// Try parsing the trace content as a single JSON value first.
-	// Uses a streaming decoder to avoid copying the full content into []byte.
-	// After decoding, attempts a second Decode to confirm EOF — if it succeeds,
-	// the content is JSONL (multiple values) and we fall through to line-by-line.
+	return jsonlContentImpl(content, String)
+}
+
+func jsonlContentImpl(content string, redactor func(string) string) (string, error) {
 	trimmed := strings.TrimSpace(content)
 	if len(trimmed) > 0 {
 		dec := json.NewDecoder(strings.NewReader(trimmed))
 		var parsed any
 		if err := dec.Decode(&parsed); err == nil && isSingleJSONValue(dec) {
-			// Content is a single JSON value (object/array) — redact field-aware.
-			result, err := applyJSONReplacements(content, collectJSONLReplacements(parsed))
+			result, err := applyJSONReplacements(content, collectJSONLReplacements(parsed, redactor))
 			if err != nil {
 				return "", err
 			}
@@ -522,7 +522,6 @@ func JSONLContent(content string) (string, error) {
 		}
 	}
 
-	// Fall back to line-by-line JSONL processing.
 	lines := strings.Split(content, "\n")
 	var b strings.Builder
 	for i, line := range lines {
@@ -536,16 +535,73 @@ func JSONLContent(content string) (string, error) {
 		}
 		var parsed any
 		if err := json.Unmarshal([]byte(lineTrimmed), &parsed); err != nil {
-			b.WriteString(String(line))
+			b.WriteString(redactor(line))
 			continue
 		}
-		result, err := applyJSONReplacements(line, collectJSONLReplacements(parsed))
+		result, err := applyJSONReplacements(line, collectJSONLReplacements(parsed, redactor))
 		if err != nil {
 			return "", err
 		}
 		b.WriteString(result)
 	}
 	return b.String(), nil
+}
+
+func StringWithPrivacyFilter(ctx context.Context, s string) string {
+	regions := detectAllLayers(s)
+	regions = append(regions, detectOPF(ctx, getOPFConfig(), s)...)
+	return applyRegions(s, regions)
+}
+
+func JSONLContentWithPrivacyFilter(ctx context.Context, content string) (string, error) {
+	cfg := getOPFConfig()
+	if cfg == nil || !cfg.Enabled || cfg.runtime == nil || opfBreakerTripped.Load() {
+		return jsonlContentImpl(content, String)
+	}
+	cats := enabledCategories(cfg)
+	if len(cats) == 0 {
+		return jsonlContentImpl(content, String)
+	}
+
+	seen := make(map[string]struct{})
+	var inputs []string
+	if _, err := jsonlContentImpl(content, func(v string) string {
+		if strings.ContainsRune(v, ' ') {
+			if _, ok := seen[v]; !ok {
+				seen[v] = struct{}{}
+				inputs = append(inputs, v)
+			}
+		}
+		return v
+	}); err != nil {
+		return "", err
+	}
+
+	spansByInput := make(map[string][]Span, len(inputs))
+	if len(inputs) > 0 {
+		fmt.Fprintln(opfStderr, "→ OpenAI Privacy Filter: scanning transcript…")
+		start := time.Now()
+		batched, err := cfg.runtime.RedactBatch(ctx, inputs, cats)
+		if err != nil {
+			handleOPFFailure(ctx, cfg, err)
+			return jsonlContentImpl(content, String)
+		}
+		fmt.Fprintf(opfStderr, "✓ OpenAI Privacy Filter: done (%.1fs)\n", time.Since(start).Seconds())
+		if len(batched) != len(inputs) {
+			shortErr := fmt.Errorf("opf runtime returned %d span slices for %d inputs", len(batched), len(inputs))
+			handleOPFFailure(ctx, cfg, shortErr)
+			return jsonlContentImpl(content, String)
+		}
+		for i, in := range inputs {
+			spansByInput[in] = batched[i]
+		}
+	}
+
+	return jsonlContentImpl(content, func(v string) string {
+		regions := detectAllLayers(v)
+		regions = append(regions, opfSpanRegions(v, spansByInput[v], cfg)...)
+		return applyRegions(v, regions)
+	})
 }
 
 // applyJSONReplacements applies collected (original, redacted) string pairs
@@ -624,11 +680,6 @@ func isJSONWhitespace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
-// isSingleJSONValue returns true if the decoder has reached EOF (no more
-// top-level values). This distinguishes a single JSON value (e.g., pretty-printed
-// object) from JSONL (multiple concatenated values). We attempt a second Decode
-// and require io.EOF rather than relying on dec.More(), which is documented for
-// use inside arrays/objects and not for top-level value boundaries.
 func isSingleJSONValue(dec *json.Decoder) bool {
 	var discard json.RawMessage
 	return dec.Decode(&discard) == io.EOF
@@ -636,7 +687,7 @@ func isSingleJSONValue(dec *json.Decoder) bool {
 
 // collectJSONLReplacements walks a parsed JSON value and collects unique string
 // replacements for values that need redaction.
-func collectJSONLReplacements(v any) []jsonReplacement {
+func collectJSONLReplacements(v any, redactor func(string) string) []jsonReplacement {
 	seen := make(map[string]bool)
 	var repls []jsonReplacement
 	var walk func(key string, credentialContext bool, v any)
@@ -658,7 +709,7 @@ func collectJSONLReplacements(v any) []jsonReplacement {
 				walk("", credentialContext, child)
 			}
 		case string:
-			redacted := String(val)
+			redacted := redactor(val)
 			if redacted == val && isCredentialJSONSecretKey(key, credentialContext) && hasNonPlaceholderPasswordValue(val) {
 				redacted = RedactedPlaceholder
 			}
