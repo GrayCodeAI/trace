@@ -195,7 +195,7 @@ func detectOPF(ctx context.Context, cfg *OPFConfig, s string) []taggedRegion {
 		return nil
 	}
 
-	fmt.Fprintln(opfStderr, "→ OpenAI Privacy Filter: scanning transcript…")
+	_, _ = fmt.Fprintln(opfStderr, "→ OpenAI Privacy Filter: scanning transcript…")
 	start := time.Now()
 	batched, err := cfg.runtime.RedactBatch(ctx, []string{s}, cats)
 	if err != nil {
@@ -207,7 +207,7 @@ func detectOPF(ctx context.Context, cfg *OPFConfig, s string) []taggedRegion {
 		return nil
 	}
 	spans := batched[0]
-	fmt.Fprintf(opfStderr, "✓ OpenAI Privacy Filter: done (%.1fs)\n", time.Since(start).Seconds())
+	_, _ = fmt.Fprintf(opfStderr, "✓ OpenAI Privacy Filter: done (%.1fs)\n", time.Since(start).Seconds())
 
 	return opfSpanRegions(s, spans, cfg)
 }
@@ -233,12 +233,13 @@ func handleOPFFailure(ctx context.Context, cfg *OPFConfig, err error) {
 	if !opfBreakerTripped.CompareAndSwap(false, true) {
 		return
 	}
-	slog.WarnContext(ctx, "OpenAI Privacy Filter call failed; disabling for the rest of this process",
+	slog.WarnContext(
+		ctx, "OpenAI Privacy Filter call failed; disabling for the rest of this process",
 		slog.String("component", "redaction"),
 		slog.String("command", cfg.Command),
 		slog.String("error", err.Error()),
 	)
-	fmt.Fprintf(opfStderr, "× OpenAI Privacy Filter unavailable (%s); falling back to regex layers for the rest of this commit. Install with 'pip install opf'.\n", cfg.Command)
+	_, _ = fmt.Fprintf(opfStderr, "× OpenAI Privacy Filter unavailable (%s); falling back to regex layers for the rest of this commit. Install with 'pip install opf'.\n", cfg.Command)
 }
 
 type Span struct {
@@ -310,7 +311,8 @@ func (s *shellOut) RedactBatch(ctx context.Context, inputs []string, categories 
 	}
 	batched := buf.String()
 
-	cmd := s.commandRunner(callCtx, s.command,
+	cmd := s.commandRunner(
+		callCtx, s.command,
 		"--device", "cpu",
 		"--output-mode", "typed",
 		"--format", "json",

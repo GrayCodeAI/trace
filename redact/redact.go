@@ -579,14 +579,14 @@ func JSONLContentWithPrivacyFilter(ctx context.Context, content string) (string,
 
 	spansByInput := make(map[string][]Span, len(inputs))
 	if len(inputs) > 0 {
-		fmt.Fprintln(opfStderr, "→ OpenAI Privacy Filter: scanning transcript…")
+		_, _ = fmt.Fprintln(opfStderr, "→ OpenAI Privacy Filter: scanning transcript…")
 		start := time.Now()
 		batched, err := cfg.runtime.RedactBatch(ctx, inputs, cats)
 		if err != nil {
 			handleOPFFailure(ctx, cfg, err)
 			return jsonlContentImpl(content, String)
 		}
-		fmt.Fprintf(opfStderr, "✓ OpenAI Privacy Filter: done (%.1fs)\n", time.Since(start).Seconds())
+		_, _ = fmt.Fprintf(opfStderr, "✓ OpenAI Privacy Filter: done (%.1fs)\n", time.Since(start).Seconds())
 		if len(batched) != len(inputs) {
 			shortErr := fmt.Errorf("opf runtime returned %d span slices for %d inputs", len(batched), len(inputs))
 			handleOPFFailure(ctx, cfg, shortErr)
