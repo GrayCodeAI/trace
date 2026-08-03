@@ -12,7 +12,6 @@ require (
 	github.com/betterleaks/betterleaks v1.4.1
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/creack/pty v1.1.24
-	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/entireio/auth-go v0.4.0
 	github.com/go-git/go-billy/v6 v6.0.0-alpha.1.0.20260519112248-0095b064a6c6
 	github.com/go-git/go-git/v6 v6.0.0-alpha.4

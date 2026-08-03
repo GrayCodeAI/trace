@@ -1,13 +1,15 @@
 package telemetry
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
-	"github.com/denisbrodbeck/machineid"
 	"github.com/posthog/posthog-go"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -31,6 +33,55 @@ type EventPayload struct {
 	Timestamp  time.Time      `json:"timestamp"`
 }
 
+// userConfigDir returns the base user config directory. It is a var so
+// tests can isolate the anonymous ID file from the real user config dir.
+var userConfigDir = os.UserConfigDir
+
+// anonymousID returns a stable per-install anonymous identifier. The ID is a
+// random 128-bit value generated on first use and cached in the user config
+// dir. A random ID is used instead of a hardware-derived machine ID so
+// telemetry events cannot be correlated to a physical machine.
+func anonymousID() (string, error) {
+	dir, err := userConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "trace")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "telemetry-id")
+	if b, err := os.ReadFile(path); err == nil {
+		if id := strings.TrimSpace(string(b)); id != "" {
+			return id, nil
+		}
+	}
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	id := hex.EncodeToString(raw)
+	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// telemetryEnabled reports whether telemetry is permitted. Telemetry is
+// opt-in: nothing is sent unless TRACE_TELEMETRY_OPTIN=1 is set. The legacy
+// TRACE_TELEMETRY_OPTOUT variable continues to force-disable even when
+// opt-in is enabled.
+func telemetryEnabled() bool {
+	if os.Getenv("TRACE_TELEMETRY_OPTOUT") != "" {
+		return false
+	}
+	return os.Getenv("TRACE_TELEMETRY_OPTIN") == "1"
+}
+
+// sendDetached dispatches a payload to the detached analytics subprocess.
+// It is a var so tests can spy on whether telemetry was dispatched.
+var sendDetached = spawnDetachedAnalytics
+
 // silentLogger suppresses PostHog log output - expected for CLI best-effort telemetry
 type silentLogger struct{}
 
@@ -46,8 +97,8 @@ func BuildEventPayload(cmd *cobra.Command, agent string, isTraceEnabled bool, ve
 		return nil
 	}
 
-	// Get machine ID for distinct_id
-	machineID, err := machineid.ProtectedID("trace-cli")
+	// Get an anonymous per-install ID for distinct_id
+	machineID, err := anonymousID()
 	if err != nil {
 		return nil
 	}
@@ -87,11 +138,12 @@ func BuildEventPayload(cmd *cobra.Command, agent string, isTraceEnabled bool, ve
 // TrackCommandDetached tracks a command execution by spawning a detached subprocess.
 // This returns immediately without blocking the CLI.
 //
-// Telemetry can be disabled by setting the TRACE_TELEMETRY_OPTOUT environment variable
-// to any non-empty value (e.g., TRACE_TELEMETRY_OPTOUT=1).
+// Telemetry is opt-in: it is only sent when TRACE_TELEMETRY_OPTIN=1 is set.
+// The legacy TRACE_TELEMETRY_OPTOUT environment variable (any non-empty
+// value) force-disables telemetry regardless.
 func TrackCommandDetached(cmd *cobra.Command, agent string, isTraceEnabled bool, version string) {
-	// Check opt-out environment variables
-	if os.Getenv("TRACE_TELEMETRY_OPTOUT") != "" {
+	// Opt-in gate: nothing is sent unless explicitly enabled.
+	if !telemetryEnabled() {
 		return
 	}
 
@@ -109,14 +161,14 @@ func TrackCommandDetached(cmd *cobra.Command, agent string, isTraceEnabled bool,
 	}
 
 	if payloadJSON, err := json.Marshal(payload); err == nil {
-		spawnDetachedAnalytics(string(payloadJSON))
+		sendDetached(string(payloadJSON))
 	}
 }
 
 // TrackPluginDetached tracks a plugin invocation by spawning a detached subprocess.
 // This returns immediately without blocking the CLI.
 func TrackPluginDetached(pluginName string, isTraceEnabled bool, version string) {
-	if os.Getenv("TRACE_TELEMETRY_OPTOUT") != "" {
+	if !telemetryEnabled() {
 		return
 	}
 
@@ -126,7 +178,7 @@ func TrackPluginDetached(pluginName string, isTraceEnabled bool, version string)
 	}
 
 	if payloadJSON, err := json.Marshal(payload); err == nil {
-		spawnDetachedAnalytics(string(payloadJSON))
+		sendDetached(string(payloadJSON))
 	}
 }
 
