@@ -8,6 +8,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// spySendDetached swaps the dispatch hook and returns a counter.
+func spySendDetached(t *testing.T) *int {
+	t.Helper()
+	calls := 0
+	orig := sendDetached
+	sendDetached = func(string) { calls++ }
+	t.Cleanup(func() { sendDetached = orig })
+	return &calls
+}
+
+// isolateConfigDir redirects the anonymous ID file into a temp dir.
+func isolateConfigDir(t *testing.T) {
+	t.Helper()
+	orig := userConfigDir
+	userConfigDir = func() (string, error) { return t.TempDir(), nil }
+	t.Cleanup(func() { userConfigDir = orig })
+}
+
 func TestEventPayloadSerialization(t *testing.T) {
 	payload := EventPayload{
 		Event:      "cli_command_executed",
@@ -69,14 +87,62 @@ func TestTrackCommandDetachedSkipsHiddenCommands(_ *testing.T) {
 }
 
 func TestTrackCommandDetachedRespectsOptOut(t *testing.T) {
+	t.Setenv("TRACE_TELEMETRY_OPTIN", "1")
 	t.Setenv("TRACE_TELEMETRY_OPTOUT", "1")
 
+	calls := spySendDetached(t)
 	cmd := &cobra.Command{
 		Use: "status",
 	}
 
-	// Should not panic and should respect opt-out
+	// Opt-out must win over opt-in: nothing is dispatched.
 	TrackCommandDetached(cmd, "claude-code", true, "1.0.0")
+	if *calls != 0 {
+		t.Errorf("expected 0 dispatches when opt-out is set, got %d", *calls)
+	}
+}
+
+func TestTrackCommandDetachedDisabledByDefault(t *testing.T) {
+	// Without TRACE_TELEMETRY_OPTIN, telemetry is off even with no opt-out.
+	calls := spySendDetached(t)
+	cmd := &cobra.Command{Use: "status"}
+
+	TrackCommandDetached(cmd, "claude-code", true, "1.0.0")
+	if *calls != 0 {
+		t.Errorf("expected 0 dispatches by default (opt-in), got %d", *calls)
+	}
+}
+
+func TestTrackCommandDetachedEnabledWithOptIn(t *testing.T) {
+	t.Setenv("TRACE_TELEMETRY_OPTIN", "1")
+	isolateConfigDir(t)
+
+	calls := spySendDetached(t)
+	cmd := &cobra.Command{Use: "status"}
+
+	TrackCommandDetached(cmd, "claude-code", true, "1.0.0")
+	if *calls != 1 {
+		t.Errorf("expected 1 dispatch with opt-in, got %d", *calls)
+	}
+}
+
+func TestTrackPluginDetachedDisabledByDefault(t *testing.T) {
+	calls := spySendDetached(t)
+	TrackPluginDetached("my-plugin", true, "1.0.0")
+	if *calls != 0 {
+		t.Errorf("expected 0 dispatches by default (opt-in), got %d", *calls)
+	}
+}
+
+func TestTrackPluginDetachedEnabledWithOptIn(t *testing.T) {
+	t.Setenv("TRACE_TELEMETRY_OPTIN", "1")
+	isolateConfigDir(t)
+
+	calls := spySendDetached(t)
+	TrackPluginDetached("my-plugin", true, "1.0.0")
+	if *calls != 1 {
+		t.Errorf("expected 1 dispatch with opt-in, got %d", *calls)
+	}
 }
 
 func TestBuildEventPayloadAgent(t *testing.T) {
