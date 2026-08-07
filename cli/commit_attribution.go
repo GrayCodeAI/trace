@@ -1,13 +1,10 @@
 package cli
 
 import (
-	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/GrayCodeAI/trace/cli/agent/types"
-	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/trailers"
 )
@@ -119,19 +116,4 @@ func applyCommitAttribution(s *settings.TraceSettings, agentType types.AgentType
 	}
 
 	return result
-}
-
-// resolveCommitAttribution loads the trace settings and applies attribution to
-// the given message and human author. On a settings load error it logs and
-// falls back to defaults (co-authored-by on, author/committer off) so commit
-// creation is never blocked by a malformed settings file.
-func resolveCommitAttribution(ctx context.Context, agentType types.AgentType, human GitAuthor, message string) CommitAttribution {
-	s, err := LoadTraceSettings(ctx)
-	if err != nil {
-		logging.Warn(logging.WithComponent(ctx, "attribution"),
-			"failed to load settings for commit attribution; using defaults",
-			slog.String("error", err.Error()))
-		s = nil // accessors treat nil as the default behavior
-	}
-	return applyCommitAttribution(s, agentType, human, message)
 }

@@ -24,7 +24,7 @@ func handleConnect(ctx context.Context, t Transport, service string, stdin io.Re
 	if err != nil {
 		return fmt.Errorf("connect %s info/refs: %w", service, err)
 	}
-	defer refs.Close()
+	defer refs.Close() //nolint:errcheck // best-effort close
 
 	refReader := bufio.NewReader(refs)
 	var reply packp.SmartReply
@@ -65,7 +65,7 @@ func handleConnect(ctx context.Context, t Transport, service string, stdin io.Re
 	if err != nil {
 		return fmt.Errorf("connect %s POST: %w", service, err)
 	}
-	defer resp.Close()
+	defer resp.Close() //nolint:errcheck // best-effort close
 
 	if _, err := io.Copy(stdout, resp); err != nil {
 		return fmt.Errorf("streaming response: %w", err)
@@ -210,7 +210,7 @@ func postShallowProbe(ctx context.Context, t Transport, stdout io.Writer, wantsB
 	if err != nil {
 		return fmt.Errorf("shallow-update probe POST: %w", err)
 	}
-	defer resp.Close()
+	defer resp.Close() //nolint:errcheck // best-effort close
 	if _, err := io.Copy(stdout, resp); err != nil {
 		return fmt.Errorf("streaming shallow-update response: %w", err)
 	}
@@ -249,7 +249,7 @@ func postRound(ctx context.Context, t Transport, stdout io.Writer, wantsBuf, hav
 	if err != nil {
 		return fmt.Errorf("connect fetch round %d POST: %w", roundNumber, err)
 	}
-	defer resp.Close()
+	defer resp.Close() //nolint:errcheck // best-effort close
 
 	var src io.Reader = resp
 	if stripShallow {

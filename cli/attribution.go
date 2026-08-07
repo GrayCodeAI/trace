@@ -10,11 +10,3 @@ func shortSessionID(sessionID string) string {
 	}
 	return sessionID[:8]
 }
-
-// shortSHA returns the first 8 characters of a commit SHA.
-func shortSHA(sha string) string {
-	if len(sha) <= 8 {
-		return sha
-	}
-	return sha[:8]
-}

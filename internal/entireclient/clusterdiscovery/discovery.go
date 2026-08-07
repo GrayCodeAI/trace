@@ -103,7 +103,7 @@ func fetchWellKnownJSON(ctx context.Context, host, path string, c *http.Client, 
 		debugf("discovery: %v", err)
 		return fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 
 	if resp.StatusCode != http.StatusOK {
 		debugf("discovery: HTTP %d from %s", resp.StatusCode, url)

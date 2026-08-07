@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 
+	"github.com/GrayCodeAI/trace/cli/experimental"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/spf13/cobra"
 )
@@ -39,6 +40,8 @@ Examples:
 	cmd.AddCommand(newExplainCmd())
 	cmd.AddCommand(newRewindCmd())
 	cmd.AddCommand(newCheckpointSearchCmd())
+	cmd.AddCommand(newCheckpointTokensCmd())
+	experimental.Register(cmd, newCheckpointPolicyCmd()) // 'checkpoint policy' (experimental)
 
 	return cmd
 }

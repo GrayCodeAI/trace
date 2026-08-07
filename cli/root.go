@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/GrayCodeAI/trace/cli/experimental"
 	cliInvestigate "github.com/GrayCodeAI/trace/cli/investigate"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	cliReview "github.com/GrayCodeAI/trace/cli/review"
@@ -103,6 +104,20 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newDoctorCmd())          // 'doctor' (group: trace/logs/bundle)
 	cmd.AddCommand(newTokensGroupCmd())     // 'tokens'
 
+	// Control-plane command groups (orgs, projects, repos, grants, API).
+	cmd.AddCommand(newOrgCmd())          // 'org' — control-plane org management
+	cmd.AddCommand(newProjectCmd())      // 'project' — control-plane project management
+	cmd.AddCommand(newRepoCmd())         // 'repo' — control-plane repo lifecycle
+	cmd.AddCommand(newGrantCmd())        // 'grant' — control-plane access grants
+	cmd.AddCommand(newAPICmd())          // 'api' — authenticated passthrough to core/cell APIs
+	cmd.AddCommand(newAgentHelpCmd(cmd)) // 'agent-help' — machine-readable usage for agents
+	cmd.AddCommand(newMCPCmd(cmd))       // 'mcp' — MCP stdio server for MCP-host agents
+
+	// Experimental commands (hidden behind `trace labs` gate).
+	experimental.Register(cmd, newImportCmd())  // 'import' — import pre-existing agent history
+	experimental.Register(cmd, newRunnerCmd())  // 'runner' — reusable session runners
+	experimental.Register(cmd, newExpertsCmd()) // 'experts' — agent/workflow provenance
+
 	// Top-level lifecycle and standalone commands.
 	cmd.AddCommand(newCleanCmd())
 	cmd.AddCommand(newSetupCmd()) // 'configure' — non-agent settings; agent CRUD lives under 'agent'
@@ -141,6 +156,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newTrailCmd())
 	cmd.AddCommand(newSendAnalyticsCmd())
 	cmd.AddCommand(newCurlBashPostInstallCmd())
+	cmd.AddCommand(newRefreshTrailEnablementCmd())
 
 	cmd.SetVersionTemplate(versionString())
 

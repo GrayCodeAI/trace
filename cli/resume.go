@@ -949,7 +949,7 @@ func restoreResumeSessions(ctx context.Context, w, errW io.Writer, metadata *str
 	}
 
 	// Get strategy and restore sessions using full checkpoint data
-	strat := GetStrategy(ctx)
+	stratg := GetStrategy(ctx)
 
 	// Use RestoreLogsOnly via LogsOnlyRestorer interface for multi-session support
 	// Create a logs-only rewind point with Agent populated (same as rewind)
@@ -959,7 +959,7 @@ func restoreResumeSessions(ctx context.Context, w, errW io.Writer, metadata *str
 		Agent:        metadata.Agent,
 	}
 
-	sessions, restoreErr := strat.RestoreLogsOnly(ctx, w, errW, point, force)
+	sessions, restoreErr := stratg.RestoreLogsOnly(ctx, w, errW, point, force)
 	if restoreErr != nil || len(sessions) == 0 {
 		// Fall back to single-session restore (e.g., old checkpoints without agent metadata)
 		session, ok, err := restoreSingleSession(ctx, w, ag, sessionID, checkpointID, repoRoot, force)

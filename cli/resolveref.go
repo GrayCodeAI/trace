@@ -20,13 +20,6 @@ import (
 // under the response's singular `org`/`project` field, or 404) — the CLI never
 // lists everything and filters client-side.
 
-// providerGitHub is the identity-provider slug for GitHub-backed accounts, the
-// provider half of a qualified grantee handle like "github:alice". GitHub is the
-// only provider with backing accounts today; other slugs resolve once they exist
-// server-side. (Distinct from setup.go's checkpointProviderGitHub, which names
-// the checkpoint hosting provider — same string, unrelated concern.)
-const providerGitHub = "github"
-
 // looksLikeULID reports whether s has the shape of a ULID: 26 characters drawn
 // from Crockford base32 (digits plus uppercase letters, excluding I, L, O, U).
 // The check is shape-only and case-insensitive on the alphabet; it never hits

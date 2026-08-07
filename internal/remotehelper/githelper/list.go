@@ -27,7 +27,7 @@ func handleList(ctx context.Context, t Transport, adv *refAdvCache, forPush bool
 	if err != nil {
 		return fmt.Errorf("list %s info/refs: %w", service, err)
 	}
-	defer refs.Close()
+	defer refs.Close() //nolint:errcheck // best-effort close
 
 	r := bufio.NewReader(refs)
 	var reply packp.SmartReply

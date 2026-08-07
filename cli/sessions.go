@@ -68,6 +68,7 @@ Examples:
 	cmd.AddCommand(newSessionExportCmd())
 	cmd.AddCommand(newSessionImportCmd())
 	cmd.AddCommand(newSessionAnalyticsCmd())
+	cmd.AddCommand(newAdoptCmd())
 	cmd.AddCommand(newTokensCmd())
 
 	return cmd

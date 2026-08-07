@@ -436,7 +436,7 @@ func (t *crossJurisRoundTripper) fetchFederationHosts(ctx context.Context, origi
 		debugf("federation fetch: %v", err)
 		return nil
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 	if resp.StatusCode != http.StatusOK {
 		debugf("federation fetch returned HTTP %d", resp.StatusCode)
 		return nil

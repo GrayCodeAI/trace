@@ -162,7 +162,7 @@ func writeCacheBytesAtomic(path string, data []byte) error {
 		return fmt.Errorf("write cache tmp: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp) //nolint:gosec // cleanup best-effort
+		os.Remove(tmp) //nolint:gosec,errcheck // cleanup best-effort
 		return fmt.Errorf("rename cache: %w", err)
 	}
 	return nil

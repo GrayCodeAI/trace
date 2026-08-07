@@ -111,7 +111,7 @@ func PostOAuthToken(ctx context.Context, httpClient *http.Client, coreURL string
 	if err != nil {
 		return "", 0, fmt.Errorf("token request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024)) //nolint:errcheck // best-effort body read for error message
