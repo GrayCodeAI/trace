@@ -21,7 +21,7 @@ const (
 )
 
 // discoveryTimeout caps the total time spent scanning $PATH for external agents.
-const discoveryTimeout = 10 * time.Second
+const discoveryTimeout = 30 * time.Second
 
 // DiscoverAndRegister scans $PATH for executables matching "trace-agent-<name>",
 // calls their "info" subcommand, and registers them in the agent registry.
