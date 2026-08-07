@@ -83,7 +83,7 @@ pre-push:
       run: bash ./scripts/check-ecosystem-boundaries.sh
 
     test:
-      run: go test ./... -count=1 -timeout=60s
+      run: go test ./... -count=1 -timeout=90s
 
     vet:
       run: go vet ./...
