@@ -44,7 +44,11 @@ pre-commit:
           echo "lefthook: golangci-lint not installed — skipping (install: https://golangci-lint.run/usage/install/)"
           exit 0
         fi
-        golangci-lint run --new-from-rev=HEAD~1 --fix {staged_files}
+        # Run on the whole module, not {staged_files}: golangci-lint rejects
+        # "named files" that span multiple directories (e.g. cli/ + cli/agent/),
+        # which blocked every cross-directory commit. --new-from-rev=HEAD still
+        # scopes the report to issues introduced by this commit.
+        golangci-lint run --new-from-rev=HEAD --fix ./...
       stage_fixed: true
 
     yaml-lint:
