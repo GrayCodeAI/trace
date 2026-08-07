@@ -75,8 +75,11 @@ pre-commit:
 
 # ---------------------------------------------------------------------------
 # pre-push — heavier checks, runs only on push (not every commit).
+# Run sequentially: the full test suite needs the CPU; parallel govulncheck +
+# vet starved packages past their per-package -timeout and flaked pushes.
 # ---------------------------------------------------------------------------
 pre-push:
+  parallel: false
   commands:
 
     boundaries:
