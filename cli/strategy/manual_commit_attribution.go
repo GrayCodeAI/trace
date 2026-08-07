@@ -90,7 +90,9 @@ func getAllChangedFilesBetweenTreesSlow(ctx context.Context, tree1, tree2 *objec
 // which only makes sense for text files.
 //
 // Uses go-git's IsBinary() which implements git's binary detection algorithm.
-// Binary files are tracked via BinaryFilesChanged in the attribution result.
+//
+// TODO: Consider tracking binary file counts separately (e.g., BinaryFilesChanged field)
+// to provide visibility into non-text file modifications.
 func getFileContent(tree *object.Tree, path string) string {
 	if tree == nil {
 		return ""
@@ -201,7 +203,7 @@ type AttributionParams struct {
 // calculations since line-based diffing only applies to text files.
 //
 // See docs/architecture/attribution.md for details on the per-file tracking approach.
-func CalculateAttributionWithAccumulated(ctx context.Context, p AttributionParams) *checkpoint.InitialAttribution {
+func CalculateAttributionWithAccumulated(ctx context.Context, p AttributionParams) *checkpoint.Attribution {
 	if len(p.FilesTouched) == 0 {
 		return nil
 	}
@@ -265,7 +267,7 @@ func CalculateAttributionWithAccumulated(ctx context.Context, p AttributionParam
 		agentPercentage = float64(agentChangedLines) / float64(totalLinesChanged) * 100
 	}
 
-	return &checkpoint.InitialAttribution{
+	return &checkpoint.Attribution{
 		CalculatedAt:      time.Now().UTC(),
 		AgentLines:        agentLinesInCommit,
 		AgentRemoved:      agentRemovedInCommit,
@@ -567,5 +569,5 @@ func isAgentOrMetadataFile(filePath string, filesTouched []string, allAgentFiles
 			return true
 		}
 	}
-	return strings.HasPrefix(filePath, ".trace/") || strings.HasPrefix(filePath, paths.TraceMetadataDir+"/")
+	return strings.HasPrefix(filePath, ".trace/") || strings.HasPrefix(filePath, paths.EntireMetadataDir+"/")
 }

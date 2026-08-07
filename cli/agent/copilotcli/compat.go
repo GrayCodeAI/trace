@@ -80,7 +80,7 @@ func parseHookEnvelope(data []byte) (*hookEnvelope, error) {
 		Reason:         firstString(raw, "reason"),
 	}
 
-	ts, err := parseTimestamp(raw["timestamp"])
+	ts, err := ParseTimestamp(raw["timestamp"])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse hook input: %w", err)
 	}
@@ -126,7 +126,7 @@ func firstString(raw map[string]json.RawMessage, keys ...string) string {
 	return ""
 }
 
-func parseTimestamp(raw json.RawMessage) (time.Time, error) {
+func ParseTimestamp(raw json.RawMessage) (time.Time, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return time.Time{}, nil
 	}

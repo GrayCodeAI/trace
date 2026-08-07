@@ -19,11 +19,11 @@ import (
 func TestUpdateSummary_RedactsSecrets(t *testing.T) {
 	t.Parallel()
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("aabbccddeef8")
 
 	// First write a checkpoint without a summary
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "update-summary-session",
 		Strategy:         "manual-commit",
@@ -37,10 +37,10 @@ func TestUpdateSummary_RedactsSecrets(t *testing.T) {
 	}
 
 	// Now update the summary with a secret
-	err = store.UpdateSummary(context.Background(), checkpointID, &Summary{
+	err = store.Write(context.Background(), SessionSummary{CheckpointID: checkpointID, Summary: &Summary{
 		Intent:  "Rotated key " + highEntropySecret,
 		Outcome: "Done",
-	})
+	}})
 	if err != nil {
 		t.Fatalf("UpdateSummary() error = %v", err)
 	}
@@ -64,7 +64,7 @@ func TestUpdateSummary_RedactsSecrets(t *testing.T) {
 func TestWriteCommitted_SubagentTranscript_JSONLFallback(t *testing.T) {
 	t.Parallel()
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("aabbccddeef9")
 
 	// Create a temp file with invalid JSONL containing a secret
@@ -75,7 +75,7 @@ func TestWriteCommitted_SubagentTranscript_JSONLFallback(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID:           checkpointID,
 		SessionID:              "jsonl-fallback-session",
 		Strategy:               "manual-commit",
@@ -165,10 +165,10 @@ func TestWriteTemporaryTask_SubagentTranscript_RedactsSecrets(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
-	_, err = store.WriteTemporaryTask(context.Background(), WriteTemporaryTaskOptions{
+	_, err = store.Write(context.Background(), TaskStep{
 		SessionID:              "test-session",
 		BaseCommit:             baseCommit,
 		ToolUseID:              "toolu_test456",
@@ -244,7 +244,7 @@ func TestAddDirectoryToEntries_PathTraversal(t *testing.T) {
 	}
 
 	entries := make(map[string]object.TreeEntry)
-	err = addDirectoryToEntriesWithAbsPath(repo, metadataDir, ".trace/metadata/session", entries)
+	err = NewGitStore(repo, DefaultV1Refs()).copyMetadataDir(context.Background(), metadataDir, ".trace/metadata/session", entries)
 	if err != nil {
 		t.Fatalf("addDirectoryToEntriesWithAbsPath failed: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestAddDirectoryToEntries_SkipsSymlinks(t *testing.T) {
 	}
 
 	entries := make(map[string]object.TreeEntry)
-	err = addDirectoryToEntriesWithAbsPath(repo, metadataDir, "checkpoint/", entries)
+	err = NewGitStore(repo, DefaultV1Refs()).copyMetadataDir(context.Background(), metadataDir, "checkpoint/", entries)
 	if err != nil {
 		t.Fatalf("addDirectoryToEntriesWithAbsPath failed: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestAddDirectoryToEntries_SkipsSymlinkedDirectories(t *testing.T) {
 	}
 
 	entries := make(map[string]object.TreeEntry)
-	err = addDirectoryToEntriesWithAbsPath(repo, metadataDir, "checkpoint/", entries)
+	err = NewGitStore(repo, DefaultV1Refs()).copyMetadataDir(context.Background(), metadataDir, "checkpoint/", entries)
 	if err != nil {
 		t.Fatalf("addDirectoryToEntriesWithAbsPath failed: %v", err)
 	}
@@ -419,11 +419,11 @@ func TestWriteTemporaryTask_ExcludesGitIgnoredFiles(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
 	// Write task checkpoint where subagent reports .env as modified
-	commitHash, err := store.WriteTemporaryTask(context.Background(), WriteTemporaryTaskOptions{
+	result, err := store.Write(context.Background(), TaskStep{
 		SessionID:              "test-session",
 		BaseCommit:             baseCommit,
 		ToolUseID:              "toolu_test789",
@@ -441,7 +441,7 @@ func TestWriteTemporaryTask_ExcludesGitIgnoredFiles(t *testing.T) {
 		t.Fatalf("WriteTemporaryTask() error = %v", err)
 	}
 
-	commit, err := repo.CommitObject(commitHash)
+	commit, err := repo.CommitObject(result.CommitHash)
 	if err != nil {
 		t.Fatalf("failed to get commit object: %v", err)
 	}

@@ -7,10 +7,8 @@ import (
 	"os/exec"
 
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
-	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
-	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/trailers"
 	"github.com/go-git/go-git/v6"
 )
@@ -40,14 +38,12 @@ func headHasInvestigateCheckpoint(ctx context.Context) (bool, string) {
 		logging.Debug(ctx, "head investigate check: open repository", slog.String("error", err.Error()))
 		return false, ""
 	}
-	v1Store := checkpoint.NewGitStore(repo)
-	v2URL, urlErr := remote.FetchURL(ctx)
-	if urlErr != nil {
-		logging.Debug(ctx, "head investigate check: no configured v2 fetch remote", slog.String("error", urlErr.Error()))
-		v2URL = ""
+	stores, err := checkpoint.Open(ctx, repo, checkpoint.OpenOptions{})
+	if err != nil {
+		logging.Debug(ctx, "head investigate check: open checkpoint store", slog.String("error", err.Error()))
+		return false, ""
 	}
-	v2Store := checkpoint.NewV2GitStore(repo, v2URL)
-	_, summary, err := checkpoint.ResolveCommittedReaderForCheckpoint(ctx, cpID, v1Store, v2Store, settings.IsCheckpointsV2Enabled(ctx))
+	summary, err := stores.Persistent.Read(ctx, cpID)
 	if err != nil || summary == nil {
 		logging.Debug(ctx, "head investigate check: resolve checkpoint summary",
 			slog.String("checkpoint_id", cpID.String()),

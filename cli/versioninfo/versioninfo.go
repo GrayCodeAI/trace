@@ -1,17 +1,3 @@
-// Package versioninfo exposes the trace CLI version metadata.
-//
-// The Version and Commit variables are set at build time via ldflags by
-// goreleaser:
-//
-//	-X github.com/GrayCodeAI/trace/cli/versioninfo.Version={{.Version}}
-//	-X github.com/GrayCodeAI/trace/cli/versioninfo.Commit={{.ShortCommit}}
-//
-// The VERSION file at the repo root is the canonical source of truth used by
-// release tooling (release-please) and CI; goreleaser derives the version
-// from the matching git tag at release time.
-//
-// The default "dev" value applies only to local builds without ldflags, so
-// developers can immediately see when they're running an unreleased binary.
 package versioninfo
 
 import (
@@ -19,13 +5,24 @@ import (
 	"strings"
 )
 
+// Version and Commit identify the running CLI build.
+//
+// Only release binaries (GoReleaser) stamp these via ldflags
+// (-X ...versioninfo.Version=...). Every other build -- `mise build`,
+// `go install github.com/entireio/cli/cmd/entire@<version>`, and plain
+// `go build`/`go install ./...` -- carries no ldflags, so Load() recovers
+// them from Go's embedded build info instead and the CLI still self-reports
+// a real version and commit.
 var (
-	// Version is the semantic version. Set via ldflags at release time.
 	Version = "dev"
-
-	// Commit is the git commit short SHA. Set via ldflags at release time.
-	Commit = "none"
+	Commit  = "unknown"
 )
+
+// UserAgent is the HTTP User-Agent the CLI sends on outbound requests:
+// "entire-cli/<version>". Call after Load() so the version is resolved.
+func UserAgent() string {
+	return "entire-cli/" + Version
+}
 
 // Load fills Version and Commit from the binary's build info when ldflags left
 // them at their defaults. Call once from main() before either is read.
@@ -36,7 +33,7 @@ func Load() {
 
 // resolve fills Version/Commit from build info only when ldflags left them at
 // their defaults; an explicit ldflags stamp always wins. A module install
-// (@<version>) carries the version as info.Main.Version; a local build
+// (`@<version>`) carries the version as info.Main.Version; a local build
 // reports "(devel)" there but records the commit under vcs.revision. (Go
 // already marks a dirty tree with a "+dirty" suffix on the version, so we
 // don't track vcs.modified ourselves.)
@@ -49,7 +46,7 @@ func resolve(version, commit string, info *debug.BuildInfo, ok bool) (string, st
 		version = strings.TrimPrefix(v, "v") // match GoReleaser's {{.Version}}
 	}
 	// Only fill an unset commit; an explicit ldflags stamp always wins.
-	if commit == "none" || commit == "unknown" {
+	if commit == "unknown" {
 		for _, setting := range info.Settings {
 			if setting.Key == "vcs.revision" && setting.Value != "" {
 				commit = setting.Value

@@ -55,7 +55,7 @@ func useBrewExecutable(t *testing.T) {
 	t.Helper()
 	orig := executablePath
 	executablePath = func() (string, error) {
-		return "/opt/homebrew/Cellar/trace/1.0.0/bin/trace", nil
+		return "/opt/homebrew/Cellar/entire/1.0.0/bin/entire", nil
 	}
 	t.Cleanup(func() { executablePath = orig })
 }
@@ -65,7 +65,7 @@ func useMiseExecutable(t *testing.T) {
 	t.Helper()
 	orig := executablePath
 	executablePath = func() (string, error) {
-		return "/home/user/.local/share/mise/installs/trace/1.0.0/bin/trace", nil
+		return "/home/user/.local/share/mise/installs/entire/1.0.0/bin/entire", nil
 	}
 	t.Cleanup(func() { executablePath = orig })
 }
@@ -75,7 +75,7 @@ func useScoopExecutable(t *testing.T) {
 	t.Helper()
 	orig := executablePath
 	executablePath = func() (string, error) {
-		return `C:\Users\test\scoop\apps\cli\current\trace.exe`, nil
+		return `C:\Users\test\scoop\apps\cli\current\entire.exe`, nil
 	}
 	t.Cleanup(func() { executablePath = orig })
 }
@@ -86,7 +86,7 @@ func useUnknownExecutable(t *testing.T) {
 	t.Helper()
 	orig := executablePath
 	executablePath = func() (string, error) {
-		return "/usr/local/bin/trace", nil
+		return "/usr/local/bin/entire", nil
 	}
 	t.Cleanup(func() { executablePath = orig })
 }
@@ -126,7 +126,7 @@ func TestMaybeAutoUpdate_KillSwitch(t *testing.T) {
 	if f.installCalls != 0 {
 		t.Errorf("installer called with kill-switch set")
 	}
-	assertManualHint(t, buf.String(), "brew upgrade trace")
+	assertManualHint(t, buf.String(), brewUpgradeCmd)
 }
 
 func TestMaybeAutoUpdate_NoTTY(t *testing.T) {
@@ -141,7 +141,7 @@ func TestMaybeAutoUpdate_NoTTY(t *testing.T) {
 	if f.installCalls != 0 {
 		t.Errorf("installer called without TTY")
 	}
-	assertManualHint(t, buf.String(), "brew upgrade trace")
+	assertManualHint(t, buf.String(), brewUpgradeCmd)
 }
 
 func TestMaybeAutoUpdate_CIEnv(t *testing.T) {
@@ -157,7 +157,7 @@ func TestMaybeAutoUpdate_CIEnv(t *testing.T) {
 	if f.installCalls != 0 {
 		t.Errorf("installer called on CI (CI=true)")
 	}
-	assertManualHint(t, buf.String(), "brew upgrade trace")
+	assertManualHint(t, buf.String(), brewUpgradeCmd)
 }
 
 func TestMaybeAutoUpdate_NonTerminalWriter(t *testing.T) {
@@ -171,7 +171,7 @@ func TestMaybeAutoUpdate_NonTerminalWriter(t *testing.T) {
 	if f.installCalls != 0 {
 		t.Errorf("installer called with non-terminal output writer")
 	}
-	assertManualHint(t, buf.String(), "brew upgrade trace")
+	assertManualHint(t, buf.String(), brewUpgradeCmd)
 }
 
 // TestMaybeAutoUpdate_WindowsUnknownInstallerNoAutoRun verifies that on
@@ -184,7 +184,7 @@ func TestMaybeAutoUpdate_WindowsUnknownInstallerNoAutoRun(t *testing.T) {
 	// Program Files path that matches none of the known prefixes.
 	orig := executablePath
 	executablePath = func() (string, error) {
-		return `C:\Program Files\Trace\trace.exe`, nil
+		return `C:\Program Files\Entire\entire.exe`, nil
 	}
 	t.Cleanup(func() { executablePath = orig })
 
@@ -200,7 +200,7 @@ func TestMaybeAutoUpdate_WindowsUnknownInstallerNoAutoRun(t *testing.T) {
 	}
 	out := buf.String()
 	if !strings.Contains(out, "download the latest release") ||
-		!strings.Contains(out, "github.com/GrayCodeAI/trace/releases") {
+		!strings.Contains(out, "github.com/entireio/cli/releases") {
 		t.Errorf("expected download-page hint, got: %q", out)
 	}
 	if strings.Contains(out, "curl -fsSL") {
@@ -225,8 +225,8 @@ func TestMaybeAutoUpdate_WindowsScoopStillAutoRuns(t *testing.T) {
 	if f.installCalls != 1 {
 		t.Fatalf("scoop install should auto-run on Windows; calls=%d", f.installCalls)
 	}
-	if f.lastCommand != "scoop update trace/cli" {
-		t.Errorf("got %q, want scoop update trace/cli", f.lastCommand)
+	if f.lastCommand != "scoop update entire/cli" {
+		t.Errorf("got %q, want scoop update entire/cli", f.lastCommand)
 	}
 }
 
@@ -256,8 +256,8 @@ func TestMaybeAutoUpdate_HappyPath(t *testing.T) {
 	if f.installCalls != 1 {
 		t.Fatalf("installer called %d times, want 1", f.installCalls)
 	}
-	if f.lastCommand != "brew upgrade trace" {
-		t.Errorf("installer got %q, want brew upgrade trace", f.lastCommand)
+	if f.lastCommand != brewUpgradeCmd {
+		t.Errorf("installer got %q, want %q", f.lastCommand, brewUpgradeCmd)
 	}
 	if action != autoUpdateActionUpdate {
 		t.Errorf("action = %q, want %q", action, autoUpdateActionUpdate)
@@ -286,7 +286,7 @@ func TestMaybeAutoUpdate_InstallerFailurePrintedToUser(t *testing.T) {
 	if !strings.Contains(out, "Try again later running:") {
 		t.Errorf("missing retry hint: %q", out)
 	}
-	if !strings.Contains(out, "brew upgrade trace") {
+	if !strings.Contains(out, brewUpgradeCmd) {
 		t.Errorf("retry hint missing installer command: %q", out)
 	}
 }
@@ -301,10 +301,10 @@ type installerCase struct {
 
 func nonWindowsAutoInstallers() []installerCase {
 	return []installerCase{
-		{name: "brew", setup: useBrewExecutable, wantCmd: "brew upgrade trace"},
-		{name: "mise", setup: useMiseExecutable, wantCmd: "mise upgrade trace"},
-		{name: "scoop", setup: useScoopExecutable, wantCmd: "scoop update trace/cli"},
-		{name: "unknown_curl_bash", setup: useUnknownExecutable, wantCmd: "curl -fsSL https://trace.io/install.sh | bash"},
+		{name: "brew", setup: useBrewExecutable, wantCmd: brewUpgradeCmd},
+		{name: "mise", setup: useMiseExecutable, wantCmd: "mise upgrade entire"},
+		{name: "scoop", setup: useScoopExecutable, wantCmd: "scoop update entire/cli"},
+		{name: "unknown_curl_bash", setup: useUnknownExecutable, wantCmd: "curl -fsSL https://entire.io/install.sh | bash"},
 	}
 }
 

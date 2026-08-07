@@ -749,10 +749,8 @@ func TestHandleLifecycleTurnStart_WritesPromptContent(t *testing.T) {
 	data, readErr := os.ReadFile(filepath.Join(sessionDirAbs, paths.PromptFileName))
 	require.NoError(t, readErr)
 
-	// Prompt is XOR-obfuscated on disk; decode before comparing.
-	decoded := xorObfuscate(data, sessionID)
-	if string(decoded) != "create a file called hello.txt" {
-		t.Errorf("expected prompt content 'create a file called hello.txt', got %q", string(decoded))
+	if string(data) != "create a file called hello.txt" {
+		t.Errorf("expected prompt content 'create a file called hello.txt', got %q", string(data))
 	}
 }
 

@@ -1,5 +1,5 @@
 // Package provenance owns the env-var contract that lets the lifecycle hook
-// recognize a spawned agent process as part of `entire review` or `entire
+// recognize a spawned agent process as part of `trace review` or `entire
 // investigate`. Both spawn families set their own TRACE_*_* vars on the
 // child agent process; the UserPromptSubmit hook reads them to tag the
 // in-flight session with the right Kind and provenance metadata.

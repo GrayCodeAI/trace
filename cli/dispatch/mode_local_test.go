@@ -263,12 +263,12 @@ func TestLocalMode_ImplicitCurrentBranchUsesHEADReachability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	parsedID, err := checkpointid.NewCheckpointID(cpID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
+	err = store.Write(context.Background(), checkpoint.Session{
 		CheckpointID:     parsedID,
 		SessionID:        "session-1",
 		Strategy:         "manual-commit",
@@ -330,12 +330,12 @@ func TestLocalMode_ExplicitBranchesRemainExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	parsedID, err := checkpointid.NewCheckpointID(cpID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
+	err = store.Write(context.Background(), checkpoint.Session{
 		CheckpointID:     parsedID,
 		SessionID:        "session-1",
 		Strategy:         "manual-commit",
@@ -628,7 +628,7 @@ func TestReachableCheckpointIDsInRange_LimitsLogToWindowAndCheckpointTrailers(t 
 	script := "#!/bin/sh\n" +
 		"if [ \"$3\" = \"log\" ]; then\n" +
 		"  printf '%s\\n' \"$@\" > \"$TEST_GIT_ARGS_FILE\"\n" +
-		"  printf 'subject\\n\\nTrace-Checkpoint: " + testCheckpointID + "\\000'\n" +
+		"  printf '2026-05-01T00:00:00Z\\000subject\\n\\nTrace-Checkpoint: " + testCheckpointID + "\\000\\000'\n" +
 		"  exit 0\n" +
 		"fi\n" +
 		"exit 1\n"
@@ -640,7 +640,7 @@ func TestReachableCheckpointIDsInRange_LimitsLogToWindowAndCheckpointTrailers(t 
 	t.Setenv("TEST_GIT_ARGS_FILE", argsFile)
 
 	since := time.Date(2026, 4, 1, 12, 30, 0, 0, time.UTC)
-	reachable, err := reachableCheckpointIDsInRange(context.Background(), "/tmp/repo", "origin/main..HEAD", since)
+	reachable, err := reachableCheckpointIDsInRange(context.Background(), "/tmp/repo", "origin/main..HEAD", since, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -771,13 +771,13 @@ func seedCommittedCheckpoint(t *testing.T, repoDir string, cp seededCheckpoint) 
 		t.Fatal(err)
 	}
 
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	cpID, err := checkpointid.NewCheckpointID(cp.id)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
+	err = store.Write(context.Background(), checkpoint.Session{
 		CheckpointID:     cpID,
 		SessionID:        "session-1",
 		Strategy:         "manual-commit",

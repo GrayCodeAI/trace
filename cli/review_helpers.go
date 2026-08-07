@@ -25,17 +25,15 @@ import (
 	"github.com/GrayCodeAI/trace/cli/agent/external"
 	"github.com/GrayCodeAI/trace/cli/agent/types"
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
-	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	cliReview "github.com/GrayCodeAI/trace/cli/review"
-	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/trailers"
 )
 
 // headHasReviewCheckpoint checks whether HEAD's checkpoint metadata includes
 // a review session. Returns (true, infoString) if HasReview is set.
-// Single lookup: read the Entire-Checkpoint trailer from HEAD, then resolve
+// Single lookup: read the Trace-Checkpoint trailer from HEAD, then resolve
 // the CheckpointSummary via ResolveCommittedReaderForCheckpoint so v2-enabled
 // repos also work (v1 alone would miss v2-written summaries).
 func headHasReviewCheckpoint(ctx context.Context) (bool, string) {
@@ -52,7 +50,7 @@ func headHasReviewCheckpoint(ctx context.Context) (bool, string) {
 	}
 	cpID, ok := trailers.ParseCheckpoint(string(output))
 	if !ok {
-		logging.Debug(ctx, "head review check: no Entire-Checkpoint trailer on HEAD")
+		logging.Debug(ctx, "head review check: no Trace-Checkpoint trailer on HEAD")
 		return false, ""
 	}
 	repo, err := git.PlainOpen(repoRoot)
@@ -60,14 +58,12 @@ func headHasReviewCheckpoint(ctx context.Context) (bool, string) {
 		logging.Debug(ctx, "head review check: open repository", slog.String("error", err.Error()))
 		return false, ""
 	}
-	v1Store := checkpoint.NewGitStore(repo)
-	v2URL, urlErr := remote.FetchURL(ctx)
-	if urlErr != nil {
-		logging.Debug(ctx, "head review check: no configured v2 fetch remote", slog.String("error", urlErr.Error()))
-		v2URL = ""
+	stores, err := checkpoint.Open(ctx, repo, checkpoint.OpenOptions{})
+	if err != nil {
+		logging.Debug(ctx, "head review check: open checkpoint store", slog.String("error", err.Error()))
+		return false, ""
 	}
-	v2Store := checkpoint.NewV2GitStore(repo, v2URL)
-	_, summary, err := checkpoint.ResolveCommittedReaderForCheckpoint(ctx, cpID, v1Store, v2Store, settings.IsCheckpointsV2Enabled(ctx))
+	summary, err := checkpoint.ReadCheckpoint(ctx, stores.Persistent, cpID)
 	if err != nil || summary == nil {
 		logging.Debug(ctx, "head review check: resolve checkpoint summary",
 			slog.String("checkpoint_id", cpID.String()),
@@ -105,7 +101,7 @@ The first user prompt in the transcript is recorded as the review
 prompt. Pass --skills to declare which skills were actually run; omit
 to attach a review without a declared skills list.
 
-Equivalent to 'entire attach --review <session-id>' — provided here for
+Equivalent to 'trace attach --review <session-id>' — provided here for
 discoverability alongside the other review subcommands.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {

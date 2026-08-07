@@ -1,5 +1,5 @@
 // Package agentlaunch is the shared "launch a normal coding agent session
-// with a composed prompt" helper, used by `entire review --fix` and
+// with a composed prompt" helper, used by `trace review --fix` and
 // `trace investigate fix`. Both commands feed accepted findings back into
 // a follow-up coding agent without spawning a review/investigate session
 // themselves.

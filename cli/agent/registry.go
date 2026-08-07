@@ -101,6 +101,13 @@ func Detect(ctx context.Context) (Agent, error) {
 	return detected[0], nil
 }
 
+// AgentForTranscriptPath returns the registered agent whose session directory
+// contains transcriptPath. Returns (nil, false) if no agent matches.
+// Alias kept for parity with upstream naming; trace callers may use either.
+func AgentForTranscriptPath(transcriptPath, repoPath string) (Agent, bool) {
+	return ForTranscriptPath(transcriptPath, repoPath)
+}
+
 // ForTranscriptPath returns the registered agent whose session directory
 // contains transcriptPath. Returns (nil, false) if no agent matches.
 func ForTranscriptPath(transcriptPath, repoPath string) (Agent, bool) {

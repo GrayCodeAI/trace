@@ -15,7 +15,7 @@ import (
 type hookManager struct {
 	Name            string // "Husky", "Lefthook", "pre-commit", "Overcommit"
 	ConfigPath      string // relative path that triggered detection (e.g., ".husky/")
-	OverwritesHooks bool   // true if the tool will overwrite Trace's hooks on reinstall
+	OverwritesHooks bool   // true if the tool will overwrite Entire's hooks on reinstall
 }
 
 // detectHookManagers checks the repository root for known hook manager config
@@ -63,7 +63,7 @@ func detectHookManagers(repoRoot string) []hookManager {
 }
 
 // hookManagerWarning builds a warning string for detected hook managers.
-// cmdPrefix is the CLI command prefix (e.g., "trace" or "go run ./cmd/trace/main.go").
+// cmdPrefix is the CLI command prefix (e.g., "entire" or "./scripts/entire-dev").
 func hookManagerWarning(managers []hookManager, cmdPrefix string) string {
 	if len(managers) == 0 {
 		return ""
@@ -77,8 +77,8 @@ func hookManagerWarning(managers []hookManager, cmdPrefix string) string {
 		if m.OverwritesHooks {
 			fmt.Fprintf(&b, "Warning: %s detected (%s)\n", m.Name, m.ConfigPath)
 			fmt.Fprintf(&b, "\n")
-			fmt.Fprintf(&b, "  %s may overwrite hooks installed by Trace on npm install.\n", m.Name)
-			fmt.Fprintf(&b, "  To make Trace hooks permanent, add these lines to your %s hook files:\n", m.Name)
+			fmt.Fprintf(&b, "  %s may overwrite hooks installed by Entire on npm install.\n", m.Name)
+			fmt.Fprintf(&b, "  To make Entire hooks permanent, add these lines to your %s hook files:\n", m.Name)
 			fmt.Fprintf(&b, "\n")
 
 			// Use the config path as the hook directory prefix for hook files.
@@ -120,7 +120,7 @@ func extractCommandLine(hookContent string) string {
 
 // CheckAndWarnHookManagers detects external hook managers and writes a warning
 // to w if any are found.
-// localDev controls whether the warning references "go run" or the "trace" binary.
+// localDev controls whether the warning references "go run" or the "entire" binary.
 // absolutePath embeds the full binary path for GUI git clients.
 func CheckAndWarnHookManagers(ctx context.Context, w io.Writer, localDev, absolutePath bool) {
 	repoRoot, err := paths.WorktreeRoot(ctx)

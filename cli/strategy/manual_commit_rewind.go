@@ -5,22 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/agent/types"
 	cpkg "github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
-	"github.com/GrayCodeAI/trace/cli/logging"
-	"github.com/GrayCodeAI/trace/cli/oplog"
 	"github.com/GrayCodeAI/trace/cli/osroot"
 	"github.com/GrayCodeAI/trace/cli/paths"
-	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/trailers"
+	"github.com/GrayCodeAI/trace/cli/validation"
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -28,25 +27,18 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-// committedReader provides read access to committed checkpoint data.
-// Both checkpoint.GitStore (v1) and checkpoint.V2GitStore implement this interface.
-type committedReader interface {
-	ReadCommitted(ctx context.Context, checkpointID id.CheckpointID) (*cpkg.CheckpointSummary, error)
-	ReadSessionContent(ctx context.Context, checkpointID id.CheckpointID, sessionIndex int) (*cpkg.SessionContent, error)
-}
-
 // GetRewindPoints returns available rewind points.
-// Uses checkpoint.GitStore.ListTemporaryCheckpoints for reading from shadow branches.
+// Uses checkpoint.EphemeralStore for reading from shadow branches.
 func (s *ManualCommitStrategy) GetRewindPoints(ctx context.Context, limit int) ([]RewindPoint, error) {
 	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
-	// Get checkpoint store
-	store, err := s.getCheckpointStore()
+	store, err := s.getEphemeralStore(ctx, repo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get checkpoint store: %w", err)
+		return nil, err
 	}
 
 	// Get current HEAD to find matching shadow branch
@@ -64,12 +56,12 @@ func (s *ManualCommitStrategy) GetRewindPoints(ctx context.Context, limit int) (
 
 	var allPoints []RewindPoint
 
-	// Collect checkpoint points from active sessions using checkpoint.GitStore
+	// Collect checkpoint points from active sessions using temporary storage.
 	// Cache session prompts by session ID to avoid re-reading the same prompt file
 	sessionPrompts := make(map[string]string)
 
 	for _, state := range sessions {
-		checkpoints, err := store.ListTemporaryCheckpoints(ctx, state.BaseCommit, state.WorktreeID, state.SessionID, limit)
+		checkpoints, err := store.ListCheckpoints(ctx, state.BaseCommit, state.WorktreeID, state.SessionID, limit)
 		if err != nil {
 			continue // Error reading checkpoints, skip this session
 		}
@@ -136,11 +128,11 @@ func (s *ManualCommitStrategy) GetRewindPoints(ctx context.Context, limit int) (
 }
 
 // GetLogsOnlyRewindPoints finds commits in the current branch's history that have
-// condensed session logs on the trace/checkpoints/v1 branch. These are commits that
+// condensed session logs in committed checkpoint storage. These are commits that
 // were created with session data but the shadow branch has been condensed.
 //
 // The function works by:
-// 1. Getting all checkpoints from the trace/checkpoints/v1 branch
+// 1. Getting all checkpoints from committed checkpoint storage
 // 2. Building a map of checkpoint ID -> checkpoint info
 // 3. Scanning the current branch history for commits with Trace-Checkpoint trailers
 // 4. Matching by checkpoint ID (stable across amend/rebase)
@@ -149,12 +141,13 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(ctx context.Context, limi
 	if err != nil {
 		return nil, err
 	}
+	defer repo.Close()
 
-	// Get all checkpoints from trace/checkpoints/v1 branch
+	// Get all checkpoints from committed checkpoint storage
 	checkpoints, err := s.listCheckpoints(ctx)
 	if err != nil {
 		// No checkpoints yet is fine
-		return nil, nil //nolint:nilerr // Expected when no checkpoints exist
+		return nil, nil
 	}
 
 	if len(checkpoints) == 0 {
@@ -170,8 +163,9 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(ctx context.Context, limi
 		}
 	}
 
-	// Get metadata branch tree for reading session prompts (best-effort, ignore errors)
-	metadataTree, _ := GetMetadataBranchTree(repo) //nolint:errcheck // Best-effort for session prompts
+	// Get committed metadata read tree for session prompts (best-effort, ignore errors)
+	readRef := cpkg.ResolveRefs(ctx).Read
+	metadataTree, _ := GetMetadataRefTree(repo, readRef) //nolint:errcheck // Best-effort for session prompts
 
 	head, err := repo.Head()
 	if err != nil {
@@ -219,17 +213,23 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(ctx context.Context, limi
 		var sessionPrompt string
 		var sessionPrompts []string
 		if metadataTree != nil {
-			//lint:ignore SA1019 // already present in codebase
-			checkpointPath := paths.CheckpointPath(cpInfo.CheckpointID)
+			checkpointPath := cpInfo.CheckpointID.Path()
 			// For multi-session checkpoints, read all prompts
 			if cpInfo.SessionCount > 1 && len(cpInfo.SessionIDs) > 1 {
 				sessionPrompts = ReadAllSessionPromptsFromTree(metadataTree, checkpointPath, cpInfo.SessionCount, cpInfo.SessionIDs)
-				// Use the last (most recent) prompt as the main session prompt
-				if len(sessionPrompts) > 0 {
-					sessionPrompt = sessionPrompts[len(sessionPrompts)-1]
+				// Prefer the latest non-empty prompt: the most-recent session may
+				// have been recorded without a prompt, but an earlier one usually has one.
+				for i := len(sessionPrompts) - 1; i >= 0; i-- {
+					if sessionPrompts[i] != "" {
+						sessionPrompt = sessionPrompts[i]
+						break
+					}
 				}
 			} else {
-				sessionPrompt = ReadSessionPromptFromTree(metadataTree, checkpointPath)
+				sessionPrompt = ReadLatestSessionPromptFromCommittedTree(metadataTree, cpInfo.CheckpointID, cpInfo.SessionCount)
+				if sessionPrompt == "" {
+					sessionPrompt = ReadSessionPromptFromTree(metadataTree, checkpointPath)
+				}
 				if sessionPrompt != "" {
 					sessionPrompts = []string{sessionPrompt}
 				}
@@ -291,6 +291,7 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
 	// Get the checkpoint commit
 	commitHash := plumbing.NewHash(point.ID)
@@ -330,7 +331,7 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 		if err := ctx.Err(); err != nil {
 			return err //nolint:wrapcheck // Propagating context cancellation
 		}
-		if !strings.HasPrefix(f.Name, traceDir) {
+		if !strings.HasPrefix(f.Name, entireDir) {
 			checkpointFiles[f.Name] = true
 		}
 		return nil
@@ -355,18 +356,14 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 
 	// Build set of files tracked in HEAD
 	trackedFiles := make(map[string]bool)
-	if iterErr := headTree.Files().ForEach(func(f *object.File) error {
+	//nolint:errcheck // Error is not critical for rewind
+	_ = headTree.Files().ForEach(func(f *object.File) error {
 		if err := ctx.Err(); err != nil {
 			return err //nolint:wrapcheck // Propagating context cancellation
 		}
 		trackedFiles[f.Name] = true
 		return nil
-	}); iterErr != nil {
-		logging.Debug(
-			ctx, "HEAD tree iteration error during rewind",
-			slog.Any("error", iterErr),
-		)
-	}
+	})
 
 	// Get repository root to walk from there
 	repoRoot, err := paths.WorktreeRoot(ctx)
@@ -419,7 +416,7 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 			return err //nolint:wrapcheck // Propagating context cancellation
 		}
 		// Skip metadata directories - these are for checkpoint storage, not working dir
-		if strings.HasPrefix(f.Name, traceDir) {
+		if strings.HasPrefix(f.Name, entireDir) {
 			return nil
 		}
 
@@ -428,13 +425,12 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 			return fmt.Errorf("failed to read file %s: %w", f.Name, err)
 		}
 
-		// Ensure directory exists (MkdirAll not available on os.Root)
-		absPath := filepath.Join(repoRoot, f.Name)
-		dir := filepath.Dir(absPath)
+		// Ensure parent directories exist via os.Root so a crafted tree entry
+		// name (e.g. containing "..") from an untrusted checkpoint cannot create
+		// directories outside the repo. f.Name uses forward slashes (git tree).
+		dir := path.Dir(f.Name)
 		if dir != "." {
-			//nolint:gosec // G301: Need 0o755 for user directories during rewind
-			// #nosec G301 -- restoring the user's project working tree during rewind; directories must match standard project directory permissions (0o755), not private data
-			if err := os.MkdirAll(dir, 0o755); err != nil {
+			if err := osroot.MkdirAll(repoRootHandle, dir, 0o755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", dir, err)
 			}
 		}
@@ -470,10 +466,10 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 // This ensures that when the user commits after rewinding, the next checkpoint will only
 // include prompts from the rewound point, not prompts from later checkpoints.
 func (s *ManualCommitStrategy) resetShadowBranchToCheckpoint(ctx context.Context, repo *git.Repository, commit *object.Commit) error {
-	// Extract session ID from the checkpoint commit's Trace-Session trailer
+	// Extract session ID from the checkpoint commit's Entire-Session trailer
 	sessionID, found := trailers.ParseSession(commit.Message)
 	if !found {
-		return errors.New("checkpoint has no Trace-Session trailer")
+		return errors.New("checkpoint has no Entire-Session trailer")
 	}
 
 	// Load session state to get the shadow branch name
@@ -489,22 +485,10 @@ func (s *ManualCommitStrategy) resetShadowBranchToCheckpoint(ctx context.Context
 	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 
-	// Record the ref's current hash before mutating it, so 'trace undo' can
-	// restore it — this SetReference doesn't touch HEAD, so it never shows
-	// up in git's own reflog either.
-	var beforeHash plumbing.Hash
-	if existing, existErr := repo.Reference(refName, true); existErr == nil {
-		beforeHash = existing.Hash()
-	}
-
 	// Update the reference to point to the checkpoint commit
 	ref := plumbing.NewHashReference(refName, commit.Hash)
 	if err := repo.Storer.SetReference(ref); err != nil {
 		return fmt.Errorf("failed to update shadow branch: %w", err)
-	}
-
-	if logErr := RecordOplogEntry(ctx, repo, oplog.OpRewind, refName.String(), beforeHash, commit.Hash, sessionID); logErr != nil {
-		logging.Warn(ctx, "failed to record oplog entry for rewind", "error", logErr.Error())
 	}
 
 	fmt.Fprintf(os.Stderr, "[trace] Reset shadow branch %s to checkpoint %s\n", shadowBranchName, commit.Hash.String()[:7])
@@ -531,6 +515,7 @@ func (s *ManualCommitStrategy) PreviewRewind(ctx context.Context, point RewindPo
 	if err != nil {
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
 	// Get the checkpoint commit
 	commitHash := plumbing.NewHash(point.ID)
@@ -564,7 +549,7 @@ func (s *ManualCommitStrategy) PreviewRewind(ctx context.Context, point RewindPo
 		if err := ctx.Err(); err != nil {
 			return err //nolint:wrapcheck // Propagating context cancellation
 		}
-		if !strings.HasPrefix(f.Name, traceDir) {
+		if !strings.HasPrefix(f.Name, entireDir) {
 			checkpointFiles[f.Name] = true
 			filesToRestore = append(filesToRestore, f.Name)
 		}
@@ -648,70 +633,38 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(ctx context.Context, w, errW io.W
 		return nil, errors.New("missing checkpoint ID")
 	}
 
-	// Resolve which store has this checkpoint. Try v2 first when enabled.
-	// The chosen reader is used for all subsequent reads (summary + session content)
-	// to avoid mixed v1/v2 reads. No per-session fallback to v1: during dual-write,
-	// both stores receive the same data, so if v2 has the summary it also has the
-	// transcripts on /full/* refs.
-	var reader committedReader
-	var summary *cpkg.CheckpointSummary
-
-	if settings.IsCheckpointsV2Enabled(ctx) {
-		v2Store, v2Err := s.getV2CheckpointStore(ctx)
-		if v2Err == nil {
-			v2Summary, readErr := v2Store.ReadCommitted(ctx, point.CheckpointID)
-			if readErr != nil {
-				logging.Debug(
-					ctx, "v2 ReadCommitted failed, falling back to v1",
-					slog.String("checkpoint_id", string(point.CheckpointID)),
-					slog.String("error", readErr.Error()),
-				)
-			} else if v2Summary != nil {
-				reader = v2Store
-				summary = v2Summary
-			}
-		}
+	repo, err := OpenRepository(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
-	if summary == nil {
-		v1Store, err := s.getCheckpointStore()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get checkpoint store: %w", err)
-		}
-		summary, err = v1Store.ReadCommitted(ctx, point.CheckpointID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read checkpoint: %w", err)
-		}
-		reader = v1Store
+	WarnIfMetadataDisconnected()
+	stores, err := cpkg.Open(ctx, repo, cpkg.OpenOptions{BlobFetcher: s.blobFetcher})
+	if err != nil {
+		return nil, fmt.Errorf("open checkpoint store: %w", err)
 	}
-	if summary == nil {
-		return nil, fmt.Errorf("checkpoint not found: %s", point.CheckpointID)
+	store := stores.Persistent
+	summary, err := cpkg.ReadCheckpoint(ctx, store, point.CheckpointID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read checkpoint: %w", err)
 	}
-
 	// Get worktree root for agent session directory lookup
 	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get worktree root: %w", err)
 	}
 
-	// Check for newer local logs if not forcing
+	// By default (no --force), never overwrite a session log that already exists
+	// locally: the on-disk transcript is the live session being resumed, so we
+	// keep it and only restore logs that are missing. The write loop below skips
+	// any session whose ID is in skipExisting but still reports it so the caller
+	// prints its resume command. --force overwrites everything from the checkpoint.
+	skipExisting := map[string]bool{}
 	if !force {
-		sessions := s.classifySessionsForRestore(ctx, repoRoot, reader, point.CheckpointID, summary)
-		hasConflicts := false
-		for _, sess := range sessions {
-			if sess.Status == StatusLocalNewer {
-				hasConflicts = true
-				break
-			}
-		}
-		if hasConflicts {
-			shouldOverwrite, promptErr := PromptOverwriteNewerLogs(errW, sessions)
-			if promptErr != nil {
-				return nil, promptErr
-			}
-			if !shouldOverwrite {
-				fmt.Fprintf(w, "Resume cancelled. Local session logs preserved.\n")
-				return nil, nil
+		for _, sess := range s.classifySessionsForRestore(ctx, repoRoot, store, point.CheckpointID, summary) {
+			if sess.Status != StatusNew {
+				skipExisting[sess.SessionID] = true
 			}
 		}
 	}
@@ -725,7 +678,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(ctx context.Context, w, errW io.W
 	// Restore all sessions (oldest to newest, using 0-based indexing)
 	var restored []RestoredSession
 	for i := range totalSessions {
-		content, readErr := reader.ReadSessionContent(ctx, point.CheckpointID, i)
+		content, readErr := store.ReadSessionContent(ctx, point.CheckpointID, i)
 		if readErr != nil {
 			if !errors.Is(readErr, cpkg.ErrNoTranscript) {
 				fmt.Fprintf(errW, "  Warning: failed to read session %d: %v\n", i, readErr)
@@ -739,6 +692,14 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(ctx context.Context, w, errW io.W
 		sessionID := content.Metadata.SessionID
 		if sessionID == "" {
 			fmt.Fprintf(errW, "  Warning: session %d has no session ID, skipping\n", i)
+			continue
+		}
+		// Checkpoint metadata comes from the shared trace/checkpoints/v1 branch
+		// and is attacker-influenceable. Reject path separators/absolute IDs before
+		// they reach ResolveSessionFile + Session, which would otherwise let a
+		// crafted session ID overwrite files outside the agent session directory.
+		if err := validation.ValidateSessionID(sessionID); err != nil {
+			fmt.Fprintf(errW, "  Warning: session %d has unsafe session ID %q, skipping: %v\n", i, sessionID, err)
 			continue
 		}
 
@@ -769,8 +730,27 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(ctx context.Context, w, errW io.W
 			}
 		}
 
-		// Get first prompt for display
-		promptPreview := ExtractFirstPrompt(content.Prompts)
+		promptPreview := restoredPromptPreview(sessionAgent, content.Prompts, content.Transcript, content.Metadata.ReviewPrompt)
+
+		// Local log already present and not forcing: keep it untouched, but still
+		// report the session so the caller can print its resume command.
+		if skipExisting[sessionID] {
+			if totalSessions > 1 {
+				fmt.Fprintf(w, "  Session %d: keeping existing local log\n", i+1)
+			} else {
+				fmt.Fprintf(w, "Keeping existing local session log\n")
+			}
+			restored = append(restored, RestoredSession{
+				SessionID:    sessionID,
+				CheckpointID: point.CheckpointID.String(),
+				Agent:        sessionAgent.Type(),
+				Prompt:       promptPreview,
+				CreatedAt:    content.Metadata.CreatedAt,
+				Kind:         content.Metadata.Kind,
+				ReviewPrompt: content.Metadata.ReviewPrompt,
+			})
+			continue
+		}
 
 		if totalSessions > 1 {
 			isLatest := i == totalSessions-1
@@ -808,14 +788,75 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(ctx context.Context, w, errW io.W
 		}
 
 		restored = append(restored, RestoredSession{
-			SessionID: sessionID,
-			Agent:     sessionAgent.Type(),
-			Prompt:    promptPreview,
-			CreatedAt: content.Metadata.CreatedAt,
+			SessionID:    sessionID,
+			CheckpointID: point.CheckpointID.String(),
+			Agent:        sessionAgent.Type(),
+			Prompt:       promptPreview,
+			CreatedAt:    content.Metadata.CreatedAt,
+			Kind:         content.Metadata.Kind,
+			ReviewPrompt: content.Metadata.ReviewPrompt,
 		})
 	}
 
 	return restored, nil
+}
+
+func restoredPromptPreview(sessionAgent agent.Agent, promptContent string, transcript []byte, reviewPrompt string) string {
+	if prompt := ExtractFirstPrompt(promptContent); prompt != "" {
+		return prompt
+	}
+	if prompt := strings.TrimSpace(reviewPrompt); prompt != "" {
+		return prompt
+	}
+	extractor, ok := sessionAgent.(agent.PromptExtractor)
+	if !ok || len(transcript) == 0 {
+		return ""
+	}
+	prompts, err := extractPromptsFromTranscriptBytes(extractor, transcript)
+	if err != nil || len(prompts) == 0 {
+		return ""
+	}
+	return firstRestoredDisplayPrompt(prompts)
+}
+
+func firstRestoredDisplayPrompt(prompts []string) string {
+	for _, prompt := range prompts {
+		cleaned := strings.TrimSpace(prompt)
+		if cleaned == "" || isOnlySeparators(cleaned) || isInjectedInstructionPrompt(cleaned) {
+			continue
+		}
+		return TruncateDescription(cleaned, MaxDescriptionLength)
+	}
+	return ""
+}
+
+func isInjectedInstructionPrompt(prompt string) bool {
+	trimmed := strings.TrimSpace(prompt)
+	return strings.HasPrefix(trimmed, "# AGENTS.md instructions for ") ||
+		strings.HasPrefix(trimmed, "<environment_context>") ||
+		(strings.Contains(trimmed, "<INSTRUCTIONS>") && strings.Contains(trimmed, "AGENTS.md instructions"))
+}
+
+func extractPromptsFromTranscriptBytes(extractor agent.PromptExtractor, transcript []byte) ([]string, error) {
+	tmp, err := os.CreateTemp("", "entire-restored-transcript-*.jsonl")
+	if err != nil {
+		return nil, fmt.Errorf("create temporary transcript: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(transcript); err != nil {
+		_ = tmp.Close()
+		return nil, fmt.Errorf("write temporary transcript: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("close temporary transcript: %w", err)
+	}
+	prompts, err := extractor.ExtractPrompts(tmpPath, 0)
+	if err != nil {
+		return nil, fmt.Errorf("extract prompts from temporary transcript: %w", err)
+	}
+	return prompts, nil
 }
 
 // ResolveAgentForRewind resolves the agent from checkpoint metadata.
@@ -825,4 +866,135 @@ func ResolveAgentForRewind(agentType types.AgentType) (agent.Agent, error) {
 		return nil, fmt.Errorf("resolving agent %q: %w", agentType, err)
 	}
 	return ag, nil
+}
+
+// readSessionPrompt reads the first prompt from the session's prompt.txt file stored in git.
+// Returns an empty string if the prompt cannot be read.
+func readSessionPrompt(repo *git.Repository, commitHash plumbing.Hash, metadataDir string) string {
+	// Get the commit and its tree
+	commit, err := repo.CommitObject(commitHash)
+	if err != nil {
+		return ""
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return ""
+	}
+
+	// Look for prompt.txt in the metadata directory
+	promptPath := metadataDir + "/" + paths.PromptFileName
+	promptEntry, err := tree.File(promptPath)
+	if err != nil {
+		return ""
+	}
+
+	content, err := promptEntry.Contents()
+	if err != nil {
+		return ""
+	}
+
+	return ExtractFirstPrompt(content)
+}
+
+// SessionRestoreStatus represents the status of a session being restored.
+type SessionRestoreStatus int
+
+const (
+	StatusNew             SessionRestoreStatus = iota // Local file doesn't exist
+	StatusUnchanged                                   // Local and checkpoint are the same
+	StatusCheckpointNewer                             // Checkpoint has newer entries
+	StatusLocalNewer                                  // Local has newer entries (conflict)
+)
+
+// SessionRestoreInfo contains information about a session being restored.
+type SessionRestoreInfo struct {
+	SessionID      string
+	Prompt         string               // First prompt preview for display
+	Status         SessionRestoreStatus // Status of this session
+	LocalTime      time.Time
+	CheckpointTime time.Time
+}
+
+// classifySessionsForRestore checks all sessions in a checkpoint and returns info
+// about each session, including whether local logs have newer timestamps.
+// repoRoot is used to compute per-session agent directories.
+// Sessions without agent metadata are skipped (cannot determine target directory).
+func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, repoRoot string, store cpkg.SessionReader, checkpointID id.CheckpointID, summary *cpkg.CheckpointSummary) []SessionRestoreInfo {
+	var sessions []SessionRestoreInfo
+
+	totalSessions := len(summary.Sessions)
+	// Check all sessions (0-based indexing)
+	for i := range totalSessions {
+		content, err := store.ReadSessionContent(ctx, checkpointID, i)
+		if err != nil || content == nil || len(content.Transcript) == 0 {
+			continue
+		}
+
+		sessionID := content.Metadata.SessionID
+		if sessionID == "" || content.Metadata.Agent == "" {
+			continue
+		}
+		// Skip unsafe session IDs (see RestoreLogsOnly): this path stats the resolved
+		// transcript file, so a crafted ID could otherwise probe arbitrary locations.
+		if validation.ValidateSessionID(sessionID) != nil {
+			continue
+		}
+
+		sessionAgent, agErr := ResolveAgentForRewind(content.Metadata.Agent)
+		if agErr != nil {
+			continue
+		}
+
+		// Compute transcript path from current repo location for cross-machine portability.
+		sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
+		if dirErr != nil {
+			continue
+		}
+		localPath := sessionAgent.ResolveSessionFile(sessionAgentDir, sessionID)
+
+		localTime := paths.GetLastTimestampFromFile(localPath)
+		checkpointTime := paths.GetLastTimestampFromBytes(content.Transcript)
+		status := ClassifyTimestamps(localTime, checkpointTime)
+		// ClassifyTimestamps reports StatusNew when the local file has no parseable
+		// timestamp — but a present-but-untimestamped log still exists and must not
+		// be silently overwritten. Only a truly-absent file counts as new.
+		if status == StatusNew {
+			if _, statErr := os.Stat(localPath); statErr == nil {
+				status = StatusUnchanged
+			}
+		}
+
+		sessions = append(sessions, SessionRestoreInfo{
+			SessionID:      sessionID,
+			Prompt:         ExtractFirstPrompt(content.Prompts),
+			Status:         status,
+			LocalTime:      localTime,
+			CheckpointTime: checkpointTime,
+		})
+	}
+
+	return sessions
+}
+
+// ClassifyTimestamps determines the restore status based on local and checkpoint timestamps.
+func ClassifyTimestamps(localTime, checkpointTime time.Time) SessionRestoreStatus {
+	// Local file doesn't exist (no timestamp found)
+	if localTime.IsZero() {
+		return StatusNew
+	}
+
+	// Can't determine checkpoint time - treat as new/safe
+	if checkpointTime.IsZero() {
+		return StatusNew
+	}
+
+	// Compare timestamps
+	if localTime.After(checkpointTime) {
+		return StatusLocalNewer
+	}
+	if checkpointTime.After(localTime) {
+		return StatusCheckpointNewer
+	}
+	return StatusUnchanged
 }

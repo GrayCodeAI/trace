@@ -22,7 +22,11 @@ const (
 	TraceMetadataDir = ".trace/metadata"
 
 	osWindows = "windows"
+	osDarwin  = "darwin"
 )
+
+// EntireMetadataDir is an alias for TraceMetadataDir (CLI compatibility).
+const EntireMetadataDir = TraceMetadataDir
 
 // Metadata file names
 const (
@@ -37,6 +41,13 @@ const (
 	CheckpointFileName            = "checkpoint.json"
 	ContentHashFileName           = "content_hash.txt"
 	SettingsFileName              = "settings.json"
+
+	// AssetsDir is the per-session subfolder holding externalized transcript
+	// assets (e.g. images); AssetsManifestFile indexes them. AssetsDirName is the
+	// bare tree-entry name (no trailing slash) used when walking git trees.
+	AssetsDirName      = "assets"
+	AssetsDir          = "assets/"
+	AssetsManifestFile = "assets/manifest.json"
 )
 
 // MetadataBranchName is the orphan branch used by manual-commit strategy to store metadata
@@ -157,7 +168,54 @@ func IsSubpath(parent, child string) bool {
 	if err != nil {
 		return false
 	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return !IsRelativeTraversal(rel)
+}
+
+// IsProtectedSubpath reports whether child is under parent for the purpose of
+// EXCLUDING protected/infrastructure content from checkpoints and tracking.
+// Unlike IsSubpath it honors OS case-insensitivity (see CaseInsensitiveFS), so
+// a case variant of a protected dir (".Claude" vs ".claude") is still excluded
+// on Windows/macOS.
+//
+// SECURITY: never use this for allow/containment decisions. Case-folding widens
+// what counts as "inside" parent, which is safe only when the effect is to
+// exclude more. On a case-sensitive volume under a case-insensitive GOOS it
+// over-matches; for a fail-closed gate that would fail open. Use IsSubpath there.
+func IsProtectedSubpath(parent, child string) bool {
+	if CaseInsensitiveFS() {
+		return IsSubpath(strings.ToLower(parent), strings.ToLower(child))
+	}
+	return IsSubpath(parent, child)
+}
+
+// CaseInsensitiveFS reports whether path comparisons should be case-insensitive
+// on the host OS. This is OS-based, not volume-based: Windows and macOS default
+// to case-insensitive filesystems, Linux to case-sensitive. Keying on GOOS keeps
+// the result deterministic. It must only influence EXCLUSION decisions (see
+// IsProtectedSubpath / Equal): on an atypical volume (e.g. a case-sensitive
+// macOS APFS volume) it treats a differently-cased path as matching, which is
+// safe only when the effect is to exclude more, never to widen an allow gate.
+func CaseInsensitiveFS() bool {
+	return runtime.GOOS == osWindows || runtime.GOOS == osDarwin
+}
+
+// Equal reports whether two paths refer to the same location, honoring the host
+// OS's case sensitivity (see CaseInsensitiveFS). Both inputs are cleaned and
+// slash-normalized before comparison. Like IsProtectedSubpath, this is intended
+// for EXCLUSION matching (e.g. protected files), not fail-closed containment.
+func Equal(a, b string) bool {
+	a = filepath.Clean(filepath.FromSlash(a))
+	b = filepath.Clean(filepath.FromSlash(b))
+	if CaseInsensitiveFS() {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// IsRelativeTraversal reports whether rel escapes its base directory.
+// It accepts both OS-native paths and Git-style slash-normalized paths.
+func IsRelativeTraversal(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, "../") || strings.HasPrefix(rel, `..\`)
 }
 
 // ToRelativePath converts an absolute path to relative.

@@ -81,6 +81,7 @@ type Message struct {
 	Role       string          `json:"role"`
 	Content    json.RawMessage `json:"content"`
 	Usage      *Usage          `json:"usage,omitempty"`
+	Model      string          `json:"model,omitempty"`
 	StopReason string          `json:"stopReason,omitempty"`
 	ToolCallID string          `json:"toolCallId,omitempty"`
 	ToolName   string          `json:"toolName,omitempty"`

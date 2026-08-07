@@ -80,7 +80,7 @@ func TestReview_EnvVarAdoptionCondensesReviewMetadataOnNextCommit(t *testing.T) 
 
 	checkpointID := env.GetCheckpointIDFromCommitMessage(env.GetHeadHash())
 	if checkpointID == "" {
-		t.Fatal("expected Entire-Checkpoint trailer on HEAD after commit")
+		t.Fatal("expected Trace-Checkpoint trailer on HEAD after commit")
 	}
 
 	summary := readCheckpointSummary(t, env, checkpointID)
@@ -182,7 +182,7 @@ func TestReviewAttach_TagsAttachedSessionAsReview(t *testing.T) {
 
 	checkpointID := env.GetCheckpointIDFromCommitMessage(env.GetHeadHash())
 	if checkpointID == "" {
-		t.Fatal("expected Entire-Checkpoint trailer on HEAD after review attach")
+		t.Fatal("expected Trace-Checkpoint trailer on HEAD after review attach")
 	}
 
 	state, err := env.GetSessionState(sessionID)

@@ -31,7 +31,14 @@ import (
 //   - generator: summary generator to use (if nil, uses default ClaudeGenerator)
 //
 // Returns nil, error if transcript is empty or cannot be parsed.
-func GenerateFromTranscript(ctx context.Context, transcriptBytes redact.RedactedBytes, filesTouched []string, agentType types.AgentType, generator Generator) (*checkpoint.Summary, error) {
+func GenerateFromTranscript(
+	ctx context.Context,
+	transcriptBytes redact.RedactedBytes,
+	filesTouched []string,
+	agentType types.AgentType,
+	generator Generator,
+	progress agent.ProgressFn, //nolint:unparam // accepted for interface parity with upstream; streaming support is not wired into Trace's generators
+) (*checkpoint.Summary, error) {
 	if transcriptBytes.Len() == 0 {
 		return nil, errors.New("empty transcript")
 	}

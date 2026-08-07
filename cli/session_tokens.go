@@ -118,7 +118,6 @@ func runSessionTokens(ctx context.Context, cmd *cobra.Command, sessionID string,
 		sessionID = strategy.FindMostRecentSession(ctx)
 		if sessionID == "" {
 			fmt.Fprintln(cmd.OutOrStdout(), "No active session found in this worktree.")
-			return nil
 		}
 	}
 
@@ -239,13 +238,6 @@ func buildSessionTokensUsage(usage *agent.TokenUsage) *sessionTokensUsage {
 		APICalls:      usage.APICallCount,
 		SubagentTotal: totalTokens(usage.SubagentTokens),
 	}
-}
-
-func saturatingIntAdd(a, b int) int {
-	if a > 0 && b > 0 && a > (1<<31-1)-b {
-		return 1<<31 - 1
-	}
-	return a + b
 }
 
 func topLevelSessionTokenTotal(tokens *sessionTokensUsage) int {

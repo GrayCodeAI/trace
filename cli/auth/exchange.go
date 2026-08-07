@@ -1,121 +1,49 @@
 package auth
 
 import (
-	"context"
-	"fmt"
 	"net/url"
-	"sync"
 	"sync/atomic"
 
-	"github.com/GrayCodeAI/trace/cli/api"
 	"github.com/entireio/auth-go/tokenmanager"
 )
 
-// TokenRequest is the trace-CLI alias of tokenmanager.TokenRequest so
-// callers don't have to import the underlying package for the common
-// case. The two types are interchangeable.
-type TokenRequest = tokenmanager.TokenRequest
+const schemeHTTP = "http"
 
 // ErrNotLoggedIn re-exports tokenmanager.ErrNotLoggedIn so callers in
 // the cli package can errors.Is against it without an extra import.
 var ErrNotLoggedIn = tokenmanager.ErrNotLoggedIn
 
-var (
-	managerOnce sync.Once
-	manager     *tokenmanager.Manager
-	errManager  error
+// insecureHTTPOverride records the --insecure-http-auth opt-in. Read by
+// every per-context token manager as it is built; call EnableInsecureHTTP
+// before resolving tokens in the same process or the override has no
+// effect. Loopback hosts are always permitted regardless of this flag.
+var insecureHTTPOverride atomic.Bool
 
-	managerForTest *tokenmanager.Manager
-	managerTestMu  sync.Mutex
-
-	insecureHTTPOverride atomic.Bool
-)
-
-// EnableInsecureHTTP relaxes the package-level manager's HTTPS guard so
-// non-loopback http:// resources (and the auth host's STS endpoint) are
-// permitted during token resolution.
-//
-// Call before any TokenForResource invocation — the manager is built
-// lazily on first use and the AllowInsecureHTTP setting is frozen at
-// that point.
+// EnableInsecureHTTP relaxes the token managers' HTTPS guard so
+// non-loopback http:// resources (and the login server's STS endpoint) are
+// permitted during token resolution. The CLI calls this when the user
+// passes --insecure-http-auth to a command that hits the data API on a
+// private network (e.g. a split-host local-dev box where both hosts are
+// plain HTTP).
 func EnableInsecureHTTP() {
 	insecureHTTPOverride.Store(true)
 }
 
-// SetManagerForTest installs mgr as the manager returned by
-// defaultManager() and returns a cleanup function. Test-only.
-func SetManagerForTest(t interface{ Helper() }, mgr *tokenmanager.Manager) func() {
-	t.Helper()
-	managerTestMu.Lock()
-	prev := managerForTest
-	managerForTest = mgr
-	managerTestMu.Unlock()
-	return func() {
-		managerTestMu.Lock()
-		managerForTest = prev
-		managerTestMu.Unlock()
-	}
-}
-
-// defaultManager returns the package-level Manager built from this
-// CLI's identity (current provider, AuthBaseURL, NewStore service
-// name). Constructed lazily on first use so any env-var setup
-// (TRACE_AUTH_BASE_URL, TRACE_AUTH_PROVIDER_VERSION) lands before
-// construction.
-func defaultManager() (*tokenmanager.Manager, error) {
-	managerTestMu.Lock()
-	override := managerForTest
-	managerTestMu.Unlock()
-	if override != nil {
-		return override, nil
-	}
-	managerOnce.Do(func() {
-		provider := CurrentProvider()
-		issuer := api.AuthBaseURL()
-		m, err := tokenmanager.New(tokenmanager.Config{
-			Issuer:            issuer,
-			ClientID:          provider.ClientID,
-			STSPath:           provider.STSPath,
-			Store:             NewStore(),
-			UserAgent:         provider.ClientID,
-			Scope:             "cli",
-			AllowInsecureHTTP: isLoopbackHTTP(issuer) || insecureHTTPOverride.Load(),
-		})
-		manager = m
-		if err != nil {
-			errManager = fmt.Errorf("build token manager: %w", err)
-		}
-	})
-	return manager, errManager
-}
-
-// TokenForResource returns a bearer token suitable for use against
-// resourceBaseURL, performing an RFC 8693 token exchange when the
-// stored core token's audience doesn't already cover that resource.
-func TokenForResource(ctx context.Context, resourceBaseURL string) (string, error) {
-	m, err := defaultManager()
-	if err != nil {
-		return "", err
-	}
-	return m.TokenForResource(ctx, resourceBaseURL) //nolint:wrapcheck // shim returns the lib error verbatim
-}
-
-// Token is the full-control entry point. Use TokenForResource for the
-// common case; this exists so callers can override the wire-level
-// Audience, RequestedTokenType, or Scope per call.
-func Token(ctx context.Context, req TokenRequest) (string, error) {
-	m, err := defaultManager()
-	if err != nil {
-		return "", err
-	}
-	return m.Token(ctx, req) //nolint:wrapcheck // shim returns the lib error verbatim
+// insecureHTTPEnabled reports whether EnableInsecureHTTP was called. The
+// per-context providers read this so --insecure-http-auth still relaxes
+// the HTTPS guard for a non-loopback http:// core.
+func insecureHTTPEnabled() bool {
+	return insecureHTTPOverride.Load()
 }
 
 // isLoopbackHTTP reports whether u is an http:// URL pointing at a
-// loopback hostname (localhost, 127.0.0.1, ::1).
+// loopback hostname (localhost, 127.0.0.1, ::1). Used to scope the
+// "auto-permit insecure HTTP" path on the tokenmanager so production
+// misconfigurations fail loudly while loopback-only local-dev flows
+// keep working.
 func isLoopbackHTTP(rawURL string) bool {
 	u, err := url.Parse(rawURL)
-	if err != nil || u.Scheme != "http" {
+	if err != nil || u.Scheme != schemeHTTP {
 		return false
 	}
 	host := u.Hostname()

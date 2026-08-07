@@ -54,6 +54,16 @@ func WriteFile(root *os.Root, name string, data []byte, perm os.FileMode) (retEr
 	return nil
 }
 
+// MkdirAll creates the directory named by name, along with any necessary
+// parents, relative to root. The kernel enforces containment: a name that
+// escapes root (absolute, or climbing above it via "..") is rejected. Already-
+// existing directories are tolerated, like os.MkdirAll. This thin wrapper keeps
+// the package's os.Root helper surface (alongside ReadFile/WriteFile/Remove)
+// consistent at call sites.
+func MkdirAll(root *os.Root, name string, perm os.FileMode) error {
+	return root.MkdirAll(name, perm) //nolint:wrapcheck // preserve original error for errors.Is/os.IsNotExist
+}
+
 // Remove removes the named file relative to root using os.Root for
 // traversal-resistant access. Returns nil if the file doesn't exist.
 func Remove(root *os.Root, name string) error {

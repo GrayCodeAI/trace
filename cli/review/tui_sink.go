@@ -140,3 +140,6 @@ func (s *TUISink) RunFinished(summary reviewtypes.RunSummary) {
 	// program already quit).
 	s.Wait()
 }
+
+// PostRunComplete is called when a run completes.
+func (s *TUISink) PostRunComplete() {}

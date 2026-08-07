@@ -141,7 +141,6 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newTrailCmd())
 	cmd.AddCommand(newSendAnalyticsCmd())
 	cmd.AddCommand(newCurlBashPostInstallCmd())
-	cmd.AddCommand(newMigrateCmd())
 
 	cmd.SetVersionTemplate(versionString())
 

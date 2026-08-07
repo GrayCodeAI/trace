@@ -376,7 +376,7 @@ func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
 	}
 
 	// Verify the condensed content includes the second prompt
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	content, err := store.ReadLatestSessionContent(t.Context(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadLatestSessionContent() error = %v", err)
@@ -593,7 +593,7 @@ func TestCondenseSession_GeminiTranscript(t *testing.T) {
 	}
 
 	// Verify condensed data on trace/checkpoints/v1 branch
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	content, err := store.ReadLatestSessionContent(t.Context(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadLatestSessionContent() error = %v", err)

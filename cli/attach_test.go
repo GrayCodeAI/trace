@@ -55,7 +55,8 @@ func TestAttach_TranscriptNotFound(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, "nonexistent-session-id", agent.AgentNameClaudeCode, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, "nonexistent-session-id", agent.AgentNameClaudeCode, attachOptions{Force: true})
 	if err == nil {
 		t.Fatal("expected error for missing transcript")
 	}
@@ -72,7 +73,8 @@ func TestAttach_Success(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameClaudeCode, attachOptions{Force: true})
 	if err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}
@@ -130,7 +132,8 @@ func TestAttach_SessionAlreadyTracked_NoCheckpoint(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err = runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true)
+	var errOut bytes.Buffer
+	err = runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameClaudeCode, attachOptions{Force: true})
 	if err != nil {
 		t.Fatalf("expected attach to handle already-tracked session, got error: %v", err)
 	}
@@ -160,7 +163,8 @@ func TestAttach_OutputContainsCheckpointID(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameClaudeCode, attachOptions{Force: true})
 	if err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}
@@ -174,145 +178,6 @@ func TestAttach_OutputContainsCheckpointID(t *testing.T) {
 	}
 }
 
-func TestAttach_V2DualWriteEnabled(t *testing.T) {
-	setupAttachTestRepo(t)
-
-	repoDir := mustGetwd(t)
-	setAttachCheckpointsV2Enabled(t, repoDir)
-
-	sessionID := "test-attach-v2-dual-write"
-	setupClaudeTranscript(t, sessionID, `{"type":"user","message":{"role":"user","content":"create hello.txt"},"uuid":"uuid-1"}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Write","input":{"file_path":"hello.txt","content":"hello"}}]},"uuid":"uuid-2"}
-{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_1","content":"wrote file"}]},"uuid":"uuid-3"}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]},"uuid":"uuid-4"}
-`)
-
-	var out bytes.Buffer
-	if err := runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true); err != nil {
-		t.Fatalf("runAttach failed: %v", err)
-	}
-
-	store, err := session.NewStateStore(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := store.Load(context.Background(), sessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state == nil || state.LastCheckpointID.IsEmpty() {
-		t.Fatal("expected attach to persist a checkpoint ID")
-	}
-
-	repo, err := git.PlainOpen(repoDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cpPath := state.LastCheckpointID.Path()
-	mainCompact, found := readFileFromRef(t, repo, paths.V2MainRefName, cpPath+"/0/"+paths.CompactTranscriptFileName)
-	if !found {
-		t.Fatalf("expected %s on %s", paths.CompactTranscriptFileName, paths.V2MainRefName)
-	}
-	if !strings.Contains(mainCompact, "create hello.txt") {
-		t.Errorf("compact transcript missing prompt, got:\n%s", mainCompact)
-	}
-
-	fullTranscript, found := readFileFromRef(t, repo, paths.V2FullCurrentRefName, cpPath+"/0/"+paths.V2RawTranscriptFileName)
-	if !found {
-		t.Fatalf("expected %s on %s", paths.V2RawTranscriptFileName, paths.V2FullCurrentRefName)
-	}
-	if !strings.Contains(fullTranscript, "hello.txt") {
-		t.Errorf("raw transcript missing file content, got:\n%s", fullTranscript)
-	}
-}
-
-func TestAttach_CheckpointsVersion2(t *testing.T) {
-	setupAttachTestRepo(t)
-
-	repoDir := mustGetwd(t)
-	setAttachCheckpointsV2Only(t, repoDir)
-
-	sessionID := "test-attach-v2-only"
-	setupClaudeTranscript(t, sessionID, `{"type":"user","message":{"role":"user","content":"create hello.txt"},"uuid":"uuid-1"}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Write","input":{"file_path":"hello.txt","content":"hello"}}]},"uuid":"uuid-2"}
-{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_1","content":"wrote file"}]},"uuid":"uuid-3"}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]},"uuid":"uuid-4"}
-`)
-
-	var out bytes.Buffer
-	if err := runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true); err != nil {
-		t.Fatalf("runAttach failed: %v", err)
-	}
-
-	store, err := session.NewStateStore(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := store.Load(context.Background(), sessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state == nil || state.LastCheckpointID.IsEmpty() {
-		t.Fatal("expected attach to persist a checkpoint ID")
-	}
-
-	repo, err := git.PlainOpen(repoDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cpPath := state.LastCheckpointID.Path()
-	if _, found := readFileFromRef(t, repo, paths.MetadataBranchName, cpPath+"/"+paths.MetadataFileName); found {
-		t.Fatalf("did not expect %s metadata for %s when checkpoints_version is 2", paths.MetadataBranchName, cpPath)
-	}
-
-	mainCompact, found := readFileFromRef(t, repo, paths.V2MainRefName, cpPath+"/0/"+paths.CompactTranscriptFileName)
-	if !found {
-		t.Fatalf("expected %s on %s", paths.CompactTranscriptFileName, paths.V2MainRefName)
-	}
-	if !strings.Contains(mainCompact, "create hello.txt") {
-		t.Errorf("compact transcript missing prompt, got:\n%s", mainCompact)
-	}
-
-	fullTranscript, found := readFileFromRef(t, repo, paths.V2FullCurrentRefName, cpPath+"/0/"+paths.V2RawTranscriptFileName)
-	if !found {
-		t.Fatalf("expected %s on %s", paths.V2RawTranscriptFileName, paths.V2FullCurrentRefName)
-	}
-	if !strings.Contains(fullTranscript, "hello.txt") {
-		t.Errorf("raw transcript missing file content, got:\n%s", fullTranscript)
-	}
-}
-
-func TestAttach_V2DualWriteDisabled(t *testing.T) {
-	setupAttachTestRepo(t)
-
-	repoDir := mustGetwd(t)
-
-	sessionID := "test-attach-v2-disabled"
-	setupClaudeTranscript(t, sessionID, `{"type":"user","message":{"role":"user","content":"create hello.txt"},"uuid":"uuid-1"}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Write","input":{"file_path":"hello.txt","content":"hello"}}]},"uuid":"uuid-2"}
-{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_1","content":"wrote file"}]},"uuid":"uuid-3"}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]},"uuid":"uuid-4"}
-`)
-
-	var out bytes.Buffer
-	if err := runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true); err != nil {
-		t.Fatalf("runAttach failed: %v", err)
-	}
-
-	repo, err := git.PlainOpen(repoDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repo.Reference(plumbing.ReferenceName(paths.V2MainRefName), true); err == nil {
-		t.Fatalf("did not expect %s when checkpoints_v2 is disabled", paths.V2MainRefName)
-	}
-	if _, err := repo.Reference(plumbing.ReferenceName(paths.V2FullCurrentRefName), true); err == nil {
-		t.Fatalf("did not expect %s when checkpoints_v2 is disabled", paths.V2FullCurrentRefName)
-	}
-}
-
 func TestAttach_AppendsAsAdditionalSessionWhenIDDiffers(t *testing.T) {
 	setupAttachTestRepo(t)
 
@@ -320,7 +185,8 @@ func TestAttach_AppendsAsAdditionalSessionWhenIDDiffers(t *testing.T) {
 	setupClaudeTranscript(t, firstSessionID, `{"type":"user","message":{"role":"user","content":"first"},"uuid":"u1"}
 `)
 	var out bytes.Buffer
-	if err := runAttach(context.Background(), &out, firstSessionID, agent.AgentNameClaudeCode, true); err != nil {
+	var errOut bytes.Buffer
+	if err := runAttach(context.Background(), &out, &errOut, firstSessionID, agent.AgentNameClaudeCode, attachOptions{Force: true}); err != nil {
 		t.Fatalf("first attach failed: %v", err)
 	}
 
@@ -347,12 +213,12 @@ func TestAttach_AppendsAsAdditionalSessionWhenIDDiffers(t *testing.T) {
 	setupClaudeTranscript(t, secondSessionID, `{"type":"user","message":{"role":"user","content":"second"},"uuid":"u1"}
 `)
 	out.Reset()
-	if err := runAttach(context.Background(), &out, secondSessionID, agent.AgentNameClaudeCode, true); err != nil {
+	if err := runAttach(context.Background(), &out, &errOut, secondSessionID, agent.AgentNameClaudeCode, attachOptions{Force: true}); err != nil {
 		t.Fatalf("second attach failed: %v", err)
 	}
 
-	store := cpkg.NewGitStore(repo)
-	summary, err := store.ReadCommitted(context.Background(), checkpointID)
+	store := cpkg.NewGitStore(repo, cpkg.DefaultV1Refs())
+	summary, err := store.Read(context.Background(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadCommitted(%s): %v", checkpointID, err)
 	}
@@ -394,7 +260,8 @@ func TestAttach_RefusesWhenCheckpointMissingFromLocalBranch(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameClaudeCode, attachOptions{Force: true})
 	if err == nil {
 		t.Fatal("expected error: checkpoint referenced by HEAD is missing locally and attach should refuse")
 	}
@@ -409,8 +276,8 @@ func TestAttach_RefusesWhenCheckpointMissingFromLocalBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := cpkg.NewGitStore(repo)
-	summary, err := store.ReadCommitted(context.Background(), "ffffffffeeee")
+	store := cpkg.NewGitStore(repo, cpkg.DefaultV1Refs())
+	summary, err := store.Read(context.Background(), "ffffffffeeee")
 	if err != nil {
 		t.Fatalf("ReadCommitted: %v", err)
 	}
@@ -437,8 +304,8 @@ func TestAttach_RefusesWhenCheckpointOnlyInRemoteTrackingRef(t *testing.T) {
 
 	// Seed the local branch with a checkpoint representing Alice's session.
 	alicesCheckpoint := id.MustCheckpointID("abcdef012345")
-	store := cpkg.NewGitStore(repo)
-	if writeErr := store.WriteCommitted(context.Background(), cpkg.WriteCommittedOptions{
+	store := cpkg.NewGitStore(repo, cpkg.DefaultV1Refs())
+	if writeErr := store.Write(context.Background(), cpkg.Session{
 		CheckpointID: alicesCheckpoint,
 		SessionID:    "alice-original",
 		Strategy:     "manual-commit",
@@ -473,7 +340,8 @@ func TestAttach_RefusesWhenCheckpointOnlyInRemoteTrackingRef(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	err = runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true)
+	var errOut bytes.Buffer
+	err = runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameClaudeCode, attachOptions{Force: true})
 	if err == nil {
 		t.Fatal("expected attach to refuse when checkpoint is only in the remote-tracking ref")
 	}
@@ -500,36 +368,6 @@ func TestAttach_RefusesWhenCheckpointOnlyInRemoteTrackingRef(t *testing.T) {
 // In v2-only mode, the refuse hint must reference the v2 /main ref and
 // its fully-qualified refspec (refs/trace/checkpoints/v2/main lives under
 // refs/trace/, not refs/heads/, so a short refspec won't resolve).
-func TestAttach_RefuseHint_V2Only(t *testing.T) {
-	setupAttachTestRepo(t)
-
-	repoRoot := mustGetwd(t)
-	setAttachCheckpointsV2Only(t, repoRoot)
-
-	runGitInDir(t, repoRoot, "commit", "--amend", "-m", "init\n\nTrace-Checkpoint: ffffffffeeee")
-
-	sessionID := "v2-orphaned-attach"
-	setupClaudeTranscript(t, sessionID, `{"type":"user","message":{"role":"user","content":"hi"},"uuid":"u1"}
-`)
-
-	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true)
-	if err == nil {
-		t.Fatal("expected v2-only attach to refuse when checkpoint is missing")
-	}
-	if !strings.Contains(err.Error(), "missing from the local v2 /main ref") {
-		t.Errorf("error should describe the v2 /main ref; got: %v", err)
-	}
-	v2Refspec := paths.V2MainRefName + ":" + paths.V2MainRefName
-	if !strings.Contains(err.Error(), v2Refspec) {
-		t.Errorf("error should include v2 refspec %q; got: %v", v2Refspec, err)
-	}
-	// And must NOT suggest the v1 refspec.
-	if strings.Contains(err.Error(), "trace/checkpoints/v1:trace/checkpoints/v1") {
-		t.Errorf("v2-only hint should not reference the v1 branch; got: %v", err)
-	}
-}
-
 func TestAttach_PopulatesTokenUsage(t *testing.T) {
 	setupAttachTestRepo(t)
 
@@ -539,7 +377,8 @@ func TestAttach_PopulatesTokenUsage(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	if err := runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true); err != nil {
+	var errOut bytes.Buffer
+	if err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameClaudeCode, attachOptions{Force: true}); err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}
 
@@ -570,7 +409,8 @@ func TestAttach_SetsSessionTurnCount(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	if err := runAttach(context.Background(), &out, sessionID, agent.AgentNameClaudeCode, true); err != nil {
+	var errOut bytes.Buffer
+	if err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameClaudeCode, attachOptions{Force: true}); err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}
 
@@ -712,7 +552,8 @@ func TestAttach_GeminiSubdirectorySession(t *testing.T) {
 	t.Setenv("TRACE_TEST_GEMINI_PROJECT_DIR", emptyProjectDir)
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameGemini, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameGemini, attachOptions{Force: true})
 	if err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}
@@ -757,7 +598,8 @@ func TestAttach_GeminiSuccess(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameGemini, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameGemini, attachOptions{Force: true})
 	if err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}

@@ -5,34 +5,69 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/GrayCodeAI/trace/cli/gitremote"
+	"github.com/GrayCodeAI/trace/cli/gitrepo"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/settings"
+
+	"github.com/go-git/go-git/v6"
 )
 
 const originRemote = "origin"
 
 const (
-	ProtocolSSH   = gitremote.ProtocolSSH
-	ProtocolHTTPS = gitremote.ProtocolHTTPS
+	ProtocolSSH    = gitremote.ProtocolSSH
+	ProtocolHTTPS  = gitremote.ProtocolHTTPS
+	ProtocolEntire = gitremote.ProtocolEntire
 )
 
 // Info is an alias for gitremote.Info.
 type Info = gitremote.Info
+
+// FetchURLOptions configures FetchURL.
+type FetchURLOptions struct {
+	WorktreeRoot string
+}
 
 // FetchURL returns the effective checkpoint fetch URL for the current repository.
 // If strategy_options.checkpoint_remote is configured, the returned URL is derived
 // from the origin remote's protocol/host and the configured checkpoint repo.
 // Otherwise, the origin remote URL is returned directly.
 //
-// If TRACE_CHECKPOINT_TOKEN is set and a checkpoint remote is configured, HTTPS is
+// If ENTIRE_CHECKPOINT_TOKEN is set and a checkpoint remote is configured, HTTPS is
 // forced so the token can be used even when origin is configured via SSH.
-func FetchURL(ctx context.Context) (string, error) {
+func FetchURL(ctx context.Context, opts ...FetchURLOptions) (string, error) {
+	url, _, err := fetchURLAuthoritative(ctx, opts...)
+	return url, err
+}
+
+// fetchURLAuthoritative is FetchURL plus whether the returned URL is
+// authoritative for checkpoint refs. It is false exactly when a
+// checkpoint_remote IS configured (or cannot be determined) but resolution
+// fell back to the origin URL — a remote that by construction does not host
+// the configured checkpoint refs. Callers that classify "ref absent on the
+// remote" (FetchCheckpointRef's ls-remote probe) must not treat emptiness on
+// a non-authoritative target as absence.
+func fetchURLAuthoritative(ctx context.Context, opts ...FetchURLOptions) (string, bool, error) {
+	var opt FetchURLOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	getRemoteURL := GetRemoteURL
+	if opt.WorktreeRoot != "" {
+		ctx = settings.WithWorktreeRoot(ctx, opt.WorktreeRoot)
+		getRemoteURL = func(ctx context.Context, remoteName string) (string, error) {
+			return GetRemoteURLInDir(ctx, opt.WorktreeRoot, remoteName)
+		}
+	}
+
 	withToken := strings.TrimSpace(os.Getenv(CheckpointTokenEnvVar)) != ""
 
-	originURL, originErr := GetRemoteURL(ctx, originRemote)
+	originURL, originErr := getRemoteURL(ctx, originRemote)
 	if originErr != nil {
 		originURL = ""
 	}
@@ -47,17 +82,20 @@ func FetchURL(ctx context.Context) (string, error) {
 	if err != nil {
 		if originURL != "" {
 			logFallback(ctx, "fetch", originURL, "load settings", err)
-			return originURL, nil
+			// Settings unreadable → checkpoint_remote unknown; conservative:
+			// do not certify origin as authoritative for checkpoint refs.
+			return originURL, false, nil
 		}
-		return "", fmt.Errorf("load settings: %w", err)
+		return "", false, fmt.Errorf("load settings: %w", err)
 	}
 
 	config := s.GetCheckpointRemote()
 	if config == nil {
 		if originURL == "" {
-			return "", fmt.Errorf("no fetch URL found: %w", originErr)
+			return "", false, fmt.Errorf("no fetch URL found: %w", originErr)
 		}
-		return originURL, nil
+		// No checkpoint_remote configured: origin IS the checkpoint host.
+		return originURL, true, nil
 	}
 
 	if withToken {
@@ -68,34 +106,41 @@ func FetchURL(ctx context.Context) (string, error) {
 				Host:     host,
 			}, config)
 			if err == nil {
-				return checkpointURL, nil
+				return checkpointURL, true, nil
 			}
 		}
 
 		// In token-based execution path, short-circuit to avoid additional
 		// change in protocol.
 		if originURL != "" {
-			return originURL, nil
+			return originURL, false, nil
 		}
 	}
 
 	if originURL == "" {
-		return "", fmt.Errorf("no fetch URL found: %w", originErr)
+		return "", false, fmt.Errorf("no fetch URL found: %w", originErr)
 	}
 
 	info, err := ParseURL(originURL)
 	if err != nil {
 		logFallback(ctx, "fetch", originURL, "parse origin remote URL", err)
-		return originURL, nil
+		return originURL, false, nil
 	}
 
 	checkpointURL, err := deriveCheckpointURLFromInfo(info, config)
 	if err != nil {
+		// Origin's protocol can't be mapped to a checkpoint URL (e.g. file://,
+		// or an entire:// mirror of a different forge than the configured
+		// provider). Honor the configured checkpoint_remote by targeting the
+		// provider's canonical host over HTTPS rather than falling back to origin.
+		if providerURL, ok := resolveProviderCheckpointURL(ctx, config, opt.WorktreeRoot); ok {
+			return providerURL, true, nil
+		}
 		logFallback(ctx, "fetch", originURL, "derive checkpoint remote URL", err)
-		return originURL, nil
+		return originURL, false, nil
 	}
 
-	return checkpointURL, nil
+	return checkpointURL, true, nil
 }
 
 // PushURL returns the effective checkpoint push URL for the current repository.
@@ -104,7 +149,7 @@ func FetchURL(ctx context.Context) (string, error) {
 //   - it skips checkpoint remote use when the push remote owner differs
 //     from the configured checkpoint remote owner
 //
-// If TRACE_CHECKPOINT_TOKEN is set, HTTPS is forced so the token can be used
+// If ENTIRE_CHECKPOINT_TOKEN is set, HTTPS is forced so the token can be used
 // even when the push remote is configured via SSH.
 //
 // The boolean return value reports whether a dedicated checkpoint_remote is
@@ -162,7 +207,13 @@ func PushURL(ctx context.Context, pushRemoteName string) (string, bool, error) {
 		}
 		return "", true, fmt.Errorf("no push URL found: %w", err)
 	}
-	if strings.TrimSpace(os.Getenv(CheckpointTokenEnvVar)) != "" {
+	withToken := strings.TrimSpace(os.Getenv(CheckpointTokenEnvVar)) != ""
+	if withToken && isDirectGitTransport(pushInfo.Protocol) {
+		// Coerce a direct (ssh/https) remote to HTTPS so the token applies,
+		// keeping the host so enterprise installations stay on their own host.
+		// An entire:// remote carries a cluster host that isn't a usable HTTPS
+		// host, so it's handled separately after the owner check below.
+		//
 		// Keep the port only when the source was already HTTPS. SSH ports
 		// (e.g., :2222) don't map to HTTPS ports on the same host.
 		port := ""
@@ -187,8 +238,25 @@ func PushURL(ctx context.Context, pushRemoteName string) (string, bool, error) {
 		return fallbackURL, false, nil
 	}
 
+	if withToken && pushInfo.Protocol == ProtocolEntire {
+		// The checkpoint token is an HTTPS credential for the provider host;
+		// it can't ride through the entire:// helper (which does its own
+		// auth). Route to the provider over HTTPS instead of the mirror.
+		if providerURL, ok := resolveProviderCheckpointURL(ctx, config, ""); ok {
+			return providerURL, true, nil
+		}
+	}
+
 	pushURL, err := deriveCheckpointURLFromInfo(pushInfo, config)
 	if err != nil {
+		// The push remote's protocol can't be mapped to a checkpoint URL
+		// (e.g. file://, or an entire:// mirror of a different forge than the
+		// configured provider). Honor the configured checkpoint_remote by
+		// targeting the provider's canonical host over HTTPS rather than
+		// misrouting checkpoints to the origin remote.
+		if providerURL, ok := resolveProviderCheckpointURL(ctx, config, ""); ok {
+			return providerURL, true, nil
+		}
 		fallbackURL, fallbackErr := resolvePushFallbackURL(ctx, pushRemoteName, originURL)
 		if fallbackErr == nil {
 			logFallback(
@@ -225,6 +293,15 @@ func GetRemoteURL(ctx context.Context, remoteName string) (string, error) {
 	return url, nil
 }
 
+// GetRemoteURLInDir returns the URL configured for the named git remote in dir.
+func GetRemoteURLInDir(ctx context.Context, dir, remoteName string) (string, error) {
+	url, err := gitremote.GetRemoteURLInDir(ctx, dir, remoteName)
+	if err != nil {
+		return "", fmt.Errorf("get remote URL: %w", err)
+	}
+	return url, nil
+}
+
 // ParseURL parses a git remote URL (SSH SCP-style or HTTPS) into its components.
 func ParseURL(rawURL string) (*Info, error) {
 	info, err := gitremote.ParseURL(rawURL)
@@ -234,17 +311,12 @@ func ParseURL(rawURL string) (*Info, error) {
 	return info, nil
 }
 
-func DeriveCheckpointURL(pushRemoteURL string, config *settings.CheckpointRemoteConfig) (string, error) {
-	info, err := gitremote.ParseURL(pushRemoteURL)
-	if err != nil {
-		return "", fmt.Errorf("cannot parse push remote URL: %w", err)
-	}
-	return deriveCheckpointURLFromInfo(info, config)
-}
-
-// ExtractOwnerFromRemoteURL extracts the owner component from a git remote URL.
-func ExtractOwnerFromRemoteURL(rawURL string) string {
-	return gitremote.ExtractOwnerFromRemoteURL(rawURL)
+// isDirectGitTransport reports whether the protocol talks to the git host
+// directly over ssh/https (where the host is a usable HTTPS host for token
+// auth), as opposed to a remote helper scheme like entire:// or a local
+// file://.
+func isDirectGitTransport(protocol string) bool {
+	return protocol == ProtocolSSH || protocol == ProtocolHTTPS
 }
 
 func deriveCheckpointURLFromInfo(info *Info, config *settings.CheckpointRemoteConfig) (string, error) {
@@ -258,9 +330,138 @@ func deriveCheckpointURLFromInfo(info *Info, config *settings.CheckpointRemoteCo
 		return fmt.Sprintf("git@%s:%s.git", info.Host, config.Repo), nil
 	case ProtocolHTTPS:
 		return fmt.Sprintf("https://%s/%s.git", info.HostPort(), config.Repo), nil
+	case ProtocolEntire:
+		// entire:// push-through mirrors are cluster-scoped: keep the cluster
+		// host and forge segment, swap in the checkpoint repo. Only derivable
+		// when the forge maps back to the configured provider's host, so a
+		// github checkpoint_remote never routes through another forge's mirror.
+		host, ok := providerHost(config.Provider)
+		if !ok || !strings.EqualFold(info.CanonicalHost(), host) {
+			return "", fmt.Errorf("entire:// remote forge %q does not match checkpoint provider %q", info.Forge, config.Provider)
+		}
+		return fmt.Sprintf("entire://%s/%s/%s", info.HostPort(), info.Forge, config.Repo), nil
 	default:
-		return "", fmt.Errorf("unsupported protocol %q in origin remote", info.Protocol)
+		return "", fmt.Errorf("unsupported protocol %q in remote URL", info.Protocol)
 	}
+}
+
+// resolveProviderCheckpointURL builds the checkpoint URL for the configured
+// provider, choosing the transport from what's already configured for that
+// endpoint. It is the fallback used when the push/origin remote's protocol can't
+// be mapped to a git transport (e.g. entire://, file://): the configured
+// checkpoint_remote names a concrete provider, so checkpoints go there rather
+// than being misrouted to the origin remote.
+//
+// Transport precedence:
+//  1. ENTIRE_CHECKPOINT_TOKEN set -> HTTPS on the provider host (the token is
+//     the credential).
+//  2. An existing remote already targets the provider host -> reuse its scheme,
+//     so checkpoints use the same auth the user already has for that endpoint.
+//  3. Otherwise SSH on the provider host.
+//
+// Returns ok=false when no transport can be determined (unknown provider with no
+// usable signal), in which case the caller falls back to the origin remote.
+func resolveProviderCheckpointURL(ctx context.Context, config *settings.CheckpointRemoteConfig, dir string) (string, bool) {
+	repo, err := openRepoAt(ctx, dir)
+	if err != nil {
+		repo = nil // Fall back to env/provider-only signals.
+	}
+
+	info, ok := pickProviderTransport(repo, config)
+	if !ok {
+		return "", false
+	}
+	url, err := deriveCheckpointURLFromInfo(info, config)
+	if err != nil {
+		return "", false
+	}
+	return url, true
+}
+
+// DeriveCheckpointURL derives the checkpoint repository URL from a push
+// remote URL and the configured checkpoint_remote, keeping the transport
+// and host of the push remote while swapping in the checkpoint repo.
+func DeriveCheckpointURL(pushRemoteURL string, config *settings.CheckpointRemoteConfig) (string, error) {
+	info, err := ParseURL(pushRemoteURL)
+	if err != nil {
+		return "", err
+	}
+	return deriveCheckpointURLFromInfo(info, config)
+}
+
+// pickProviderTransport returns the protocol/host/port to use when deriving a
+// checkpoint URL, following the precedence documented on
+// resolveProviderCheckpointURL.
+func pickProviderTransport(repo *git.Repository, config *settings.CheckpointRemoteConfig) (*Info, bool) {
+	host, hostOK := providerHost(config.Provider)
+
+	// 1. Explicit token -> HTTPS on the provider host.
+	if hostOK && strings.TrimSpace(os.Getenv(CheckpointTokenEnvVar)) != "" {
+		return &Info{Protocol: ProtocolHTTPS, Host: host}, true
+	}
+
+	// 2. An existing remote already targeting the provider host -> reuse scheme.
+	if hostOK && repo != nil {
+		if info, ok := findRemoteInfoForHost(repo, host); ok {
+			return &Info{Protocol: info.Protocol, Host: info.Host, Port: info.Port}, true
+		}
+	}
+
+	// 3. Default to SSH on the provider host.
+	if hostOK {
+		return &Info{Protocol: ProtocolSSH, Host: host}, true
+	}
+
+	return nil, false
+}
+
+// openRepoAt opens the git repository at dir (current directory when dir is
+// empty). It routes through gitrepo, the single reftable-aware opener, so a
+// reftable repository is opened via the git-CLI storer rather than rejected by
+// go-git's extension check. gitrepo.OpenCurrent resolves the worktree root from
+// the current directory (the walk-up equivalent of the previous DetectDotGit
+// open) when no explicit root is given.
+func openRepoAt(ctx context.Context, dir string) (*git.Repository, error) {
+	if dir == "" {
+		repo, err := gitrepo.OpenCurrent(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("open git repository: %w", err)
+		}
+		return repo, nil
+	}
+	repo, err := gitrepo.OpenPath(dir)
+	if err != nil {
+		return nil, fmt.Errorf("open git repository: %w", err)
+	}
+	return repo, nil
+}
+
+// findRemoteInfoForHost returns the parsed Info of the first configured git
+// remote (in deterministic name order) whose host matches host and whose
+// protocol is a usable git transport (ssh/https). entire:// and other
+// non-transport remotes are ignored.
+func findRemoteInfoForHost(repo *git.Repository, host string) (*Info, bool) {
+	cfg, err := repo.Config()
+	if err != nil {
+		return nil, false
+	}
+	names := make([]string, 0, len(cfg.Remotes))
+	for name := range cfg.Remotes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, rawURL := range cfg.Remotes[name].URLs {
+			info, err := gitremote.ParseURL(rawURL)
+			if err != nil {
+				continue
+			}
+			if strings.EqualFold(info.Host, host) && isDirectGitTransport(info.Protocol) {
+				return info, true
+			}
+		}
+	}
+	return nil, false
 }
 
 func deriveTokenOriginURL(originURL string) (string, bool) {

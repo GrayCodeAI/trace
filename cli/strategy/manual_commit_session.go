@@ -2,8 +2,13 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/GrayCodeAI/trace/cli/agent/types"
@@ -79,10 +84,26 @@ func (s *ManualCommitStrategy) listAllSessionStates(ctx context.Context) ([]*Ses
 	if err != nil {
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
 	var states []*SessionState
 	for _, sessionState := range sessionStates {
 		state := sessionState
+		// Adopted-away source records are tombstones: keep them until normal stale
+		// expiry so old source hooks cannot recreate a second live state.
+		if state.AdoptedIntoWorktreePath != "" {
+			states = append(states, state)
+			continue
+		}
+
+		// Imported sessions are read-only historical records: no shadow branch
+		// and (by design) no BaseCommit. Keep them regardless of the
+		// shadow-branch orphan check below. Gate on Kind, not on commit
+		// presence, so this stays correct once imports are linked to a commit.
+		if state.Kind.IsImported() {
+			states = append(states, state)
+			continue
+		}
 
 		// Skip and cleanup orphaned sessions whose shadow branch no longer exists.
 		// Keep active sessions (shadow branch may not be created yet) and sessions
@@ -93,13 +114,8 @@ func (s *ManualCommitStrategy) listAllSessionStates(ctx context.Context) ([]*Ses
 		refName := plumbing.NewBranchReferenceName(shadowBranch)
 		if _, err := repo.Reference(refName, true); err != nil {
 			if !state.Phase.IsActive() && state.LastCheckpointID.IsEmpty() {
-				if clearErr := store.Clear(ctx, state.SessionID); clearErr != nil {
-					logging.Warn(
-						ctx, "failed to clear orphaned session state",
-						slog.String("session_id", state.SessionID),
-						slog.Any("error", clearErr),
-					)
-				}
+				//nolint:errcheck,gosec // G104: Cleanup is best-effort, shouldn't fail the list operation
+				store.Clear(ctx, state.SessionID)
 				continue
 			}
 		}
@@ -139,20 +155,185 @@ func countWarnableStaleEndedSessions(repo *git.Repository, sessions []*SessionSt
 	return n
 }
 
+// findExactSessionsForWorktree returns sessions recorded for exactly this
+// worktree path, with no sibling/parent fallback. Callers that mutate
+// worktree-coupled state (e.g. BaseCommit, which must only follow the HEAD of
+// the session's own worktree) must use this instead of
+// findSessionsForWorktree.
+func (s *ManualCommitStrategy) findExactSessionsForWorktree(ctx context.Context, worktreePath string) ([]*SessionState, error) {
+	allStates, err := s.listAllSessionStates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return exactWorktreeMatches(allStates, worktreePath), nil
+}
+
+func exactWorktreeMatches(states []*SessionState, worktreePath string) []*SessionState {
+	var exact []*SessionState
+	for _, state := range states {
+		if state.WorktreePath == worktreePath {
+			exact = append(exact, state)
+		}
+	}
+	return exact
+}
+
 // findSessionsForWorktree finds all sessions for the given worktree path.
+// Exact WorktreePath matches win; otherwise sessions recorded in another
+// worktree of the same repository (shared git common dir) are matched, as long
+// as all candidates come from a single worktree.
 func (s *ManualCommitStrategy) findSessionsForWorktree(ctx context.Context, worktreePath string) ([]*SessionState, error) {
 	allStates, err := s.listAllSessionStates(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var matching []*SessionState
+	if exact := exactWorktreeMatches(allStates, worktreePath); len(exact) > 0 {
+		return exact, nil
+	}
+
+	worktreeCommonDir, err := gitCommonDirForWorktree(ctx, worktreePath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve common dir for fallback session matching: %w", err)
+	}
+
+	var parentWorktreeMatches []*SessionState
+	var commonDirMatches []*SessionState
+	commonDirByPath := make(map[string]string)
 	for _, state := range allStates {
-		if state.WorktreePath == worktreePath {
-			matching = append(matching, state)
+		if state.WorktreePath == "" {
+			continue
+		}
+
+		stateCommonDir, seen := commonDirByPath[state.WorktreePath]
+		if !seen {
+			stateCommonDir = gitCommonDirForWorktreeOrEmpty(ctx, state.WorktreePath)
+			commonDirByPath[state.WorktreePath] = stateCommonDir
+		}
+		if stateCommonDir == "" || stateCommonDir != worktreeCommonDir {
+			continue
+		}
+
+		if isNestedWorktreeOfRecordedRepo(state.WorktreePath, worktreePath) {
+			parentWorktreeMatches = append(parentWorktreeMatches, state)
+			continue
+		}
+
+		commonDirMatches = append(commonDirMatches, state)
+	}
+
+	if len(parentWorktreeMatches) > 0 {
+		matches := sessionsFromSingleWorktree(parentWorktreeMatches)
+		if matches == nil {
+			warnAmbiguousWorktreeSessions(ctx, worktreePath, parentWorktreeMatches)
+		}
+		return matches, nil
+	}
+	matches := sessionsFromSingleWorktree(commonDirMatches)
+	if matches == nil && len(commonDirMatches) > 0 {
+		warnAmbiguousWorktreeSessions(ctx, worktreePath, commonDirMatches)
+	}
+	return matches, nil
+}
+
+// warnAmbiguousWorktreeSessions surfaces refused fallback matches: live
+// sessions exist in other worktrees of this repo, but they span multiple
+// worktrees so no automatic match is safe. Without this warning, commits made
+// here silently lose their Trace-Checkpoint linkage (#1852) with only a
+// DEBUG-level trace.
+func warnAmbiguousWorktreeSessions(ctx context.Context, worktreePath string, candidates []*SessionState) {
+	logCtx := logging.WithComponent(ctx, "checkpoint")
+	seen := make(map[string]struct{}, len(candidates))
+	worktrees := make([]string, 0, len(candidates))
+	for _, state := range candidates {
+		if _, ok := seen[state.WorktreePath]; ok {
+			continue
+		}
+		seen[state.WorktreePath] = struct{}{}
+		worktrees = append(worktrees, state.WorktreePath)
+	}
+	logging.Warn(
+		logCtx, "session matching: ambiguous sessions across worktrees; commit will not be linked",
+		slog.String("commit_worktree", worktreePath),
+		slog.Int("candidate_sessions", len(candidates)),
+		slog.Any("candidate_worktrees", worktrees),
+	)
+}
+
+// sessionsFromSingleWorktree returns the candidates only when they were all
+// recorded in the same worktree. Multiple sessions in one worktree is the
+// supported concurrent-session case (matching exact-match semantics);
+// candidates spanning distinct worktrees are ambiguous, so no fallback match
+// is made rather than guessing which worktree the commit belongs to.
+func sessionsFromSingleWorktree(candidates []*SessionState) []*SessionState {
+	if len(candidates) == 0 {
+		return nil
+	}
+	first := candidates[0].WorktreePath
+	for _, state := range candidates[1:] {
+		if state.WorktreePath != first {
+			return nil
 		}
 	}
-	return matching, nil
+	return candidates
+}
+
+func gitCommonDirForWorktreeOrEmpty(ctx context.Context, worktreePath string) string {
+	commonDir, err := gitCommonDirForWorktree(ctx, worktreePath)
+	if err != nil {
+		return ""
+	}
+	return commonDir
+}
+
+func gitCommonDirForWorktree(ctx context.Context, worktreePath string) (string, error) {
+	if worktreePath == "" {
+		return "", errors.New("empty worktree path")
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", worktreePath, "rev-parse", "--git-common-dir")
+	cmd.Env = gitEnvWithoutRepoOverrides()
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git common dir for %s: %w", worktreePath, err)
+	}
+
+	commonDir := strings.TrimSpace(string(output))
+	if commonDir == "" {
+		return "", fmt.Errorf("empty git common dir for %s", worktreePath)
+	}
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(worktreePath, commonDir)
+	}
+	commonDir = filepath.Clean(commonDir)
+	if resolved, err := filepath.EvalSymlinks(commonDir); err == nil {
+		commonDir = resolved
+	}
+	return commonDir, nil
+}
+
+// gitEnvWithoutRepoOverrides returns the current environment minus git's
+// repo-selector variables. Git hooks run with GIT_DIR (and sometimes
+// GIT_WORK_TREE / GIT_INDEX_FILE) exported for the hook's own repo; inheriting
+// them would make `git -C <other-worktree>` resolve against the hook's repo
+// instead of the requested path.
+func gitEnvWithoutRepoOverrides() []string {
+	env := os.Environ()
+	filtered := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GIT_DIR=") ||
+			strings.HasPrefix(kv, "GIT_WORK_TREE=") ||
+			strings.HasPrefix(kv, "GIT_INDEX_FILE=") {
+			continue
+		}
+		filtered = append(filtered, kv)
+	}
+	return filtered
+}
+
+func isNestedWorktreeOfRecordedRepo(recordedWorktreePath, commitWorktreePath string) bool {
+	nestedWorktreesDir := filepath.Join(filepath.Clean(recordedWorktreePath), ".worktrees")
+	return paths.IsSubpath(nestedWorktreesDir, filepath.Clean(commitWorktreePath))
 }
 
 type rewritePair struct {
@@ -254,6 +435,7 @@ func (s *ManualCommitStrategy) CountOtherActiveSessionsWithCheckpoints(ctx conte
 	if err != nil {
 		return 0, err
 	}
+	defer repo.Close()
 	head, err := repo.Head()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get HEAD: %w", err)
@@ -286,21 +468,21 @@ func (s *ManualCommitStrategy) CountOtherActiveSessionsWithCheckpoints(ctx conte
 // transcriptPath is the path to the live transcript file (for mid-session commit detection).
 // userPrompt is the user's prompt text (stored truncated as LastPrompt for display).
 // model is the LLM model identifier (e.g., "claude-sonnet-4-20250514"); empty if unknown.
-func (s *ManualCommitStrategy) initializeSession(ctx context.Context, repo *git.Repository, sessionID string, agentType types.AgentType, transcriptPath string, userPrompt string, model string) (*SessionState, error) {
+func (s *ManualCommitStrategy) initializeSession(ctx context.Context, repo *git.Repository, sessionID string, agentType types.AgentType, transcriptPath string, userPrompt string, model string) error {
 	head, err := repo.Head()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get HEAD: %w", err)
+		return fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
 	worktreePath, err := paths.WorktreeRoot(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get worktree path: %w", err)
+		return fmt.Errorf("failed to get worktree path: %w", err)
 	}
 
 	// Get worktree ID for shadow branch naming
 	worktreeID, err := paths.GetWorktreeID(worktreePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get worktree ID: %w", err)
+		return fmt.Errorf("failed to get worktree ID: %w", err)
 	}
 
 	// Capture untracked files at session start to preserve them during rewind
@@ -310,13 +492,10 @@ func (s *ManualCommitStrategy) initializeSession(ctx context.Context, repo *git.
 		untrackedFiles = nil
 	}
 
-	// Collect TRACE_TAG_* environment variables as session metadata.
-	tags := session.CollectSessionTags()
-
 	// Generate TurnID for the first turn
 	turnID, err := id.Generate()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate turn ID: %w", err)
+		return fmt.Errorf("failed to generate turn ID: %w", err)
 	}
 
 	now := time.Now()
@@ -337,14 +516,26 @@ func (s *ManualCommitStrategy) initializeSession(ctx context.Context, repo *git.
 		ModelName:             model,
 		TranscriptPath:        transcriptPath,
 		LastPrompt:            truncatePromptForStorage(userPrompt),
-		Metadata:              tags,
 	}
 
-	if err := s.saveSessionState(ctx, state); err != nil {
-		return nil, err
+	// Take the gate, then re-check under lock. Without this re-check a
+	// concurrent turn-start hook that wrote a richer state in the gap
+	// between our caller's existence check and our save would have its
+	// fields (TranscriptPath, LastPrompt, ModelName, accumulated TurnID)
+	// overwritten with blanks here.
+	_, _, release, lockErr := acquireSessionGate(ctx, sessionID)
+	if lockErr != nil {
+		return fmt.Errorf("acquire state lock: %w", lockErr)
 	}
-
-	return state, nil
+	defer release()
+	existing, loadErr := s.loadSessionState(ctx, sessionID)
+	if loadErr != nil {
+		return fmt.Errorf("re-load session state under lock: %w", loadErr)
+	}
+	if existing != nil && existing.BaseCommit != "" {
+		return nil
+	}
+	return s.saveSessionState(ctx, state)
 }
 
 // getShadowBranchNameForCommit returns the shadow branch name for the given base commit and worktree ID.

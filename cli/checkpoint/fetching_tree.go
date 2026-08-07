@@ -17,6 +17,27 @@ import (
 // BlobFetchFunc fetches missing blob objects by hash from a remote.
 type BlobFetchFunc func(ctx context.Context, hashes []plumbing.Hash) error
 
+// RefFetchFunc fetches a single checkpoint ref from the remote into the local
+// ref of the same name. The git-refs store uses it to resolve a checkpoint ref
+// that is not present locally (e.g. written on another machine). The checkpoint
+// package cannot resolve the remote target itself, so the CLI layer injects it.
+type RefFetchFunc func(ctx context.Context, ref plumbing.ReferenceName) error
+
+// RemoteRefListFunc enumerates the per-checkpoint refs present on the configured
+// checkpoint remote (names only, via `ls-remote refs/entire/checkpoints/*` — no
+// object transfer), returning their full ref names. The git-refs store uses it
+// in List to discover checkpoints written on another machine that have no local
+// ref yet; each discovered checkpoint is then hydrated lazily on read via
+// RefFetchFunc. The checkpoint package cannot resolve the remote target itself,
+// so the CLI layer injects it.
+//
+// Scope is stricter than the on-demand read fetch: with no checkpoint_remote
+// configured the lister returns (nil, nil) and List stays local-only. The
+// on-demand fetch (FetchURL) falls back to origin in that case. When a
+// checkpoint_remote is configured the lister queries the resolved checkpoint
+// URL (which can still fall through to origin in FetchURL edge cases).
+type RemoteRefListFunc func(ctx context.Context) ([]plumbing.ReferenceName, error)
+
 // FetchingTree wraps a git tree to automatically fetch missing blobs on demand.
 // After a treeless fetch (--filter=blob:none), tree objects are available locally
 // but blob objects are not. Each File() call checks whether the target blob
@@ -174,7 +195,7 @@ func (t *FetchingTree) collectMissingBlobs(tree *object.Tree) []plumbing.Hash {
 // disk but invisible to go-git's storer (filtered out, or in a packfile
 // not in the cached index). We'd rather skip a wasted network round-trip.
 func (t *FetchingTree) blobOnDisk(hash plumbing.Hash) bool {
-	cmd := exec.CommandContext(t.ctx, "git", "cat-file", "-e", hash.String()) // #nosec G204 -- fixed "git" binary; hash.String() is an internally resolved object hash, not remote input
+	cmd := exec.CommandContext(t.ctx, "git", "cat-file", "-e", hash.String())
 	return cmd.Run() == nil
 }
 
@@ -182,7 +203,7 @@ func (t *FetchingTree) blobOnDisk(hash plumbing.Hash) bool {
 // in-memory *object.File. This bypasses go-git's storer which may have a
 // stale packfile index after external git commands fetched new objects.
 func (t *FetchingTree) readFileViaGit(path string, entry *object.TreeEntry) (*object.File, error) {
-	cmd := exec.CommandContext(t.ctx, "git", "cat-file", "-p", entry.Hash.String()) // #nosec G204 -- fixed "git" binary; entry.Hash.String() is an internally resolved object hash, not remote input
+	cmd := exec.CommandContext(t.ctx, "git", "cat-file", "-p", entry.Hash.String())
 	content, cmdErr := cmd.Output()
 	if cmdErr != nil {
 		logging.Warn(
@@ -242,18 +263,6 @@ func (t *FetchingTree) Tree(path string) (*FetchingTree, error) {
 // RawEntries returns the direct tree entries (no blob reads needed).
 func (t *FetchingTree) RawEntries() []object.TreeEntry {
 	return t.inner.Entries
-}
-
-// Unwrap returns the underlying *object.Tree.
-func (t *FetchingTree) Unwrap() *object.Tree {
-	return t.inner
-}
-
-// Files returns a recursive file iterator from the underlying tree.
-// Warning: after a treeless fetch, this iterator will fail when it tries
-// to resolve blob objects. Use File() for on-demand blob fetching instead.
-func (t *FetchingTree) Files() *object.FileIter {
-	return t.inner.Files()
 }
 
 // FileReader provides read access to files within a git tree.

@@ -2,21 +2,19 @@ package strategy
 
 import (
 	"context"
-	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/GrayCodeAI/trace/cli/agent"
 	_ "github.com/GrayCodeAI/trace/cli/agent/claudecode"
+	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
-	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/testutil"
-	"github.com/GrayCodeAI/trace/cli/vercelconfig"
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -161,411 +159,6 @@ func TestIsProtectedPath(t *testing.T) {
 			}
 		})
 	}
-}
-
-// initBareWithMetadataBranch creates a bare repo with a main branch and an
-// trace/checkpoints/v1 branch containing checkpoint data via git CLI.
-func initBareWithMetadataBranch(t *testing.T) string {
-	t.Helper()
-	bareDir := t.TempDir()
-
-	// Init bare, create main branch with a commit
-	workDir := t.TempDir()
-	run := func(dir string, args ...string) {
-		cmd := exec.CommandContext(context.Background(), "git", args...)
-		cmd.Dir = dir
-		cmd.Env = testutil.GitIsolatedEnv()
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v failed: %v\n%s", args, err, out)
-		}
-	}
-	run(bareDir, "init", "--bare", "-b", "main")
-	run(workDir, "clone", bareDir, ".")
-	run(workDir, "config", "user.email", "test@test.com")
-	run(workDir, "config", "user.name", "Test User")
-	run(workDir, "config", "commit.gpgsign", "false")
-	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("# Test"), 0o644); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
-	run(workDir, "add", ".")
-	run(workDir, "commit", "-m", "init")
-	run(workDir, "push", "origin", "main")
-
-	// Create orphan trace/checkpoints/v1 with data
-	run(workDir, "checkout", "--orphan", paths.MetadataBranchName)
-	run(workDir, "rm", "-rf", ".")
-	if err := os.WriteFile(filepath.Join(workDir, "metadata.json"), []byte(`{"checkpoint_id":"test123"}`), 0o644); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
-	run(workDir, "add", ".")
-	run(workDir, "commit", "-m", "Checkpoint: test123")
-	run(workDir, "push", "origin", paths.MetadataBranchName)
-
-	return bareDir
-}
-
-func TestEnsureMetadataBranch(t *testing.T) {
-	t.Parallel()
-
-	t.Run("creates from remote on fresh clone", func(t *testing.T) {
-		bareDir := initBareWithMetadataBranch(t)
-		cloneDir := filepath.Join(t.TempDir(), "clone")
-		cmd := exec.CommandContext(context.Background(), "git", "clone", bareDir, cloneDir)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("clone failed: %v\n%s", err, out)
-		}
-
-		repo, err := git.PlainOpen(cloneDir)
-		if err != nil {
-			t.Fatalf("failed to open repo: %v", err)
-		}
-
-		if err := EnsureMetadataBranch(repo); err != nil {
-			t.Fatalf("EnsureMetadataBranch() failed: %v", err)
-		}
-
-		// Local branch should exist with data (not empty)
-		ref, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
-		if err != nil {
-			t.Fatalf("local branch not found: %v", err)
-		}
-		commit, err := repo.CommitObject(ref.Hash())
-		if err != nil {
-			t.Fatalf("failed to get commit: %v", err)
-		}
-		tree, err := commit.Tree()
-		if err != nil {
-			t.Fatalf("failed to get tree: %v", err)
-		}
-		if len(tree.Entries) == 0 {
-			t.Error("local branch has empty tree — remote data was not preserved")
-		}
-	})
-
-	t.Run("updates empty orphan from remote", func(t *testing.T) {
-		t.Parallel()
-		bareDir := initBareWithMetadataBranch(t)
-		cloneDir := filepath.Join(t.TempDir(), "clone")
-		cmd := exec.CommandContext(context.Background(), "git", "clone", bareDir, cloneDir)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("clone failed: %v\n%s", err, out)
-		}
-
-		repo, err := git.PlainOpen(cloneDir)
-		if err != nil {
-			t.Fatalf("failed to open repo: %v", err)
-		}
-
-		// Create an empty orphan locally (simulates old enable behavior)
-		emptyTree := &object.Tree{Entries: []object.TreeEntry{}}
-		treeObj := repo.Storer.NewEncodedObject()
-		if err := emptyTree.Encode(treeObj); err != nil {
-			t.Fatalf("failed to encode tree: %v", err)
-		}
-		treeHash, err := repo.Storer.SetEncodedObject(treeObj)
-		if err != nil {
-			t.Fatalf("failed to store tree: %v", err)
-		}
-		orphan := &object.Commit{
-			TreeHash: treeHash,
-			Author:   object.Signature{Name: "Test", Email: "test@test.com"},
-			Message:  "Initialize metadata branch\n",
-		}
-		orphanObj := repo.Storer.NewEncodedObject()
-		if err := orphan.Encode(orphanObj); err != nil {
-			t.Fatalf("failed to encode commit: %v", err)
-		}
-		orphanHash, err := repo.Storer.SetEncodedObject(orphanObj)
-		if err != nil {
-			t.Fatalf("failed to store commit: %v", err)
-		}
-		refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-		if err := repo.Storer.SetReference(plumbing.NewHashReference(refName, orphanHash)); err != nil {
-			t.Fatalf("failed to set ref: %v", err)
-		}
-
-		if err := EnsureMetadataBranch(repo); err != nil {
-			t.Fatalf("EnsureMetadataBranch() failed: %v", err)
-		}
-
-		// Should have been updated from remote — no longer empty
-		ref, err := repo.Reference(refName, true)
-		if err != nil {
-			t.Fatalf("local branch not found: %v", err)
-		}
-		if ref.Hash() == orphanHash {
-			t.Error("local branch still points to empty orphan — was not updated from remote")
-		}
-	})
-
-	t.Run("creates empty orphan when no remote", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		initTestRepo(t, dir)
-		repo, err := git.PlainOpen(dir)
-		if err != nil {
-			t.Fatalf("failed to open repo: %v", err)
-		}
-		if err := EnsureMetadataBranch(repo); err != nil {
-			t.Fatalf("EnsureMetadataBranch() failed: %v", err)
-		}
-
-		ref, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
-		if err != nil {
-			t.Fatalf("branch not found: %v", err)
-		}
-		commit, err := repo.CommitObject(ref.Hash())
-		if err != nil {
-			t.Fatalf("failed to get commit: %v", err)
-		}
-		tree, err := commit.Tree()
-		if err != nil {
-			t.Fatalf("failed to get tree: %v", err)
-		}
-		if len(tree.Entries) != 0 {
-			t.Errorf("expected empty tree, got %d entries", len(tree.Entries))
-		}
-	})
-}
-
-func TestEnsureMetadataBranch_WritesVercelConfigWhenEnabled(t *testing.T) {
-	vercelconfig.ResetSettingsCache()
-	t.Cleanup(vercelconfig.ResetSettingsCache)
-
-	dir := t.TempDir()
-	initTestRepo(t, dir)
-	if err := os.MkdirAll(filepath.Join(dir, ".trace"), 0o755); err != nil {
-		t.Fatalf("mkdir .trace: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ".trace", "settings.json"), []byte(`{"enabled":true,"vercel":true}`), 0o644); err != nil {
-		t.Fatalf("write settings.json: %v", err)
-	}
-
-	repo, err := git.PlainOpen(dir)
-	if err != nil {
-		t.Fatalf("failed to open repo: %v", err)
-	}
-	t.Chdir(dir)
-	if err := vercelconfig.InitSettings(context.Background()); err != nil {
-		t.Fatalf("InitSettings() failed: %v", err)
-	}
-
-	if err := EnsureMetadataBranch(repo); err != nil {
-		t.Fatalf("EnsureMetadataBranch() failed: %v", err)
-	}
-
-	ref, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
-	if err != nil {
-		t.Fatalf("branch not found: %v", err)
-	}
-	commit, err := repo.CommitObject(ref.Hash())
-	if err != nil {
-		t.Fatalf("failed to get commit: %v", err)
-	}
-	tree, err := commit.Tree()
-	if err != nil {
-		t.Fatalf("failed to get tree: %v", err)
-	}
-	file, err := tree.File(vercelconfig.FileName)
-	if err != nil {
-		t.Fatalf("expected %s on metadata branch: %v", vercelconfig.FileName, err)
-	}
-	content, err := file.Contents()
-	if err != nil {
-		t.Fatalf("read %s: %v", vercelconfig.FileName, err)
-	}
-	var config map[string]any
-	if err := json.Unmarshal([]byte(content), &config); err != nil {
-		t.Fatalf("parse %s: %v", vercelconfig.FileName, err)
-	}
-	if !vercelconfig.DeploymentDisabled(config) {
-		t.Fatalf("expected %s to disable %s, got %s", vercelconfig.FileName, vercelconfig.BranchPattern, content)
-	}
-}
-
-// cloneWithConfig clones bareDir into a new temp directory, configures git identity,
-// and returns the clone path and a git runner function.
-func cloneWithConfig(t *testing.T, bareDir string) (string, func(args ...string)) {
-	t.Helper()
-	cloneDir := filepath.Join(t.TempDir(), "clone")
-	cmd := exec.CommandContext(context.Background(), "git", "clone", bareDir, cloneDir)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("clone failed: %v\n%s", err, out)
-	}
-	run := func(args ...string) {
-		cmd := exec.CommandContext(context.Background(), "git", args...)
-		cmd.Dir = cloneDir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v failed: %v\n%s", args, err, out)
-		}
-	}
-	run("config", "user.email", "test@test.com")
-	run("config", "user.name", "Test User")
-	run("config", "commit.gpgsign", "false")
-	return cloneDir, run
-}
-
-func TestEnsureMetadataBranch_DisconnectedBranchesNotReconciledInEnable(t *testing.T) {
-	t.Parallel()
-
-	bareDir := initBareWithMetadataBranch(t)
-	cloneDir, run := cloneWithConfig(t, bareDir)
-
-	// Create a disconnected local branch with different checkpoint data
-	run("checkout", "--orphan", "temp-orphan")
-	run("rm", "-rf", ".")
-	localCheckpointDir := filepath.Join(cloneDir, "ab", "cdef012345")
-	if err := os.MkdirAll(localCheckpointDir, 0o755); err != nil {
-		t.Fatalf("failed to create dir: %v", err)
-	}
-	if err := os.WriteFile(
-		filepath.Join(localCheckpointDir, "metadata.json"),
-		[]byte(`{"checkpoint_id":"abcdef012345"}`), 0o644,
-	); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
-	run("add", ".")
-	run("commit", "-m", "Checkpoint: abcdef012345")
-	run("branch", "-f", paths.MetadataBranchName, "temp-orphan")
-
-	repo, err := git.PlainOpen(cloneDir)
-	if err != nil {
-		t.Fatalf("failed to open repo: %v", err)
-	}
-
-	// Get local ref hash before EnsureMetadataBranch
-	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-	localRefBefore, err := repo.Reference(refName, true)
-	if err != nil {
-		t.Fatalf("local branch not found: %v", err)
-	}
-
-	if err := EnsureMetadataBranch(repo); err != nil {
-		t.Fatalf("EnsureMetadataBranch() failed: %v", err)
-	}
-
-	// EnsureMetadataBranch should NOT reconcile disconnected branches.
-	// Reconciliation happens at pre-push time or via 'trace doctor'.
-	// The local branch should be unchanged.
-	localRefAfter, err := repo.Reference(refName, true)
-	if err != nil {
-		t.Fatalf("local branch not found: %v", err)
-	}
-	if localRefAfter.Hash() != localRefBefore.Hash() {
-		t.Error("EnsureMetadataBranch should not modify disconnected local branch with real data")
-	}
-}
-
-func TestEnsureMetadataBranch_DoesNotFastForwardWhenBehind(t *testing.T) {
-	t.Parallel()
-
-	bareDir := initBareWithMetadataBranch(t)
-	cloneDir, run := cloneWithConfig(t, bareDir)
-
-	// Create local branch from remote (normal state)
-	repo, err := git.PlainOpen(cloneDir)
-	if err != nil {
-		t.Fatalf("failed to open repo: %v", err)
-	}
-	if err := EnsureMetadataBranch(repo); err != nil {
-		t.Fatalf("first EnsureMetadataBranch() failed: %v", err)
-	}
-
-	// Remember current local hash
-	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-	localBefore, err := repo.Reference(refName, true)
-	if err != nil {
-		t.Fatalf("local branch not found: %v", err)
-	}
-
-	// Add a second checkpoint to the remote (simulates another machine pushing)
-	run("checkout", paths.MetadataBranchName)
-	secondDir := filepath.Join(cloneDir, "cd", "ef01234567")
-	if err := os.MkdirAll(secondDir, 0o755); err != nil {
-		t.Fatalf("failed to create dir: %v", err)
-	}
-	if err := os.WriteFile(
-		filepath.Join(secondDir, "metadata.json"),
-		[]byte(`{"checkpoint_id":"cdef01234567"}`), 0o644,
-	); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
-	run("add", ".")
-	run("commit", "-m", "Checkpoint: cdef01234567")
-	run("push", "origin", paths.MetadataBranchName)
-
-	// Reset local branch back to the old commit (local is now behind remote)
-	if err := repo.Storer.SetReference(
-		plumbing.NewHashReference(refName, localBefore.Hash()),
-	); err != nil {
-		t.Fatalf("failed to reset ref: %v", err)
-	}
-
-	// Re-open to clear caches
-	repo, err = git.PlainOpen(cloneDir)
-	if err != nil {
-		t.Fatalf("failed to reopen repo: %v", err)
-	}
-
-	if err := EnsureMetadataBranch(repo); err != nil {
-		t.Fatalf("second EnsureMetadataBranch() failed: %v", err)
-	}
-
-	// EnsureMetadataBranch no longer fast-forwards diverged branches (handled by push path).
-	// Local should be unchanged since it has real data and shares ancestry with remote.
-	localAfter, err := repo.Reference(refName, true)
-	if err != nil {
-		t.Fatalf("local branch not found: %v", err)
-	}
-	if localAfter.Hash() != localBefore.Hash() {
-		t.Error("EnsureMetadataBranch should not modify local branch with shared ancestry")
-	}
-}
-
-// buildCommittedTree creates a git tree with the sharded committed checkpoint layout
-// used by trace/checkpoints/v1. files is a map of path -> content relative to the tree root.
-// Example: {"a3/b2c4d5e6f7/0/prompt.txt": "Hello"} creates the nested directory structure.
-func buildCommittedTree(t *testing.T, files map[string]string) *object.Tree {
-	t.Helper()
-	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
-	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
-	}
-
-	for path, content := range files {
-		absPath := filepath.Join(dir, path)
-		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-			t.Fatalf("failed to create directory for %s: %v", path, err)
-		}
-		if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
-			t.Fatalf("failed to write %s: %v", path, err)
-		}
-	}
-
-	wt, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("failed to get worktree: %v", err)
-	}
-	if _, err := wt.Add("."); err != nil {
-		t.Fatalf("failed to add files: %v", err)
-	}
-	commitHash, err := wt.Commit("test tree", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@test.com"},
-	})
-	if err != nil {
-		t.Fatalf("failed to commit: %v", err)
-	}
-
-	commit, err := repo.CommitObject(commitHash)
-	if err != nil {
-		t.Fatalf("failed to get commit: %v", err)
-	}
-	tree, err := commit.Tree()
-	if err != nil {
-		t.Fatalf("failed to get tree: %v", err)
-	}
-	return tree
 }
 
 func TestReadLatestSessionPromptFromCommittedTree(t *testing.T) {
@@ -808,4 +401,42 @@ func TestReadAgentTypeFromTree_OnlyGemini(t *testing.T) {
 	tree := openRepoHeadTree(t, dir)
 	result := ReadAgentTypeFromTree(tree, "nonexistent-path")
 	assert.Equal(t, agent.AgentTypeGemini, result)
+}
+
+// buildCommittedTree builds a committed tree from a path→content map and
+// returns the resulting *object.Tree. Paths may be nested (e.g.
+// "a3/b2c4d5e6f7/0/prompt.txt").
+func buildCommittedTree(t *testing.T, fileContents map[string]string) *object.Tree {
+	t.Helper()
+
+	repo, err := git.PlainInit(t.TempDir(), false)
+	require.NoError(t, err)
+
+	entries := make(map[string]object.TreeEntry, len(fileContents))
+	for filePath, content := range fileContents {
+		blob := repo.Storer.NewEncodedObject()
+		blob.SetType(plumbing.BlobObject)
+		blob.SetSize(int64(len(content)))
+		writer, err := blob.Writer()
+		require.NoError(t, err)
+		_, err = writer.Write([]byte(content))
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+
+		blobHash, err := repo.Storer.SetEncodedObject(blob)
+		require.NoError(t, err)
+
+		entries[filePath] = object.TreeEntry{
+			Name: filePath,
+			Mode: filemode.Regular,
+			Hash: blobHash,
+		}
+	}
+
+	treeHash, err := checkpoint.BuildTreeFromEntries(context.Background(), repo, entries)
+	require.NoError(t, err)
+
+	tree, err := repo.TreeObject(treeHash)
+	require.NoError(t, err)
+	return tree
 }

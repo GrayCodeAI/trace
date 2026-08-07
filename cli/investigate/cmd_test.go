@@ -411,7 +411,7 @@ func TestNewCommand_FreshRunRejectsAgentWithoutHooks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when configured agent has no hooks")
 	}
-	if !strings.Contains(errBuf.String(), "entire configure --agent") {
+	if !strings.Contains(errBuf.String(), "trace configure --agent") {
 		t.Errorf("stderr should hint at `entire configure --agent`, got: %s", errBuf.String())
 	}
 }

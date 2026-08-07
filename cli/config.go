@@ -109,6 +109,17 @@ func InstalledAgentDisplayNames(ctx context.Context) []string {
 	return displayNames
 }
 
+// agentDisplayNames maps agent names to their display names.
+func agentDisplayNames(names []types.AgentName) []string {
+	displayNames := make([]string, 0, len(names))
+	for _, name := range names {
+		if ag, err := agent.Get(name); err == nil {
+			displayNames = append(displayNames, string(ag.Type()))
+		}
+	}
+	return displayNames
+}
+
 // JoinAgentNames joins agent names into a comma-separated string.
 func JoinAgentNames(names []types.AgentName) string {
 	strs := make([]string, len(names))

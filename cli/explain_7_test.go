@@ -258,7 +258,7 @@ func TestFormatCheckpointOutput_WithAssociatedCommits(t *testing.T) {
 		FilesTouched: []string{"main.go"},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:              "abc123def456",
 			SessionID:                 "2026-02-04-test-session",
 			CreatedAt:                 time.Date(2026, 2, 4, 10, 30, 0, 0, time.UTC),
@@ -286,7 +286,7 @@ func TestFormatCheckpointOutput_WithAssociatedCommits(t *testing.T) {
 		},
 	}
 
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), associatedCommits, checkpoint.Author{}, true, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), associatedCommits, checkpoint.Author{}, true, false, &bytes.Buffer{})
 
 	// Should show commits section with count
 	if !strings.Contains(output, "  commits  (2)") {
@@ -731,7 +731,7 @@ func TestFormatCheckpointOutput_NoCommitsOnBranch(t *testing.T) {
 		FilesTouched: []string{"main.go"},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:              "abc123def456",
 			SessionID:                 "2026-02-04-test-session",
 			CreatedAt:                 time.Date(2026, 2, 4, 10, 30, 0, 0, time.UTC),
@@ -745,7 +745,7 @@ func TestFormatCheckpointOutput_NoCommitsOnBranch(t *testing.T) {
 	// No associated commits - use empty slice (not nil) to indicate "searched but found none"
 	associatedCommits := []associatedCommit{}
 
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), associatedCommits, checkpoint.Author{}, true, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), associatedCommits, checkpoint.Author{}, true, false, &bytes.Buffer{})
 
 	// Should show message indicating no commits found
 	if !strings.Contains(output, "  commits  (none on this branch)") {

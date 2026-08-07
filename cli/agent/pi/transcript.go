@@ -14,6 +14,7 @@ var (
 	_ agent.TokenCalculator    = (*PiAgent)(nil)
 	_ agent.TranscriptAnalyzer = (*PiAgent)(nil)
 	_ agent.PromptExtractor    = (*PiAgent)(nil)
+	_ agent.ModelExtractor     = (*PiAgent)(nil)
 )
 
 // CalculateTokenUsage sums per-assistant-message token usage from a Pi JSONL
@@ -53,6 +54,38 @@ func (a *PiAgent) CalculateTokenUsage(transcriptData []byte, fromOffset int) (*a
 		return usage, fmt.Errorf("pi transcript scanner: %w", err)
 	}
 	return usage, nil
+}
+
+// ExtractModel returns the model identifier from the most recent assistant
+// message on the active conversation branch. Pi records the model on every
+// assistant message (message.model, e.g. "gpt-5.5") but never reports it through
+// hooks, so the transcript is the only source. Using the most recent message
+// reflects mid-session model changes. Returns "" when no active-branch assistant
+// message carries a model.
+func (a *PiAgent) ExtractModel(transcriptData []byte) (string, error) {
+	model := ""
+	if len(transcriptData) == 0 {
+		return model, nil
+	}
+	active := pijsonl.ResolveActiveBranch(transcriptData)
+	scanner := pijsonl.NewScanner(transcriptData)
+	for scanner.Scan() {
+		var entry pijsonl.Entry
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			continue
+		}
+		if entry.Type != pijsonl.EntryTypeMessage || entry.Message.Role != pijsonl.RoleAssistant || entry.Message.Model == "" {
+			continue
+		}
+		if active != nil && !active[entry.ID] {
+			continue
+		}
+		model = entry.Message.Model
+	}
+	if err := scanner.Err(); err != nil {
+		return model, fmt.Errorf("pi transcript scanner: %w", err)
+	}
+	return model, nil
 }
 
 // GetTranscriptPosition returns the JSONL line count of the file at path.

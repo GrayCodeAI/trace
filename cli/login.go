@@ -12,10 +12,21 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/GrayCodeAI/trace/cli/api"
 	"github.com/GrayCodeAI/trace/cli/auth"
 	"github.com/GrayCodeAI/trace/cli/interactive"
 	"github.com/spf13/cobra"
 )
+
+// requireSecureBaseURL returns an error when the effective base URL uses
+// insecure HTTP and the user has not explicitly allowed it via
+// --insecure-http-auth.
+func requireSecureBaseURL(insecureHTTPAuth bool) error {
+	if insecureHTTPAuth {
+		return nil
+	}
+	return api.RequireSecureURL(api.BaseURL())
+}
 
 const (
 	fallbackDeviceAuthPollInterval = time.Second

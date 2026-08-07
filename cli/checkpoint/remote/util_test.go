@@ -124,10 +124,10 @@ func TestFetchURL_EdgeCases(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name:         "unsupported origin protocol without token falls back to origin",
+			name:         "unsupported origin protocol without token routes to provider ssh",
 			addOrigin:    true,
 			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
-			wantURL:      "",
+			wantURL:      "git@github.com:acme/checkpoints.git",
 		},
 		{
 			name:         "unsupported origin protocol with token returns https checkpoint url",

@@ -24,6 +24,13 @@ import (
 	reviewtypes "github.com/GrayCodeAI/trace/cli/review/types"
 )
 
+const (
+	reviewTrailGranularityWholeChange = "whole_change"
+	reviewTrailGranularityFile        = "file"
+	reviewTrailGranularityLine        = "line"
+	reviewTrailGranularityRange       = "range"
+)
+
 // buildReviewDeps builds the review.Deps struct used by review.NewCommand.
 // attachCmd is the cobra.Command for `trace review attach`; pass nil in
 // tests that don't need the subcommand.

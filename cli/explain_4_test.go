@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -14,68 +13,7 @@ import (
 	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
-	"github.com/GrayCodeAI/trace/cli/testutil"
-	"github.com/GrayCodeAI/trace/redact"
-	"github.com/go-git/go-git/v6"
-	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/stretchr/testify/require"
 )
-
-func TestListCommittedForExplain_V2Disabled_ReturnsV1Only(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testutil.InitRepo(t, tmpDir)
-	repo, err := git.PlainOpen(tmpDir)
-	require.NoError(t, err)
-
-	wt, err := repo.Worktree()
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "f.txt"), []byte("x"), 0o644))
-	_, err = wt.Add("f.txt")
-	require.NoError(t, err)
-	_, err = wt.Commit("init", &git.CommitOptions{
-		Author: &object.Signature{Name: "T", Email: "t@t.com", When: time.Now()},
-	})
-	require.NoError(t, err)
-
-	v1Store := checkpoint.NewGitStore(repo)
-	v2Store := checkpoint.NewV2GitStore(repo, "origin")
-	ctx := context.Background()
-
-	transcript := []byte(`{"type":"user","message":{"content":[{"type":"text","text":"hello"}]}}` + "\n")
-
-	v1ID := id.MustCheckpointID("ccc777888999")
-	require.NoError(t, v1Store.WriteCommitted(ctx, checkpoint.WriteCommittedOptions{
-		CheckpointID: v1ID,
-		SessionID:    "session-v1",
-		Strategy:     "manual-commit",
-		Transcript:   redact.AlreadyRedacted(transcript),
-		AuthorName:   "T",
-		AuthorEmail:  "t@t.com",
-	}))
-
-	// v2 also has a checkpoint, but v2 is disabled — should only see v1.
-	v2ID := id.MustCheckpointID("ddd000111222")
-	require.NoError(t, v2Store.WriteCommitted(ctx, checkpoint.WriteCommittedOptions{
-		CheckpointID: v2ID,
-		SessionID:    "session-v2",
-		Strategy:     "manual-commit",
-		Transcript:   redact.AlreadyRedacted(transcript),
-		AuthorName:   "T",
-		AuthorEmail:  "t@t.com",
-	}))
-
-	results, err := listCommittedForExplain(ctx, v1Store, v2Store, false)
-	require.NoError(t, err)
-
-	foundIDs := make(map[id.CheckpointID]bool)
-	for _, r := range results {
-		foundIDs[r.CheckpointID] = true
-	}
-	require.True(t, foundIDs[v1ID], "v1 checkpoint should be returned")
-	require.False(t, foundIDs[v2ID], "v2-only checkpoint should NOT appear when v2 is disabled")
-}
 
 func TestFormatCheckpointOutput_Short(t *testing.T) {
 	summary := &checkpoint.CheckpointSummary{
@@ -88,7 +26,7 @@ func TestFormatCheckpointOutput_Short(t *testing.T) {
 		},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:     "abc123def456",
 			SessionID:        "2026-01-21-test-session",
 			CreatedAt:        time.Date(2026, 1, 21, 10, 30, 0, 0, time.UTC),
@@ -103,7 +41,7 @@ func TestFormatCheckpointOutput_Short(t *testing.T) {
 	}
 
 	// Default mode: empty commit message (not shown anyway in default mode)
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, false, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, false, false, &bytes.Buffer{})
 
 	// Should show checkpoint ID
 	if !strings.Contains(output, "abc123def456") {
@@ -157,7 +95,7 @@ func TestFormatCheckpointOutput_Verbose(t *testing.T) {
 		},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:              "abc123def456",
 			SessionID:                 "2026-01-21-test-session",
 			CreatedAt:                 time.Date(2026, 1, 21, 10, 30, 0, 0, time.UTC),
@@ -173,7 +111,7 @@ func TestFormatCheckpointOutput_Verbose(t *testing.T) {
 		Transcript: transcriptContent,
 	}
 
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
 
 	// Should show checkpoint ID (like default)
 	if !strings.Contains(output, "abc123def456") {
@@ -213,7 +151,7 @@ func TestFormatCheckpointOutput_Verbose_NoCommitMessage(t *testing.T) {
 		FilesTouched:     []string{"main.go"},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:     "abc123def456",
 			SessionID:        "2026-01-21-test-session",
 			CreatedAt:        time.Date(2026, 1, 21, 10, 30, 0, 0, time.UTC),
@@ -224,7 +162,7 @@ func TestFormatCheckpointOutput_Verbose_NoCommitMessage(t *testing.T) {
 	}
 
 	// When commit message is empty, should not show Commit section
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
 
 	if strings.Contains(output, "  commits") {
 		t.Error("verbose output should not show Commits section when nil (not searched)")
@@ -246,7 +184,7 @@ func TestFormatCheckpointOutput_Full(t *testing.T) {
 		},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:     "abc123def456",
 			SessionID:        "2026-01-21-test-session",
 			CreatedAt:        time.Date(2026, 1, 21, 10, 30, 0, 0, time.UTC),
@@ -261,7 +199,7 @@ func TestFormatCheckpointOutput_Full(t *testing.T) {
 		Transcript: []byte(transcriptData),
 	}
 
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, false, true, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, false, true, &bytes.Buffer{})
 
 	// Should show checkpoint ID (like default)
 	if !strings.Contains(output, "abc123def456") {
@@ -291,7 +229,7 @@ func TestFormatCheckpointOutput_WithSummary(t *testing.T) {
 		FilesTouched: []string{"file1.go", "file2.go"},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID: cpID,
 			SessionID:    "2026-01-22-test-session",
 			CreatedAt:    time.Date(2026, 1, 22, 10, 30, 0, 0, time.UTC),
@@ -312,7 +250,7 @@ func TestFormatCheckpointOutput_WithSummary(t *testing.T) {
 	}
 
 	// Test default output (non-verbose) with summary
-	output := formatCheckpointOutput(summary, content, cpID, nil, checkpoint.Author{}, false, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, cpID, nil, checkpoint.Author{}, false, false, &bytes.Buffer{})
 
 	// Should show AI-generated intent and outcome as markdown.
 	if !strings.Contains(output, "## Intent\n\nImplement user authentication") {
@@ -327,7 +265,7 @@ func TestFormatCheckpointOutput_WithSummary(t *testing.T) {
 	}
 
 	// Test verbose output with summary
-	verboseOutput := formatCheckpointOutput(summary, content, cpID, nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
+	verboseOutput := formatCheckpointOutput(context.Background(), summary, content, cpID, nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
 
 	// Verbose should show learnings sections
 	if !strings.Contains(verboseOutput, "## Learnings") {
@@ -362,7 +300,7 @@ func TestFormatCheckpointOutput_SummaryStartsAfterTightHeaderRule(t *testing.T) 
 	cpID := id.MustCheckpointID("abc123456789")
 	summary := &checkpoint.CheckpointSummary{CheckpointID: cpID}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID: cpID,
 			SessionID:    "2026-01-22-test-session",
 			CreatedAt:    time.Date(2026, 1, 22, 10, 30, 0, 0, time.UTC),
@@ -373,7 +311,7 @@ func TestFormatCheckpointOutput_SummaryStartsAfterTightHeaderRule(t *testing.T) 
 		},
 	}
 
-	output := formatCheckpointOutput(summary, content, cpID, nil, checkpoint.Author{}, false, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, cpID, nil, checkpoint.Author{}, false, false, &bytes.Buffer{})
 	rule := strings.Repeat("─", 60)
 	want := "  created  2026-01-22 10:30:00\n" + rule + "\n## Intent"
 
@@ -576,7 +514,7 @@ func TestFormatCheckpointHeader_FullMetadataPlain(t *testing.T) {
 	summary := &checkpoint.CheckpointSummary{
 		TokenUsage: &agent.TokenUsage{InputTokens: 18432},
 	}
-	meta := checkpoint.CommittedMetadata{
+	meta := checkpoint.Metadata{
 		SessionID: "2026-04-29-7f3c1a",
 		CreatedAt: time.Date(2026, 4, 29, 14, 22, 8, 0, time.UTC),
 	}
@@ -609,7 +547,7 @@ func TestFormatCheckpointHeader_NoAuthor(t *testing.T) {
 	t.Parallel()
 
 	cpID := id.MustCheckpointID("a3b2c4d5e6f7")
-	meta := checkpoint.CommittedMetadata{
+	meta := checkpoint.Metadata{
 		SessionID: "s",
 		CreatedAt: time.Date(2026, 4, 29, 14, 22, 8, 0, time.UTC),
 	}
@@ -626,7 +564,7 @@ func TestFormatCheckpointHeader_NoCommits(t *testing.T) {
 	t.Parallel()
 
 	cpID := id.MustCheckpointID("a3b2c4d5e6f7")
-	meta := checkpoint.CommittedMetadata{
+	meta := checkpoint.Metadata{
 		SessionID: "s",
 		CreatedAt: time.Date(2026, 4, 29, 14, 22, 8, 0, time.UTC),
 	}
@@ -643,7 +581,7 @@ func TestFormatCheckpointHeader_MultipleCommits(t *testing.T) {
 	t.Parallel()
 
 	cpID := id.MustCheckpointID("a3b2c4d5e6f7")
-	meta := checkpoint.CommittedMetadata{
+	meta := checkpoint.Metadata{
 		SessionID: "s",
 		CreatedAt: time.Date(2026, 4, 29, 14, 22, 8, 0, time.UTC),
 	}
@@ -670,7 +608,7 @@ func TestFormatCheckpointHeader_EmptyCommitsSlice(t *testing.T) {
 	t.Parallel()
 
 	cpID := id.MustCheckpointID("a3b2c4d5e6f7")
-	meta := checkpoint.CommittedMetadata{
+	meta := checkpoint.Metadata{
 		SessionID: "s",
 		CreatedAt: time.Date(2026, 4, 29, 14, 22, 8, 0, time.UTC),
 	}
@@ -687,7 +625,7 @@ func TestFormatCheckpointHeader_NoTokenUsage(t *testing.T) {
 	t.Parallel()
 
 	cpID := id.MustCheckpointID("a3b2c4d5e6f7")
-	meta := checkpoint.CommittedMetadata{
+	meta := checkpoint.Metadata{
 		SessionID: "s",
 		CreatedAt: time.Date(2026, 4, 29, 14, 22, 8, 0, time.UTC),
 	}
@@ -704,7 +642,7 @@ func TestFormatCheckpointHeader_TokensFromSummaryFallback(t *testing.T) {
 	t.Parallel()
 
 	cpID := id.MustCheckpointID("a3b2c4d5e6f7")
-	meta := checkpoint.CommittedMetadata{
+	meta := checkpoint.Metadata{
 		SessionID:  "s",
 		CreatedAt:  time.Date(2026, 4, 29, 14, 22, 8, 0, time.UTC),
 		TokenUsage: nil,
@@ -725,7 +663,7 @@ func TestFormatCheckpointHeader_ColorEnabledRenders(t *testing.T) {
 	t.Parallel()
 
 	cpID := id.MustCheckpointID("a3b2c4d5e6f7")
-	meta := checkpoint.CommittedMetadata{
+	meta := checkpoint.Metadata{
 		SessionID:  "s",
 		CreatedAt:  time.Date(2026, 4, 29, 14, 22, 8, 0, time.UTC),
 		TokenUsage: &agent.TokenUsage{InputTokens: 1234},

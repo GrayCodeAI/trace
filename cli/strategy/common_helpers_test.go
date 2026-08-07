@@ -12,7 +12,7 @@ import (
 
 // readCheckpointMetadataFull is the original ReadCheckpointMetadata implementation
 // preserved for test code that needs the full deserialization behavior (loading
-// every field from both the root CheckpointSummary and per-session CommittedMetadata).
+// every field from both the root CheckpointSummary and per-session Metadata).
 //
 // Production code uses ReadCheckpointMetadata which streams via json.Decoder
 // and uses minimal structs to avoid allocating large unused fields
@@ -52,7 +52,7 @@ func readCheckpointMetadataFull(tree *object.Tree, checkpointPath string) (*Chec
 					sessionMetadataPath := strings.TrimPrefix(sessionPaths.Metadata, "/")
 					if sessionFile, err := tree.File(sessionMetadataPath); err == nil {
 						if sessionContent, err := sessionFile.Contents(); err == nil {
-							var sessionMetadata checkpoint.CommittedMetadata
+							var sessionMetadata checkpoint.Metadata
 							if json.Unmarshal([]byte(sessionContent), &sessionMetadata) == nil {
 								sessionIDs = append(sessionIDs, sessionMetadata.SessionID)
 								// Use first session for Agent, SessionID, CreatedAt, IsTask, ToolUseID

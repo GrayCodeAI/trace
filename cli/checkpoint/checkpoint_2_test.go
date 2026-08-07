@@ -25,7 +25,7 @@ import (
 // when the checkpoint doesn't exist.
 func TestUpdateSummary_NotFound(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 
 	// Ensure sessions branch exists
 	err := store.ensureSessionsBranch(context.Background())
@@ -37,7 +37,7 @@ func TestUpdateSummary_NotFound(t *testing.T) {
 	checkpointID := id.MustCheckpointID("000000000000")
 	summary := &Summary{Intent: "Test", Outcome: "Test"}
 
-	err = store.UpdateSummary(context.Background(), checkpointID, summary)
+	err = store.Write(context.Background(), SessionSummary{CheckpointID: checkpointID, Summary: summary})
 	if err == nil {
 		t.Error("UpdateSummary() should return error for non-existent checkpoint")
 	}
@@ -75,9 +75,9 @@ func TestListCommitted_FallsBackToRemote(t *testing.T) {
 	}
 
 	// Create trace/checkpoints/v1 branch on the remote with a checkpoint
-	remoteStore := NewGitStore(remoteRepo)
+	remoteStore := NewGitStore(remoteRepo, DefaultV1Refs())
 	cpID := id.MustCheckpointID("abcdef123456")
-	err = remoteStore.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err = remoteStore.Write(context.Background(), Session{
 		CheckpointID: cpID,
 		SessionID:    "test-session-id",
 		Strategy:     "manual-commit",
@@ -122,8 +122,8 @@ func TestListCommitted_FallsBackToRemote(t *testing.T) {
 	}
 
 	// ListCommitted should find the checkpoint by falling back to remote
-	localStore := NewGitStore(localRepo)
-	checkpoints, err := localStore.ListCommitted(context.Background())
+	localStore := NewGitStore(localRepo, DefaultV1Refs())
+	checkpoints, err := localStore.List(context.Background())
 	if err != nil {
 		t.Fatalf("ListCommitted() error = %v", err)
 	}
@@ -139,14 +139,14 @@ func TestListCommitted_FallsBackToRemote(t *testing.T) {
 // author of the commit that created the checkpoint on the trace/checkpoints/v1 branch.
 func TestGetCheckpointAuthor(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
 
 	// Create a checkpoint with specific author info
 	authorName := "Alice Developer"
 	authorEmail := "alice@example.com"
 
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID: checkpointID,
 		SessionID:    "test-session-author",
 		Strategy:     "manual-commit",
@@ -177,7 +177,7 @@ func TestGetCheckpointAuthor(t *testing.T) {
 // empty author when the checkpoint doesn't exist.
 func TestGetCheckpointAuthor_NotFound(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 
 	// Query for a non-existent checkpoint (must be valid hex)
 	checkpointID := id.MustCheckpointID("ffffffffffff")
@@ -203,7 +203,7 @@ func TestGetCheckpointAuthor_NoSessionsBranch(t *testing.T) {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("aabbccddeeff")
 
 	author, err := store.GetCheckpointAuthor(context.Background(), checkpointID)
@@ -226,11 +226,11 @@ func TestGetCheckpointAuthor_NoSessionsBranch(t *testing.T) {
 // sessions to the same checkpoint ID creates separate numbered subdirectories.
 func TestWriteCommitted_MultipleSessionsSameCheckpoint(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("a1a2a3a4a5a6")
 
 	// Write first session
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "session-one",
 		Strategy:         "manual-commit",
@@ -246,7 +246,7 @@ func TestWriteCommitted_MultipleSessionsSameCheckpoint(t *testing.T) {
 	}
 
 	// Write second session to the same checkpoint ID
-	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err = store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "session-two",
 		Strategy:         "manual-commit",
@@ -262,7 +262,7 @@ func TestWriteCommitted_MultipleSessionsSameCheckpoint(t *testing.T) {
 	}
 
 	// Read the checkpoint summary
-	summary, err := store.ReadCommitted(context.Background(), checkpointID)
+	summary, err := store.Read(context.Background(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadCommitted() error = %v", err)
 	}
@@ -307,11 +307,11 @@ func TestWriteCommitted_MultipleSessionsSameCheckpoint(t *testing.T) {
 // multiple sessions written to the same checkpoint.
 func TestWriteCommitted_Aggregation(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("b1b2b3b4b5b6")
 
 	// Write first session with specific stats
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "session-one",
 		Strategy:         "manual-commit",
@@ -331,7 +331,7 @@ func TestWriteCommitted_Aggregation(t *testing.T) {
 	}
 
 	// Write second session with overlapping and new files
-	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err = store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "session-two",
 		Strategy:         "manual-commit",
@@ -351,7 +351,7 @@ func TestWriteCommitted_Aggregation(t *testing.T) {
 	}
 
 	// Read the checkpoint summary
-	summary, err := store.ReadCommitted(context.Background(), checkpointID)
+	summary, err := store.Read(context.Background(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadCommitted() error = %v", err)
 	}
@@ -398,12 +398,12 @@ func TestWriteCommitted_Aggregation(t *testing.T) {
 // a CheckpointSummary with the correct structure including Sessions array.
 func TestReadCommitted_ReturnsCheckpointSummary(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("c1c2c3c4c5c6")
 
 	// Write two sessions
 	for i, sessionID := range []string{"session-alpha", "session-beta"} {
-		err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		err := store.Write(context.Background(), Session{
 			CheckpointID:     checkpointID,
 			SessionID:        sessionID,
 			Strategy:         "manual-commit",
@@ -420,7 +420,7 @@ func TestReadCommitted_ReturnsCheckpointSummary(t *testing.T) {
 	}
 
 	// Read the checkpoint summary
-	summary, err := store.ReadCommitted(context.Background(), checkpointID)
+	summary, err := store.Read(context.Background(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadCommitted() error = %v", err)
 	}
@@ -458,7 +458,7 @@ func TestReadCommitted_ReturnsCheckpointSummary(t *testing.T) {
 // specific sessions by their 0-based index within a checkpoint.
 func TestReadSessionContent_ByIndex(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("d1d2d3d4d5d6")
 
 	// Write two sessions with distinct content
@@ -472,7 +472,7 @@ func TestReadSessionContent_ByIndex(t *testing.T) {
 	}
 
 	for _, s := range sessions {
-		err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		err := store.Write(context.Background(), Session{
 			CheckpointID:     checkpointID,
 			SessionID:        s.id,
 			Strategy:         "manual-commit",
@@ -520,10 +520,10 @@ func TestReadSessionContent_ByIndex(t *testing.T) {
 func writeSingleSession(t *testing.T, cpIDStr, sessionID, transcript string) (*GitStore, id.CheckpointID) {
 	t.Helper()
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID(cpIDStr)
 
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        sessionID,
 		Strategy:         "manual-commit",
@@ -540,7 +540,7 @@ func writeSingleSession(t *testing.T, cpIDStr, sessionID, transcript string) (*G
 
 func TestWriteCommitted_CodexSanitizesPortableTranscript(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("c0de1234beef")
 
 	transcript := `{"timestamp":"2026-03-25T11:31:11.754Z","type":"response_item","payload":{"type":"reasoning","summary":[{"text":"brief"}],"encrypted_content":"REDACTED"}}
@@ -548,7 +548,7 @@ func TestWriteCommitted_CodexSanitizesPortableTranscript(t *testing.T) {
 {"timestamp":"2026-03-25T11:31:11.756Z","type":"compacted","payload":{"message":"","replacement_history":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]},{"type":"reasoning","summary":[{"text":"nested"}],"encrypted_content":"REDACTED"},{"type":"compaction","encrypted_content":"REDACTED"},{"type":"compaction_summary","encrypted_content":"REDACTED"}]}}
 `
 
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "codex-session",
 		Strategy:         "manual-commit",
@@ -593,12 +593,12 @@ func TestReadSessionContent_InvalidIndex(t *testing.T) {
 // the content of the most recently added session (highest index).
 func TestReadLatestSessionContent(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("f1f2f3f4f5f6")
 
 	// Write three sessions
 	for i := range 3 {
-		err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		err := store.Write(context.Background(), Session{
 			CheckpointID:     checkpointID,
 			SessionID:        fmt.Sprintf("session-%d", i),
 			Strategy:         "manual-commit",
@@ -631,13 +631,13 @@ func TestReadLatestSessionContent(t *testing.T) {
 // a session by its session ID rather than by index.
 func TestReadSessionContentByID(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("010203040506")
 
 	// Write two sessions with distinct IDs
 	sessionIDs := []string{"unique-id-alpha", "unique-id-beta"}
 	for i, sid := range sessionIDs {
-		err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		err := store.Write(context.Background(), Session{
 			CheckpointID:     checkpointID,
 			SessionID:        sid,
 			Strategy:         "manual-commit",
@@ -684,12 +684,12 @@ func TestReadSessionContentByID_NotFound(t *testing.T) {
 // information for checkpoints with multiple sessions.
 func TestListCommitted_MultiSessionInfo(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("212223242526")
 
 	// Write two sessions to the same checkpoint
 	for i, sid := range []string{"list-session-1", "list-session-2"} {
-		err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		err := store.Write(context.Background(), Session{
 			CheckpointID:     checkpointID,
 			SessionID:        sid,
 			Strategy:         "manual-commit",
@@ -706,13 +706,13 @@ func TestListCommitted_MultiSessionInfo(t *testing.T) {
 	}
 
 	// List all checkpoints
-	checkpoints, err := store.ListCommitted(context.Background())
+	checkpoints, err := store.List(context.Background())
 	if err != nil {
 		t.Fatalf("ListCommitted() error = %v", err)
 	}
 
 	// Find our checkpoint
-	var found *CommittedInfo
+	var found *CheckpointInfo
 	for i := range checkpoints {
 		if checkpoints[i].CheckpointID == checkpointID {
 			found = &checkpoints[i]
@@ -744,11 +744,11 @@ func TestListCommitted_MultiSessionInfo(t *testing.T) {
 // written without prompts and still be read correctly.
 func TestWriteCommitted_SessionWithNoPrompts(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("313233343536")
 
 	// Write session without prompts
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "no-prompts-session",
 		Strategy:         "manual-commit",

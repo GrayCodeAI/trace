@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/logging"
-	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/settings"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -50,7 +50,7 @@ func (ps *pushSettings) hasCheckpointURL() bool {
 //   - Skips if the push remote owner differs from the checkpoint repo owner (fork detection)
 //   - If a checkpoint branch doesn't exist locally, attempts to fetch it from the URL
 //
-// The push itself handles failures gracefully (doPushBranch warns and continues),
+// The push itself handles failures gracefully (doPushRef warns and continues),
 // so no reachability check is needed here.
 func resolvePushSettings(ctx context.Context, pushRemoteName string) pushSettings {
 	s, err := settings.Load(ctx)
@@ -83,29 +83,15 @@ func resolvePushSettings(ctx context.Context, pushRemoteName string) pushSetting
 
 	ps.checkpointURL = checkpointURL
 
-	// Skip the v1 metadata-branch fetch entirely when checkpoints_version is 2 —
-	// there is no v1 branch being written or pushed, so there is nothing to sync.
-	if s.CheckpointsVersion() != 2 {
-		// If the v1 checkpoint branch doesn't exist locally, try to fetch it from the URL.
-		// This is a one-time operation — once the branch exists locally, subsequent pushes
-		// skip the fetch entirely. Only fetch the metadata branch; trails are always pushed
-		// to the user's push remote, not the checkpoint remote.
-		if err := fetchMetadataBranchIfMissing(ctx, checkpointURL); err != nil {
-			logging.Warn(
-				ctx, "checkpoint-remote: failed to fetch metadata branch",
-				slog.String("error", err.Error()),
-			)
-		}
-	}
-
-	// Also fetch v2 /main ref if v2 refs are enabled
-	if s.IsPushV2RefsEnabled() {
-		if err := fetchV2MainRefIfMissing(ctx, checkpointURL); err != nil {
-			logging.Warn(
-				ctx, "checkpoint-remote: failed to fetch v2 /main ref",
-				slog.String("error", err.Error()),
-			)
-		}
+	// If the v1 checkpoint branch doesn't exist locally, try to fetch it from the URL.
+	// This is a one-time operation — once the branch exists locally, subsequent pushes
+	// skip the fetch entirely. Only fetch the metadata branch; trails are always pushed
+	// to the user's push remote, not the checkpoint remote.
+	if err := fetchMetadataBranchIfMissing(ctx, checkpointURL); err != nil {
+		logging.Warn(
+			ctx, "checkpoint-remote: failed to fetch metadata branch",
+			slog.String("error", err.Error()),
+		)
 	}
 
 	return ps
@@ -119,26 +105,22 @@ func resolvePushSettings(ctx context.Context, pushRemoteName string) pushSetting
 // The fetch is unfiltered (NoFilter: true) because resume needs blob content
 // (transcripts, metadata JSON) — not just tree objects.
 func FetchMetadataBranch(ctx context.Context, remoteURL string) error {
-	branchName := paths.MetadataBranchName
+	refs := checkpoint.ResolveRefs(ctx)
+	if !refs.Primary.IsBranch() {
+		return fmt.Errorf("primary metadata ref %s is not a branch", refs.Primary)
+	}
+	branchName := refs.Primary.Short()
 	tmpRef := FetchTmpRefPrefix + branchName
-	srcRef := "refs/heads/" + branchName
+	srcRef := refs.Primary.String()
 
-	if err := fetchURLIntoTmpRef(ctx, remoteURL, srcRef, tmpRef, "metadata branch", true); err != nil {
+	if err := fetchURLIntoTmpRef(ctx, "", remoteURL, srcRef, tmpRef, "metadata branch", true); err != nil {
 		return err
 	}
-	return PromoteTmpRefSafely(ctx, plumbing.ReferenceName(tmpRef), plumbing.NewBranchReferenceName(branchName), branchName)
-}
-
-// FetchV2MainFromURL fetches the v2 /main ref from a remote URL and advances
-// the local ref only when doing so cannot rewind locally-ahead commits.
-// Uses explicit refspec since v2 refs are under refs/trace/, not refs/heads/.
-//
-// The fetch is unfiltered (NoFilter: true) because resume needs full metadata.
-func FetchV2MainFromURL(ctx context.Context, remoteURL string) error {
-	if err := fetchURLIntoTmpRef(ctx, remoteURL, paths.V2MainRefName, V2MainFetchTmpRef, "v2 /main", true); err != nil {
+	if err := PromoteTmpRefSafely(ctx, plumbing.ReferenceName(tmpRef), refs.Primary, branchName); err != nil {
 		return err
 	}
-	return PromoteTmpRefSafely(ctx, V2MainFetchTmpRef, paths.V2MainRefName, "v2 /main")
+
+	return nil
 }
 
 // fetchURLIntoTmpRef runs `git fetch <remoteURL> +<srcRef>:<tmpRef>` via the
@@ -151,7 +133,7 @@ func FetchV2MainFromURL(ctx context.Context, remoteURL string) error {
 // fetches are globally enabled. Use noFilter for operations that need blob
 // content (resume, explain) as opposed to sync operations (push recovery)
 // that only need tree structure.
-func fetchURLIntoTmpRef(ctx context.Context, remoteURL, srcRef, tmpRef, label string, noFilter bool) error {
+func fetchURLIntoTmpRef(ctx context.Context, dir, remoteURL, srcRef, tmpRef, label string, noFilter bool) error { //nolint:unparam // noFilter distinguishes blob-content fetches (true) from tree-only sync fetches (false); kept for the documented fetch-filtering contract even though current callers all need blob content
 	fetchCtx, cancel := context.WithTimeout(ctx, checkpointRemoteFetchTimeout)
 	defer cancel()
 
@@ -161,6 +143,7 @@ func fetchURLIntoTmpRef(ctx context.Context, remoteURL, srcRef, tmpRef, label st
 		RefSpecs: []string{refSpec},
 		NoTags:   true,
 		NoFilter: noFilter,
+		Dir:      dir,
 	})
 	if fetchErr == nil {
 		return nil
@@ -174,7 +157,7 @@ func fetchURLIntoTmpRef(ctx context.Context, remoteURL, srcRef, tmpRef, label st
 	return fmt.Errorf("fetch %s from %s failed: %w", label, redactedURL, fetchErr)
 }
 
-// fetchMetadataBranchIfMissing fetches the metadata branch from a URL only if it doesn't exist locally.
+// fetchMetadataBranchIfMissing fetches the primary metadata ref from a URL only if it doesn't exist locally.
 // This avoids network calls on every push — once the branch exists locally, this is a no-op.
 // Fetch failures are silently swallowed (returns nil): the push will handle creating the
 // branch on the remote. Only fatal errors (opening repo, creating local branch) are returned.
@@ -183,40 +166,70 @@ func fetchMetadataBranchIfMissing(ctx context.Context, remoteURL string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open repository: %w", err)
 	}
+	defer repo.Close()
 
 	// Check if branch already exists locally - if so, nothing to do
-	branchRef := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-	if _, err := repo.Reference(branchRef, true); err == nil {
+	refs := checkpoint.ResolveRefs(ctx)
+	if _, err := repo.Reference(refs.Primary, true); err == nil {
 		return nil // Branch exists locally, skip fetch
 	}
 
 	// Branch doesn't exist locally - try to fetch it from the URL.
 	// Fetch failures are not fatal: push will create it on the remote when it succeeds.
 	if err := FetchMetadataBranch(ctx, remoteURL); err != nil {
-		return nil //nolint:nilerr // Fetch failure is expected when remote is unreachable or branch doesn't exist yet
+		return nil
 	}
 
 	logging.Info(ctx, "checkpoint-remote: fetched metadata branch from URL")
 	return nil
 }
 
-// fetchV2MainRefIfMissing fetches the v2 /main ref from a URL only if it doesn't
-// exist locally. Delegates to FetchV2MainFromURL for the actual fetch.
-func fetchV2MainRefIfMissing(ctx context.Context, remoteURL string) error {
-	repo, err := OpenRepository(ctx)
+// resolveCheckpointFetchURL resolves the checkpoint_remote fetch URL for the repo
+// rooted at worktreeRoot and verifies it actually targets the configured
+// checkpoint repository. It returns ok=false (never an error) when no
+// checkpoint_remote is configured or a dedicated checkpoint URL cannot be
+// resolved, so callers fall back to keeping the local branch / creating an orphan.
+//
+// remote.FetchURL silently falls back to the origin remote URL in several paths
+// (ENTIRE_CHECKPOINT_TOKEN short-circuit, unparseable origin, non-derivable origin
+// protocol). Adopting from origin would contradict the rule that origin is never
+// authoritative when a checkpoint_remote is configured (issue #1374), so a resolved
+// URL that does not target the configured checkpoint repo is treated as unresolved.
+func resolveCheckpointFetchURL(ctx context.Context, worktreeRoot string) (string, bool) {
+	s, err := settings.Load(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to open repository: %w", err)
+		logging.Debug(ctx, "checkpoint-remote: could not load settings for metadata fetch URL",
+			slog.String("error", err.Error()))
+		return "", false
 	}
-
-	refName := plumbing.ReferenceName(paths.V2MainRefName)
-	if _, err := repo.Reference(refName, true); err == nil {
-		return nil // Ref exists locally, skip fetch
+	config := s.GetCheckpointRemote()
+	if config == nil {
+		return "", false
 	}
-
-	if err := FetchV2MainFromURL(ctx, remoteURL); err != nil {
-		return nil //nolint:nilerr // Fetch failure is not fatal — ref may not exist on remote yet
+	url, err := remote.FetchURL(ctx, remote.FetchURLOptions{WorktreeRoot: worktreeRoot})
+	if err != nil || strings.TrimSpace(url) == "" {
+		logging.Debug(ctx, "checkpoint-remote: could not resolve fetch URL for metadata bootstrap",
+			slog.Any("error", err))
+		return "", false
 	}
+	if !urlTargetsCheckpointRepo(url, config) {
+		logging.Debug(ctx, "checkpoint-remote: fetch URL did not resolve to the configured checkpoint repo; not adopting from origin",
+			slog.String("repo", config.Repo))
+		return "", false
+	}
+	return url, true
+}
 
-	logging.Info(ctx, "checkpoint-remote: fetched v2 /main ref from URL")
-	return nil
+// urlTargetsCheckpointRepo reports whether url points at the configured checkpoint
+// repository (host-agnostic, case-insensitive owner/repo match). It distinguishes a
+// derived checkpoint URL from remote.FetchURL's origin fallback, which targets the
+// origin repository instead. A same-repo checkpoint_remote (origin == checkpoint
+// repo) still matches, which is correct: adopting from that URL is adopting the
+// checkpoint repo.
+func urlTargetsCheckpointRepo(url string, config *settings.CheckpointRemoteConfig) bool {
+	info, err := remote.ParseURL(url)
+	if err != nil || info.Owner == "" || info.Repo == "" {
+		return false
+	}
+	return strings.EqualFold(info.Owner+"/"+info.Repo, config.Repo)
 }

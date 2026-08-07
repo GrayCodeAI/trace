@@ -41,7 +41,8 @@ func TestAttach_CursorSuccess(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameCursor, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameCursor, attachOptions{Force: true})
 	if err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}
@@ -90,7 +91,8 @@ func TestAttach_CodexSuccess(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameCodex, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameCodex, attachOptions{Force: true})
 	if err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}
@@ -139,7 +141,8 @@ func TestAttach_FactoryAIDroidSuccess(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameFactoryAIDroid, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameFactoryAIDroid, attachOptions{Force: true})
 	if err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}
@@ -187,7 +190,8 @@ func TestAttach_CursorNestedLayout(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := runAttach(context.Background(), &out, sessionID, agent.AgentNameCursor, true)
+	var errOut bytes.Buffer
+	err := runAttach(context.Background(), &out, &errOut, sessionID, agent.AgentNameCursor, attachOptions{Force: true})
 	if err != nil {
 		t.Fatalf("runAttach failed: %v", err)
 	}

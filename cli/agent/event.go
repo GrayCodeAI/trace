@@ -134,6 +134,15 @@ type Event struct {
 	// Populated on ToolUse events (e.g., Codex apply_patch "Delete File").
 	DeletedFiles []string
 
+	// CWD is the working directory the agent's hook ran in.
+	CWD string
+
+	// TokenUsage carries token accounting for the session (nil when unknown).
+	TokenUsage *TokenUsage
+
+	// SkillEvents lists skill invocations observed during the session.
+	SkillEvents []SkillEvent
+
 	// ResponseMessage is an optional message to display to the user via the agent.
 	ResponseMessage string
 

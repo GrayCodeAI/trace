@@ -661,7 +661,7 @@ func TestGenerateFromTranscript(t *testing.T) {
 	transcript := []byte(`{"type":"user","message":{"content":"Hello"}}
 {"type":"assistant","message":{"content":[{"type":"text","text":"Hi there"}]}}`)
 
-	summary, err := GenerateFromTranscript(context.Background(), redact.AlreadyRedacted(transcript), []string{"file.go"}, "", mockGenerator)
+	summary, err := GenerateFromTranscript(context.Background(), redact.AlreadyRedacted(transcript), []string{"file.go"}, "", mockGenerator, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -690,7 +690,7 @@ func TestGenerateFromTranscript_PreservesClaudeError(t *testing.T) {
 	transcript := []byte(`{"type":"user","message":{"content":"Hello"}}
 {"type":"assistant","message":{"content":[{"type":"text","text":"Hi there"}]}}`)
 
-	_, err := GenerateFromTranscript(context.Background(), redact.AlreadyRedacted(transcript), []string{}, "", gen)
+	_, err := GenerateFromTranscript(context.Background(), redact.AlreadyRedacted(transcript), []string{}, "", gen, nil)
 	wrapped := fmt.Errorf("explain generate call: %w", err)
 
 	var ce *claudecode.ClaudeError
@@ -708,7 +708,7 @@ func TestGenerateFromTranscript_PreservesClaudeError(t *testing.T) {
 func TestGenerateFromTranscript_EmptyTranscript(t *testing.T) {
 	mockGenerator := &ClaudeGenerator{}
 
-	summary, err := GenerateFromTranscript(context.Background(), redact.AlreadyRedacted([]byte{}), []string{}, "", mockGenerator)
+	summary, err := GenerateFromTranscript(context.Background(), redact.AlreadyRedacted([]byte{}), []string{}, "", mockGenerator, nil)
 	if err == nil {
 		t.Error("expected error for empty transcript")
 	}
@@ -722,7 +722,7 @@ func TestGenerateFromTranscript_NilGenerator(t *testing.T) {
 
 	// With nil generator, should use default ClaudeGenerator
 	// This will fail because claude CLI isn't available in test, but tests the nil handling
-	_, err := GenerateFromTranscript(context.Background(), redact.AlreadyRedacted(transcript), []string{}, "", nil)
+	_, err := GenerateFromTranscript(context.Background(), redact.AlreadyRedacted(transcript), []string{}, "", nil, nil)
 	// Error is expected (claude CLI not available), but function should not panic
 	if err == nil {
 		t.Log("Unexpectedly succeeded - claude CLI must be available")

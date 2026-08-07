@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/jsonutil"
@@ -16,7 +17,7 @@ import (
 // Ensure ClaudeCodeAgent implements HookSupport
 var _ agent.HookSupport = (*ClaudeCodeAgent)(nil)
 
-// Claude Code hook names - these become subcommands under `hawk trace hooks claude-code`
+// Claude Code hook names - these become subcommands under `trace hooks claude-code`
 const (
 	HookNameSessionStart     = "session-start"
 	HookNameSessionEnd       = "session-end"
@@ -27,25 +28,62 @@ const (
 	HookNamePostTodo         = "post-todo"
 )
 
+// Claude Code tool-name matchers for Entire's PreToolUse/PostToolUse hooks.
+//
+// The subagent dispatch tool is "Agent" (Claude Code never exposed a tool named
+// "Task"), and the "TodoWrite" tool was disabled by default in v2.1.142 in favor
+// of the Task* tools. "TaskCreate|TaskUpdate" is a matcher list of exact tool
+// names (Claude Code treats a matcher containing only letters/digits/_/-/spaces/
+// ,/| as exact strings, not a regex). See:
+//   - https://code.claude.com/docs/en/tools-reference.md (Agent, TodoWrite entries)
+//   - https://code.claude.com/docs/en/hooks.md (matcher evaluation rules)
+//
+// Configs written by older CLI versions used the outdated matchers "Task" and
+// "TodoWrite", where the hooks silently never fired. Those are not rewritten in
+// place on a normal `entire enable`; run with --force to strip and reinstall.
+const (
+	subagentToolMatcher = "Agent"
+	taskToolMatcher     = "TaskCreate|TaskUpdate"
+)
+
 // ClaudeSettingsFileName is the settings file used by Claude Code.
 // This is Claude-specific and not shared with other agents.
 const ClaudeSettingsFileName = "settings.json"
 
-// metadataDenyRule blocks Claude from reading Trace session metadata
+// metadataDenyRule blocks Claude from reading Entire session metadata
 const metadataDenyRule = "Read(./.trace/metadata/**)"
 
-// traceHookPrefixes are command prefixes that identify Trace hooks. Both the
-// current "hawk trace" forms and the legacy bare-"trace" / cmd/trace forms are
-// listed so previously-installed hooks are still recognised for upgrade/removal.
-var traceHookPrefixes = []string{
-	"hawk trace ",
-	"go run ${CLAUDE_PROJECT_DIR}/cmd/hawk trace ",
+// localDevHookCmdPrefix is the command prefix used for hooks in local-dev mode.
+// It points at scripts/entire-dev, which compiles the CLI on demand and falls
+// back to the entire binary on PATH when the tree does not build (e.g. mid
+// merge-conflict-fix). ${CLAUDE_PROJECT_DIR} is set by Claude Code to the
+// repository root when it runs hooks.
+const localDevHookCmdPrefix = "${CLAUDE_PROJECT_DIR}/scripts/entire-dev "
+
+// localDevSessionEndTimeoutSecs gives the local-dev SessionEnd hook an explicit
+// timeout (seconds) so Claude Code waits for it on exit instead of cancelling it
+// after its short default exit-grace, which the build-from-source dev launcher
+// (scripts/entire-dev) can exceed. Only set in local-dev mode; production leaves
+// Claude Code's default in place.
+const localDevSessionEndTimeoutSecs = 60
+
+// entireHookPrefixes are command prefixes that identify Entire hooks. The
+// "go run" prefix is retained so hooks installed by older versions are still
+// recognized for removal/upgrade.
+var entireHookPrefixes = []string{
 	"trace ",
-	"go run ${CLAUDE_PROJECT_DIR}/cmd/trace/main.go ",
+	localDevHookCmdPrefix,
+	"go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go ",
+}
+
+// localDevHookCommand builds a local-dev hook command for the given hook name,
+// delegating to scripts/entire-dev for the build-probe-and-fallback logic.
+func localDevHookCommand(hookName string) string {
+	return fmt.Sprintf("%shooks claude-code %s", localDevHookCmdPrefix, hookName)
 }
 
 // InstallHooks installs Claude Code hooks in .claude/settings.json.
-// If force is true, removes existing Trace hooks before installing.
+// If force is true, removes existing Entire hooks before installing.
 // Returns the number of hooks installed.
 func (c *ClaudeCodeAgent) InstallHooks(ctx context.Context, localDev bool, force bool) (int, error) {
 	// Use repo root instead of CWD to find .claude directory
@@ -70,7 +108,6 @@ func (c *ClaudeCodeAgent) InstallHooks(ctx context.Context, localDev bool, force
 	// rawPermissions preserves unknown permission fields (e.g., "ask")
 	var rawPermissions map[string]json.RawMessage
 
-	// #nosec G304 -- path is constructed from repo root + settings file name, not external input
 	existingData, readErr := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + settings file name
 	if readErr == nil {
 		if err := json.Unmarshal(existingData, &rawSettings); err != nil {
@@ -106,65 +143,73 @@ func (c *ClaudeCodeAgent) InstallHooks(ctx context.Context, localDev bool, force
 	parseHookType(rawHooks, "PreToolUse", &preToolUse)
 	parseHookType(rawHooks, "PostToolUse", &postToolUse)
 
-	// If force is true, remove all existing Trace hooks first
+	// If force is true, remove all existing Entire hooks first
 	if force {
-		sessionStart = removeTraceHooks(sessionStart)
-		sessionEnd = removeTraceHooks(sessionEnd)
-		stop = removeTraceHooks(stop)
-		userPromptSubmit = removeTraceHooks(userPromptSubmit)
-		preToolUse = removeTraceHooksFromMatchers(preToolUse)
-		postToolUse = removeTraceHooksFromMatchers(postToolUse)
+		sessionStart = removeEntireHooks(sessionStart)
+		sessionEnd = removeEntireHooks(sessionEnd)
+		stop = removeEntireHooks(stop)
+		userPromptSubmit = removeEntireHooks(userPromptSubmit)
+		preToolUse = removeEntireHooksFromMatchers(preToolUse)
+		postToolUse = removeEntireHooksFromMatchers(postToolUse)
 	}
 
 	// Define hook commands
 	var sessionStartCmd, sessionEndCmd, stopCmd, userPromptSubmitCmd, preTaskCmd, postTaskCmd, postTodoCmd string
 	if localDev {
-		sessionStartCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/hawk trace hooks claude-code session-start"
-		sessionEndCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/hawk trace hooks claude-code session-end"
-		stopCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/hawk trace hooks claude-code stop"
-		userPromptSubmitCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/hawk trace hooks claude-code user-prompt-submit"
-		preTaskCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/hawk trace hooks claude-code pre-task"
-		postTaskCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/hawk trace hooks claude-code post-task"
-		postTodoCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/hawk trace hooks claude-code post-todo"
+		sessionStartCmd = localDevHookCommand(HookNameSessionStart)
+		sessionEndCmd = localDevHookCommand(HookNameSessionEnd)
+		stopCmd = localDevHookCommand(HookNameStop)
+		userPromptSubmitCmd = localDevHookCommand(HookNameUserPromptSubmit)
+		preTaskCmd = localDevHookCommand(HookNamePreTask)
+		postTaskCmd = localDevHookCommand(HookNamePostTask)
+		postTodoCmd = localDevHookCommand(HookNamePostTodo)
 	} else {
-		sessionStartCmd = agent.WrapProductionJSONWarningHookCommand("hawk trace hooks claude-code session-start", agent.WarningFormatMultiLine)
-		sessionEndCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks claude-code session-end")
-		stopCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks claude-code stop")
-		userPromptSubmitCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks claude-code user-prompt-submit")
-		preTaskCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks claude-code pre-task")
-		postTaskCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks claude-code post-task")
-		postTodoCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks claude-code post-todo")
+		sessionStartCmd = agent.WrapProductionJSONWarningHookCommand("trace hooks claude-code session-start", agent.WarningFormatMultiLine)
+		sessionEndCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code session-end")
+		stopCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code stop")
+		userPromptSubmitCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code user-prompt-submit")
+		preTaskCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code pre-task")
+		postTaskCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code post-task")
+		postTodoCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code post-todo")
 	}
 
 	count := 0
 
+	// The local-dev SessionEnd hook gets an explicit timeout so Claude Code
+	// waits for it on exit; every other hook (and all production hooks) keeps
+	// Claude Code's default.
+	sessionEndTimeoutSecs := 0
+	if localDev {
+		sessionEndTimeoutSecs = localDevSessionEndTimeoutSecs
+	}
+
 	// Add hooks if they don't exist
 	if !hookCommandExists(sessionStart, sessionStartCmd) {
-		sessionStart = addHookToMatcher(sessionStart, "", sessionStartCmd)
+		sessionStart = addHookToMatcher(sessionStart, "", sessionStartCmd, 0)
 		count++
 	}
 	if !hookCommandExists(sessionEnd, sessionEndCmd) {
-		sessionEnd = addHookToMatcher(sessionEnd, "", sessionEndCmd)
+		sessionEnd = addHookToMatcher(sessionEnd, "", sessionEndCmd, sessionEndTimeoutSecs)
 		count++
 	}
 	if !hookCommandExists(stop, stopCmd) {
-		stop = addHookToMatcher(stop, "", stopCmd)
+		stop = addHookToMatcher(stop, "", stopCmd, 0)
 		count++
 	}
 	if !hookCommandExists(userPromptSubmit, userPromptSubmitCmd) {
-		userPromptSubmit = addHookToMatcher(userPromptSubmit, "", userPromptSubmitCmd)
+		userPromptSubmit = addHookToMatcher(userPromptSubmit, "", userPromptSubmitCmd, 0)
 		count++
 	}
-	if !hookCommandExistsWithMatcher(preToolUse, "Task", preTaskCmd) {
-		preToolUse = addHookToMatcher(preToolUse, "Task", preTaskCmd)
+	if !hookCommandExistsWithMatcher(preToolUse, subagentToolMatcher, preTaskCmd) {
+		preToolUse = addHookToMatcher(preToolUse, subagentToolMatcher, preTaskCmd, 0)
 		count++
 	}
-	if !hookCommandExistsWithMatcher(postToolUse, "Task", postTaskCmd) {
-		postToolUse = addHookToMatcher(postToolUse, "Task", postTaskCmd)
+	if !hookCommandExistsWithMatcher(postToolUse, subagentToolMatcher, postTaskCmd) {
+		postToolUse = addHookToMatcher(postToolUse, subagentToolMatcher, postTaskCmd, 0)
 		count++
 	}
-	if !hookCommandExistsWithMatcher(postToolUse, "TodoWrite", postTodoCmd) {
-		postToolUse = addHookToMatcher(postToolUse, "TodoWrite", postTodoCmd)
+	if !hookCommandExistsWithMatcher(postToolUse, taskToolMatcher, postTodoCmd) {
+		postToolUse = addHookToMatcher(postToolUse, taskToolMatcher, postTodoCmd, 0)
 		count++
 	}
 
@@ -234,7 +279,7 @@ func (c *ClaudeCodeAgent) InstallHooks(ctx context.Context, localDev bool, force
 func parseHookType(rawHooks map[string]json.RawMessage, hookType string, target *[]ClaudeHookMatcher) {
 	if data, ok := rawHooks[hookType]; ok {
 		//nolint:errcheck,gosec // Intentionally ignoring parse errors - leave target as nil/empty
-		json.Unmarshal(data, target) // #nosec G104 -- intentionally ignoring parse errors, leave target as nil/empty
+		json.Unmarshal(data, target)
 	}
 }
 
@@ -252,7 +297,7 @@ func marshalHookType(rawHooks map[string]json.RawMessage, hookType string, match
 	rawHooks[hookType] = data
 }
 
-// UninstallHooks removes Trace hooks from Claude Code settings.
+// UninstallHooks removes Entire hooks from Claude Code settings.
 func (c *ClaudeCodeAgent) UninstallHooks(ctx context.Context) error {
 	// Use repo root to find .claude directory when run from a subdirectory
 	repoRoot, err := paths.WorktreeRoot(ctx)
@@ -260,7 +305,6 @@ func (c *ClaudeCodeAgent) UninstallHooks(ctx context.Context) error {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".claude", ClaudeSettingsFileName)
-	// #nosec G304 -- path is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return nil //nolint:nilerr // No settings file means nothing to uninstall
@@ -291,13 +335,13 @@ func (c *ClaudeCodeAgent) UninstallHooks(ctx context.Context) error {
 	parseHookType(rawHooks, "PreToolUse", &preToolUse)
 	parseHookType(rawHooks, "PostToolUse", &postToolUse)
 
-	// Remove Trace hooks from all hook types
-	sessionStart = removeTraceHooks(sessionStart)
-	sessionEnd = removeTraceHooks(sessionEnd)
-	stop = removeTraceHooks(stop)
-	userPromptSubmit = removeTraceHooks(userPromptSubmit)
-	preToolUse = removeTraceHooksFromMatchers(preToolUse)
-	postToolUse = removeTraceHooksFromMatchers(postToolUse)
+	// Remove Entire hooks from all hook types
+	sessionStart = removeEntireHooks(sessionStart)
+	sessionEnd = removeEntireHooks(sessionEnd)
+	stop = removeEntireHooks(stop)
+	userPromptSubmit = removeEntireHooks(userPromptSubmit)
+	preToolUse = removeEntireHooksFromMatchers(preToolUse)
+	postToolUse = removeEntireHooksFromMatchers(postToolUse)
 
 	// Marshal modified hook types back to rawHooks
 	marshalHookType(rawHooks, "SessionStart", sessionStart)
@@ -372,27 +416,70 @@ func (c *ClaudeCodeAgent) UninstallHooks(ctx context.Context) error {
 	return nil
 }
 
-// AreHooksInstalled checks if Trace hooks are installed.
-func (c *ClaudeCodeAgent) AreHooksInstalled(ctx context.Context) bool {
+// loadClaudeSettings reads and parses .claude/settings.json from the repo root.
+// Returns ok=false when the file is missing or unparseable.
+func loadClaudeSettings(ctx context.Context) (ClaudeSettings, bool) {
 	// Use repo root to find .claude directory when run from a subdirectory
 	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".claude", ClaudeSettingsFileName)
-	// #nosec G304 -- path is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
-		return false
+		return ClaudeSettings{}, false
 	}
 
 	var settings ClaudeSettings
 	if err := json.Unmarshal(data, &settings); err != nil {
+		return ClaudeSettings{}, false
+	}
+	return settings, true
+}
+
+// AreHooksInstalled checks if Entire hooks are installed.
+func (c *ClaudeCodeAgent) AreHooksInstalled(ctx context.Context) bool {
+	settings, ok := loadClaudeSettings(ctx)
+	if !ok {
 		return false
 	}
-
 	// Check for at least one of our hooks (new, wrapped, or legacy format)
-	return hasTraceHook(settings.Hooks.Stop)
+	return hasEntireHook(settings.Hooks.Stop)
+}
+
+// HookConfigState describes how Entire's Claude Code hooks compare to what
+// InstallHooks would write today.
+type HookConfigState int
+
+const (
+	// HooksAbsent means Entire hooks are not installed in this repo.
+	HooksAbsent HookConfigState = iota
+	// HooksCurrent means the installed hooks match the current config.
+	HooksCurrent
+	// HooksOutdated means Entire hooks are installed but the current tool-use
+	// matchers no longer carry them (e.g. an older CLI wrote them under the now
+	// non-firing "Task"/"TodoWrite" matchers). Fix: `entire enable --force`.
+	HooksOutdated
+)
+
+// CheckHookConfig reports whether Entire's Claude Code hooks are absent,
+// current, or outdated. It is a read-only diagnostic used by `entire status`
+// and `entire doctor`; it never modifies settings. Outdated is detected on the
+// positive spec: Entire is installed (Stop hook present) yet one of the current
+// tool-use matchers does not carry its Entire hook.
+func CheckHookConfig(ctx context.Context) HookConfigState {
+	settings, ok := loadClaudeSettings(ctx)
+	if !ok || !hasEntireHook(settings.Hooks.Stop) {
+		return HooksAbsent
+	}
+	subagentTools := splitMatcherTools(subagentToolMatcher)
+	taskTools := splitMatcherTools(taskToolMatcher)
+	if !hasEntireHookCoveringTools(settings.Hooks.PreToolUse, subagentTools) ||
+		!hasEntireHookCoveringTools(settings.Hooks.PostToolUse, subagentTools) ||
+		!hasEntireHookCoveringTools(settings.Hooks.PostToolUse, taskTools) {
+		return HooksOutdated
+	}
+	return HooksCurrent
 }
 
 // Helper functions for hook management
@@ -408,10 +495,51 @@ func hookCommandExists(matchers []ClaudeHookMatcher, command string) bool {
 	return false
 }
 
-func hasTraceHook(matchers []ClaudeHookMatcher) bool {
+func hasEntireHook(matchers []ClaudeHookMatcher) bool {
 	for _, matcher := range matchers {
 		for _, hook := range matcher.Hooks {
-			if isTraceHook(hook.Command) {
+			if isEntireHook(hook.Command) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// splitMatcherTools splits a Claude Code tool matcher into its exact tool
+// names. Matchers that InstallHooks writes are `|`-separated lists (Claude Code
+// also accepts `,`); whitespace around separators is ignored. Returns the tools
+// in order, dropping empties.
+func splitMatcherTools(matcher string) []string {
+	parts := strings.FieldsFunc(matcher, func(r rune) bool { return r == '|' || r == ',' })
+	tools := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			tools = append(tools, t)
+		}
+	}
+	return tools
+}
+
+// hasEntireHookCoveringTools reports whether an Entire hook is installed under a
+// matcher that covers every tool in want. A widened matcher still counts: a
+// matcher of "TaskCreate|TaskUpdate|TaskGet" covers {TaskCreate, TaskUpdate},
+// so users who broaden a matcher aren't falsely flagged as outdated.
+func hasEntireHookCoveringTools(matchers []ClaudeHookMatcher, want []string) bool {
+	for _, matcher := range matchers {
+		have := splitMatcherTools(matcher.Matcher)
+		coversAll := true
+		for _, w := range want {
+			if !slices.Contains(have, w) {
+				coversAll = false
+				break
+			}
+		}
+		if !coversAll {
+			continue
+		}
+		for _, hook := range matcher.Hooks {
+			if isEntireHook(hook.Command) {
 				return true
 			}
 		}
@@ -432,10 +560,11 @@ func hookCommandExistsWithMatcher(matchers []ClaudeHookMatcher, matcherName, com
 	return false
 }
 
-func addHookToMatcher(matchers []ClaudeHookMatcher, matcherName, command string) []ClaudeHookMatcher {
+func addHookToMatcher(matchers []ClaudeHookMatcher, matcherName, command string, timeoutSecs int) []ClaudeHookMatcher {
 	entry := ClaudeHookEntry{
 		Type:    "command",
 		Command: command,
+		Timeout: timeoutSecs,
 	}
 
 	// If no matcher name, add to a matcher with empty string
@@ -466,18 +595,18 @@ func addHookToMatcher(matchers []ClaudeHookMatcher, matcherName, command string)
 	})
 }
 
-// isTraceHook checks if a command is an Trace hook (old or new format)
-func isTraceHook(command string) bool {
-	return agent.IsManagedHookCommand(command, traceHookPrefixes)
+// isEntireHook checks if a command is an Entire hook (old or new format)
+func isEntireHook(command string) bool {
+	return agent.IsManagedHookCommand(command, entireHookPrefixes)
 }
 
-// removeTraceHooks removes all Trace hooks from a list of matchers (for simple hooks like Stop)
-func removeTraceHooks(matchers []ClaudeHookMatcher) []ClaudeHookMatcher {
+// removeEntireHooks removes all Entire hooks from a list of matchers (for simple hooks like Stop)
+func removeEntireHooks(matchers []ClaudeHookMatcher) []ClaudeHookMatcher {
 	result := make([]ClaudeHookMatcher, 0, len(matchers))
 	for _, matcher := range matchers {
 		filteredHooks := make([]ClaudeHookEntry, 0, len(matcher.Hooks))
 		for _, hook := range matcher.Hooks {
-			if !isTraceHook(hook.Command) {
+			if !isEntireHook(hook.Command) {
 				filteredHooks = append(filteredHooks, hook)
 			}
 		}
@@ -490,9 +619,9 @@ func removeTraceHooks(matchers []ClaudeHookMatcher) []ClaudeHookMatcher {
 	return result
 }
 
-// removeTraceHooksFromMatchers removes Trace hooks from tool-use matchers (PreToolUse, PostToolUse)
-// This handles the nested structure where hooks are grouped by tool matcher (e.g., "Task", "TodoWrite")
-func removeTraceHooksFromMatchers(matchers []ClaudeHookMatcher) []ClaudeHookMatcher {
-	// Same logic as removeTraceHooks - both work on the same structure
-	return removeTraceHooks(matchers)
+// removeEntireHooksFromMatchers removes Entire hooks from tool-use matchers (PreToolUse, PostToolUse)
+// This handles the nested structure where hooks are grouped by tool matcher (e.g., "Agent", "TaskCreate|TaskUpdate")
+func removeEntireHooksFromMatchers(matchers []ClaudeHookMatcher) []ClaudeHookMatcher {
+	// Same logic as removeEntireHooks - both work on the same structure
+	return removeEntireHooks(matchers)
 }

@@ -214,7 +214,7 @@ section reflects the current best hypothesis with confidence ("likely",
 <!-- What was searched, what was found, what was ruled out. If nothing
 relevant, say "no prior work found; searched for: <queries>". When a
 finding cites a commit hash, also note the Trace-Checkpoint trailer
-(if any) and what `+"`entire explain --checkpoint <id> --no-pager`"+`
+(if any) and what `+"`trace explain --checkpoint <id> --no-pager`"+`
 revealed. -->
 
 ## System under investigation
@@ -232,7 +232,7 @@ hypotheses ruled out. Edit in place each turn — replace stale text,
 keep the section tight. NO per-agent attribution; NO per-turn entries
 ("claude-code (round 1):" / "codex (round 2):"). The reasoning trail
 lives in the agent session transcripts on trace/checkpoints/v1; run
-`+"`entire checkpoint explain <id>`"+` to retrieve it. -->
+`+"`trace checkpoint explain <id>`"+` to retrieve it. -->
 
 ## Findings
 

@@ -2,64 +2,94 @@ package checkpoint
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
-// Compile-time check that GitStore implements the Store interface.
-var _ Store = (*GitStore)(nil)
+var (
+	_ PersistentStore = (*GitStore)(nil)
+	_ AuthorReader    = (*GitStore)(nil)
+	_ Writer          = (*GitStore)(nil)
+	_ EphemeralStore  = (*ephemeralStore)(nil)
+)
 
-// StorerMu serializes all in-process access to git storers. go-git's
-// filesystem storer is not safe for concurrent read+write even across
-// separate Repository instances that share the same .git directory.
-// The shadow branch flock handles cross-process serialization; this
-// mutex handles in-process (cross-goroutine) serialization.
-// Exported so the strategy package can also acquire it around OpenRepository
-// and other storer access that happens outside GitStore methods.
-var StorerMu sync.Mutex
+// treeWriter holds the repo-only machinery for building a single checkpoint's
+// subtree from write requests: entry builders, transcript/session writers, and
+// the per-request appliers (applySessionWrite / applyTranscriptBackfill /
+// applySummaryBackfill / applyAttributionBackfill). It is independent of where
+// the resulting subtree is committed, so both the git-branch store (which nests
+// the subtree under <shard>/<id>/ on the v1 branch) and the git-refs store
+// (which keeps it at the root of a per-checkpoint ref) embed it and share this
+// code.
+type treeWriter struct {
+	repo *git.Repository
+}
 
-// GitStore provides operations for both temporary and committed checkpoint storage.
-// It implements the Store interface by wrapping a git repository.
+// GitStore is the committed (persistent) checkpoint store. Writes target
+// refs.Primary; committed reads resolve against refs.Read. The temporary
+// shadow-branch surface lives in ephemeralStore. It embeds *treeWriter for the
+// shared subtree-building machinery.
 type GitStore struct {
-	repo        *git.Repository
-	repoPath    string // root path for opening fresh repo instances
+	*treeWriter
+
+	refs        PersistentRefs
 	blobFetcher BlobFetchFunc
 }
 
-// NewGitStore creates a new checkpoint store backed by the given git repository.
-func NewGitStore(repo *git.Repository) *GitStore {
-	wt, err := repo.Worktree()
-	var repoPath string
-	if err == nil {
-		repoPath = wt.Filesystem().Root()
-	}
-	return &GitStore{repo: repo, repoPath: repoPath}
+// ephemeralStore is the git shadow-branch (temporary) checkpoint store. It is
+// an independent type from GitStore; the two share only package-level helpers.
+type ephemeralStore struct {
+	repo *git.Repository
+	refs PersistentRefs
+}
+
+// newEphemeralStore creates the shadow-branch store for the given repository
+// and committed-metadata topology (it consults refs.Primary to recognize the
+// committed branch when listing shadow branches).
+func newEphemeralStore(repo *git.Repository, refs PersistentRefs) *ephemeralStore {
+	return &ephemeralStore{repo: repo, refs: refs}
+}
+
+// NewEphemeralStore constructs the git shadow-branch (temporary) checkpoint
+// store. Most callers reach it via Open(...).Ephemeral(); this direct
+// constructor exists for benchmarks and tests that exercise the shadow-branch
+// surface without the full facade.
+func NewEphemeralStore(repo *git.Repository, refs PersistentRefs) EphemeralStore {
+	return newEphemeralStore(repo, refs)
+}
+
+// NewGitStore creates a checkpoint store backed by the given git repository
+// and committed-metadata topology. Pass DefaultV1Refs() for the v1-only default
+// or ResolveRefs(ctx) in code paths that honor settings.
+func NewGitStore(repo *git.Repository, refs PersistentRefs) *GitStore {
+	return &GitStore{treeWriter: &treeWriter{repo: repo}, refs: refs}
 }
 
 // SetBlobFetcher configures the store to automatically fetch missing blobs
-// on demand when reading from metadata trees. This is used after treeless
-// fetches where tree objects are local but blob objects are not.
+// on demand when reading from metadata trees.
 func (s *GitStore) SetBlobFetcher(f BlobFetchFunc) {
 	s.blobFetcher = f
 }
 
 // Repository returns the underlying git repository.
-// This is useful for strategies that need direct repository access.
 func (s *GitStore) Repository() *git.Repository {
 	return s.repo
 }
 
-// openFreshRepo opens a new git.Repository instance to avoid storer contention
-// with concurrent writers. go-git's storer is not fully thread-safe for
-// concurrent write+read on the same instance.
-func (s *GitStore) openFreshRepo() (*git.Repository, error) {
-	if s.repoPath == "" {
-		return s.repo, nil
+// Refs returns the committed-metadata topology the store was constructed with.
+func (s *GitStore) Refs() PersistentRefs {
+	return s.refs
+}
+
+// PersistentReadRef returns the ref that committed-checkpoint reads resolve against.
+func (s *GitStore) PersistentReadRef() plumbing.ReferenceName {
+	return s.refs.Read
+}
+
+func (s *GitStore) setPrimaryRef(hash plumbing.Hash) error {
+	if err := s.repo.Storer.SetReference(plumbing.NewHashReference(s.refs.Primary, hash)); err != nil {
+		return fmt.Errorf("set primary metadata ref %s to %s: %w", s.refs.Primary, hash, err)
 	}
-	repo, err := git.PlainOpen(s.repoPath)
-	if err != nil {
-		return nil, fmt.Errorf("opening git repo at %s: %w", s.repoPath, err)
-	}
-	return repo, nil
+	return nil
 }

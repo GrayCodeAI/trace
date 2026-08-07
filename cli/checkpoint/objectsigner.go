@@ -16,13 +16,6 @@ import (
 	sshagent "golang.org/x/crypto/ssh/agent"
 )
 
-// Default signing program names matching git's own defaults.
-const (
-	DefaultGPGProgram     = "gpg"
-	DefaultSSHSignProgram = "ssh-keygen"
-	DefaultGPGSMProgram   = "gpgsm"
-)
-
 var (
 	objectSignerLoader = loadObjectSigner
 	scopeName          = map[config.Scope]string{
@@ -72,7 +65,7 @@ func loadObjectSignerFromConfigs(ctx context.Context, sysCfg, globalCfg *config.
 func loadCustomProgramSigner(ctx context.Context, sysCfg, globalCfg *config.Config, merged config.Config) (plugin.Signer, bool) {
 	signFormat := normalizeProgramFormat(merged.GPG.Format)
 
-	// Replace with merged.GPG.Program once go-git surfaces that field.
+	// TODO: Replace with merged.GPG.Program once that is surfaced by go-git.
 	programName, ok := customSignProgram(signFormat, rawConfig(sysCfg), rawConfig(globalCfg))
 	if !ok {
 		return nil, false
@@ -155,14 +148,19 @@ func signProgramFromRaw(signFormat programsigner.Format, raw *format.Config) str
 	return programName
 }
 
+// DefaultSSHSignProgram is the git-default SSH signing program, used to detect
+// whether gpg.ssh.program has been customized (custom programs such as
+// 1Password's op-ssh-sign use a signing mechanism go-git cannot invoke).
+const DefaultSSHSignProgram = "ssh-keygen"
+
 func defaultSignProgram(signFormat programsigner.Format) string {
 	switch signFormat {
 	case programsigner.FormatOpenPGP:
-		return DefaultGPGProgram
+		return "gpg"
 	case programsigner.FormatSSH:
-		return DefaultSSHSignProgram
+		return "ssh-keygen"
 	case programsigner.FormatX509:
-		return DefaultGPGSMProgram
+		return "gpgsm"
 	default:
 		return ""
 	}

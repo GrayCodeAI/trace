@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GrayCodeAI/trace/cli/internal/flock"
+	"github.com/GrayCodeAI/trace/internal/flock"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )
@@ -35,7 +35,7 @@ const shadowRefMaxJitter = 8 * time.Millisecond
 // repository. Callers use the worktree root as cmd.Dir for git invocations
 // and the common dir to locate filesystem paths (lock files, loose objects)
 // — both without depending on the process cwd.
-func (s *GitStore) repoDirs(ctx context.Context) (worktreeRoot, commonDir string, err error) {
+func (s *ephemeralStore) repoDirs(ctx context.Context) (worktreeRoot, commonDir string, err error) {
 	wt, err := s.repo.Worktree()
 	if err != nil {
 		return "", "", fmt.Errorf("open worktree: %w", err)
@@ -65,7 +65,7 @@ func (s *GitStore) repoDirs(ctx context.Context) (worktreeRoot, commonDir string
 // Why shell out: git's ref-locking is the canonical cross-process atomic
 // CAS — go-git's CheckAndSetReference doesn't interoperate with native git's
 // .lock files, and shadow branches can be touched concurrently by separate
-// `trace` hook processes.
+// `entire` hook processes.
 func casUpdateShadowBranchRef(ctx context.Context, repoRoot, branchName string, newHash, expectedHash plumbing.Hash) error {
 	refName := "refs/heads/" + branchName
 
@@ -78,22 +78,13 @@ func casUpdateShadowBranchRef(ctx context.Context, repoRoot, branchName string, 
 		oldValue = expectedHash.String()
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "update-ref", refName, newValue, oldValue) // #nosec G204 -- fixed "git" binary; refName/newValue/oldValue are internally resolved ref names and object hashes, not remote input
+	cmd := exec.CommandContext(ctx, "git", "update-ref", refName, newValue, oldValue)
 	cmd.Dir = repoRoot
 	// Force English diagnostics so the CAS-conflict pattern match below
 	// isn't defeated by a translated stderr message in a non-C locale.
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
 	output, err := cmd.CombinedOutput()
 	if err == nil {
-		// Create a keep-around ref to protect the commit from git GC pruning.
-		// Git GC respects refs/keep-around/* as an anchor and will not prune
-		// objects reachable through these refs, even without a reflog entry.
-		// Best-effort: failure here is non-fatal — the shadow branch still exists.
-		keepRef := "refs/keep-around/" + newValue
-		keepCmd := exec.CommandContext(ctx, "git", "update-ref", keepRef, newValue) // #nosec G204 -- fixed "git" binary; keepRef/newValue are internally resolved ref name and object hash, not remote input
-		keepCmd.Dir = repoRoot
-		keepCmd.Env = cmd.Env
-		_ = keepCmd.Run() //nolint:errcheck // Best-effort keep-around ref; failure is non-fatal
 		return nil
 	}
 
@@ -117,7 +108,6 @@ func shadowRefBackoff(ctx context.Context, attempt int) error {
 	}
 	// Add a 1ms floor so the chosen sleep is always non-trivial, even when
 	// rand.Int64N happens to return 0.
-	// #nosec G404 -- non-cryptographic use (retry backoff jitter)
 	d := time.Duration(rand.Int64N(int64(base))) + time.Millisecond //nolint:gosec // jitter, not security-sensitive
 	select {
 	case <-time.After(d):
@@ -128,11 +118,11 @@ func shadowRefBackoff(ctx context.Context, attempt int) error {
 }
 
 // shadowBranchLockPath returns the per-shadow-branch flock file path. Lock
-// files live in <git-common-dir>/trace-shadow-locks/ so they don't pollute
+// files live in <git-common-dir>/entire-shadow-locks/ so they don't pollute
 // the session-state directory. Branch names are slash-escaped because the
-// shadow-branch convention "trace/<hash>" would otherwise nest directories.
+// shadow-branch convention "entire/<hash>" would otherwise nest directories.
 func shadowBranchLockPath(commonDir, branchName string) (string, error) {
-	lockDir := filepath.Join(commonDir, "trace-shadow-locks")
+	lockDir := filepath.Join(commonDir, "entire-shadow-locks")
 	if err := os.MkdirAll(lockDir, 0o750); err != nil {
 		return "", fmt.Errorf("create shadow lock directory: %w", err)
 	}

@@ -77,7 +77,7 @@ func NewCommand(deps Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "investigate [seed-doc]",
 		Short: "Run a multi-agent investigation against the current branch",
-		// Hidden from `entire help` while the feature is still maturing;
+		// Hidden from `trace help` while the feature is still maturing;
 		// directly invoking it still works.
 		Hidden: true,
 		Long: `Run a multi-agent investigation. Agents take turns appending findings,

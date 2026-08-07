@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GrayCodeAI/trace/cli/agent"
 	_ "github.com/GrayCodeAI/trace/cli/agent/claudecode"
 	_ "github.com/GrayCodeAI/trace/cli/agent/geminicli"
 	"github.com/GrayCodeAI/trace/cli/paths"
@@ -781,4 +782,78 @@ func TestShellCompletionTarget(t *testing.T) {
 			}
 		})
 	}
+}
+
+// writeClaudeHooksFixture writes a minimal .claude/settings.json with Trace
+// hooks installed.
+func writeClaudeHooksFixture(t *testing.T) {
+	t.Helper()
+	if err := os.MkdirAll(".claude", 0o755); err != nil {
+		t.Fatalf("Failed to create .claude directory: %v", err)
+	}
+	hooksJSON := `{
+		"hooks": {
+			"Stop": [{"hooks": [{"type": "command", "command": "trace hooks claude-code stop"}]}]
+		}
+	}`
+	if err := os.WriteFile(".claude/settings.json", []byte(hooksJSON), 0o644); err != nil {
+		t.Fatalf("Failed to write .claude/settings.json: %v", err)
+	}
+}
+
+// checkClaudeCodeHooksInstalled checks if Claude Code hooks are installed.
+func checkClaudeCodeHooksInstalled() bool {
+	ag, err := agent.Get(agent.AgentNameClaudeCode)
+	if err != nil {
+		return false
+	}
+	hookAgent, ok := agent.AsHookSupport(ag)
+	if !ok {
+		return false
+	}
+	return hookAgent.AreHooksInstalled(context.Background())
+}
+
+// writeGeminiHooksFixture writes a minimal .gemini/settings.json with Trace
+// hooks installed.
+func writeGeminiHooksFixture(t *testing.T) {
+	t.Helper()
+	if err := os.MkdirAll(".gemini", 0o755); err != nil {
+		t.Fatalf("Failed to create .gemini directory: %v", err)
+	}
+	hooksJSON := `{
+		"hooks": {
+			"enabled": true,
+			"SessionStart": [{"hooks": [{"type": "command", "command": "trace hooks gemini session-start"}]}]
+		}
+	}`
+	if err := os.WriteFile(".gemini/settings.json", []byte(hooksJSON), 0o644); err != nil {
+		t.Fatalf("Failed to write .gemini/settings.json: %v", err)
+	}
+}
+
+// checkGeminiCLIHooksInstalled checks if Gemini CLI hooks are installed.
+func checkGeminiCLIHooksInstalled() bool {
+	ag, err := agent.Get(agent.AgentNameGemini)
+	if err != nil {
+		return false
+	}
+	hookAgent, ok := agent.AsHookSupport(ag)
+	if !ok {
+		return false
+	}
+	return hookAgent.AreHooksInstalled(context.Background())
+}
+
+// checkTraceDirExists reports whether the .trace directory exists in the
+// current working directory.
+func checkTraceDirExists(_ context.Context) bool {
+	info, err := os.Stat(paths.TraceDir)
+	return err == nil && info.IsDir()
+}
+
+// removeTraceDirectory removes the .trace directory in the current working
+// directory, returning an error if it cannot be removed.
+func removeTraceDirectory(_ context.Context) error {
+	return os.RemoveAll(paths.TraceDir)
 }
