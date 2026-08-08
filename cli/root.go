@@ -141,8 +141,16 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(inGroup(newDispatchCmd(), groupSessions))
 	cmd.AddCommand(inGroup(newActivityCmd(), groupSessions))
 	cmd.AddCommand(inGroup(newRecapCmd(), groupSessions))
-	cmd.AddCommand(inGroup(newAPICmd(), groupControlPlane)) // authenticated passthrough to core/cell APIs
-	cmd.AddCommand(newAgentHelpCmd(cmd))                    // visible: agents on transports without context injection discover it via `entire help`
+
+	// Trace-specific commands (not present in upstream entireio/cli).
+	cmd.AddCommand(inGroup(newGraphCmd(), groupSessions))    // 'graph' — portable execution-graph export
+	cmd.AddCommand(inGroup(newForkCmd(), groupSessions))     // 'fork' — clone a checkpoint into a new session for A/B testing
+	cmd.AddCommand(inGroup(newAnnotateCmd(), groupSessions)) // 'annotate' — attach comments to a session/checkpoint
+	cmd.AddCommand(inGroup(newUndoCmd(), groupSessions))     // 'undo' — revert the most recent rewind/reset/fork/cleanup
+	cmd.AddCommand(inGroup(newCIInitCmd(), groupSetup))      // 'ci-init' — configure CI session auto-capture
+	cmd.AddCommand(inGroup(newOplogCmd(), groupSessions))    // 'log' — show trace's operation log
+	cmd.AddCommand(inGroup(newAPICmd(), groupControlPlane))  // authenticated passthrough to core/cell APIs
+	cmd.AddCommand(newAgentHelpCmd(cmd))                     // visible: agents on transports without context injection discover it via `entire help`
 
 	// Hidden top-level shortcuts. Functional but print a deprecation hint.
 	cmd.AddCommand(hideAsAlias(newResumeCmd(), "entire session resume"))

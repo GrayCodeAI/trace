@@ -195,6 +195,10 @@ Examples:
 	cmd.AddCommand(newStopCmd())
 	cmd.AddCommand(newSessionCurrentCmd())
 	cmd.AddCommand(newAttachCmd())
+	cmd.AddCommand(newSessionReplayCmd())
+	cmd.AddCommand(newSessionExportCmd())
+	cmd.AddCommand(newSessionImportCmd())
+	cmd.AddCommand(newSessionAnalyticsCmd())
 	cmd.AddCommand(newAdoptCmd())
 	cmd.AddCommand(newResumeCmd())
 
