@@ -15,7 +15,7 @@ import (
 )
 
 // TestPrepareCommitMsg_AmendPreservesExistingTrailer verifies that when amending
-// a commit that already has an Trace-Checkpoint trailer, the trailer is preserved
+// a commit that already has an Entire-Checkpoint trailer, the trailer is preserved
 // unchanged. source="commit" indicates an amend operation.
 func TestPrepareCommitMsg_AmendPreservesExistingTrailer(t *testing.T) {
 	dir := setupGitRepo(t)
@@ -29,7 +29,7 @@ func TestPrepareCommitMsg_AmendPreservesExistingTrailer(t *testing.T) {
 
 	// Write a commit message file that already has the trailer
 	commitMsgFile := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
-	existingMsg := "Original commit message\n\nTrace-Checkpoint: abc123def456\n"
+	existingMsg := "Original commit message\n\nEntire-Checkpoint: abc123def456\n"
 	require.NoError(t, os.WriteFile(commitMsgFile, []byte(existingMsg), 0o644))
 
 	// Call PrepareCommitMsg with source="commit" (amend)
@@ -47,7 +47,7 @@ func TestPrepareCommitMsg_AmendPreservesExistingTrailer(t *testing.T) {
 }
 
 // TestPrepareCommitMsg_AmendRestoresTrailerFromLastCheckpointID verifies the amend
-// bug fix: when a user does `git commit --amend -m "new message"`, the Trace-Checkpoint
+// bug fix: when a user does `git commit --amend -m "new message"`, the Entire-Checkpoint
 // trailer is lost because the new message replaces the old one. PrepareCommitMsg restores
 // the trailer from LastCheckpointID in session state.
 func TestPrepareCommitMsg_AmendRestoresTrailerFromLastCheckpointID(t *testing.T) {

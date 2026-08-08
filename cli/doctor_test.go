@@ -3,11 +3,13 @@ package cli
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/GrayCodeAI/trace/cli/agent/claudecode"
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
@@ -15,79 +17,21 @@ import (
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// createV2Ref creates a v2 custom ref with an empty tree commit.
-// Works for refs/trace/checkpoints/v2/main, refs/trace/checkpoints/v2/full/current, etc.
-func createV2Ref(t *testing.T, repo *git.Repository, refName string) {
-	t.Helper()
-
-	treeHash, err := checkpoint.BuildTreeFromEntries(context.Background(), repo, make(map[string]object.TreeEntry))
-	require.NoError(t, err)
-
-	commitHash, err := checkpoint.CreateCommit(context.Background(), repo, treeHash, plumbing.ZeroHash, "init v2 ref", "test", "test@test.com")
-	require.NoError(t, err)
-
-	ref := plumbing.NewHashReference(plumbing.ReferenceName(refName), commitHash)
-	require.NoError(t, repo.Storer.SetReference(ref))
-}
-
-// createBlob stores a string as a git blob and returns its hash.
-func createBlob(t *testing.T, repo *git.Repository, content string) plumbing.Hash {
-	t.Helper()
-	obj := repo.Storer.NewEncodedObject()
-	obj.SetType(plumbing.BlobObject)
-	w, err := obj.Writer()
-	require.NoError(t, err)
-	_, err = w.Write([]byte(content))
-	require.NoError(t, err)
-	require.NoError(t, w.Close())
-	hash, err := repo.Storer.SetEncodedObject(obj)
-	require.NoError(t, err)
-	return hash
-}
-
-// createV2RefWithCheckpoints creates a v2 custom ref with N checkpoint shard directories.
-// Each shard has a minimal metadata.json file.
-func createV2RefWithCheckpoints(t *testing.T, repo *git.Repository, refName string, count int) {
-	t.Helper()
-
-	entries := make(map[string]object.TreeEntry)
-	for i := range count {
-		cpID := fmt.Sprintf("%02x%010x", i%256, i)
-		path := cpID[:2] + "/" + cpID[2:] + "/" + paths.MetadataFileName
-		blobHash := createBlob(t, repo, fmt.Sprintf(`{"checkpoint_id":"%s"}`, cpID))
-		entries[path] = object.TreeEntry{
-			Name: paths.MetadataFileName,
-			Mode: filemode.Regular,
-			Hash: blobHash,
-		}
-	}
-
-	treeHash, err := checkpoint.BuildTreeFromEntries(context.Background(), repo, entries)
-	require.NoError(t, err)
-
-	commitHash, err := checkpoint.CreateCommit(context.Background(), repo, treeHash, plumbing.ZeroHash, "v2 ref with checkpoints", "test", "test@test.com")
-	require.NoError(t, err)
-
-	ref := plumbing.NewHashReference(plumbing.ReferenceName(refName), commitHash)
-	require.NoError(t, repo.Storer.SetReference(ref))
-}
-
-// newTestCmd creates a minimal cobra.Command with captured stdout/stderr for testing.
-func newTestCmd(t *testing.T) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
+// newTestCmd creates a minimal cobra.Command with captured stdout for testing.
+func newTestCmd(t *testing.T) (*cobra.Command, *bytes.Buffer) {
 	t.Helper()
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	return cmd, &stdout, &stderr
+	return cmd, &stdout
 }
 
 // testBaseCommit is a fake commit hash used across classifySession tests.
@@ -362,6 +306,9 @@ func TestClassifySession_WorktreeIDInShadowBranch(t *testing.T) {
 	assert.Equal(t, expectedBranch, result.ShadowBranch)
 }
 
+// TestRunSessionsFix_MetadataCheckFailure_PropagatesError verifies that when
+// checkDisconnectedMetadata fails, runSessionsFix returns a SilentError so the
+// custom stderr message is not printed twice by main.go.
 func TestRunSessionsFix_MetadataCheckFailure_PropagatesError(t *testing.T) {
 	// Cannot use t.Parallel() because t.Chdir modifies process-global state.
 	dir := setupGitRepoForPhaseTest(t)
@@ -453,4 +400,224 @@ func TestRunSessionsFix_ForceDiscardOutput_Indented(t *testing.T) {
 			assert.True(t, strings.HasPrefix(line, "  ✓ "), "expected nested success line to stay indented: %q", line)
 		}
 	}
+}
+
+// TestCheckCodexHookTrust_SilentWhenCodexNotInstalled — `entire doctor`
+// shouldn't print anything Codex-related when this repo doesn't have
+// .codex/hooks.json. Other agents (Claude, Cursor) keep their existing
+// quiet behavior; the codex check has to be opt-in by file presence.
+func TestCheckCodexHookTrust_SilentWhenCodexNotInstalled(t *testing.T) {
+	dir := setupGitRepoForPhaseTest(t)
+	t.Chdir(dir)
+
+	cmd, stdout := newTestCmd(t)
+	checkCodexHookTrust(cmd)
+	require.NotContains(t, stdout.String(), "Codex hook trust")
+}
+
+// resolvedHooksPath returns the .codex/hooks.json path under dir using the
+// symlink-resolved form `git rev-parse --show-toplevel` would return. Test
+// fixtures need this because t.TempDir() can produce a /var path while git
+// hands back the /private/var equivalent on macOS — divergence between the
+// two breaks the trust-state key match the production code uses.
+func resolvedHooksPath(t *testing.T, dir string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
+	return filepath.Join(resolved, ".codex", "hooks.json")
+}
+
+// canonicalCodexHooksJSON returns a hooks.json declaring all four
+// canonical Entire-managed events. Tests use this as the "current"
+// install baseline so the missing-hooks check passes.
+func canonicalCodexHooksJSON() string {
+	return `{"hooks":{
+		"SessionStart":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex session-start","timeout":30}]}],
+		"UserPromptSubmit":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex user-prompt-submit","timeout":30}]}],
+		"Stop":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex stop","timeout":30}]}],
+		"PostToolUse":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex post-tool-use","timeout":30}]}]
+	}}`
+}
+
+// TestCheckCodexHookTrust_OKWhenAllTrusted prints "✓ Codex hook trust: OK"
+// when every event declared in hooks.json has a matching state entry.
+func TestCheckCodexHookTrust_OKWhenAllTrusted(t *testing.T) {
+	dir := setupGitRepoForPhaseTest(t)
+	t.Chdir(dir)
+
+	codexDir := filepath.Join(dir, ".codex")
+	require.NoError(t, os.MkdirAll(codexDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(codexDir, "hooks.json"), []byte(canonicalCodexHooksJSON()), 0o600))
+
+	hooksPath := resolvedHooksPath(t, dir)
+	codexHome := filepath.Join(t.TempDir(), "codex-home")
+	require.NoError(t, os.MkdirAll(codexHome, 0o750))
+	configTOML := `[hooks.state."` + hooksPath + `:session_start:0:0"]
+trusted_hash = "sha256:aaa"
+
+[hooks.state."` + hooksPath + `:user_prompt_submit:0:0"]
+trusted_hash = "sha256:bbb"
+
+[hooks.state."` + hooksPath + `:stop:0:0"]
+trusted_hash = "sha256:ccc"
+
+[hooks.state."` + hooksPath + `:post_tool_use:0:0"]
+trusted_hash = "sha256:ddd"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(configTOML), 0o600))
+	t.Setenv("CODEX_HOME", codexHome)
+
+	cmd, stdout := newTestCmd(t)
+	checkCodexHookTrust(cmd)
+	require.Contains(t, stdout.String(), "✓ Codex hook trust: OK")
+}
+
+// TestCheckCodexHookTrust_ListsMissingEvents prints the gap list when a
+// hook event has no corresponding trusted_hash. Pinning the format
+// keeps the doctor output script-grep-friendly.
+func TestCheckCodexHookTrust_ListsMissingEvents(t *testing.T) {
+	dir := setupGitRepoForPhaseTest(t)
+	t.Chdir(dir)
+
+	codexDir := filepath.Join(dir, ".codex")
+	require.NoError(t, os.MkdirAll(codexDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(codexDir, "hooks.json"), []byte(canonicalCodexHooksJSON()), 0o600))
+
+	hooksPath := resolvedHooksPath(t, dir)
+	codexHome := filepath.Join(t.TempDir(), "codex-home")
+	require.NoError(t, os.MkdirAll(codexHome, 0o750))
+	// Trust three of four — PostToolUse is the gap.
+	configTOML := `[hooks.state."` + hooksPath + `:session_start:0:0"]
+trusted_hash = "sha256:aaa"
+
+[hooks.state."` + hooksPath + `:user_prompt_submit:0:0"]
+trusted_hash = "sha256:bbb"
+
+[hooks.state."` + hooksPath + `:stop:0:0"]
+trusted_hash = "sha256:ccc"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(configTOML), 0o600))
+	t.Setenv("CODEX_HOME", codexHome)
+
+	cmd, stdout := newTestCmd(t)
+	checkCodexHookTrust(cmd)
+
+	out := stdout.String()
+	require.Contains(t, out, "Codex hook trust: REVIEW NEEDED")
+	require.Contains(t, out, "1 hook(s) declared")
+	require.Contains(t, out, "- post_tool_use")
+	require.Contains(t, out, "Open /hooks inside Codex")
+}
+
+// TestCheckClaudeCodeHookDrift_SilentWhenNotInstalled — doctor prints nothing
+// Claude-Code-related when this repo has no Entire hooks installed.
+func TestCheckClaudeCodeHookDrift_SilentWhenNotInstalled(t *testing.T) {
+	dir := setupGitRepoForPhaseTest(t)
+	t.Chdir(dir)
+
+	cmd, stdout := newTestCmd(t)
+	checkClaudeCodeHookDrift(cmd)
+	require.NotContains(t, stdout.String(), "Claude Code hook")
+}
+
+// TestCheckClaudeCodeHookDrift_OKWhenCurrent — a fresh install writes the
+// current matchers, so doctor reports OK.
+func TestCheckClaudeCodeHookDrift_OKWhenCurrent(t *testing.T) {
+	dir := setupGitRepoForPhaseTest(t)
+	t.Chdir(dir)
+
+	if _, err := (&claudecode.ClaudeCodeAgent{}).InstallHooks(context.Background(), false, false); err != nil {
+		t.Fatalf("InstallHooks() error = %v", err)
+	}
+
+	cmd, stdout := newTestCmd(t)
+	checkClaudeCodeHookDrift(cmd)
+	require.Contains(t, stdout.String(), "✓ Claude Code hook config: OK")
+}
+
+// TestCheckClaudeCodeHookDrift_WarnsWhenOutdated — a config left by an older CLI
+// (hooks under the stale Task/TodoWrite matchers) is reported OUT OF DATE with
+// the --force fix hint.
+func TestCheckClaudeCodeHookDrift_WarnsWhenOutdated(t *testing.T) {
+	dir := setupGitRepoForPhaseTest(t)
+	t.Chdir(dir)
+
+	claudeDir := filepath.Join(dir, ".claude")
+	require.NoError(t, os.MkdirAll(claudeDir, 0o750))
+	stale := `{
+  "hooks": {
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "entire hooks claude-code stop"}]}],
+    "PreToolUse": [{"matcher": "Task", "hooks": [{"type": "command", "command": "entire hooks claude-code pre-task"}]}],
+    "PostToolUse": [
+      {"matcher": "Task", "hooks": [{"type": "command", "command": "entire hooks claude-code post-task"}]},
+      {"matcher": "TodoWrite", "hooks": [{"type": "command", "command": "entire hooks claude-code post-todo"}]}
+    ]
+  }
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(claudeDir, claudecode.ClaudeSettingsFileName), []byte(stale), 0o600))
+
+	cmd, stdout := newTestCmd(t)
+	checkClaudeCodeHookDrift(cmd)
+
+	out := stdout.String()
+	require.Contains(t, out, "Claude Code hooks: OUT OF DATE")
+	require.Contains(t, out, "entire enable --force")
+}
+
+// TestCheckCodexHookTrust_FlagsStaleHooksFile — user enabled Codex on
+// an older release that didn't ship PostToolUse. Their hooks.json has
+// only the three legacy events. Doctor must surface the gap and tell
+// them to re-run `entire enable`.
+func TestCheckCodexHookTrust_FlagsStaleHooksFile(t *testing.T) {
+	dir := setupGitRepoForPhaseTest(t)
+	t.Chdir(dir)
+
+	codexDir := filepath.Join(dir, ".codex")
+	require.NoError(t, os.MkdirAll(codexDir, 0o750))
+	staleHooksJSON := `{"hooks":{
+		"SessionStart":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex session-start","timeout":30}]}],
+		"UserPromptSubmit":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex user-prompt-submit","timeout":30}]}],
+		"Stop":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex stop","timeout":30}]}]
+	}}`
+	require.NoError(t, os.WriteFile(filepath.Join(codexDir, "hooks.json"), []byte(staleHooksJSON), 0o600))
+
+	hooksPath := resolvedHooksPath(t, dir)
+	codexHome := filepath.Join(t.TempDir(), "codex-home")
+	require.NoError(t, os.MkdirAll(codexHome, 0o750))
+	// Trust the three legacy events so the trust check itself stays quiet —
+	// only the stale-file finding should fire.
+	configTOML := `[hooks.state."` + hooksPath + `:session_start:0:0"]
+trusted_hash = "sha256:aaa"
+
+[hooks.state."` + hooksPath + `:user_prompt_submit:0:0"]
+trusted_hash = "sha256:bbb"
+
+[hooks.state."` + hooksPath + `:stop:0:0"]
+trusted_hash = "sha256:ccc"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(configTOML), 0o600))
+	t.Setenv("CODEX_HOME", codexHome)
+
+	cmd, stdout := newTestCmd(t)
+	checkCodexHookTrust(cmd)
+
+	out := stdout.String()
+	require.Contains(t, out, "Codex hooks: OUT OF DATE")
+	require.Contains(t, out, "- post_tool_use")
+	require.Contains(t, out, "entire enable")
+	require.NotContains(t, out, "Codex hook trust: REVIEW NEEDED")
+}
+
+// TestConfirmDoctorFix_CancelledContext verifies that a cancelled command
+// context makes the confirm prompt return (false, nil) rather than surfacing a
+// wrapped error — doctor fixes are skipped cleanly on interrupt.
+func TestConfirmDoctorFix_CancelledContext(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before prompting
+
+	var out bytes.Buffer
+	proceed, err := confirmDoctorFix(ctx, &out, "Apply fix?")
+	require.NoError(t, err)
+	assert.False(t, proceed)
 }

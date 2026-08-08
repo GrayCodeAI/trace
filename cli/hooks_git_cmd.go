@@ -2,23 +2,29 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/GrayCodeAI/trace/cli/agent/external"
+	"github.com/GrayCodeAI/trace/cli/checkpointpolicy"
+	"github.com/GrayCodeAI/trace/cli/gitrepo"
+	"github.com/GrayCodeAI/trace/cli/interactive"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/strategy"
+	"github.com/GrayCodeAI/trace/cli/telemetry"
+	"github.com/GrayCodeAI/trace/cli/versioncheck"
+	"github.com/GrayCodeAI/trace/cli/versioninfo"
 	"github.com/GrayCodeAI/trace/perf"
 
 	"github.com/spf13/cobra"
 )
 
-// contextKey is an unexported type for context keys defined in this package.
-type contextKey string
-
-// gitHooksDisabledKey is the context key for the git hooks disabled state.
-const gitHooksDisabledKey contextKey = "gitHooksDisabled"
+// gitHooksDisabled is set by PersistentPreRunE when Entire is not set up or disabled.
+// When true, all git hook commands return early without doing any work.
+var gitHooksDisabled bool
 
 // gitHookContext holds common state for git hook logging.
 type gitHookContext struct {
@@ -60,11 +66,68 @@ func (g *gitHookContext) logCompleted(err error) {
 	g.span.RecordError(err)
 }
 
+func (g *gitHookContext) skipUnsupportedCheckpointPolicy() bool {
+	// Callers return success when this is true because policy failures should
+	// disable Entire checkpoint work, not make Git reject the user's operation.
+	repo, err := gitrepo.OpenCurrent(g.ctx)
+	if err != nil {
+		return g.skipUnreadableCheckpointPolicy(err)
+	}
+	defer repo.Close()
+
+	state, err := checkpointpolicy.ReadLocal(g.ctx, repo)
+	if err != nil {
+		return g.skipUnreadableCheckpointPolicy(err)
+	}
+
+	policy := state.Policy
+	if checkpointpolicy.CanSatisfyPolicy(policy) {
+		return false
+	}
+
+	logging.Warn(g.ctx, "checkpoint policy unsupported; skipping git hook",
+		slog.String("checkpoint_version", policy.CheckpointVersion),
+		slog.String("checkpoint_min_version", policy.CheckpointMinVersion))
+	if interactive.CanPromptInteractively() {
+		fmt.Fprint(os.Stderr, checkpointpolicy.UnsupportedPolicyMessage(
+			policy,
+			versioncheck.UpdateCommandForCurrentBinary(versioninfo.Version),
+		))
+	}
+	emitCheckpointPolicyBlocked(g.ctx, telemetry.CheckpointPolicyBlockedEvent{
+		Hook:                 g.hookName,
+		HookType:             telemetry.PolicyBlockedHookTypeGit,
+		Reason:               telemetry.PolicyBlockedReasonUnsupported,
+		Outcome:              telemetry.PolicyBlockedOutcomeSkipped,
+		CheckpointVersion:    policy.CheckpointVersion,
+		CheckpointMinVersion: policy.CheckpointMinVersion,
+	})
+	return true
+}
+
+// skipUnreadableCheckpointPolicy warns, notifies the user, and reports the
+// policy-blocked telemetry event for a hook whose checkpoint policy could not be
+// read. It always returns true so callers skip Entire checkpoint work.
+func (g *gitHookContext) skipUnreadableCheckpointPolicy(err error) bool {
+	logging.Warn(g.ctx, "checkpoint policy read failed; skipping git hook",
+		slog.String("error", err.Error()))
+	if interactive.CanPromptInteractively() {
+		fmt.Fprintf(os.Stderr, "[entire] Could not read checkpoint policy; skipping Entire checkpoint work: %v\n", err)
+	}
+	emitCheckpointPolicyBlocked(g.ctx, telemetry.CheckpointPolicyBlockedEvent{
+		Hook:     g.hookName,
+		HookType: telemetry.PolicyBlockedHookTypeGit,
+		Reason:   telemetry.PolicyBlockedReasonUnreadable,
+		Outcome:  telemetry.PolicyBlockedOutcomeSkipped,
+	})
+	return true
+}
+
 // initHookLogging initializes logging for hooks by finding the most recent session.
 // Returns a cleanup function that should be deferred.
-// If Trace is not set up or disabled, returns a no-op to avoid creating files.
+// If Entire is not set up or disabled, returns a no-op to avoid creating files.
 func initHookLogging(ctx context.Context) func() {
-	// Don't create any files if Trace is not set up or disabled.
+	// Don't create any files if Entire is not set up or disabled.
 	// This is checked here as defense-in-depth (also checked in PersistentPreRunE).
 	if !settings.IsSetUpAndEnabled(ctx) {
 		return func() {}
@@ -80,7 +143,8 @@ func initHookLogging(ctx context.Context) func() {
 		return func() {}
 	}
 
-	// Configure PII redaction once at startup (reads settings, no-op if disabled).
+	// Configure redaction once at startup: PII (opt-in), inline custom_redactions,
+	// and rule packs discovered under .entire/redactors/. No-op if nothing is configured.
 	strategy.EnsureRedactionConfigured()
 
 	return logging.Close
@@ -98,18 +162,18 @@ func newHooksGitCmd() *cobra.Command {
 		Hidden: true, // Internal command, not for direct user use
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			// Check if Trace is set up and enabled before doing any work.
+			// Check if Entire is set up and enabled before doing any work.
 			// This prevents global git hooks from doing anything in repos where
-			// Trace was never enabled or has been disabled.
+			// Entire was never enabled or has been disabled.
 			if !settings.IsSetUpAndEnabled(ctx) {
-				cmd.SetContext(context.WithValue(ctx, gitHooksDisabledKey, true))
+				gitHooksDisabled = true
 				return nil
 			}
 			// Discover external agent plugins so GetByAgentType works correctly
 			// during condensation (e.g. post-commit). Without this, external agents
 			// registered in the hook phase cannot be resolved here, causing token
 			// usage and other agent-specific data to be missing from metadata.json.
-			discoveryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+			discoveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			external.DiscoverAndRegister(discoveryCtx)
 			hookLogCleanup = initHookLogging(ctx)
@@ -138,7 +202,7 @@ func newHooksGitPrepareCommitMsgCmd() *cobra.Command {
 		Short: "Handle prepare-commit-msg git hook",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Context().Value(gitHooksDisabledKey) == true {
+			if gitHooksDisabled {
 				return nil
 			}
 
@@ -152,6 +216,9 @@ func newHooksGitPrepareCommitMsgCmd() *cobra.Command {
 			defer g.span.End()
 			g.logInvoked(slog.String("source", source))
 
+			if g.skipUnsupportedCheckpointPolicy() {
+				return nil
+			}
 			hookErr := g.strategy.PrepareCommitMsg(g.ctx, commitMsgFile, source)
 			g.logCompleted(hookErr)
 
@@ -166,7 +233,7 @@ func newHooksGitCommitMsgCmd() *cobra.Command {
 		Short: "Handle commit-msg git hook",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Context().Value(gitHooksDisabledKey) == true {
+			if gitHooksDisabled {
 				return nil
 			}
 
@@ -176,6 +243,9 @@ func newHooksGitCommitMsgCmd() *cobra.Command {
 			defer g.span.End()
 			g.logInvoked()
 
+			if g.skipUnsupportedCheckpointPolicy() {
+				return nil
+			}
 			hookErr := g.strategy.CommitMsg(g.ctx, commitMsgFile)
 			g.logCompleted(hookErr)
 			return hookErr //nolint:wrapcheck // Thin delegation layer - wrapping adds no value
@@ -189,7 +259,7 @@ func newHooksGitPostCommitCmd() *cobra.Command {
 		Short: "Handle post-commit git hook",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if cmd.Context().Value(gitHooksDisabledKey) == true {
+			if gitHooksDisabled {
 				return nil
 			}
 
@@ -197,6 +267,9 @@ func newHooksGitPostCommitCmd() *cobra.Command {
 			defer g.span.End()
 			g.logInvoked()
 
+			if g.skipUnsupportedCheckpointPolicy() {
+				return nil
+			}
 			hookErr := g.strategy.PostCommit(g.ctx)
 			g.logCompleted(hookErr)
 
@@ -211,7 +284,7 @@ func newHooksGitPostRewriteCmd() *cobra.Command {
 		Short: "Handle post-rewrite git hook",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Context().Value(gitHooksDisabledKey) == true {
+			if gitHooksDisabled {
 				return nil
 			}
 
@@ -219,6 +292,9 @@ func newHooksGitPostRewriteCmd() *cobra.Command {
 			defer g.span.End()
 			g.logInvoked(slog.String("rewrite_type", args[0]))
 
+			if g.skipUnsupportedCheckpointPolicy() {
+				return nil
+			}
 			hookErr := g.strategy.PostRewrite(g.ctx, args[0], cmd.InOrStdin())
 			g.logCompleted(hookErr)
 
@@ -232,8 +308,15 @@ func newHooksGitPrePushCmd() *cobra.Command {
 		Use:   "pre-push <remote>",
 		Short: "Handle pre-push git hook",
 		Args:  cobra.ExactArgs(1),
+		// SilenceUsage/Errors so non-zero exits from privacy-critical
+		// failures (OPF rewrite errors) print only the error message,
+		// not cobra's usage banner. The error message itself already
+		// includes user guidance (see ErrV1Diverged / ErrBootstrapTooLarge /
+		// ErrV1RefMoved in strategy/manual_commit_opf_rewrite.go).
+		SilenceUsage:  true,
+		SilenceErrors: false,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Context().Value(gitHooksDisabledKey) == true {
+			if gitHooksDisabled {
 				return nil
 			}
 
@@ -243,10 +326,23 @@ func newHooksGitPrePushCmd() *cobra.Command {
 			defer g.span.End()
 			g.logInvoked(slog.String("remote", remote))
 
-			hookErr := g.strategy.PrePush(g.ctx, remote)
+			hookErr := g.strategy.PrePushFromGitHook(g.ctx, remote)
 			g.logCompleted(hookErr)
 
-			return nil
+			// Propagate the error so the hook script exits non-zero and
+			// git push aborts the entire batch. PrePush itself only
+			// returns errors for privacy-critical failures (OPF rewrite —
+			// e.g., V1DivergedError, BootstrapTooLargeError,
+			// V1RefMovedError, OPFRuntimeFailedError); transient
+			// checkpoint-push failures are logged and swallowed before
+			// reaching this point. See strategy/manual_commit_push.go
+			// for the contract. We wrap with a short "pre-push:" prefix
+			// so the user sees the source of the abort without losing
+			// the underlying type (errors.As still finds the sentinels).
+			if hookErr == nil {
+				return nil
+			}
+			return fmt.Errorf("pre-push: %w", hookErr)
 		},
 	}
 }

@@ -46,17 +46,17 @@ func TestTestEnv_InitRepo(t *testing.T) {
 	}
 }
 
-func TestTestEnv_InitTrace(t *testing.T) {
+func TestTestEnv_InitEntire(t *testing.T) {
 	t.Parallel()
 	env := NewRepoEnv(t)
-	// Verify .trace directory exists
-	traceDir := filepath.Join(env.RepoDir, ".trace")
-	if _, err := os.Stat(traceDir); os.IsNotExist(err) {
-		t.Error(".trace directory should exist")
+	// Verify .entire directory exists
+	entireDir := filepath.Join(env.RepoDir, ".entire")
+	if _, err := os.Stat(entireDir); os.IsNotExist(err) {
+		t.Error(".entire directory should exist")
 	}
 
 	// Verify settings file exists and contains enabled
-	settingsPath := filepath.Join(traceDir, paths.SettingsFileName)
+	settingsPath := filepath.Join(entireDir, paths.SettingsFileName)
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatalf("failed to read %s: %v", paths.SettingsFileName, err)
@@ -68,9 +68,9 @@ func TestTestEnv_InitTrace(t *testing.T) {
 	}
 
 	// Verify tmp directory exists
-	tmpDir := filepath.Join(traceDir, "tmp")
+	tmpDir := filepath.Join(entireDir, "tmp")
 	if _, err := os.Stat(tmpDir); os.IsNotExist(err) {
-		t.Error(".trace/tmp directory should exist")
+		t.Error(".entire/tmp directory should exist")
 	}
 }
 
@@ -166,10 +166,10 @@ func TestNewRepoEnv(t *testing.T) {
 		t.Error(".git directory should exist")
 	}
 
-	// Verify .trace directory exists
-	traceDir := filepath.Join(env.RepoDir, ".trace")
-	if _, err := os.Stat(traceDir); os.IsNotExist(err) {
-		t.Error(".trace directory should exist")
+	// Verify .entire directory exists
+	entireDir := filepath.Join(env.RepoDir, ".entire")
+	if _, err := os.Stat(entireDir); os.IsNotExist(err) {
+		t.Error(".entire directory should exist")
 	}
 }
 

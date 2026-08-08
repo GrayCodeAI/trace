@@ -26,7 +26,7 @@ func renderDataAPIAuthError(errW io.Writer, err error) error {
 		return NewSilentError(err)
 	}
 	if errors.Is(err, auth.ErrNotLoggedIn) {
-		fmt.Fprintln(errW, "Not logged in. Run 'trace login' to authenticate.")
+		fmt.Fprintln(errW, "Not logged in. Run 'entire login' to authenticate.")
 		return NewSilentError(err)
 	}
 	return err

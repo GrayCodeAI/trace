@@ -77,19 +77,19 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 		t.Errorf("Notification hooks = %d, want 1", len(settings.Hooks.Notification))
 	}
 
-	// Verify hook commands (localDev=false, so use trace binary)
-	verifyHookCommand(t, settings.Hooks.SessionStart, "", agentpkg.WrapProductionJSONWarningHookCommand("hawk trace hooks gemini session-start", agentpkg.WarningFormatSingleLine))
-	verifyHookCommand(t, settings.Hooks.SessionEnd, "exit", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini session-end"))
-	verifyHookCommand(t, settings.Hooks.SessionEnd, "logout", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini session-end"))
-	verifyHookCommand(t, settings.Hooks.BeforeAgent, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini before-agent"))
-	verifyHookCommand(t, settings.Hooks.AfterAgent, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini after-agent"))
-	verifyHookCommand(t, settings.Hooks.BeforeModel, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini before-model"))
-	verifyHookCommand(t, settings.Hooks.AfterModel, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini after-model"))
-	verifyHookCommand(t, settings.Hooks.BeforeToolSelection, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini before-tool-selection"))
-	verifyHookCommand(t, settings.Hooks.BeforeTool, "*", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini before-tool"))
-	verifyHookCommand(t, settings.Hooks.AfterTool, "*", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini after-tool"))
-	verifyHookCommand(t, settings.Hooks.PreCompress, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini pre-compress"))
-	verifyHookCommand(t, settings.Hooks.Notification, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks gemini notification"))
+	// Verify hook commands (localDev=false, so use entire binary)
+	verifyHookCommand(t, settings.Hooks.SessionStart, "", agentpkg.WrapProductionJSONWarningHookCommand("entire hooks gemini session-start", agentpkg.WarningFormatSingleLine))
+	verifyHookCommand(t, settings.Hooks.SessionEnd, "exit", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini session-end"))
+	verifyHookCommand(t, settings.Hooks.SessionEnd, "logout", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini session-end"))
+	verifyHookCommand(t, settings.Hooks.BeforeAgent, "", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini before-agent"))
+	verifyHookCommand(t, settings.Hooks.AfterAgent, "", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini after-agent"))
+	verifyHookCommand(t, settings.Hooks.BeforeModel, "", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini before-model"))
+	verifyHookCommand(t, settings.Hooks.AfterModel, "", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini after-model"))
+	verifyHookCommand(t, settings.Hooks.BeforeToolSelection, "", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini before-tool-selection"))
+	verifyHookCommand(t, settings.Hooks.BeforeTool, "*", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini before-tool"))
+	verifyHookCommand(t, settings.Hooks.AfterTool, "*", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini after-tool"))
+	verifyHookCommand(t, settings.Hooks.PreCompress, "", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini pre-compress"))
+	verifyHookCommand(t, settings.Hooks.Notification, "", agentpkg.WrapProductionSilentHookCommand("entire hooks gemini notification"))
 }
 
 func TestInstallHooks_LocalDev(t *testing.T) {
@@ -104,8 +104,9 @@ func TestInstallHooks_LocalDev(t *testing.T) {
 
 	settings := readGeminiSettings(t, tempDir)
 
-	// Verify local dev commands use git rev-parse for runtime repo root resolution
-	prefix := `go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace hooks gemini `
+	// Verify local dev commands delegate to the entire-dev launcher, resolving
+	// the repo root at runtime via git.
+	prefix := `"$(git rev-parse --show-toplevel)"/scripts/entire-dev hooks gemini `
 	verifyHookCommand(t, settings.Hooks.SessionStart, "", prefix+"session-start")
 	verifyHookCommand(t, settings.Hooks.SessionEnd, "exit", prefix+"session-end")
 	verifyHookCommand(t, settings.Hooks.SessionEnd, "logout", prefix+"session-end")
@@ -200,7 +201,7 @@ func TestInstallHooks_PreservesUserHooks(t *testing.T) {
 
 	// Verify user hooks are preserved
 	if len(settings.Hooks.SessionStart) != 2 {
-		t.Errorf("SessionStart hooks = %d, want 2 (user + trace)", len(settings.Hooks.SessionStart))
+		t.Errorf("SessionStart hooks = %d, want 2 (user + entire)", len(settings.Hooks.SessionStart))
 	}
 
 	// Verify user hook is still there
@@ -296,12 +297,12 @@ func TestUninstallHooks_PreservesUnknownHookTypes(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 
-	// Create settings with Trace hooks AND unknown hook types
+	// Create settings with Entire hooks AND unknown hook types
 	writeGeminiSettings(t, tempDir, `{
   "hooks": {
     "SessionStart": [
       {
-        "hooks": [{"name": "trace-session-start", "type": "command", "command": "sh -c 'if ! command -v trace >/dev/null 2>&1; then echo \"Trace CLI is enabled but not installed or not on PATH. Installation guide: https://docs.trace.io/cli/installation#installation-methods\" >&2; exit 0; fi; exec trace hooks gemini session-start'"}]
+        "hooks": [{"name": "entire-session-start", "type": "command", "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then echo \"Entire CLI is enabled but not installed or not on PATH. Installation guide: https://docs.entire.io/cli/installation#installation-methods\" >&2; exit 0; fi; exec entire hooks gemini session-start'"}]
       }
     ],
     "FutureHook": [
@@ -418,7 +419,7 @@ func TestUninstallHooks_PreservesUserHooks(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 
-	// Create settings with both user and trace hooks
+	// Create settings with both user and entire hooks
 	writeGeminiSettings(t, tempDir, `{
   "hooks": {
     "SessionStart": [
@@ -427,7 +428,7 @@ func TestUninstallHooks_PreservesUserHooks(t *testing.T) {
         "hooks": [{"name": "my-hook", "type": "command", "command": "echo hello"}]
       },
       {
-        "hooks": [{"name": "trace-session-start", "type": "command", "command": "sh -c 'if ! command -v trace >/dev/null 2>&1; then echo \"Trace CLI is enabled but not installed or not on PATH. Installation guide: https://docs.trace.io/cli/installation#installation-methods\" >&2; exit 0; fi; exec trace hooks gemini session-start'"}]
+        "hooks": [{"name": "entire-session-start", "type": "command", "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then echo \"Entire CLI is enabled but not installed or not on PATH. Installation guide: https://docs.entire.io/cli/installation#installation-methods\" >&2; exit 0; fi; exec entire hooks gemini session-start'"}]
       }
     ]
   }
@@ -508,7 +509,7 @@ func TestInstallHooks_RemovesLegacyEnabledField(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 
-	// Simulate settings.json written by old Trace that put "enabled": true inside hooks
+	// Simulate settings.json written by old Entire that put "enabled": true inside hooks
 	writeGeminiSettings(t, tempDir, `{
   "hooks": {
     "enabled": true,
@@ -560,11 +561,11 @@ func TestInstallHooks_RemovesLegacyEnabledField_WhenAlreadyInstalled(t *testing.
     "enabled": true,
     "SessionStart": [
       {
-        "hooks": [{"name": "trace-session-start", "type": "command", "command": %q}]
+        "hooks": [{"name": "entire-session-start", "type": "command", "command": %q}]
       }
     ]
   }
-}`, agentpkg.WrapProductionJSONWarningHookCommand("hawk trace hooks gemini session-start", agentpkg.WarningFormatSingleLine)))
+}`, agentpkg.WrapProductionJSONWarningHookCommand("entire hooks gemini session-start", agentpkg.WarningFormatSingleLine)))
 
 	agent := &GeminiCLIAgent{}
 	n, err := agent.InstallHooks(context.Background(), false, false)
@@ -643,7 +644,7 @@ func TestInstallHooks_ForceWithLegacyFields(t *testing.T) {
     "enabled": true,
     "SessionStart": [
       {
-        "hooks": [{"name": "trace-session-start", "type": "command", "command": "sh -c 'if ! command -v trace >/dev/null 2>&1; then echo \"Trace CLI is enabled but not installed or not on PATH. Installation guide: https://docs.trace.io/cli/installation#installation-methods\" >&2; exit 0; fi; exec trace hooks gemini session-start'"}]
+        "hooks": [{"name": "entire-session-start", "type": "command", "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then echo \"Entire CLI is enabled but not installed or not on PATH. Installation guide: https://docs.entire.io/cli/installation#installation-methods\" >&2; exit 0; fi; exec entire hooks gemini session-start'"}]
       }
     ]
   }
@@ -671,13 +672,13 @@ func TestUninstallHooks_RemovesLegacyEnabledField(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 
-	// Simulate legacy settings with "enabled": true inside hooks plus an Trace hook
+	// Simulate legacy settings with "enabled": true inside hooks plus an Entire hook
 	writeGeminiSettings(t, tempDir, `{
   "hooks": {
     "enabled": true,
     "SessionStart": [
       {
-        "hooks": [{"name": "trace-session-start", "type": "command", "command": "sh -c 'if ! command -v trace >/dev/null 2>&1; then echo \"Trace CLI is enabled but not installed or not on PATH. Installation guide: https://docs.trace.io/cli/installation#installation-methods\" >&2; exit 0; fi; exec trace hooks gemini session-start'"}]
+        "hooks": [{"name": "entire-session-start", "type": "command", "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then echo \"Entire CLI is enabled but not installed or not on PATH. Installation guide: https://docs.entire.io/cli/installation#installation-methods\" >&2; exit 0; fi; exec entire hooks gemini session-start'"}]
       }
     ]
   }

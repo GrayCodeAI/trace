@@ -47,37 +47,7 @@ type SessionChange struct {
 	Timestamp  time.Time
 }
 
-// TokenUsage represents aggregated token usage for a checkpoint.
-// This is agent-agnostic and can be populated by any agent that tracks token usage.
+// TokenUsage is defined in the leaf agent/types package so the checkpoint
+// contract can reference it without importing the full agent package. The
+// alias keeps existing agent.TokenUsage references working.
 type TokenUsage = types.TokenUsage
-
-// ProgressFn receives streaming progress updates. It must not block — invoke it
-// from the same goroutine that reads the stream and keep handlers fast.
-type ProgressFn func(progress GenerationProgress)
-
-// ProgressPhase represents a progress phase.
-type ProgressPhase string
-
-const (
-	// PhaseConnecting is emitted once when the CLI signals it is making the upstream request.
-	PhaseConnecting ProgressPhase = "connecting"
-	// PhaseFirstToken is emitted once when the upstream responds with the first event,
-	// carrying TTFT and input/cache token counts.
-	PhaseFirstToken ProgressPhase = "first-token"
-	// PhaseGenerating is emitted repeatedly as text or thinking deltas arrive.
-	// OutputTokens carries a running estimate based on delta sizes.
-	PhaseGenerating ProgressPhase = "generating"
-	// PhaseDone is emitted once when the final result event is received without error.
-	PhaseDone ProgressPhase = "done"
-)
-
-// GenerationProgress reports a snapshot of streaming text generation progress.
-// Fields not relevant to the current Phase may be zero-valued.
-type GenerationProgress struct {
-	Phase             ProgressPhase
-	OutputTokens      int // running estimate during PhaseGenerating; final at PhaseDone
-	InputTokens       int // populated at PhaseFirstToken
-	CachedInputTokens int // populated at PhaseFirstToken
-	TTFTms            int // time-to-first-token, populated at PhaseFirstToken
-	DurationMs        int // populated at PhaseDone (final result event)
-}

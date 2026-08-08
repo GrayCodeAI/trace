@@ -7,7 +7,7 @@ import "github.com/GrayCodeAI/trace/cli/paths"
 
 // Directory paths - re-exported from paths package for convenience
 const (
-	TraceDir         = paths.TraceDir
-	TraceTmpDir      = paths.TraceTmpDir
-	TraceMetadataDir = paths.TraceMetadataDir
+	EntireDir         = paths.EntireDir
+	EntireTmpDir      = paths.EntireTmpDir
+	EntireMetadataDir = paths.EntireMetadataDir
 )

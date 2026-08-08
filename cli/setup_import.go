@@ -36,14 +36,14 @@ var (
 // maybeOfferSessionImport offers, on first-time enable only, to import
 // pre-existing agent history for the just-selected agents. Granularity is
 // agent-level: choosing an agent imports all its discoverable sessions (30-day
-// lookback, matching `trace import`). It is best-effort — discovery or import
+// lookback, matching `entire import`). It is best-effort — discovery or import
 // failures are logged and reported to the user but never fail enable.
 //
 // Import only happens on an explicit choice: an interactive run presents a
 // multi-select (nothing pre-checked) and imports what the user selects; `--yes`
 // ("accept all defaults") auto-imports all eligible agents. A non-interactive
 // run without `--yes` (a script, a piped shell, or an agent with no TTY) makes
-// no choice, so it imports nothing and just points at `trace import` — silently
+// no choice, so it imports nothing and just points at `entire import` — silently
 // importing history there would be surprising.
 func maybeOfferSessionImport(ctx context.Context, w io.Writer, agents []agent.Agent, opts EnableOptions, firstRun bool) {
 	if !firstRun {
@@ -68,7 +68,7 @@ func maybeOfferSessionImport(ctx context.Context, w io.Writer, agents []agent.Ag
 			// Non-interactive without --yes: don't silently import. Leave a
 			// pointer so scripted/agent enables can still import on demand.
 			logging.Info(ctx, "session import offer skipped: non-interactive without --yes", "eligible", len(eligible))
-			fmt.Fprintf(w, "Found importable history for %s. Run 'trace import <agent>' to import it.\n", pluralAgents(len(eligible)))
+			fmt.Fprintf(w, "Found importable history for %s. Run 'entire import <agent>' to import it.\n", pluralAgents(len(eligible)))
 			return
 		}
 		selected, err = sessionImportPrompt(ctx, w, eligible)
@@ -196,7 +196,7 @@ func promptImportConfirmSingle(ctx context.Context, w io.Writer, e eligibleImpor
 }
 
 // runSelectedImports imports each chosen agent's history, mirroring the
-// standalone `trace import` command. Per-agent failures are logged and
+// standalone `entire import` command. Per-agent failures are logged and
 // reported but do not stop the remaining imports or fail enable.
 func runSelectedImports(ctx context.Context, w io.Writer, repoRoot string, selected []eligibleImport) {
 	repo, err := openRepository(ctx)
@@ -208,7 +208,7 @@ func runSelectedImports(ctx context.Context, w io.Writer, repoRoot string, selec
 	defer repo.Close()
 
 	// Gate on the checkpoint policy before writing any checkpoint data, matching
-	// the standalone `trace import` command. Best-effort: an unsupported or
+	// the standalone `entire import` command. Best-effort: an unsupported or
 	// unreadable policy skips the import (logged and noted) instead of failing
 	// enable, since the offer must never break enable.
 	if err := ensureCheckpointPolicyAllowsCheckpointData(ctx, repo); err != nil {

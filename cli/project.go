@@ -9,7 +9,7 @@ import (
 	"github.com/GrayCodeAI/trace/internal/coreapi"
 )
 
-// newProjectCmd is the `trace project` command group: create, list,
+// newProjectCmd is the `entire project` command group: create, list,
 // get, and delete projects on the Entire control plane.
 func newProjectCmd() *cobra.Command {
 	cmd := &cobra.Command{

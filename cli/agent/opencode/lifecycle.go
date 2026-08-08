@@ -19,7 +19,30 @@ import (
 
 var runOpenCodeExportToFileFn = runOpenCodeExportToFile
 
-// Hook name constants — these become CLI subcommands under `trace hooks opencode`.
+// Compile-time assertion that OpenCode can inject context into the model.
+var _ agent.ContextInjector = (*OpenCodeAgent)(nil)
+
+// InjectionEvent reports that OpenCode injects model context at TurnStart. The
+// embedded plugin reads the turn-start hook's stdout and applies the injection
+// via experimental.chat.system.transform.
+func (a *OpenCodeAgent) InjectionEvent() agent.EventType { return agent.TurnStart }
+
+// RenderContextInjection emits a {"inject_context":"..."} envelope on stdout for
+// the plugin to apply. Returns (nil, nil) for empty text.
+func (a *OpenCodeAgent) RenderContextInjection(inj agent.ContextInjection) ([]byte, error) {
+	if strings.TrimSpace(inj.Text) == "" {
+		return nil, nil
+	}
+	b, err := json.Marshal(struct {
+		InjectContext string `json:"inject_context"`
+	}{InjectContext: inj.Text})
+	if err != nil {
+		return nil, fmt.Errorf("marshal opencode context injection: %w", err)
+	}
+	return append(b, '\n'), nil
+}
+
+// Hook name constants — these become CLI subcommands under `entire hooks opencode`.
 const (
 	HookNameSessionStart = "session-start"
 	HookNameSessionEnd   = "session-end"
@@ -154,15 +177,15 @@ func sessionTranscriptPath(ctx context.Context, sessionID string) (string, error
 	if err != nil {
 		repoRoot = "."
 	}
-	return filepath.Join(repoRoot, paths.TraceTmpDir, sessionID+".json"), nil
+	return filepath.Join(repoRoot, paths.EntireTmpDir, sessionID+".json"), nil
 }
 
 // fetchAndCacheExport calls `opencode export <sessionID>` and writes the result
 // to a temporary file. Returns the path to the temp file.
 //
-// Integration testing: Set TRACE_TEST_OPENCODE_MOCK_EXPORT=1 to skip the
+// Integration testing: Set ENTIRE_TEST_OPENCODE_MOCK_EXPORT=1 to skip the
 // `opencode export` call and use pre-written mock data instead. Tests must
-// pre-write the transcript file to .trace/tmp/<sessionID>.json before
+// pre-write the transcript file to .entire/tmp/<sessionID>.json before
 // triggering the hook. See integration_test/hooks.go:SimulateOpenCodeTurnEnd.
 func (a *OpenCodeAgent) fetchAndCacheExport(ctx context.Context, sessionID string) (string, error) {
 	if err := validation.ValidateSessionID(sessionID); err != nil {
@@ -175,18 +198,18 @@ func (a *OpenCodeAgent) fetchAndCacheExport(ctx context.Context, sessionID strin
 		repoRoot = "."
 	}
 
-	tmpDir := filepath.Join(repoRoot, paths.TraceTmpDir)
+	tmpDir := filepath.Join(repoRoot, paths.EntireTmpDir)
 	tmpFile := filepath.Join(tmpDir, sessionID+".json")
 
 	// Integration test mode: use pre-written mock file without calling opencode export
-	if os.Getenv("TRACE_TEST_OPENCODE_MOCK_EXPORT") != "" {
+	if os.Getenv("ENTIRE_TEST_OPENCODE_MOCK_EXPORT") != "" {
 		if _, err := os.Stat(tmpFile); err == nil {
 			return tmpFile, nil
 		}
-		return "", fmt.Errorf("mock export file not found: %s (TRACE_TEST_OPENCODE_MOCK_EXPORT is set)", tmpFile)
+		return "", fmt.Errorf("mock export file not found: %s (ENTIRE_TEST_OPENCODE_MOCK_EXPORT is set)", tmpFile)
 	}
 
-	// Write export directly to temp file under .trace. Avoid stdout capture,
+	// Write export directly to temp file under .entire. Avoid stdout capture,
 	// which can truncate large payloads in some opencode versions.
 	if err := os.MkdirAll(tmpDir, 0o750); err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
@@ -196,8 +219,8 @@ func (a *OpenCodeAgent) fetchAndCacheExport(ctx context.Context, sessionID strin
 		return "", fmt.Errorf("opencode export failed: %w", err)
 	}
 
-	//nolint:gosec // tmpFile is constructed from validated session ID under repo .trace/tmp
-	data, err := os.ReadFile(tmpFile) // #nosec G304 -- tmpFile is constructed from a validated session ID under repo .trace/tmp, not external input
+	//nolint:gosec // tmpFile is constructed from validated session ID under repo .entire/tmp
+	data, err := os.ReadFile(tmpFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to read export file: %w", err)
 	}

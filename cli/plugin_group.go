@@ -1,14 +1,13 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
 )
 
-// newPluginGroupCmd builds `trace plugin` and its subcommands. The kubectl
+// newPluginGroupCmd builds `entire plugin` and its subcommands. The kubectl
 // dispatcher in plugin.go is the runtime mechanism — these commands manage a
 // per-user managed directory that the dispatcher discovers because main.go
 // prepends it to PATH at startup.
@@ -18,17 +17,17 @@ import (
 func newPluginGroupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plugin",
-		Short: "Manage Trace plugins (install, list, remove)",
-		Long: `Manage Trace plugins.
+		Short: "Manage Entire plugins (install, list, remove)",
+		Long: `Manage Entire plugins.
 
-Plugins are external executables named 'trace-<name>'. The CLI discovers
+Plugins are external executables named 'entire-<name>'. The CLI discovers
 plugins on $PATH and from a per-user managed directory which is
 auto-prepended to PATH at startup. The managed directory is, in order of
 precedence:
 
-  $TRACE_PLUGIN_DIR/bin (override)
-  $XDG_DATA_HOME/trace/plugins/bin (Linux/macOS, when set)
-  ~/.local/share/trace/plugins/bin (Linux/macOS default)
+  $ENTIRE_PLUGIN_DIR/bin (override)
+  $XDG_DATA_HOME/entire/plugins/bin (Linux/macOS, when set)
+  ~/.local/share/entire/plugins/bin (Linux/macOS default)
   %LOCALAPPDATA%\entire\plugins\bin (Windows, when set)
   ~\AppData\Local\entire\plugins\bin (Windows fallback when LOCALAPPDATA is unset)
 
@@ -38,9 +37,9 @@ Commands:
   remove    Remove a plugin from the managed directory
 
 Examples:
-  trace plugin install ./dist/trace-pgr
-  trace plugin list
-  trace plugin remove pgr`,
+  entire plugin install ./dist/entire-pgr
+  entire plugin list
+  entire plugin remove pgr`,
 	}
 
 	cmd.AddCommand(newPluginInstallCmd())
@@ -56,7 +55,7 @@ func newPluginInstallCmd() *cobra.Command {
 		Short: "Link or copy a plugin executable into the managed directory",
 		Long: `Link or copy a plugin executable into the managed directory.
 
-The source must be a file whose basename starts with 'trace-' (the
+The source must be a file whose basename starts with 'entire-' (the
 dispatcher only resolves names of that shape). On Unix the file must be
 executable.
 
@@ -68,8 +67,8 @@ After install, 'entire <name>' invokes the plugin via the kubectl-style
 dispatcher — the managed directory is auto-prepended to $PATH.
 
 Examples:
-  trace plugin install ./dist/trace-pgr
-  trace plugin install /usr/local/bin/trace-pgr --force`,
+  entire plugin install ./dist/entire-pgr
+  entire plugin install /usr/local/bin/entire-pgr --force`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := InstallPluginFromPath(InstallPluginOptions{
@@ -107,27 +106,19 @@ func warnIfShadowsBuiltin(cmd *cobra.Command, name string) {
 }
 
 func newPluginListCmd() *cobra.Command {
-	var jsonOut bool
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "list",
 		Short: "List plugins installed in the managed directory",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runPluginList(cmd.OutOrStdout(), jsonOut)
+			return runPluginList(cmd.OutOrStdout())
 		},
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "output plugin list as JSON")
-	return cmd
 }
 
-func runPluginList(w io.Writer, jsonOut bool) error {
+func runPluginList(w io.Writer) error {
 	plugins, err := ListInstalledPlugins()
 	if err != nil {
 		return fmt.Errorf("list plugins: %w", err)
-	}
-	if jsonOut {
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(plugins)
 	}
 	dir, err := PluginBinDir()
 	if err != nil {
@@ -135,7 +126,7 @@ func runPluginList(w io.Writer, jsonOut bool) error {
 	}
 	if len(plugins) == 0 {
 		fmt.Fprintf(w, "No plugins installed in %s.\n", dir)
-		fmt.Fprintln(w, "Install one with 'trace plugin install <path>', or drop an trace-<name> binary anywhere on $PATH.")
+		fmt.Fprintln(w, "Install one with 'entire plugin install <path>', or drop an entire-<name> binary anywhere on $PATH.")
 		return nil
 	}
 	fmt.Fprintf(w, "Managed plugin directory: %s\n\n", dir)

@@ -1,7 +1,7 @@
 // Package experimental gates the visibility of experimental CLI commands.
 //
 // Experimental commands stay fully runnable in every build; this package only
-// controls whether they appear in `trace help`. Developer builds (go build,
+// controls whether they appear in `entire help`. Developer builds (go build,
 // go run, mise) show them, grouped under an "Experimental commands:" help
 // section. Release builds (GoReleaser) hide them.
 package experimental

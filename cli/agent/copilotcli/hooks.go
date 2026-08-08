@@ -14,18 +14,19 @@ import (
 	"github.com/GrayCodeAI/trace/cli/paths"
 )
 
-// HooksFileName is the hooks file managed by Trace for Copilot CLI.
-const HooksFileName = "trace.json"
+// HooksFileName is the hooks file managed by Entire for Copilot CLI.
+const HooksFileName = "entire.json"
 
 // hooksDir is the directory within the repo where Copilot CLI looks for hook configs.
 const hooksDir = ".github/hooks"
 
-// traceHookPrefixes are command prefixes that identify Trace hooks in the bash field.
-var traceHookPrefixes = []string{
-	"hawk trace ",
-	`go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace `,
-	"trace ",
-	`go run "$(git rev-parse --show-toplevel)"/cmd/trace/main.go `,
+// entireHookPrefixes are command prefixes that identify Entire hooks in the
+// bash field. The "go run" prefix is retained so hooks installed by older
+// versions are still recognized.
+var entireHookPrefixes = []string{
+	"entire ",
+	agent.LocalDevHookScript + " ",
+	`go run "$(git rev-parse --show-toplevel)"/cmd/entire/main.go `,
 }
 
 // hookConfigKey maps our kebab-case hook names to camelCase JSON keys.
@@ -40,8 +41,8 @@ var hookConfigKey = map[string]string{
 	HookNameErrorOccurred:       "errorOccurred",
 }
 
-// InstallHooks installs Copilot CLI hooks in .github/hooks/trace.json.
-// If force is true, removes existing Trace hooks before installing.
+// InstallHooks installs Copilot CLI hooks in .github/hooks/entire.json.
+// If force is true, removes existing Entire hooks before installing.
 // Returns the number of hooks installed.
 // Unknown top-level fields and hook types are preserved on round-trip.
 func (c *CopilotCLIAgent) InstallHooks(ctx context.Context, localDev bool, force bool) (int, error) {
@@ -56,7 +57,6 @@ func (c *CopilotCLIAgent) InstallHooks(ctx context.Context, localDev bool, force
 	var rawFile map[string]json.RawMessage
 	var rawHooks map[string]json.RawMessage
 
-	// #nosec G304 -- hooksPath is constructed from repo root + fixed path, not external input
 	existingData, readErr := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	switch {
 	case readErr == nil:
@@ -94,19 +94,19 @@ func (c *CopilotCLIAgent) InstallHooks(ctx context.Context, localDev bool, force
 		hookEntries[hookName] = entries
 	}
 
-	// If force, remove existing Trace hooks first
+	// If force, remove existing Entire hooks first
 	if force {
 		for hookName, entries := range hookEntries {
-			hookEntries[hookName] = removeTraceHooks(entries)
+			hookEntries[hookName] = removeEntireHooks(entries)
 		}
 	}
 
 	// Define command prefix
 	var cmdPrefix string
 	if localDev {
-		cmdPrefix = `go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace hooks copilot-cli `
+		cmdPrefix = agent.LocalDevHookScript + " hooks copilot-cli "
 	} else {
-		cmdPrefix = "hawk trace hooks copilot-cli "
+		cmdPrefix = "entire hooks copilot-cli "
 	}
 
 	count := 0
@@ -122,7 +122,7 @@ func (c *CopilotCLIAgent) InstallHooks(ctx context.Context, localDev bool, force
 			entries = append(entries, CopilotHookEntry{
 				Type:    "command",
 				Bash:    cmd,
-				Comment: "Trace CLI",
+				Comment: "Entire CLI",
 			})
 			hookEntries[hookName] = entries
 			count++
@@ -165,7 +165,7 @@ func (c *CopilotCLIAgent) InstallHooks(ctx context.Context, localDev bool, force
 	return count, nil
 }
 
-// UninstallHooks removes Trace hooks from Copilot CLI's trace.json.
+// UninstallHooks removes Entire hooks from Copilot CLI's entire.json.
 // Unknown top-level fields and hook types are preserved on round-trip.
 func (c *CopilotCLIAgent) UninstallHooks(ctx context.Context) error {
 	worktreeRoot, err := paths.WorktreeRoot(ctx)
@@ -173,7 +173,6 @@ func (c *CopilotCLIAgent) UninstallHooks(ctx context.Context) error {
 		worktreeRoot = "."
 	}
 	hooksPath := filepath.Join(worktreeRoot, hooksDir, HooksFileName)
-	// #nosec G304 -- hooksPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -197,14 +196,14 @@ func (c *CopilotCLIAgent) UninstallHooks(ctx context.Context) error {
 		rawHooks = make(map[string]json.RawMessage)
 	}
 
-	// Parse and remove Trace hooks from each hook type we manage
+	// Parse and remove Entire hooks from each hook type we manage
 	for _, hookName := range c.HookNames() {
 		key := hookConfigKey[hookName]
 		var entries []CopilotHookEntry
 		if err := parseCopilotHookType(rawHooks, key, &entries); err != nil {
 			return fmt.Errorf("failed to parse %s hooks: %w", key, err)
 		}
-		entries = removeTraceHooks(entries)
+		entries = removeEntireHooks(entries)
 		if err := marshalCopilotHookType(rawHooks, key, entries); err != nil {
 			return fmt.Errorf("failed to marshal %s hooks: %w", key, err)
 		}
@@ -233,14 +232,13 @@ func (c *CopilotCLIAgent) UninstallHooks(ctx context.Context) error {
 	return nil
 }
 
-// AreHooksInstalled checks if Trace hooks are installed in the Copilot CLI config.
+// AreHooksInstalled checks if Entire hooks are installed in the Copilot CLI config.
 func (c *CopilotCLIAgent) AreHooksInstalled(ctx context.Context) bool {
 	worktreeRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		worktreeRoot = "."
 	}
 	hooksPath := filepath.Join(worktreeRoot, hooksDir, HooksFileName)
-	// #nosec G304 -- hooksPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -255,14 +253,14 @@ func (c *CopilotCLIAgent) AreHooksInstalled(ctx context.Context) bool {
 		return false
 	}
 
-	return hasTraceHook(hooksFile.Hooks.UserPromptSubmitted) ||
-		hasTraceHook(hooksFile.Hooks.SessionStart) ||
-		hasTraceHook(hooksFile.Hooks.AgentStop) ||
-		hasTraceHook(hooksFile.Hooks.SessionEnd) ||
-		hasTraceHook(hooksFile.Hooks.SubagentStop) ||
-		hasTraceHook(hooksFile.Hooks.PreToolUse) ||
-		hasTraceHook(hooksFile.Hooks.PostToolUse) ||
-		hasTraceHook(hooksFile.Hooks.ErrorOccurred)
+	return hasEntireHook(hooksFile.Hooks.UserPromptSubmitted) ||
+		hasEntireHook(hooksFile.Hooks.SessionStart) ||
+		hasEntireHook(hooksFile.Hooks.AgentStop) ||
+		hasEntireHook(hooksFile.Hooks.SessionEnd) ||
+		hasEntireHook(hooksFile.Hooks.SubagentStop) ||
+		hasEntireHook(hooksFile.Hooks.PreToolUse) ||
+		hasEntireHook(hooksFile.Hooks.PostToolUse) ||
+		hasEntireHook(hooksFile.Hooks.ErrorOccurred)
 }
 
 // GetSupportedHooks returns the normalized lifecycle events this agent supports.
@@ -317,26 +315,26 @@ func hookBashExists(entries []CopilotHookEntry, bash string) bool {
 	return false
 }
 
-// isTraceHook checks if a hook entry's bash command belongs to Trace.
-func isTraceHook(bash string) bool {
-	return agent.IsManagedHookCommand(bash, traceHookPrefixes)
+// isEntireHook checks if a hook entry's bash command belongs to Entire.
+func isEntireHook(bash string) bool {
+	return agent.IsManagedHookCommand(bash, entireHookPrefixes)
 }
 
-// hasTraceHook checks if any entry in the slice is an Trace hook.
-func hasTraceHook(entries []CopilotHookEntry) bool {
+// hasEntireHook checks if any entry in the slice is an Entire hook.
+func hasEntireHook(entries []CopilotHookEntry) bool {
 	for _, entry := range entries {
-		if isTraceHook(entry.Bash) {
+		if isEntireHook(entry.Bash) {
 			return true
 		}
 	}
 	return false
 }
 
-// removeTraceHooks removes all Trace hooks from the slice.
-func removeTraceHooks(entries []CopilotHookEntry) []CopilotHookEntry {
+// removeEntireHooks removes all Entire hooks from the slice.
+func removeEntireHooks(entries []CopilotHookEntry) []CopilotHookEntry {
 	result := make([]CopilotHookEntry, 0, len(entries))
 	for _, entry := range entries {
-		if !isTraceHook(entry.Bash) {
+		if !isEntireHook(entry.Bash) {
 			result = append(result, entry)
 		}
 	}

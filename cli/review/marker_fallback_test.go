@@ -53,8 +53,8 @@ func TestReviewMarker_RoundTrip(t *testing.T) {
 		t.Errorf("Prompt roundtrip mismatch: got %q want %q", got.Prompt, m.Prompt)
 	}
 
-	// Marker file must live under .git/trace-sessions/, not the worktree.
-	markerGlob := filepath.Join(tmp, ".git", "trace-sessions", "*")
+	// Marker file must live under .git/entire-sessions/, not the worktree.
+	markerGlob := filepath.Join(tmp, ".git", "entire-sessions", "*")
 	entries, err := filepath.Glob(markerGlob)
 	if err != nil {
 		t.Fatalf("glob sessions dir: %v", err)

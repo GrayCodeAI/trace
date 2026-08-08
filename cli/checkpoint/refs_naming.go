@@ -12,7 +12,7 @@ import (
 // CheckpointRefPrefix is the namespace under which the git-refs backend stores
 // one ref per checkpoint: refs/entire/checkpoints/<shard>/<id>. Each ref points
 // at a checkpoint commit whose tree root is that checkpoint's contents. This is
-// distinct from the git-branch backend's single trace/checkpoints/v1 branch.
+// distinct from the git-branch backend's single entire/checkpoints/v1 branch.
 const CheckpointRefPrefix = "refs/entire/checkpoints/"
 
 // RefName returns the per-checkpoint git ref for a checkpoint ID:

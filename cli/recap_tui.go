@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/GrayCodeAI/trace/cli/api"
+	"github.com/GrayCodeAI/trace/cli/palette"
 	"github.com/GrayCodeAI/trace/cli/recap"
 )
 
@@ -21,7 +22,10 @@ type recapTUIOptions struct {
 	View  recap.ViewMode
 	Agent string
 	Repo  string
-	Color bool
+	// RepoName is the human owner/repo display name for the scoped repo; Repo is
+	// the ?repo= query value (a repo_id ULID when routed to a cell).
+	RepoName string
+	Color    bool
 }
 
 type recapDataMsg struct {
@@ -35,9 +39,10 @@ type recapErrMsg struct {
 }
 
 type recapTUIModel struct {
-	ctx    context.Context
-	client *api.Client
-	repo   string
+	ctx      context.Context
+	client   *api.Client
+	repo     string
+	repoName string
 
 	rangeKey recap.RangeKey
 	view     recap.ViewMode
@@ -77,6 +82,7 @@ func newRecapTUIModel(ctx context.Context, client *api.Client, opts recapTUIOpti
 		ctx:       ctx,
 		client:    client,
 		repo:      opts.Repo,
+		repoName:  opts.RepoName,
 		rangeKey:  opts.Range,
 		view:      opts.View,
 		agent:     opts.Agent,
@@ -104,7 +110,7 @@ func (m recapTUIModel) fetch(requestID int) tea.Cmd {
 	}
 }
 
-func (m recapTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:ireturn // required by bubbletea.Model interface
+func (m recapTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case recapDataMsg:
 		if msg.requestID != m.requestID {
@@ -137,20 +143,23 @@ func (m recapTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:iretu
 			return m, tea.Quit
 		}
 		switch msg.String() {
+		case "d":
+			return m.setRange(recap.RangeDay)
+		case "w":
+			return m.setRange(recap.RangeWeek)
+		case "m":
+			return m.setRange(recap.RangeMonth)
+		case "r":
+			return m.setRange(recap.Range90d)
 		case "t":
-			m.rangeKey = nextRecapRange(m.rangeKey)
-			m.requestID++
-			m.loading = true
-			m.loadErr = nil
-			m.resp = nil
-			return m.withViewport(), m.fetch(m.requestID)
+			return m.setRange(nextRecapRange(m.rangeKey))
 		case "v":
 			m.view = nextRecapView(m.view)
 			return m.withViewport(), nil
 		case "a":
 			m.agent = m.nextAgent()
 			return m.withViewport(), nil
-		case "r":
+		case "R":
 			m.requestID++
 			m.loading = true
 			m.loadErr = nil
@@ -174,10 +183,41 @@ func (m recapTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:iretu
 	return m, nil
 }
 
+func (m recapTUIModel) setRange(next recap.RangeKey) (recapTUIModel, tea.Cmd) {
+	if next == "" {
+		return m, nil
+	}
+	// Pressing the current range key while a load error is on screen acts as
+	// retry — otherwise the keystroke would be silently dropped and the user
+	// would be left staring at the error with no obvious way out.
+	//
+	// Same-range retry intentionally preserves m.resp (no nil-out) and skips
+	// withViewport: the user is asking for the same data, so if a previous
+	// successful response is on screen we keep showing it under the loading
+	// state instead of blanking the viewport. This matches the 'R' reload
+	// path. The new-range branch below clears m.resp because the displayed
+	// data no longer matches the requested range.
+	if next == m.rangeKey {
+		if m.loadErr == nil {
+			return m, nil
+		}
+		m.requestID++
+		m.loading = true
+		m.loadErr = nil
+		return m, m.fetch(m.requestID)
+	}
+	m.rangeKey = next
+	m.requestID++
+	m.loading = true
+	m.loadErr = nil
+	m.resp = nil
+	return m.withViewport(), m.fetch(m.requestID)
+}
+
 func (m recapTUIModel) View() tea.View {
 	v := tea.View{AltScreen: true}
 	if m.loadErr != nil {
-		v.SetContent(fmt.Sprintf("\n  Failed to load recap: %s\n\n  Press r to retry or q to quit.\n", recapLoadErrorMessage(m.loadErr)))
+		v.SetContent(fmt.Sprintf("\n  Failed to load recap: %s\n\n  Press R to retry or q to quit.\n", recapLoadErrorMessage(m.loadErr)))
 		return v
 	}
 	if m.loading && m.resp == nil {
@@ -210,11 +250,12 @@ func (m recapTUIModel) withViewport() recapTUIModel {
 	}
 	if m.resp != nil {
 		m.viewport.SetContent(recap.RenderStaticRecap(m.resp, recap.RenderOptions{
-			Range: m.rangeKey,
-			View:  m.view,
-			Agent: m.agent,
-			Width: m.width,
-			Color: m.color,
+			Range:    m.rangeKey,
+			View:     m.view,
+			Agent:    m.agent,
+			Width:    m.width,
+			Color:    m.color,
+			RepoName: m.repoName,
 		}))
 	}
 	return m
@@ -223,21 +264,23 @@ func (m recapTUIModel) withViewport() recapTUIModel {
 func (m recapTUIModel) renderFooter() string {
 	choices := []string{
 		recapFooterLine(m.color, []recapHelpItem{
-			{"t", "range"},
+			{"d", "day"},
+			{"w", "week"},
+			{"m", "month"},
+			{"r", "90d"},
 			{"v", "view"},
 			{"a", "agent"},
-			{"r", "refresh"},
-			{"↑/↓", "scroll"},
+			{"R", "reload"},
 			{"q", "quit"},
 		}),
 		recapFooterLine(m.color, []recapHelpItem{
-			{"t", "range"},
+			{"d/w/m/r", "range"},
 			{"v", "view"},
 			{"a", "agent"},
 			{"q", "quit"},
 		}),
 		recapFooterLine(m.color, []recapHelpItem{
-			{"t", "range"},
+			{"d/w/m/r", "range"},
 			{"v", "view"},
 			{"q", "quit"},
 		}),
@@ -266,8 +309,8 @@ func recapFooterLine(color bool, items []recapHelpItem) string {
 		}
 		return strings.Join(parts, " · ")
 	}
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted)).Faint(true)
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted)).Bold(true)
 	item := func(k, desc string) string {
 		return keyStyle.Render(k) + helpStyle.Render(" "+desc)
 	}

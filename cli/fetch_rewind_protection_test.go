@@ -58,9 +58,9 @@ func TestFetchMetadataBranch_DoesNotRewindLocalAhead(t *testing.T) {
 	// Go back to main so CWD isn't sitting on the orphan-ish metadata branch.
 	runGit(t, localDir, "checkout", "--quiet", "main")
 
-	require.NoError(t, os.MkdirAll(filepath.Join(localDir, ".trace"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(localDir, ".entire"), 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(localDir, ".trace", "settings.json"),
+		filepath.Join(localDir, ".entire", "settings.json"),
 		[]byte(`{"enabled": true, "strategy_options": {"filtered_fetches": true}}`),
 		0o644,
 	))

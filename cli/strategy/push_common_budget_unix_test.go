@@ -19,7 +19,7 @@ import (
 // budget (~2x). A hanging GIT_SSH_COMMAND blocks until the shared budget cuts it off.
 //
 // Not parallel: uses t.Setenv and overrides checkpointPushBudget.
-func TestDoPushBranch_SharedBudget_BoundsTotalWallClock(t *testing.T) {
+func TestDoPushRef_SharedBudget_BoundsTotalWallClock(t *testing.T) {
 	const budget = 2 * time.Second
 	restoreBudget := checkpointPushBudget
 	checkpointPushBudget = budget
@@ -30,7 +30,7 @@ func TestDoPushBranch_SharedBudget_BoundsTotalWallClock(t *testing.T) {
 	require.NoError(t, os.WriteFile(hangScript, []byte("#!/bin/sh\nexec sleep 30\n"), 0o755))
 	t.Setenv("GIT_SSH_COMMAND", hangScript)
 	// With a token set, newCommand rewrites ssh:// to https:// and the hang never runs.
-	t.Setenv("TRACE_CHECKPOINT_TOKEN", "")
+	t.Setenv("ENTIRE_CHECKPOINT_TOKEN", "")
 
 	tmpDir := setupRepoWithCheckpointBranch(t)
 	t.Chdir(tmpDir)
@@ -45,11 +45,11 @@ func TestDoPushBranch_SharedBudget_BoundsTotalWallClock(t *testing.T) {
 	err := doPushRef(context.Background(), target, plumbing.NewBranchReferenceName(paths.MetadataBranchName))
 	elapsed := time.Since(start)
 
-	require.NoError(t, err, "doPushBranch degrades gracefully on a stuck transport")
+	require.NoError(t, err, "doPushRef degrades gracefully on a stuck transport")
 
 	// Upper bound: one shared budget; per-attempt regression would land at ~2x.
 	require.Less(t, elapsed, 5*time.Second,
-		"doPushBranch should return at ~budget, not stack multiple full timeouts; took %s", elapsed)
+		"doPushRef should return at ~budget, not stack multiple full timeouts; took %s", elapsed)
 	// Lower bound: confirm the push hung and was cut off by the budget, not failing
 	// instantly (which would make the upper bound meaningless).
 	require.GreaterOrEqual(t, elapsed, budget/2,

@@ -58,7 +58,7 @@ func syncCheckpointPolicyForPrePush(ctx context.Context, repo *git.Repository, p
 
 func warnOrLogCheckpointPolicyReadFailure(ctx context.Context, err error) {
 	if interactive.CanPromptInteractively() {
-		fmt.Fprintf(stderrWriter, "[trace] Could not read checkpoint policy; skipping Trace checkpoint work: %v\n", err)
+		fmt.Fprintf(stderrWriter, "[entire] Could not read checkpoint policy; skipping Entire checkpoint work: %v\n", err)
 		return
 	}
 	logging.Warn(
@@ -69,7 +69,7 @@ func warnOrLogCheckpointPolicyReadFailure(ctx context.Context, err error) {
 
 func warnOrLogCheckpointPolicySyncFailure(ctx context.Context, err error) {
 	if interactive.CanPromptInteractively() {
-		fmt.Fprintf(stderrWriter, "[trace] Could not refresh checkpoint policy: %v\n", err)
+		fmt.Fprintf(stderrWriter, "[entire] Could not refresh checkpoint policy: %v\n", err)
 		return
 	}
 	logging.Warn(
@@ -82,7 +82,7 @@ func warnOrLogCheckpointPolicyDiverged(ctx context.Context, state checkpointpoli
 	if interactive.CanPromptInteractively() {
 		fmt.Fprintf(
 			stderrWriter,
-			"[trace] Could not reconcile checkpoint policy: local checkpoint policy %s diverges from remote %s\n",
+			"[entire] Could not reconcile checkpoint policy: local checkpoint policy %s diverges from remote %s\n",
 			state.Hash,
 			state.RemoteHash,
 		)

@@ -20,16 +20,16 @@ import (
 )
 
 func cleanLongDescription() string {
-	description := `Clean up Trace session data for the current HEAD commit.
+	description := `Clean up Entire session data for the current HEAD commit.
 
 By default, cleans session state and shadow branches for the current HEAD:
-  - Session state files (.git/trace-sessions/<session-id>.json)
-  - Shadow branch (trace/<commit-hash>-<worktree-hash>)
+  - Session state files (.git/entire-sessions/<session-id>.json)
+  - Shadow branch (entire/<commit-hash>-<worktree-hash>)
 
-Use --all to clean all Trace session data across the repository:
-  - All session state files (.git/trace-sessions/)
+Use --all to clean all Entire session data across the repository:
+  - All session state files (.git/entire-sessions/)
   - All shadow branches
-  - Temporary files (.trace/tmp/)`
+  - Temporary files (.entire/tmp/)`
 
 	description += `
 
@@ -49,7 +49,7 @@ func newCleanCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "clean",
-		Short: "Clean up Trace session data",
+		Short: "Clean up Entire session data",
 		Long:  cleanLongDescription(),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -60,7 +60,7 @@ func newCleanCmd() *cobra.Command {
 			}
 
 			// Check if in git repository before initializing logging,
-			// to avoid creating .trace/logs in arbitrary directories.
+			// to avoid creating .entire/logs in arbitrary directories.
 			if _, err := paths.WorktreeRoot(ctx); err != nil {
 				return errors.New("not a git repository")
 			}
@@ -157,6 +157,7 @@ func previewCurrentHead(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	defer repo.Close()
 
 	head, err := repo.Head()
 	if err != nil {
@@ -265,16 +266,16 @@ func runCleanSession(ctx context.Context, cmd *cobra.Command, start *strategy.Ma
 
 // runCleanAll cleans all session data across the repository.
 func runCleanAll(ctx context.Context, cmd *cobra.Command, force, dryRun bool) error {
-	// List all items (sessions, shadow branches) — not just orphaned ones
 	items, err := strategy.ListAllItems(ctx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return NewSilentError(err)
+		}
 		return fmt.Errorf("failed to list items: %w", err)
 	}
 
-	// List temp files — skip active-session filter since --all deletes those sessions
 	tempFiles, err := listAllTempFiles(ctx)
 	if err != nil {
-		// Non-fatal: continue with other cleanup items
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to list temp files: %v\n", err)
 	}
 
@@ -415,10 +416,10 @@ func cleanupItemIDs(items []strategy.CleanupItem) []string {
 	return ids
 }
 
-// listAllTempFiles returns all files in .trace/tmp/ without filtering.
+// listAllTempFiles returns all files in .entire/tmp/ without filtering.
 // Used by --all since those sessions are being deleted anyway.
 func listAllTempFiles(ctx context.Context) ([]string, error) {
-	absDir, err := paths.AbsPath(ctx, paths.TraceTmpDir)
+	absDir, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve temp dir: %w", err)
 	}
@@ -457,11 +458,11 @@ type TempFileDeleteError struct {
 	Err  error
 }
 
-// deleteTempFiles removes all files in .trace/tmp/.
+// deleteTempFiles removes all files in .entire/tmp/.
 // Uses os.Root to ensure deletions are confined to the temp directory.
 // Returns successfully deleted files and any failures with their error reasons.
 func deleteTempFiles(ctx context.Context, files []string) (deleted []string, failed []TempFileDeleteError) {
-	absDir, err := paths.AbsPath(ctx, paths.TraceTmpDir)
+	absDir, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
 		for _, file := range files {
 			failed = append(failed, TempFileDeleteError{File: file, Err: err})
@@ -494,6 +495,7 @@ func activeSessionsOnCurrentHead(ctx context.Context) ([]*session.State, error) 
 	if err != nil {
 		return nil, err
 	}
+	defer repo.Close()
 
 	head, err := repo.Head()
 	if err != nil {

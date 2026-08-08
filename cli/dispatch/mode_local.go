@@ -135,7 +135,7 @@ func runLocal(ctx context.Context, opts Options) (*Dispatch, error) {
 		},
 	}
 
-	text, err := generateLocalDispatch(ctx, dispatch, opts.Voice)
+	text, err := generateLocalDispatch(ctx, dispatch, opts.Voice, opts.TextGenerator, opts.Model)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func reachableCheckpointIDsInRange(ctx context.Context, repoRoot, revRange strin
 		"--since="+since.UTC().Format(time.RFC3339),
 		"--until="+until.UTC().Format(time.RFC3339),
 		"--grep",
-		"Trace-Checkpoint:",
+		"Entire-Checkpoint:",
 		"--format=%cI%x00%B%x00%x00",
 	)
 	output, err := cmd.Output()
@@ -536,7 +536,7 @@ func loadCommitSubjectsByCheckpoint(ctx context.Context, repoRoot string, since 
 		"--all",
 		"--since="+since.UTC().Format(time.RFC3339),
 		"--grep",
-		"Trace-Checkpoint:",
+		"Entire-Checkpoint:",
 		"--format=%s%x00%B%x00%x00",
 	)
 	output, err := cmd.Output()

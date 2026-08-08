@@ -37,20 +37,14 @@ const configLoaderKey plugin.Name = "config-loader"
 func useAutoConfigLoader(t *testing.T) {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	resetPluginEntry(configLoaderKey)
-	if err := plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource { return config.NewAuto() }); err != nil {
-		t.Fatalf("failed to register NewAuto config loader: %v", err)
-	}
-	t.Cleanup(func() {
-		resetPluginEntry(configLoaderKey)
-		if err := plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource { return config.NewEmpty() }); err != nil {
-			t.Fatalf("failed to restore NewEmpty config loader: %v", err)
-		}
+	registerConfigLoaderForTest(t, func() error {
+		return plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource { return config.NewAuto() })
 	})
 }
 
-// registerConfigLoaderForTest swaps the registered ConfigLoader plugin to the
-// given register function for the duration of t, then restores NewEmpty on cleanup.
+// registerConfigLoaderForTest resets the ConfigLoader plugin entry, runs register
+// to install a test loader, and restores NewEmpty on cleanup. The reset is required
+// because a prior plugin.Get may have frozen the entry.
 func registerConfigLoaderForTest(t *testing.T, register func() error) {
 	t.Helper()
 	resetPluginEntry(configLoaderKey)

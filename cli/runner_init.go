@@ -54,7 +54,7 @@ func ensureRunnersPresent(w, errW io.Writer, repoRoot string, assumeYes bool) (c
 		if err := os.WriteFile(dest, f.Data, 0o644); err != nil { //nolint:gosec // runner configs are repo-committed, world-readable config
 			return nil, fmt.Errorf("writing %s: %w", dest, err)
 		}
-		fmt.Fprintf(w, "created %s\n", filepath.Join(paths.TraceDir, "runners", f.Name))
+		fmt.Fprintf(w, "created %s\n", filepath.Join(paths.EntireDir, "runners", f.Name))
 		created = append(created, strings.TrimSuffix(f.Name, ".json"))
 	}
 	fmt.Fprintf(errW, "Created %d default runner(s); tailoring them to this repo…\n", len(defaults))
@@ -66,7 +66,7 @@ func confirmCreateRunners(n int) (bool, error) {
 	form := NewAccessibleForm(
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title(fmt.Sprintf("No trail runners found. Create the default set (%d runners) in .trace/runners/?", n)).
+				Title(fmt.Sprintf("No trail runners found. Create the default set (%d runners) in .entire/runners/?", n)).
 				Description("Written from the built-in defaults, then tailored to this repo.").
 				Value(&ok),
 		),

@@ -39,7 +39,7 @@ func ValidatePolicy(policy Policy) error {
 		return fmt.Errorf("checkpoint_version: %w", err)
 	}
 	if !CanWrite(version) {
-		return fmt.Errorf("checkpoint_version %q is not supported by this Trace CLI", policy.CheckpointVersion)
+		return fmt.Errorf("checkpoint_version %q is not supported by this Entire CLI", policy.CheckpointVersion)
 	}
 
 	minVersion, err := ParseFormat(policy.CheckpointMinVersion)
@@ -47,7 +47,7 @@ func ValidatePolicy(policy Policy) error {
 		return fmt.Errorf("checkpoint_min_version: %w", err)
 	}
 	if !CanRead(minVersion) {
-		return fmt.Errorf("checkpoint_min_version %q is not supported by this Trace CLI", policy.CheckpointMinVersion)
+		return fmt.Errorf("checkpoint_min_version %q is not supported by this Entire CLI", policy.CheckpointMinVersion)
 	}
 	if Compare(minVersion, version) > 0 {
 		return fmt.Errorf("checkpoint_min_version %q is newer than checkpoint_version %q", policy.CheckpointMinVersion, policy.CheckpointVersion)
@@ -84,7 +84,7 @@ func UnsupportedPolicyMessage(policy Policy, updateCommand string) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "[entire] This repository requires checkpoint support newer than this Trace CLI.\n[entire] Upgrade Entire, then rerun the command:\n[entire]   %s\n", updateCommand)
+	fmt.Fprintf(&b, "[entire] This repository requires checkpoint support newer than this Entire CLI.\n[entire] Upgrade Entire, then rerun the command:\n[entire]   %s\n", updateCommand)
 	details := unsupportedPolicyDetails(policy)
 	if len(details) == 0 {
 		return b.String()
@@ -104,14 +104,14 @@ func unsupportedPolicyDetails(policy Policy) []string {
 	if err != nil {
 		details = append(details, fmt.Sprintf("checkpoint_version %q is invalid: %v.", policy.CheckpointVersion, err))
 	} else if !CanWrite(version) {
-		details = append(details, fmt.Sprintf("checkpoint_version %q is not writable by this Trace CLI; this CLI defaults to %q.", policy.CheckpointVersion, DefaultCheckpointVersion()))
+		details = append(details, fmt.Sprintf("checkpoint_version %q is not writable by this Entire CLI; this CLI defaults to %q.", policy.CheckpointVersion, DefaultCheckpointVersion()))
 	}
 
 	minVersion, err := ParseFormat(policy.CheckpointMinVersion)
 	if err != nil {
 		details = append(details, fmt.Sprintf("checkpoint_min_version %q is invalid: %v.", policy.CheckpointMinVersion, err))
 	} else if !CanRead(minVersion) {
-		details = append(details, fmt.Sprintf("checkpoint_min_version %q is not readable by this Trace CLI; this CLI can read %q.", policy.CheckpointMinVersion, DefaultCheckpointVersion()))
+		details = append(details, fmt.Sprintf("checkpoint_min_version %q is not readable by this Entire CLI; this CLI can read %q.", policy.CheckpointMinVersion, DefaultCheckpointVersion()))
 	}
 
 	return details

@@ -18,18 +18,18 @@ import (
 
 // Package-level aliases to avoid shadowing the settings package with local variables named "settings".
 const (
-	TraceSettingsFile      = settings.TraceSettingsFile
-	TraceSettingsLocalFile = settings.TraceSettingsLocalFile
+	EntireSettingsFile      = settings.EntireSettingsFile
+	EntireSettingsLocalFile = settings.EntireSettingsLocalFile
 )
 
-// TraceSettings is an alias for settings.TraceSettings.
-type TraceSettings = settings.TraceSettings
+// EntireSettings is an alias for settings.EntireSettings.
+type EntireSettings = settings.EntireSettings
 
-// LoadTraceSettings loads the Trace settings from .trace/settings.json,
-// then applies any overrides from .trace/settings.local.json if it exists.
+// LoadEntireSettings loads the Entire settings from .entire/settings.json,
+// then applies any overrides from .entire/settings.local.json if it exists.
 // Returns default settings if neither file exists.
 // Works correctly from any subdirectory within the repository.
-func LoadTraceSettings(ctx context.Context) (*settings.TraceSettings, error) {
+func LoadEntireSettings(ctx context.Context) (*settings.EntireSettings, error) {
 	s, err := settings.Load(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading settings: %w", err)
@@ -37,23 +37,37 @@ func LoadTraceSettings(ctx context.Context) (*settings.TraceSettings, error) {
 	return s, nil
 }
 
-// SaveTraceSettings saves the Trace settings to .trace/settings.json.
-func SaveTraceSettings(ctx context.Context, s *settings.TraceSettings) error {
+// TraceSettings is an alias for settings.EntireSettings, kept for trace-only
+// callers written before the upstream rename.
+type TraceSettings = settings.EntireSettings
+
+// LoadTraceSettings loads the Trace settings, applying overrides from
+// settings.local.json. Returns default settings if neither file exists.
+func LoadTraceSettings(ctx context.Context) (*settings.EntireSettings, error) {
+	s, err := settings.Load(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading settings: %w", err)
+	}
+	return s, nil
+}
+
+// SaveEntireSettings saves the Entire settings to .entire/settings.json.
+func SaveEntireSettings(ctx context.Context, s *settings.EntireSettings) error {
 	if err := settings.Save(ctx, s); err != nil {
 		return fmt.Errorf("saving settings: %w", err)
 	}
 	return nil
 }
 
-// SaveTraceSettingsLocal saves the Trace settings to .trace/settings.local.json.
-func SaveTraceSettingsLocal(ctx context.Context, s *settings.TraceSettings) error {
+// SaveEntireSettingsLocal saves the Entire settings to .entire/settings.local.json.
+func SaveEntireSettingsLocal(ctx context.Context, s *settings.EntireSettings) error {
 	if err := settings.SaveLocal(ctx, s); err != nil {
 		return fmt.Errorf("saving local settings: %w", err)
 	}
 	return nil
 }
 
-// IsEnabled returns whether Trace is currently enabled.
+// IsEnabled returns whether Entire is currently enabled.
 // Returns true by default if settings cannot be loaded.
 func IsEnabled(ctx context.Context) (bool, error) {
 	s, err := settings.Load(ctx)
@@ -73,7 +87,7 @@ func GetStrategy(_ context.Context) *strategy.ManualCommitStrategy {
 
 // GetLogLevel returns the configured log level from settings.
 // Returns empty string if not configured (caller should use default).
-// Note: TRACE_LOG_LEVEL env var takes precedence; check it first.
+// Note: ENTIRE_LOG_LEVEL env var takes precedence; check it first.
 func GetLogLevel() string {
 	s, err := settings.Load(context.TODO()) //nolint:contextcheck // Called as a callback via SetLogLevelGetter, no ctx available
 	if err != nil {
@@ -99,17 +113,11 @@ func GetAgentsWithHooksInstalled(ctx context.Context) []types.AgentName {
 
 // InstalledAgentDisplayNames returns user-facing display names for agents with hooks installed.
 func InstalledAgentDisplayNames(ctx context.Context) []string {
-	installedNames := GetAgentsWithHooksInstalled(ctx)
-	displayNames := make([]string, 0, len(installedNames))
-	for _, name := range installedNames {
-		if ag, err := agent.Get(name); err == nil {
-			displayNames = append(displayNames, string(ag.Type()))
-		}
-	}
-	return displayNames
+	return agentDisplayNames(GetAgentsWithHooksInstalled(ctx))
 }
 
-// agentDisplayNames maps agent names to their display names.
+// agentDisplayNames maps agent names to their user-facing display names,
+// skipping names that aren't registered.
 func agentDisplayNames(names []types.AgentName) []string {
 	displayNames := make([]string, 0, len(names))
 	for _, name := range names {

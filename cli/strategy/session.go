@@ -34,7 +34,7 @@ type Session struct {
 // Checkpoints can be either session-level (on Stop) or task-level (on subagent completion).
 type Checkpoint struct {
 	// CheckpointID is the stable 12-hex-char identifier for this checkpoint.
-	// Used to look up metadata at <id[:2]>/<id[2:]>/ on trace/checkpoints/v1 branch.
+	// Used to look up metadata at <id[:2]>/<id[2:]>/ on entire/checkpoints/v1 branch.
 	CheckpointID id.CheckpointID
 
 	// Message is the commit message or checkpoint description

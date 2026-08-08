@@ -25,23 +25,23 @@ func recapLoadErrorMessage(err error) string {
 		detail := recapErrorDetail(apiErr)
 		switch apiErr.StatusCode {
 		case http.StatusUnauthorized:
-			return "Run `trace login` to re-authenticate."
+			return "Run `entire login` to re-authenticate."
 		case http.StatusBadRequest:
-			return "Entire sent an invalid recap time range. Please update Trace CLI and retry. Details: " + detail
+			return "Entire sent an invalid recap time range. Please update Entire CLI and retry. Details: " + detail
 		case http.StatusNotFound:
-			return "trace.io could not find your account. Run `trace logout` then `trace login`; if it still fails, contact Trace support. Details: " + detail
+			return "entire.io could not find your account. Run `entire logout` then `entire login`; if it still fails, contact Entire support. Details: " + detail
 		default:
 			if apiErr.StatusCode >= http.StatusInternalServerError {
-				return "trace.io could not build the recap. Please retry in a moment; if it still fails, contact Trace support. Details: " + detail
+				return "entire.io could not build the recap. Please retry in a moment; if it still fails, contact Entire support. Details: " + detail
 			}
 			return err.Error()
 		}
 	}
 	if host, ok := dnsNotFoundHost(err); ok {
-		return fmt.Sprintf("Could not resolve API host %q (DNS lookup failed). Check TRACE_API_BASE_URL — the host may be misspelled or the env var may be pointing at a non-existent server. Details: %v", host, err)
+		return fmt.Sprintf("Could not resolve API host %q (DNS lookup failed). Check ENTIRE_API_BASE_URL — the host may be misspelled or the env var may be pointing at a non-existent server. Details: %v", host, err)
 	}
 	if isRecapNetworkError(err) {
-		return fmt.Sprintf("Could not reach trace.io. Check your internet connection and TRACE_API_BASE_URL if you use a custom API host. Details: %v", err)
+		return fmt.Sprintf("Could not reach entire.io. Check your internet connection and ENTIRE_API_BASE_URL if you use a custom API host. Details: %v", err)
 	}
 	return err.Error()
 }

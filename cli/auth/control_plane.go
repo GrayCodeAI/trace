@@ -37,12 +37,12 @@ type ControlPlaneTarget struct {
 // ResolveControlPlaneTarget chooses which core the control-plane commands talk
 // to and how their bearer is obtained. The control-plane host *is* a core, so
 // there is no /.well-known discovery here — the active context names the core,
-// which is what makes `trace auth use <ctx>` retarget the control plane onto
+// which is what makes `entire auth use <ctx>` retarget the control plane onto
 // that login server. The bearer is a per-context refreshing provider (silent
 // JWT re-mint from the stored refresh token).
 //
 // No active context means not logged in: the error wraps ErrNotLoggedIn so
-// callers render the `trace login` hint. There is no fallback host — a
+// callers render the `entire login` hint. There is no fallback host — a
 // control-plane command without a login has no identity to act as.
 func ResolveControlPlaneTarget() (ControlPlaneTarget, error) {
 	c, ok, err := activeContext()
@@ -51,7 +51,7 @@ func ResolveControlPlaneTarget() (ControlPlaneTarget, error) {
 	}
 	if !ok {
 		return ControlPlaneTarget{}, &reauthError{
-			msg:      "not logged in; run `trace login`",
+			msg:      "not logged in; run `entire login`",
 			sentinel: ErrNotLoggedIn,
 		}
 	}

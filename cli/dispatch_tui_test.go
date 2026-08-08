@@ -14,7 +14,6 @@ type fakeDispatchProgram struct {
 	model tea.Model
 }
 
-//nolint:ireturn // dispatchProgram interface contract (mirrors tea.Program)
 func (p fakeDispatchProgram) Run() (tea.Model, error) {
 	model, ok := p.model.(dispatchStatusModel)
 	if !ok {
@@ -22,6 +21,80 @@ func (p fakeDispatchProgram) Run() (tea.Model, error) {
 	}
 	model.result = dispatchRenderResult{markdown: "# generated dispatch\n"}
 	return model, nil
+}
+
+type dispatchProgramFunc func() (tea.Model, error)
+
+func (f dispatchProgramFunc) Run() (tea.Model, error) {
+	return f()
+}
+
+func TestDispatchTerminal_ResolvesProviderBeforeProgramRun(t *testing.T) {
+	oldPrepare := prepareLocalDispatch
+	oldProvider := resolveDispatchProvider
+	oldRunDispatch := runDispatch
+	oldTerminalMode := dispatchTerminalMode
+	oldInteractiveDispatch := runInteractiveDispatch
+	oldRenderTerminal := renderTerminalMarkdown
+	oldProgramFactory := newDispatchProgram
+	providerResolved := false
+	programRunning := false
+	generator := &stubTextAgent{}
+	prepareLocalDispatch = func(_ context.Context, opts dispatchpkg.Options) (dispatchpkg.Options, error) {
+		return opts, nil
+	}
+	resolveDispatchProvider = func(context.Context, io.Writer, string) (*checkpointSummaryProvider, error) {
+		if programRunning {
+			t.Fatal("provider resolution ran after Bubble Tea took terminal ownership")
+		}
+		providerResolved = true
+		return &checkpointSummaryProvider{TextGenerator: generator, Model: "terminal-model"}, nil
+	}
+	runDispatch = func(_ context.Context, opts dispatchpkg.Options) (*dispatchpkg.Dispatch, error) {
+		if !programRunning {
+			t.Fatal("interactive dispatch callback ran before program Run")
+		}
+		if opts.TextGenerator != generator || opts.Model != "terminal-model" {
+			t.Fatalf("provider options not passed to interactive dispatch: generator=%T model=%q", opts.TextGenerator, opts.Model)
+		}
+		return &dispatchpkg.Dispatch{GeneratedText: "# terminal dispatch\n"}, nil
+	}
+	dispatchTerminalMode = func(io.Writer) bool { return true }
+	runInteractiveDispatch = defaultRunInteractiveDispatch
+	renderTerminalMarkdown = func(_ io.Writer, markdown string) (string, error) { return markdown, nil }
+	newDispatchProgram = func(model tea.Model, _ io.Writer, _ bool) dispatchProgram {
+		if !providerResolved {
+			t.Fatal("Bubble Tea program was created before provider resolution completed")
+		}
+		return dispatchProgramFunc(func() (tea.Model, error) {
+			programRunning = true
+			status, ok := model.(dispatchStatusModel)
+			if !ok {
+				t.Fatalf("unexpected model type %T", model)
+			}
+			markdown, err := status.run(context.Background())
+			status.result = dispatchRenderResult{markdown: markdown, err: err}
+			return status, nil
+		})
+	}
+	t.Cleanup(func() {
+		prepareLocalDispatch = oldPrepare
+		resolveDispatchProvider = oldProvider
+		runDispatch = oldRunDispatch
+		dispatchTerminalMode = oldTerminalMode
+		runInteractiveDispatch = oldInteractiveDispatch
+		renderTerminalMarkdown = oldRenderTerminal
+		newDispatchProgram = oldProgramFactory
+	})
+
+	cmd := newDispatchCmd()
+	cmd.SetArgs([]string{"--local", "--all-branches"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !providerResolved {
+		t.Fatal("provider was not resolved")
+	}
 }
 
 func TestDefaultRunInteractiveDispatch_DoesNotUseAltScreen(t *testing.T) {
@@ -75,14 +148,14 @@ func TestDispatchStatusModel_ViewRendersInlineCard(t *testing.T) {
 func TestDefaultRenderTerminalMarkdown_RendersHyperlinks(t *testing.T) {
 	t.Parallel()
 
-	rendered, err := defaultRenderTerminalMarkdown(io.Discard, "[Trace](https://graycode.ai)\n")
+	rendered, err := defaultRenderTerminalMarkdown(io.Discard, "[Entire](https://entire.dev)\n")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(rendered, "\x1b]8;") {
 		t.Fatalf("expected OSC 8 hyperlink sequence, got %q", rendered)
 	}
-	if !strings.Contains(rendered, ";https://graycode.ai\x07") {
+	if !strings.Contains(rendered, ";https://entire.dev\x07") {
 		t.Fatalf("expected hyperlink target, got %q", rendered)
 	}
 	if !strings.Contains(rendered, "\x1b]8;;\x07") {

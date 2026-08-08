@@ -22,7 +22,7 @@ import (
 // scenario behind the Stop-hook error
 //
 //	failed to write temporary checkpoint: failed to build tree:
-//	  failed to apply changes in .trace: failed to read tree: object not found
+//	  failed to apply changes in .entire: failed to read tree: object not found
 //
 // Multiple sessions in the same worktree on the same base commit all hash to the
 // same shadow branch name. SaveStep is serialized per-session-ID via
@@ -68,7 +68,7 @@ func TestSaveStep_ConcurrentSessionsSameShadowBranch(t *testing.T) {
 	sessions := make([]session, numSessions)
 	for i := range sessions {
 		id := fmt.Sprintf("2026-05-14-concurrent-%02d", i)
-		md := paths.TraceMetadataDir + "/" + id
+		md := paths.EntireMetadataDir + "/" + id
 		sessions[i] = session{
 			id:             id,
 			metadataDir:    md,

@@ -80,7 +80,7 @@ most recent commit with a checkpoint.  You'll be prompted to confirm resuming in
 
 func runResume(ctx context.Context, cmd *cobra.Command, branchName string, force bool) error {
 	// Only initialize logging when inside a git worktree to avoid
-	// creating .trace/logs/ in arbitrary directories.
+	// creating .entire/logs/ in arbitrary directories.
 	if _, err := paths.WorktreeRoot(ctx); err == nil {
 		logging.SetLogLevelGetter(GetLogLevel)
 		if err := logging.Init(ctx, ""); err == nil {
@@ -261,13 +261,13 @@ func restoreFromCurrentBranch(ctx context.Context, w, errW io.Writer, branchName
 	}
 	defer repo.Close()
 
-	// Find a commit with an Trace-Checkpoint trailer, looking at branch-only commits
+	// Find a commit with an Entire-Checkpoint trailer, looking at branch-only commits
 	result, err := findBranchCheckpoints(repo, branchName)
 	if err != nil {
 		return nil, err
 	}
 	if len(result.checkpointIDs) == 0 {
-		fmt.Fprintf(w, "No Trace checkpoint found on branch '%s'\n", branchName)
+		fmt.Fprintf(w, "No Entire checkpoint found on branch '%s'\n", branchName)
 		return nil, nil
 	}
 
@@ -598,7 +598,7 @@ type branchCheckpointsResult struct {
 	newerCommitCount  int  // count of branch-only commits without checkpoints
 }
 
-// findBranchCheckpoints finds the most recent commit with an Trace-Checkpoint trailer
+// findBranchCheckpoints finds the most recent commit with an Entire-Checkpoint trailer
 // among commits that are unique to this branch (not reachable from the default branch).
 // This handles the case where main has been merged into the feature branch.
 func findBranchCheckpoints(repo *git.Repository, branchName string) (*branchCheckpointsResult, error) {
@@ -881,11 +881,11 @@ func checkRemoteMetadata(
 		} else {
 			fmt.Fprintf(errW, "Checkpoint '%s' found in commit but its metadata could not be fetched from the checkpoint remote.\n", checkpointID)
 		}
-		fmt.Fprintf(errW, "Ensure you have access to the checkpoint remote configured in .trace/settings.json.\n")
+		fmt.Fprintf(errW, "Ensure you have access to the checkpoint remote configured in .entire/settings.json.\n")
 	} else {
-		fmt.Fprintf(errW, "Checkpoint '%s' found in commit but the trace/checkpoints/v1 branch is not available locally or on the remote.\n", checkpointID)
+		fmt.Fprintf(errW, "Checkpoint '%s' found in commit but the entire/checkpoints/v1 branch is not available locally or on the remote.\n", checkpointID)
 		fmt.Fprintf(errW, "This can happen if the metadata branch was not pushed. Try:\n")
-		fmt.Fprintf(errW, "  git fetch origin trace/checkpoints/v1:trace/checkpoints/v1\n")
+		fmt.Fprintf(errW, "  git fetch origin entire/checkpoints/v1:entire/checkpoints/v1\n")
 	}
 	return nil, nil
 }
@@ -949,7 +949,7 @@ func restoreResumeSessions(ctx context.Context, w, errW io.Writer, metadata *str
 	}
 
 	// Get strategy and restore sessions using full checkpoint data
-	stratg := GetStrategy(ctx)
+	start := GetStrategy(ctx)
 
 	// Use RestoreLogsOnly via LogsOnlyRestorer interface for multi-session support
 	// Create a logs-only rewind point with Agent populated (same as rewind)
@@ -959,7 +959,7 @@ func restoreResumeSessions(ctx context.Context, w, errW io.Writer, metadata *str
 		Agent:        metadata.Agent,
 	}
 
-	sessions, restoreErr := stratg.RestoreLogsOnly(ctx, w, errW, point, force)
+	sessions, restoreErr := start.RestoreLogsOnly(ctx, w, errW, point, force)
 	if restoreErr != nil || len(sessions) == 0 {
 		// Fall back to single-session restore (e.g., old checkpoints without agent metadata)
 		session, ok, err := restoreSingleSession(ctx, w, ag, sessionID, checkpointID, repoRoot, force)

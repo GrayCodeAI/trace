@@ -13,7 +13,7 @@ type EnableRepoRequest struct {
 	RemoteURL string `json:"remote_url"`
 }
 
-// EnableRepoResponse is the result of recording an `trace enable`. Connected
+// EnableRepoResponse is the result of recording an `entire enable`. Connected
 // reports whether the GitHub App can currently reach the repo; when it can't,
 // InstallURL points at the App installation page.
 //
@@ -30,7 +30,7 @@ type EnableRepoResponse struct {
 	} `json:"repo,omitempty"`
 }
 
-// ReportEnable records that the authenticated user ran `trace enable` for the
+// ReportEnable records that the authenticated user ran `entire enable` for the
 // repo identified by remoteURL, and returns whether the App can reach it.
 func (c *Client) ReportEnable(ctx context.Context, remoteURL string) (*EnableRepoResponse, error) {
 	resp, err := c.Post(ctx, "/api/v1/cli/enable", EnableRepoRequest{RemoteURL: remoteURL})

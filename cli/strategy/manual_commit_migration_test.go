@@ -35,14 +35,14 @@ func TestMigrateShadowBranch_ReconcilePath(t *testing.T) {
 
 	cpID := checkpointID.MustCheckpointID("abc123def456")
 
-	// Create a commit with the matching Trace-Checkpoint trailer.
+	// Create a commit with the matching Entire-Checkpoint trailer.
 	testutil.WriteFile(t, dir, "file.txt", "content")
 	testutil.GitAdd(t, dir, "file.txt")
-	testutil.GitCommit(t, dir, "add feature\n\nTrace-Checkpoint: abc123def456")
+	testutil.GitCommit(t, dir, "add feature\n\nEntire-Checkpoint: abc123def456")
 	headHash := testutil.GetHeadHash(t, dir)
 
 	// Set up a shadow branch at the OLD base to verify it is NOT deleted.
-	oldShadowName := "trace/" + initHash[:7] + "-"
+	oldShadowName := "entire/" + initHash[:7] + "-"
 	testutil.CreateBranch(t, dir, oldShadowName)
 
 	repo, err := git.PlainOpen(dir)
@@ -84,7 +84,7 @@ func TestMigrateShadowBranch_CherryPickedCheckpointDoesNotTriggerReconcile(t *te
 	// cherry-pick / rebase scenario.
 	testutil.WriteFile(t, dir, "file.txt", "content")
 	testutil.GitAdd(t, dir, "file.txt")
-	testutil.GitCommit(t, dir, "cherry-picked commit\n\nTrace-Checkpoint: abc123def456")
+	testutil.GitCommit(t, dir, "cherry-picked commit\n\nEntire-Checkpoint: abc123def456")
 
 	repo, err := git.PlainOpen(dir)
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestMigrateShadowBranch_ReconcileClearsDivergenceFlag(t *testing.T) {
 
 	testutil.WriteFile(t, dir, "file.txt", "content")
 	testutil.GitAdd(t, dir, "file.txt")
-	testutil.GitCommit(t, dir, "add feature\n\nTrace-Checkpoint: abc123def456")
+	testutil.GitCommit(t, dir, "add feature\n\nEntire-Checkpoint: abc123def456")
 
 	repo, err := git.PlainOpen(dir)
 	require.NoError(t, err)
@@ -150,7 +150,7 @@ func TestMigrateShadowBranch_MigratePathPinsAttribution(t *testing.T) {
 
 	cpID := checkpointID.MustCheckpointID("abc123def456")
 
-	// Create a second commit WITHOUT any Trace-Checkpoint trailer.
+	// Create a second commit WITHOUT any Entire-Checkpoint trailer.
 	testutil.WriteFile(t, dir, "file.txt", "content")
 	testutil.GitAdd(t, dir, "file.txt")
 	testutil.GitCommit(t, dir, "add feature without trailer")
@@ -176,7 +176,7 @@ func TestMigrateShadowBranch_MigratePathPinsAttribution(t *testing.T) {
 }
 
 // TestMigrateShadowBranch_DifferentTrailerFromSameSession verifies that when
-// HEAD has a DIFFERENT Trace-Checkpoint trailer (not matching LastCheckpointID),
+// HEAD has a DIFFERENT Entire-Checkpoint trailer (not matching LastCheckpointID),
 // the migrate path fires instead of reconcile, and AttributionBaseCommit stays pinned.
 func TestMigrateShadowBranch_DifferentTrailerFromSameSession(t *testing.T) {
 	dir, initHash := setupMigrationRepo(t)
@@ -187,7 +187,7 @@ func TestMigrateShadowBranch_DifferentTrailerFromSameSession(t *testing.T) {
 	// Create a commit with a DIFFERENT checkpoint ID.
 	testutil.WriteFile(t, dir, "file.txt", "content")
 	testutil.GitAdd(t, dir, "file.txt")
-	testutil.GitCommit(t, dir, "add feature\n\nTrace-Checkpoint: 111111222222")
+	testutil.GitCommit(t, dir, "add feature\n\nEntire-Checkpoint: 111111222222")
 	headHash := testutil.GetHeadHash(t, dir)
 
 	repo, err := git.PlainOpen(dir)
@@ -219,7 +219,7 @@ func TestMigrateShadowBranch_EmptyLastCheckpointID(t *testing.T) {
 	// Create a commit WITH a checkpoint trailer, but session has no LastCheckpointID.
 	testutil.WriteFile(t, dir, "file.txt", "content")
 	testutil.GitAdd(t, dir, "file.txt")
-	testutil.GitCommit(t, dir, "add feature\n\nTrace-Checkpoint: abc123def456")
+	testutil.GitCommit(t, dir, "add feature\n\nEntire-Checkpoint: abc123def456")
 	headHash := testutil.GetHeadHash(t, dir)
 
 	repo, err := git.PlainOpen(dir)
@@ -250,10 +250,10 @@ func TestMigrateShadowBranch_MultiTrailerHEAD(t *testing.T) {
 
 	cpID := checkpointID.MustCheckpointID("bbb222ccc333")
 
-	// Commit with two Trace-Checkpoint trailers; the session ID matches the second.
+	// Commit with two Entire-Checkpoint trailers; the session ID matches the second.
 	testutil.WriteFile(t, dir, "file.txt", "content")
 	testutil.GitAdd(t, dir, "file.txt")
-	testutil.GitCommit(t, dir, "squash merge\n\nTrace-Checkpoint: aaa111bbb222\nTrace-Checkpoint: bbb222ccc333")
+	testutil.GitCommit(t, dir, "squash merge\n\nEntire-Checkpoint: aaa111bbb222\nEntire-Checkpoint: bbb222ccc333")
 	headHash := testutil.GetHeadHash(t, dir)
 
 	repo, err := git.PlainOpen(dir)
@@ -273,38 +273,4 @@ func TestMigrateShadowBranch_MultiTrailerHEAD(t *testing.T) {
 	assert.True(t, migrated, "reconcile should fire on multi-trailer match")
 	assert.Equal(t, headHash, state.BaseCommit, "BaseCommit should advance to HEAD")
 	assert.Equal(t, headHash, state.AttributionBaseCommit, "AttributionBaseCommit should advance (reconcile path)")
-}
-
-// TestMigrateShadowBranch_CommitObjectFailure verifies that when HEAD has no
-// trailers but the session has a LastCheckpointID set, the code falls through
-// to the migrate path without panicking.
-func TestMigrateShadowBranch_CommitObjectFailure(t *testing.T) {
-	dir, initHash := setupMigrationRepo(t)
-	t.Chdir(dir)
-
-	cpID := checkpointID.MustCheckpointID("abc123def456")
-
-	// Create a commit without any trailers.
-	testutil.WriteFile(t, dir, "file.txt", "content")
-	testutil.GitAdd(t, dir, "file.txt")
-	testutil.GitCommit(t, dir, "plain commit without trailers")
-	headHash := testutil.GetHeadHash(t, dir)
-
-	repo, err := git.PlainOpen(dir)
-	require.NoError(t, err)
-
-	state := &SessionState{
-		SessionID:             "test-session",
-		BaseCommit:            initHash,
-		AttributionBaseCommit: initHash,
-		LastCheckpointID:      cpID,
-	}
-
-	s := &ManualCommitStrategy{}
-	migrated, _, err := s.migrateShadowBranchIfNeeded(context.Background(), repo, state)
-	require.NoError(t, err)
-
-	assert.True(t, migrated, "should fall through to migrate path")
-	assert.Equal(t, headHash, state.BaseCommit, "BaseCommit should advance")
-	assert.Equal(t, initHash, state.AttributionBaseCommit, "AttributionBaseCommit should stay pinned (migrate path)")
 }

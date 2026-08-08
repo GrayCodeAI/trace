@@ -5,6 +5,7 @@ package integration
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
@@ -34,7 +35,7 @@ func TestManualCommit_Attribution(t *testing.T) {
 	env.GitAdd("main.go")
 	env.GitCommit("Initial commit")
 
-	env.InitTrace()
+	env.InitEntire()
 
 	initialHead := env.GetHeadHash()
 	t.Logf("Initial HEAD: %s", initialHead[:7])
@@ -127,7 +128,7 @@ func TestManualCommit_Attribution(t *testing.T) {
 
 	checkpointID, found := trailers.ParseCheckpoint(commitObj.Message)
 	if !found {
-		t.Fatal("Commit should have Trace-Checkpoint trailer")
+		t.Fatal("Commit should have Entire-Checkpoint trailer")
 	}
 	t.Logf("Checkpoint ID: %s", checkpointID)
 
@@ -136,10 +137,10 @@ func TestManualCommit_Attribution(t *testing.T) {
 	// ========================================
 	t.Log("Verifying attribution in metadata")
 
-	// Read metadata from trace/checkpoints/v1 branch
+	// Read metadata from entire/checkpoints/v1 branch
 	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
 	if err != nil {
-		t.Fatalf("Failed to get trace/checkpoints/v1 branch: %v", err)
+		t.Fatalf("Failed to get entire/checkpoints/v1 branch: %v", err)
 	}
 
 	sessionsCommit, err := repo.CommitObject(sessionsRef.Hash())
@@ -152,7 +153,7 @@ func TestManualCommit_Attribution(t *testing.T) {
 		t.Fatalf("Failed to get sessions tree: %v", err)
 	}
 
-	// Read session-level metadata.json from sharded path (InitialAttribution is in 0/metadata.json)
+	// Read session-level metadata.json from sharded path (Attribution is in 0/metadata.json)
 	metadataPath := SessionMetadataPath(checkpointID.String())
 	metadataFile, err := sessionsTree.File(metadataPath)
 	if err != nil {
@@ -164,17 +165,17 @@ func TestManualCommit_Attribution(t *testing.T) {
 		t.Fatalf("Failed to read metadata content: %v", err)
 	}
 
-	var metadata checkpoint.CommittedMetadata
+	var metadata checkpoint.Metadata
 	if err := json.Unmarshal([]byte(metadataContent), &metadata); err != nil {
 		t.Fatalf("Failed to parse metadata.json: %v", err)
 	}
 
-	// Verify InitialAttribution exists
-	if metadata.InitialAttribution == nil {
-		t.Fatal("InitialAttribution is nil")
+	// Verify Attribution exists
+	if metadata.Attribution == nil {
+		t.Fatal("Attribution is nil")
 	}
 
-	attr := metadata.InitialAttribution
+	attr := metadata.Attribution
 	t.Logf("Attribution: agent=%d, human_added=%d, human_modified=%d, human_removed=%d, total=%d, percentage=%.1f%%",
 		attr.AgentLines, attr.HumanAdded, attr.HumanModified, attr.HumanRemoved,
 		attr.TotalCommitted, attr.AgentPercentage)
@@ -225,7 +226,7 @@ func TestManualCommit_AttributionDeletionOnly(t *testing.T) {
 	env.GitAdd("main.go")
 	env.GitCommit("Initial commit")
 
-	env.InitTrace()
+	env.InitEntire()
 
 	// ========================================
 	// CHECKPOINT 1: Agent REMOVES a function (deletion, no additions)
@@ -272,7 +273,7 @@ func TestManualCommit_AttributionDeletionOnly(t *testing.T) {
 
 	checkpointID, found := trailers.ParseCheckpoint(commitObj.Message)
 	if !found {
-		t.Fatal("Commit should have Trace-Checkpoint trailer")
+		t.Fatal("Commit should have Entire-Checkpoint trailer")
 	}
 
 	// ========================================
@@ -282,7 +283,7 @@ func TestManualCommit_AttributionDeletionOnly(t *testing.T) {
 
 	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
 	if err != nil {
-		t.Fatalf("Failed to get trace/checkpoints/v1 branch: %v", err)
+		t.Fatalf("Failed to get entire/checkpoints/v1 branch: %v", err)
 	}
 
 	sessionsCommit, err := repo.CommitObject(sessionsRef.Hash())
@@ -295,7 +296,7 @@ func TestManualCommit_AttributionDeletionOnly(t *testing.T) {
 		t.Fatalf("Failed to get sessions tree: %v", err)
 	}
 
-	// Read session-level metadata.json (InitialAttribution is in 0/metadata.json)
+	// Read session-level metadata.json (Attribution is in 0/metadata.json)
 	metadataPath := SessionMetadataPath(checkpointID.String())
 	metadataFile, err := sessionsTree.File(metadataPath)
 	if err != nil {
@@ -307,16 +308,16 @@ func TestManualCommit_AttributionDeletionOnly(t *testing.T) {
 		t.Fatalf("Failed to read metadata content: %v", err)
 	}
 
-	var metadata checkpoint.CommittedMetadata
+	var metadata checkpoint.Metadata
 	if err := json.Unmarshal([]byte(metadataContent), &metadata); err != nil {
 		t.Fatalf("Failed to parse metadata.json: %v", err)
 	}
 
-	if metadata.InitialAttribution == nil {
-		t.Fatal("InitialAttribution is nil")
+	if metadata.Attribution == nil {
+		t.Fatal("Attribution is nil")
 	}
 
-	attr := metadata.InitialAttribution
+	attr := metadata.Attribution
 	t.Logf("Attribution (deletion-only): agent_added=%d, agent_removed=%d, human_added=%d, human_removed=%d, total=%d, changed=%d, percentage=%.1f%%",
 		attr.AgentLines, attr.AgentRemoved, attr.HumanAdded, attr.HumanRemoved,
 		attr.TotalCommitted, attr.TotalLinesChanged, attr.AgentPercentage)
@@ -378,7 +379,7 @@ func TestManualCommit_AttributionNoDoubleCount(t *testing.T) {
 	env.GitAdd("main.go")
 	env.GitCommit("Initial commit")
 
-	env.InitTrace()
+	env.InitEntire()
 
 	// ========================================
 	// FIRST CYCLE: Checkpoint → user edit → commit
@@ -544,7 +545,7 @@ func TestManualCommit_AttributionStaleBase(t *testing.T) {
 	env.GitAdd("main.go")
 	env.GitCommit("Initial commit")
 
-	env.InitTrace()
+	env.InitEntire()
 
 	// ========================================
 	// FIRST CYCLE: Agent works and user commits
@@ -587,7 +588,7 @@ func TestManualCommit_AttributionStaleBase(t *testing.T) {
 
 	cpID1, found := trailers.ParseCheckpoint(commit1Obj.Message)
 	if !found {
-		t.Fatal("First commit should have Trace-Checkpoint trailer")
+		t.Fatal("First commit should have Entire-Checkpoint trailer")
 	}
 
 	attr1 := getAttributionFromMetadata(t, repo, cpID1)
@@ -606,15 +607,16 @@ func TestManualCommit_AttributionStaleBase(t *testing.T) {
 
 	// User creates a large unrelated file (50 lines) and commits it.
 	// The session is ACTIVE but has no new checkpoint content, so:
-	// - prepare-commit-msg: no Trace-Checkpoint trailer added
+	// - prepare-commit-msg: no Entire-Checkpoint trailer added
 	// - post-commit: calls postCommitUpdateBaseCommitOnly
 	//   → BaseCommit advances to this commit
 	//   → AttributionBaseCommit stays at first commit (BUG)
-	unrelatedContent := "package utils\n\n"
+	var unrelated strings.Builder
+	unrelated.WriteString("package utils\n\n")
 	for i := range 50 {
-		unrelatedContent += fmt.Sprintf("func util%d() { return %d }\n", i, i)
+		fmt.Fprintf(&unrelated, "func util%d() { return %d }\n", i, i)
 	}
-	env.WriteFile("utils.go", unrelatedContent)
+	env.WriteFile("utils.go", unrelated.String())
 	env.GitCommitWithShadowHooks("Add utility functions", "utils.go")
 
 	unrelatedHead := env.GetHeadHash()
@@ -654,7 +656,7 @@ func TestManualCommit_AttributionStaleBase(t *testing.T) {
 
 	cpID2, found := trailers.ParseCheckpoint(commit2Obj.Message)
 	if !found {
-		t.Fatal("Second commit should have Trace-Checkpoint trailer")
+		t.Fatal("Second commit should have Entire-Checkpoint trailer")
 	}
 
 	attr2 := getAttributionFromMetadata(t, repo, cpID2)
@@ -690,7 +692,7 @@ func TestManualCommit_AttributionStaleBase(t *testing.T) {
 // TestManualCommit_AttributionStaleBase_BranchSwitch tests attribution when the user
 // switches branches mid-session and makes a commit on a different branch.
 //
-// Production scenario (observed on trace.io):
+// Production scenario (observed on entire.io):
 //  1. Agent works on feature branch → commit (condensation, attribution correct)
 //  2. New prompt (session ACTIVE)
 //  3. User switches to a different branch, makes a commit there
@@ -710,9 +712,9 @@ func TestManualCommit_AttributionStaleBase_BranchSwitch(t *testing.T) {
 	env.GitAdd("main.go")
 	env.GitCommit("Initial commit")
 
-	env.InitTrace()
+	env.InitEntire()
 
-	// Create feature branch (Trace skips main/master)
+	// Create feature branch (Entire skips main/master)
 	env.GitCheckoutNewBranch("feature/polish")
 
 	// ========================================
@@ -749,11 +751,12 @@ func TestManualCommit_AttributionStaleBase_BranchSwitch(t *testing.T) {
 	// Switch to a different branch and make a commit with many files
 	env.GitCheckoutNewBranch("feature/other-work")
 
-	unrelatedContent := "package utils\n\n"
+	var unrelated strings.Builder
+	unrelated.WriteString("package utils\n\n")
 	for i := range 50 {
-		unrelatedContent += fmt.Sprintf("func util%d() { return %d }\n", i, i)
+		fmt.Fprintf(&unrelated, "func util%d() { return %d }\n", i, i)
 	}
-	env.WriteFile("utils.go", unrelatedContent)
+	env.WriteFile("utils.go", unrelated.String())
 	env.GitCommitWithShadowHooks("Other branch work", "utils.go")
 	t.Logf("Commit on feature/other-work: %s", env.GetHeadHash()[:7])
 
@@ -797,7 +800,7 @@ func TestManualCommit_AttributionStaleBase_BranchSwitch(t *testing.T) {
 
 	cpID, found := trailers.ParseCheckpoint(commitObj.Message)
 	if !found {
-		t.Fatal("Second commit should have Trace-Checkpoint trailer")
+		t.Fatal("Second commit should have Entire-Checkpoint trailer")
 	}
 
 	attr := getAttributionFromMetadata(t, repo, cpID)
@@ -822,14 +825,14 @@ func TestManualCommit_AttributionStaleBase_BranchSwitch(t *testing.T) {
 	}
 }
 
-// getAttributionFromMetadata reads attribution from a checkpoint on trace/checkpoints/v1 branch.
-// InitialAttribution is stored in session-level metadata (0/metadata.json).
-func getAttributionFromMetadata(t *testing.T, repo *git.Repository, checkpointID id.CheckpointID) *checkpoint.InitialAttribution {
+// getAttributionFromMetadata reads attribution from a checkpoint on entire/checkpoints/v1 branch.
+// Attribution is stored in session-level metadata (0/metadata.json).
+func getAttributionFromMetadata(t *testing.T, repo *git.Repository, checkpointID id.CheckpointID) *checkpoint.Attribution {
 	t.Helper()
 
 	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
 	if err != nil {
-		t.Fatalf("Failed to get trace/checkpoints/v1 branch: %v", err)
+		t.Fatalf("Failed to get entire/checkpoints/v1 branch: %v", err)
 	}
 
 	sessionsCommit, err := repo.CommitObject(sessionsRef.Hash())
@@ -842,7 +845,7 @@ func getAttributionFromMetadata(t *testing.T, repo *git.Repository, checkpointID
 		t.Fatalf("Failed to get sessions tree: %v", err)
 	}
 
-	// Read session-level metadata (InitialAttribution is in 0/metadata.json)
+	// Read session-level metadata (Attribution is in 0/metadata.json)
 	metadataPath := SessionMetadataPath(checkpointID.String())
 	metadataFile, err := sessionsTree.File(metadataPath)
 	if err != nil {
@@ -854,14 +857,14 @@ func getAttributionFromMetadata(t *testing.T, repo *git.Repository, checkpointID
 		t.Fatalf("Failed to read metadata content: %v", err)
 	}
 
-	var metadata checkpoint.CommittedMetadata
+	var metadata checkpoint.Metadata
 	if err := json.Unmarshal([]byte(metadataContent), &metadata); err != nil {
 		t.Fatalf("Failed to parse metadata.json: %v", err)
 	}
 
-	if metadata.InitialAttribution == nil {
-		t.Fatal("InitialAttribution is nil")
+	if metadata.Attribution == nil {
+		t.Fatal("Attribution is nil")
 	}
 
-	return metadata.InitialAttribution
+	return metadata.Attribution
 }

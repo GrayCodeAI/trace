@@ -44,7 +44,7 @@ func Printf(format string, args ...any) {
 	if w == nil {
 		return
 	}
-	fmt.Fprintf(w, prefix+" "+format+"\n", args...) //nolint:errcheck // best-effort debug log
+	fmt.Fprintf(w, prefix+" "+format+"\n", args...)
 }
 
 // SetOutput redirects debug output. Returns the previous writer so tests

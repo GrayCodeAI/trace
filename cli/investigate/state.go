@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/jsonutil"
-	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/provenance"
 	"github.com/GrayCodeAI/trace/cli/session"
 )
@@ -21,7 +19,7 @@ import (
 // InvestigationsDirName is the directory name (under git common dir) where
 // investigation runs persist their per-run artifacts (findings.md +
 // state.json).
-const InvestigationsDirName = "trace-investigations"
+const InvestigationsDirName = "entire-investigations"
 
 // stateFileName is the on-disk name for the per-run state file inside the
 // run directory.
@@ -95,7 +93,7 @@ type StateStore struct {
 }
 
 // NewStateStore creates a StateStore rooted at
-// <git-common-dir>/trace-investigations. Resolves the common dir via
+// <git-common-dir>/entire-investigations. Resolves the common dir via
 // session.GetGitCommonDir, so this requires a git repository context.
 func NewStateStore(ctx context.Context) (*StateStore, error) {
 	commonDir, err := session.GetGitCommonDir(ctx)
@@ -111,12 +109,6 @@ func NewStateStore(ctx context.Context) (*StateStore, error) {
 // that don't want to depend on a real git repository.
 func NewStateStoreWithDir(dir string) *StateStore {
 	return &StateStore{dir: dir}
-}
-
-// Root returns the absolute path the store is rooted at. Useful for callers
-// that need to derive sibling paths (e.g. findings.md alongside state.json).
-func (s *StateStore) Root() string {
-	return s.dir
 }
 
 // RunDir returns the absolute path of the per-run directory for runID,
@@ -180,61 +172,6 @@ func (s *StateStore) Load(ctx context.Context, runID string) (*RunState, error) 
 		return nil, fmt.Errorf("unmarshal run state: %w", err)
 	}
 	return &st, nil
-}
-
-// List returns all persisted run states. Returns nil (and no error) when the
-// state directory does not exist.
-func (s *StateStore) List(ctx context.Context) ([]*RunState, error) {
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read investigations directory: %w", err)
-	}
-
-	var states []*RunState
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		runID := entry.Name()
-		if err := validateRunID(runID); err != nil {
-			// Skip directories that don't match the run-ID format — they
-			// are not ours (e.g. the manifests/ sibling).
-			continue
-		}
-		st, loadErr := s.Load(ctx, runID)
-		if loadErr != nil {
-			// state.json exists but won't parse — surface so the user can
-			// inspect or `trace investigate clean <runID>`. Listing keeps
-			// going so one bad run doesn't hide the rest.
-			logging.Warn(ctx, "investigate: list skipped unreadable run state",
-				slog.String("run_id", runID),
-				slog.String("err", loadErr.Error()))
-			continue
-		}
-		if st == nil {
-			continue
-		}
-		states = append(states, st)
-	}
-	return states, nil
-}
-
-// Clear removes the persisted state for runID. Missing files are treated as a
-// successful clear (no-op).
-func (s *StateStore) Clear(ctx context.Context, runID string) error {
-	_ = ctx // Reserved for future use
-
-	if err := validateRunID(runID); err != nil {
-		return fmt.Errorf("invalid run ID: %w", err)
-	}
-
-	if err := os.Remove(s.runStatePath(runID)); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove run state file: %w", err)
-	}
-	return nil
 }
 
 // runStatePath returns the on-disk path for runID's state file.

@@ -62,16 +62,12 @@ func validateGitRemoteName(name string) error {
 // these errors reach stderr through main.go and from there into logs and pasted
 // transcripts — the same reason reportMirrorRemotePlan redacts what it prints.
 //
-// Only URL-shaped args are touched: gitremote.RedactURL would turn a bare word
-// like "remote" into "://remote", so it cannot be applied blanket-fashion.
+// Non-URL args (bare words like "remote", local paths) pass through untouched;
+// see gitremote.RedactURLOrPath for why RedactURL cannot be applied blanket-fashion.
 func redactGitArgs(args []string) []string {
 	safe := make([]string, len(args))
 	for i, a := range args {
-		if strings.Contains(a, "://") || strings.Contains(a, "@") {
-			safe[i] = gitremote.RedactURL(a)
-			continue
-		}
-		safe[i] = a
+		safe[i] = gitremote.RedactURLOrPath(a)
 	}
 	return safe
 }
@@ -413,7 +409,7 @@ func newRepoMirrorUseCmd() *cobra.Command {
 			"the forge stays reachable.\n\n" +
 			"Non-interactively it repoints --remote (default `origin`) directly, " +
 			"preserving the replaced URL under --upstream. It only ever edits " +
-			"local git config — the mirror must already exist (`trace repo " +
+			"local git config — the mirror must already exist (`entire repo " +
 			"mirror create`); nothing server-side is changed.",
 		Example: "  entire repo mirror use\n" +
 			"  entire repo mirror use --cluster aws-us-east-2.entire.io\n" +
@@ -462,7 +458,7 @@ func newRepoMirrorUseCmd() *cobra.Command {
 			ctx := cmd.Context()
 			repoRoot, err := paths.WorktreeRoot(ctx)
 			if err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Run `trace repo mirror use` from inside the clone whose remote you want to repoint.")
+				fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Run `entire repo mirror use` from inside the clone whose remote you want to repoint.")
 				return NewSilentError(errors.New("not a git repository"))
 			}
 

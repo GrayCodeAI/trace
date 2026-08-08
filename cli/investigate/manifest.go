@@ -17,13 +17,13 @@ import (
 
 const manifestsSubdirName = "manifests"
 
-// LocalManifest is the persisted record of one `trace investigate` run for
-// local findings browsing. Written to <git-common-dir>/trace-investigations/
+// LocalManifest is the persisted record of one `entire investigate` run for
+// local findings browsing. Written to <git-common-dir>/entire-investigations/
 // manifests/<timestamp>-<run-id>.json after each run terminates.
 //
 // The schema is intentionally narrower than RunState: this file is what
-// `trace investigate --findings` reads to render the picker, so it carries
-// only what a human (or `trace status`) needs to identify a past run, not the
+// `entire investigate --findings` reads to render the picker, so it carries
+// only what a human (or `entire status`) needs to identify a past run, not the
 // state needed to resume one.
 type LocalManifest struct {
 	// RunID is the 12-hex-char investigation run identifier.
@@ -47,7 +47,7 @@ type LocalManifest struct {
 	// FindingsDoc is the absolute path to the findings document the run
 	// produced. Always absolute — callers (writeRunManifest in particular)
 	// must resolve repo-relative paths before populating this field, since
-	// `trace investigate show` / `fix` read it back via os.ReadFile and
+	// `entire investigate show` / `fix` read it back via os.ReadFile and
 	// do not perform their own resolution. The on-disk file is removed for
 	// terminal outcomes (Quorum/Stalled) once FindingsContent has been
 	// captured — the path remains here for resumable runs (Paused /
@@ -88,7 +88,7 @@ type LocalManifestStore struct {
 }
 
 // NewLocalManifestStore creates a LocalManifestStore rooted at
-// <git-common-dir>/trace-investigations/manifests. Resolves the common dir
+// <git-common-dir>/entire-investigations/manifests. Resolves the common dir
 // via session.GetGitCommonDir, so this requires a git repository context.
 func NewLocalManifestStore(ctx context.Context) (*LocalManifestStore, error) {
 	commonDir, err := session.GetGitCommonDir(ctx)
@@ -163,7 +163,6 @@ func (s *LocalManifestStore) List(ctx context.Context) ([]LocalManifest, error) 
 		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".tmp") {
 			continue
 		}
-		// #nosec G304 -- name from os.ReadDir(s.dir), not external input
 		b, readErr := os.ReadFile(filepath.Join(s.dir, name)) //nolint:gosec // names from os.ReadDir(s.dir)
 		if readErr != nil {
 			return nil, fmt.Errorf("read manifest %s: %w", name, readErr)
@@ -311,7 +310,6 @@ func (s *LocalManifestStore) Latest(ctx context.Context) (LocalManifest, bool, e
 	if latest == "" {
 		return LocalManifest{}, false, nil
 	}
-	// #nosec G304 -- name from os.ReadDir(s.dir), not external input
 	b, err := os.ReadFile(filepath.Join(s.dir, latest)) //nolint:gosec // name from os.ReadDir(s.dir)
 	if err != nil {
 		return LocalManifest{}, false, fmt.Errorf("read manifest %s: %w", latest, err)

@@ -1,6 +1,8 @@
 package codex
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -216,6 +218,97 @@ func TestExtractFilesFromApplyPatch(t *testing.T) {
 	}
 }
 
+func TestClassifyApplyPatchPaths(t *testing.T) {
+	t.Parallel()
+
+	added, modified, deleted := classifyApplyPatchPaths(
+		"*** Begin Patch\n*** Add File: a.txt\n+hi\n*** Update File: b.txt\n@@\n-old\n+new\n*** Delete File: c.txt\n*** End Patch\n",
+	)
+	require.Equal(t, []string{"a.txt"}, added)
+	require.Equal(t, []string{"b.txt"}, modified)
+	require.Equal(t, []string{"c.txt"}, deleted)
+}
+
+func TestClassifyApplyPatchPaths_AddWinsOverUpdate(t *testing.T) {
+	t.Parallel()
+	// If a path appears with both Add and Update verbs (envelopes shouldn't do
+	// this, but we're defensive), the more specific intent — Add — wins so
+	// callers route the file into NewFiles rather than ModifiedFiles.
+	added, modified, deleted := classifyApplyPatchPaths(
+		"*** Add File: a.txt\n*** Update File: a.txt\n",
+	)
+	require.Equal(t, []string{"a.txt"}, added)
+	require.Empty(t, modified)
+	require.Empty(t, deleted)
+}
+
+func TestClassifyApplyPatchPaths_Empty(t *testing.T) {
+	t.Parallel()
+	added, modified, deleted := classifyApplyPatchPaths("*** Begin Patch\n*** End Patch\n")
+	require.Empty(t, added)
+	require.Empty(t, modified)
+	require.Empty(t, deleted)
+}
+
+func TestClassifyApplyPatchPaths_MoveTo(t *testing.T) {
+	t.Parallel()
+	// Codex apply_patch encodes renames as "*** Update File: <old>\n*** Move
+	// to: <new>". Both paths must be tracked: the source is being deleted
+	// (renamed away), the destination is being created.
+	added, modified, deleted := classifyApplyPatchPaths(
+		"*** Begin Patch\n" +
+			"*** Update File: src/old.rs\n" +
+			"*** Move to: src/new.rs\n" +
+			"@@\n-old\n+new\n" +
+			"*** End Patch\n",
+	)
+	require.Equal(t, []string{"src/new.rs"}, added)
+	require.Empty(t, modified)
+	require.Equal(t, []string{"src/old.rs"}, deleted)
+}
+
+func TestClassifyApplyPatchPaths_MoveToWithSiblingHunks(t *testing.T) {
+	t.Parallel()
+	// A patch can mix Move-to renames with regular Add/Delete entries — the
+	// Move handler must scope to the most recent Update File, not collapse
+	// unrelated entries.
+	added, modified, deleted := classifyApplyPatchPaths(
+		"*** Begin Patch\n" +
+			"*** Delete File: gone.txt\n" +
+			"*** Update File: a.rs\n" +
+			"*** Move to: b.rs\n" +
+			"@@\n-x\n+y\n" +
+			"*** Add File: brand-new.go\n" +
+			"+package main\n" +
+			"*** End Patch\n",
+	)
+	require.Equal(t, []string{"b.rs", "brand-new.go"}, added)
+	require.Empty(t, modified)
+	require.Equal(t, []string{"a.rs", "gone.txt"}, deleted)
+}
+
+// TestClassifyApplyPatchPaths_MoveDoesNotOverwriteStickyAdd pins the
+// sticky-verb invariant against the Move-to handler. A path already
+// classified as Add must survive a later Update+Move-to that names it
+// as the source. Codex itself doesn't emit envelopes shaped like this,
+// but the invariant is documented and we don't want a quiet downgrade
+// if the grammar ever loosens.
+func TestClassifyApplyPatchPaths_MoveDoesNotOverwriteStickyAdd(t *testing.T) {
+	t.Parallel()
+	added, modified, deleted := classifyApplyPatchPaths(
+		"*** Begin Patch\n" +
+			"*** Add File: foo.txt\n" +
+			"+content\n" +
+			"*** Update File: foo.txt\n" +
+			"*** Move to: bar.txt\n" +
+			"@@\n-x\n+y\n" +
+			"*** End Patch\n",
+	)
+	require.Equal(t, []string{"bar.txt", "foo.txt"}, added)
+	require.Empty(t, modified)
+	require.Empty(t, deleted)
+}
+
 func TestSplitJSONL(t *testing.T) {
 	t.Parallel()
 
@@ -235,11 +328,50 @@ func TestSanitizeRestoredTranscript_StripsEncryptedItems(t *testing.T) {
 {"timestamp":"2026-03-25T11:31:11.756Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}}
 `)
 
-	got := string(sanitizeRestoredTranscript(input))
+	got := string(SanitizePortableTranscript(input))
 	require.Contains(t, got, `"type":"reasoning"`)
 	require.NotContains(t, got, `"encrypted_content":"REDACTED"`)
-	require.NotContains(t, got, `"type":"compaction"`)
 	require.Contains(t, got, `"type":"message"`)
+
+	// Top-level compaction items are stripped in place, NOT dropped: the item
+	// survives without its payload so the stored transcript keeps the same line
+	// numbering as the agent's rollout (CheckpointTranscriptStart is counted on the
+	// rollout but applied to the stored copy).
+	require.Contains(t, got, `"type":"compaction"`)
+	require.Len(t,
+		splitJSONL([]byte(got)), len(splitJSONL(input)),
+		"sanitization must preserve the line count")
+}
+
+func TestSanitizePortableTranscript_PreservesLineNumbering(t *testing.T) {
+	t.Parallel()
+
+	// Every transform the sanitizer performs must leave line numbering intact, so an
+	// offset counted on the raw rollout still indexes the stored copy correctly.
+	input := []byte(`{"type":"session_meta","payload":{"id":"abc"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"one"}]}}
+{"type":"response_item","payload":{"type":"reasoning","summary":[],"encrypted_content":"Y2lwaGVy"}}
+{"type":"response_item","payload":{"type":"compaction","encrypted_content":"Y2lwaGVy"}}
+{"type":"response_item","payload":{"type":"compaction_summary","encrypted_content":"Y2lwaGVy"}}
+{"type":"compacted","payload":{"message":"","replacement_history":[{"type":"compaction","encrypted_content":"Y2lwaGVy"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"two"}]}}
+`)
+
+	rawLines := splitJSONL(input)
+	got := SanitizePortableTranscript(input)
+	gotLines := splitJSONL(got)
+
+	require.Len(t, gotLines, len(rawLines),
+		"line count changed: offsets into the stored transcript would drift")
+	require.NotContains(t, string(got), "Y2lwaGVy", "ciphertext survived")
+
+	// Line-for-line, each stored line must still correspond to the same rollout line.
+	for i := range rawLines {
+		var rawLine, gotLine rolloutLine
+		require.NoError(t, json.Unmarshal(rawLines[i], &rawLine))
+		require.NoError(t, json.Unmarshal(gotLines[i], &gotLine))
+		require.Equal(t, rawLine.Type, gotLine.Type, "line %d changed type", i)
+	}
 }
 
 func TestSanitizeRestoredTranscript_StripsEncryptedItemsFromCompactedHistory(t *testing.T) {
@@ -249,11 +381,52 @@ func TestSanitizeRestoredTranscript_StripsEncryptedItemsFromCompactedHistory(t *
 {"timestamp":"2026-03-25T11:31:11.754Z","type":"compacted","payload":{"message":"","replacement_history":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]},{"type":"reasoning","summary":[{"text":"brief"}],"encrypted_content":"REDACTED"},{"type":"compaction","encrypted_content":"REDACTED"},{"type":"compaction_summary","encrypted_content":"REDACTED"}]}}
 `)
 
-	got := string(sanitizeRestoredTranscript(input))
+	got := string(SanitizePortableTranscript(input))
 	require.Contains(t, got, `"type":"compacted"`)
 	require.Contains(t, got, `"type":"reasoning"`)
 	require.Contains(t, got, `"type":"message"`)
 	require.NotContains(t, got, `"encrypted_content":"REDACTED"`)
 	require.NotContains(t, got, `"type":"compaction"`)
 	require.NotContains(t, got, `"type":"compaction_summary"`)
+}
+
+// TestSanitizePortableTranscript_UnchangedInputReturnsSameBytes pins the fast path
+// that makes the "call it from every storage path" contract affordable: a transcript
+// with nothing to strip must come back as the identical backing array, not a
+// reassembled copy.
+func TestSanitizePortableTranscript_UnchangedInputReturnsSameBytes(t *testing.T) {
+	t.Parallel()
+
+	clean := []byte(`{"type":"session_meta","payload":{"id":"abc"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}}` + "\n")
+
+	got := SanitizePortableTranscript(clean)
+	if !bytes.Equal(got, clean) {
+		t.Fatalf("clean transcript was altered:\nwant %s\ngot  %s", clean, got)
+	}
+	if len(got) > 0 && &got[0] != &clean[0] {
+		t.Error("clean transcript was copied; expected the original backing array (fast path missed)")
+	}
+}
+
+// TestSanitizePortableTranscript_IdempotentBytes proves a second pass over an
+// already-sanitized transcript is a no-op, which is what lets the Stop path,
+// condensation, finalize, and the checkpoint store each call it unconditionally.
+func TestSanitizePortableTranscript_IdempotentBytes(t *testing.T) {
+	t.Parallel()
+
+	input := []byte(`{"type":"session_meta","payload":{"id":"abc"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"reasoning","summary":[],"encrypted_content":"c2VjcmV0"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"compaction","encrypted_content":"c2VjcmV0"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}` + "\n")
+
+	once := SanitizePortableTranscript(input)
+	if bytes.Contains(once, []byte("encrypted_content")) {
+		t.Fatalf("first pass left encrypted_content: %s", once)
+	}
+
+	twice := SanitizePortableTranscript(once)
+	if !bytes.Equal(once, twice) {
+		t.Errorf("not byte-idempotent:\n once=%s\ntwice=%s", once, twice)
+	}
 }

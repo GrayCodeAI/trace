@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/jsonutil"
@@ -16,12 +15,12 @@ import (
 // HooksFileName is the hooks config file used by Codex.
 const HooksFileName = "hooks.json"
 
-// traceHookPrefixes identifies Trace hook commands.
-var traceHookPrefixes = []string{
-	"hawk trace ",
-	`go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace `,
-	"trace ",
-	`go run "$(git rev-parse --show-toplevel)"/cmd/trace/main.go `,
+// entireHookPrefixes identifies Entire hook commands. The "go run" prefix is
+// retained so hooks installed by older versions are still recognized.
+var entireHookPrefixes = []string{
+	"entire ",
+	agent.LocalDevHookScript + " ",
+	`go run "$(git rev-parse --show-toplevel)"/cmd/entire/main.go `,
 }
 
 // InstallHooks installs Codex hooks in .codex/hooks.json.
@@ -38,7 +37,6 @@ func (c *CodexAgent) InstallHooks(ctx context.Context, localDev bool, force bool
 
 	// Read existing hooks.json if present
 	var rawHooks map[string]json.RawMessage
-	// #nosec G304 -- hooksPath is constructed from repo root + fixed subpath, not external input
 	existingData, readErr := os.ReadFile(hooksPath) //nolint:gosec // path constructed from repo root
 	if readErr == nil {
 		var hooksFile map[string]json.RawMessage
@@ -57,7 +55,7 @@ func (c *CodexAgent) InstallHooks(ctx context.Context, localDev bool, force bool
 	}
 
 	// Parse event types we manage
-	var sessionStart, userPromptSubmit, stop []MatcherGroup
+	var sessionStart, userPromptSubmit, stop, postToolUse []MatcherGroup
 	if err := parseHookType(rawHooks, "SessionStart", &sessionStart); err != nil {
 		return 0, err
 	}
@@ -67,52 +65,58 @@ func (c *CodexAgent) InstallHooks(ctx context.Context, localDev bool, force bool
 	if err := parseHookType(rawHooks, "Stop", &stop); err != nil {
 		return 0, err
 	}
+	if err := parseHookType(rawHooks, "PostToolUse", &postToolUse); err != nil {
+		return 0, err
+	}
 
 	if force {
-		sessionStart = removeTraceHooks(sessionStart)
-		userPromptSubmit = removeTraceHooks(userPromptSubmit)
-		stop = removeTraceHooks(stop)
+		sessionStart = removeEntireHooks(sessionStart)
+		userPromptSubmit = removeEntireHooks(userPromptSubmit)
+		stop = removeEntireHooks(stop)
+		postToolUse = removeEntireHooks(postToolUse)
 	}
 
 	// Build hook commands
 	var cmdPrefix string
 	if localDev {
-		cmdPrefix = `go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace hooks codex `
+		cmdPrefix = agent.LocalDevHookScript + " hooks codex "
 	} else {
-		cmdPrefix = "hawk trace hooks codex "
+		cmdPrefix = "entire hooks codex "
 	}
 	sessionStartCmd := cmdPrefix + "session-start"
+	useWindowsProductionHooks := agent.UseWindowsProductionHooks(ctx, localDev)
 	if !localDev {
-		sessionStartCmd = agent.WrapProductionJSONWarningHookCommand(sessionStartCmd, agent.WarningFormatSingleLine)
+		sessionStartCmd = agent.WrapProductionJSONWarningHookCommandForOS(sessionStartCmd, agent.WarningFormatSingleLine, useWindowsProductionHooks)
 	}
 	userPromptSubmitCmd := cmdPrefix + "user-prompt-submit"
 	stopCmd := cmdPrefix + "stop"
+	postToolUseCmd := cmdPrefix + "post-tool-use"
 	if !localDev {
-		userPromptSubmitCmd = agent.WrapProductionSilentHookCommand(userPromptSubmitCmd)
-		stopCmd = agent.WrapProductionSilentHookCommand(stopCmd)
+		userPromptSubmitCmd = agent.WrapProductionSilentHookCommandForOS(userPromptSubmitCmd, useWindowsProductionHooks)
+		stopCmd = agent.WrapProductionSilentHookCommandForOS(stopCmd, useWindowsProductionHooks)
+		postToolUseCmd = agent.WrapProductionSilentHookCommandForOS(postToolUseCmd, useWindowsProductionHooks)
 	}
 
 	count := 0
 
-	if !hookCommandExists(sessionStart, sessionStartCmd) {
-		sessionStart = addHook(sessionStart, sessionStartCmd)
+	if updated, changed := syncHookCommand(sessionStart, sessionStartCmd); changed {
+		sessionStart = updated
 		count++
 	}
-	if !hookCommandExists(userPromptSubmit, userPromptSubmitCmd) {
-		userPromptSubmit = addHook(userPromptSubmit, userPromptSubmitCmd)
+	if updated, changed := syncHookCommand(userPromptSubmit, userPromptSubmitCmd); changed {
+		userPromptSubmit = updated
 		count++
 	}
-	if !hookCommandExists(stop, stopCmd) {
-		stop = addHook(stop, stopCmd)
+	if updated, changed := syncHookCommand(stop, stopCmd); changed {
+		stop = updated
+		count++
+	}
+	if updated, changed := syncHookCommand(postToolUse, postToolUseCmd); changed {
+		postToolUse = updated
 		count++
 	}
 
 	if count == 0 {
-		// Still ensure the feature flag is configured even if hooks
-		// were already present (e.g., manually installed).
-		if err := ensureProjectFeatureEnabled(repoRoot); err != nil {
-			return 0, fmt.Errorf("failed to enable codex_hooks feature: %w", err)
-		}
 		return 0, nil
 	}
 
@@ -120,6 +124,7 @@ func (c *CodexAgent) InstallHooks(ctx context.Context, localDev bool, force bool
 	marshalHookType(rawHooks, "SessionStart", sessionStart)
 	marshalHookType(rawHooks, "UserPromptSubmit", userPromptSubmit)
 	marshalHookType(rawHooks, "Stop", stop)
+	marshalHookType(rawHooks, "PostToolUse", postToolUse)
 
 	// Preserve existing top-level keys (e.g., $schema) by reusing the parsed file
 	topLevel := make(map[string]json.RawMessage)
@@ -147,16 +152,15 @@ func (c *CodexAgent) InstallHooks(ctx context.Context, localDev bool, force bool
 		return 0, fmt.Errorf("failed to write hooks.json: %w", err)
 	}
 
-	// Enable the codex_hooks feature in the project-level .codex/config.toml.
-	// This keeps the feature flag per-repo rather than global.
-	if err := ensureProjectFeatureEnabled(repoRoot); err != nil {
-		return count, fmt.Errorf("failed to enable codex_hooks feature: %w", err)
-	}
-
+	// No .codex/config.toml is written: hooks are enabled by default in
+	// Codex (since 0.124.0), and a TOML file inside Codex's reserved
+	// <CODEX_HOME>/agents tree would be rejected by its agent-role scanner
+	// at every startup (entireio/cli#842). A leftover config.toml written
+	// by an older entire version must be removed manually.
 	return count, nil
 }
 
-// UninstallHooks removes Trace hooks from Codex hooks.json.
+// UninstallHooks removes Entire hooks from Codex hooks.json.
 func (c *CodexAgent) UninstallHooks(ctx context.Context) error {
 	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
@@ -164,7 +168,6 @@ func (c *CodexAgent) UninstallHooks(ctx context.Context) error {
 	}
 
 	hooksPath := filepath.Join(repoRoot, ".codex", HooksFileName)
-	// #nosec G304 -- hooksPath is constructed from repo root + fixed subpath, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path constructed from repo root
 	if err != nil {
 		return nil //nolint:nilerr // No hooks.json means nothing to uninstall
@@ -185,7 +188,7 @@ func (c *CodexAgent) UninstallHooks(ctx context.Context) error {
 		return nil
 	}
 
-	var sessionStart, userPromptSubmit, stop []MatcherGroup
+	var sessionStart, userPromptSubmit, stop, postToolUse []MatcherGroup
 	if err := parseHookType(rawHooks, "SessionStart", &sessionStart); err != nil {
 		return err
 	}
@@ -195,14 +198,19 @@ func (c *CodexAgent) UninstallHooks(ctx context.Context) error {
 	if err := parseHookType(rawHooks, "Stop", &stop); err != nil {
 		return err
 	}
+	if err := parseHookType(rawHooks, "PostToolUse", &postToolUse); err != nil {
+		return err
+	}
 
-	sessionStart = removeTraceHooks(sessionStart)
-	userPromptSubmit = removeTraceHooks(userPromptSubmit)
-	stop = removeTraceHooks(stop)
+	sessionStart = removeEntireHooks(sessionStart)
+	userPromptSubmit = removeEntireHooks(userPromptSubmit)
+	stop = removeEntireHooks(stop)
+	postToolUse = removeEntireHooks(postToolUse)
 
 	marshalHookType(rawHooks, "SessionStart", sessionStart)
 	marshalHookType(rawHooks, "UserPromptSubmit", userPromptSubmit)
 	marshalHookType(rawHooks, "Stop", stop)
+	marshalHookType(rawHooks, "PostToolUse", postToolUse)
 
 	if len(rawHooks) > 0 {
 		hooksJSON, err := jsonutil.MarshalWithNoHTMLEscape(rawHooks)
@@ -224,7 +232,7 @@ func (c *CodexAgent) UninstallHooks(ctx context.Context) error {
 	return nil
 }
 
-// AreHooksInstalled checks if Trace hooks are installed in Codex hooks.json.
+// AreHooksInstalled checks if Entire hooks are installed in Codex hooks.json.
 func (c *CodexAgent) AreHooksInstalled(ctx context.Context) bool {
 	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
@@ -232,7 +240,6 @@ func (c *CodexAgent) AreHooksInstalled(ctx context.Context) bool {
 	}
 
 	hooksPath := filepath.Join(repoRoot, ".codex", HooksFileName)
-	// #nosec G304 -- hooksPath is constructed from repo root + fixed subpath, not external input
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path constructed from repo root
 	if err != nil {
 		return false
@@ -243,9 +250,10 @@ func (c *CodexAgent) AreHooksInstalled(ctx context.Context) bool {
 		return false
 	}
 
-	return hasTraceHook(hooksFile.Hooks.SessionStart) &&
-		hasTraceHook(hooksFile.Hooks.UserPromptSubmit) &&
-		hasTraceHook(hooksFile.Hooks.Stop)
+	return hasEntireHook(hooksFile.Hooks.SessionStart) &&
+		hasEntireHook(hooksFile.Hooks.UserPromptSubmit) &&
+		hasEntireHook(hooksFile.Hooks.Stop) &&
+		hasEntireHook(hooksFile.Hooks.PostToolUse)
 }
 
 // --- Helpers ---
@@ -282,6 +290,16 @@ func hookCommandExists(groups []MatcherGroup, command string) bool {
 	return false
 }
 
+func syncHookCommand(groups []MatcherGroup, command string) ([]MatcherGroup, bool) {
+	if hookCommandExists(groups, command) {
+		return groups, false
+	}
+	if hasEntireHook(groups) {
+		groups = removeEntireHooks(groups)
+	}
+	return addHook(groups, command), true
+}
+
 func addHook(groups []MatcherGroup, command string) []MatcherGroup {
 	entry := HookEntry{
 		Type:    "command",
@@ -302,14 +320,14 @@ func addHook(groups []MatcherGroup, command string) []MatcherGroup {
 	})
 }
 
-func isTraceHook(command string) bool {
-	return agent.IsManagedHookCommand(command, traceHookPrefixes)
+func isEntireHook(command string) bool {
+	return agent.IsManagedHookCommand(command, entireHookPrefixes)
 }
 
-func hasTraceHook(groups []MatcherGroup) bool {
+func hasEntireHook(groups []MatcherGroup) bool {
 	for _, group := range groups {
 		for _, hook := range group.Hooks {
-			if isTraceHook(hook.Command) {
+			if isEntireHook(hook.Command) {
 				return true
 			}
 		}
@@ -317,12 +335,12 @@ func hasTraceHook(groups []MatcherGroup) bool {
 	return false
 }
 
-func removeTraceHooks(groups []MatcherGroup) []MatcherGroup {
+func removeEntireHooks(groups []MatcherGroup) []MatcherGroup {
 	result := make([]MatcherGroup, 0, len(groups))
 	for _, group := range groups {
 		filtered := make([]HookEntry, 0, len(group.Hooks))
 		for _, hook := range group.Hooks {
-			if !isTraceHook(hook.Command) {
+			if !isEntireHook(hook.Command) {
 				filtered = append(filtered, hook)
 			}
 		}
@@ -332,44 +350,4 @@ func removeTraceHooks(groups []MatcherGroup) []MatcherGroup {
 		}
 	}
 	return result
-}
-
-// configFileName is the Codex config file name.
-const configFileName = "config.toml"
-
-// featureLine is the TOML line that enables the codex_hooks feature.
-const featureLine = "codex_hooks = true"
-
-// ensureProjectFeatureEnabled writes features.codex_hooks = true to the
-// project-level .codex/config.toml. This keeps the feature flag per-repo.
-func ensureProjectFeatureEnabled(repoRoot string) error {
-	configPath := filepath.Join(repoRoot, ".codex", configFileName)
-
-	// #nosec G304 -- configPath is constructed from repo root + fixed subpath, not external input
-	data, err := os.ReadFile(configPath) //nolint:gosec // path constructed from repo root
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to read config.toml: %w", err)
-	}
-
-	content := string(data)
-	if strings.Contains(content, featureLine) {
-		return nil
-	}
-
-	if strings.Contains(content, "[features]") {
-		content = strings.Replace(content, "[features]", "[features]\n"+featureLine, 1)
-	} else {
-		if len(content) > 0 && !strings.HasSuffix(content, "\n") {
-			content += "\n"
-		}
-		content += "\n[features]\n" + featureLine + "\n"
-	}
-
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o750); err != nil {
-		return fmt.Errorf("failed to create .codex directory: %w", err)
-	}
-	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil { //nolint:gosec // path constructed from repo root
-		return fmt.Errorf("failed to write config.toml: %w", err)
-	}
-	return nil
 }

@@ -13,7 +13,7 @@ import (
 )
 
 // BenchmarkEnableCommand benchmarks the non-interactive enable path
-// (setupAgentHooksNonInteractive) which is the hot path for `trace enable --agent claude-code`.
+// (setupAgentHooksNonInteractive) which is the hot path for `entire enable --agent claude-code`.
 //
 // Cannot use t.Parallel() because os.Chdir is process-global state.
 func BenchmarkEnableCommand(b *testing.B) {

@@ -12,13 +12,15 @@ func TestCuratedBuiltinsFor_KnownAgents(t *testing.T) {
 	if len(claude) != 3 {
 		t.Fatalf("claude-code built-ins: got %d entries, want 3", len(claude))
 	}
+	// Codex has no binary-bundled review command usable from `codex exec`;
+	// its review skills are discovered on disk in $name form instead.
 	codex := skilldiscovery.CuratedBuiltinsFor("codex")
-	if len(codex) != 1 || codex[0].Name != "/review" {
-		t.Errorf("codex built-ins: got %+v, want 1x /review", codex)
+	if len(codex) != 0 {
+		t.Errorf("codex built-ins: got %+v, want 0 (discovery-driven)", codex)
 	}
-	gemini := skilldiscovery.CuratedBuiltinsFor("gemini-cli")
+	gemini := skilldiscovery.CuratedBuiltinsFor("gemini")
 	if len(gemini) != 0 {
-		t.Errorf("gemini-cli built-ins: got %d, want 0", len(gemini))
+		t.Errorf("gemini built-ins: got %d, want 0", len(gemini))
 	}
 }
 
@@ -52,7 +54,7 @@ func TestActiveInstallHintsFor_ShowsAllWhenNothingDiscovered(t *testing.T) {
 
 func TestActiveInstallHintsFor_GeminiAlwaysShownRegardlessOfDiscovery(t *testing.T) {
 	t.Parallel()
-	hints := skilldiscovery.ActiveInstallHintsFor("gemini-cli", map[string]struct{}{"/anything": {}})
+	hints := skilldiscovery.ActiveInstallHintsFor("gemini", map[string]struct{}{"/anything": {}})
 	if len(hints) == 0 {
 		t.Error("gemini hint with nil ProvidesAny should always show")
 	}
@@ -60,13 +62,26 @@ func TestActiveInstallHintsFor_GeminiAlwaysShownRegardlessOfDiscovery(t *testing
 
 func TestIsEligible_IncludesAgentWithOnlyInstallHint(t *testing.T) {
 	t.Parallel()
-	if !skilldiscovery.IsEligible("gemini-cli") {
-		t.Error("gemini-cli should be eligible via install hint alone")
+	if !skilldiscovery.IsEligible("gemini") {
+		t.Error("gemini should be eligible via install hint alone")
 	}
 	if !skilldiscovery.IsEligible("claude-code") {
 		t.Error("claude-code should be eligible via built-ins")
 	}
 	if skilldiscovery.IsEligible("nonexistent") {
 		t.Error("unknown agent should not be eligible")
+	}
+}
+
+// TestActiveInstallHintsFor_CodexFingerprintMatchesDollarFormDiscovery pins
+// the suppression fingerprint to the invocation form codex discovery actually
+// produces: DiscoverReviewSkills emits `$plugin:name`, so a slash-form
+// ProvidesAny entry could never intersect the discovered set and the hint
+// would show forever even with the plugin installed.
+func TestActiveInstallHintsFor_CodexFingerprintMatchesDollarFormDiscovery(t *testing.T) {
+	t.Parallel()
+	discovered := map[string]struct{}{"$codex:adversarial-review": {}}
+	if hints := skilldiscovery.ActiveInstallHintsFor("codex", discovered); len(hints) != 0 {
+		t.Fatalf("codex hint not suppressed by $-form discovery; got %d hints: %+v", len(hints), hints)
 	}
 }

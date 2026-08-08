@@ -84,11 +84,11 @@ func setupCleanTestRepo(t *testing.T) (*git.Repository, plumbing.Hash) {
 	return repo, commitHash
 }
 
-// createSessionStateFile creates a session state JSON file in .git/trace-sessions/.
+// createSessionStateFile creates a session state JSON file in .git/entire-sessions/.
 func createSessionStateFile(t *testing.T, repoRoot string, sessionID string, commitHash plumbing.Hash) string {
 	t.Helper()
 
-	sessionStateDir := filepath.Join(repoRoot, ".git", "trace-sessions")
+	sessionStateDir := filepath.Join(repoRoot, ".git", "entire-sessions")
 	if err := os.MkdirAll(sessionStateDir, 0o755); err != nil {
 		t.Fatalf("failed to create session state dir: %v", err)
 	}
@@ -113,9 +113,9 @@ func createSessionStateFile(t *testing.T, repoRoot string, sessionID string, com
 func writeCleanSettingsFile(t *testing.T, repoRoot, content string) {
 	t.Helper()
 
-	entireDir := filepath.Join(repoRoot, ".trace")
+	entireDir := filepath.Join(repoRoot, ".entire")
 	if err := os.MkdirAll(entireDir, 0o755); err != nil {
-		t.Fatalf("failed to create .trace directory: %v", err)
+		t.Fatalf("failed to create .entire directory: %v", err)
 	}
 
 	settingsFile := filepath.Join(entireDir, "settings.json")
@@ -402,7 +402,7 @@ func TestCleanCmd_All_PreviewMode(t *testing.T) {
 	repo, commitHash := setupCleanTestRepo(t)
 
 	// Create shadow branches
-	shadowBranches := []string{"trace/abc1234", "trace/def5678"}
+	shadowBranches := []string{"entire/abc1234", "entire/def5678"}
 	for _, b := range shadowBranches {
 		ref := plumbing.NewHashReference(plumbing.NewBranchReferenceName(b), commitHash)
 		if err := repo.Storer.SetReference(ref); err != nil {
@@ -431,10 +431,10 @@ func TestCleanCmd_All_PreviewMode(t *testing.T) {
 	if !strings.Contains(output, "to clean") {
 		t.Errorf("Expected 'to clean' in output, got: %s", output)
 	}
-	if !strings.Contains(output, "trace/abc1234") {
+	if !strings.Contains(output, "entire/abc1234") {
 		t.Errorf("Expected 'entire/abc1234' in output, got: %s", output)
 	}
-	if !strings.Contains(output, "trace/def5678") {
+	if !strings.Contains(output, "entire/def5678") {
 		t.Errorf("Expected 'entire/def5678' in output, got: %s", output)
 	}
 	if strings.Contains(output, paths.MetadataBranchName) {
@@ -456,7 +456,7 @@ func TestCleanCmd_All_PreviewMode(t *testing.T) {
 func TestCleanCmd_All_DryRun(t *testing.T) {
 	repo, commitHash := setupCleanTestRepo(t)
 
-	shadowBranches := []string{"trace/abc1234"}
+	shadowBranches := []string{"entire/abc1234"}
 	for _, b := range shadowBranches {
 		ref := plumbing.NewHashReference(plumbing.NewBranchReferenceName(b), commitHash)
 		if err := repo.Storer.SetReference(ref); err != nil {
@@ -494,7 +494,7 @@ func TestCleanCmd_All_DryRun(t *testing.T) {
 func TestCleanCmd_All_ForceMode(t *testing.T) {
 	repo, commitHash := setupCleanTestRepo(t)
 
-	shadowBranches := []string{"trace/abc1234", "trace/def5678"}
+	shadowBranches := []string{"entire/abc1234", "entire/def5678"}
 	for _, b := range shadowBranches {
 		ref := plumbing.NewHashReference(plumbing.NewBranchReferenceName(b), commitHash)
 		if err := repo.Storer.SetReference(ref); err != nil {
@@ -529,7 +529,7 @@ func TestCleanCmd_All_ForceMode(t *testing.T) {
 func TestCleanCmd_All_SessionsBranchPreserved(t *testing.T) {
 	repo, commitHash := setupCleanTestRepo(t)
 
-	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("trace/abc1234"), commitHash)
+	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("entire/abc1234"), commitHash)
 	if err := repo.Storer.SetReference(shadowRef); err != nil {
 		t.Fatalf("failed to create shadow branch: %v", err)
 	}
@@ -550,7 +550,7 @@ func TestCleanCmd_All_SessionsBranchPreserved(t *testing.T) {
 	}
 
 	// Shadow branch should be deleted
-	refName := plumbing.NewBranchReferenceName("trace/abc1234")
+	refName := plumbing.NewBranchReferenceName("entire/abc1234")
 	if _, err := repo.Reference(refName, true); err == nil {
 		t.Error("Shadow branch should be deleted")
 	}
@@ -611,7 +611,7 @@ func TestCleanCmd_All_InvalidSettingsIgnoredWithoutV2Scan(t *testing.T) {
 func TestCleanCmd_All_Subdirectory(t *testing.T) {
 	repo, commitHash := setupCleanTestRepo(t)
 
-	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("trace/abc1234"), commitHash)
+	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("entire/abc1234"), commitHash)
 	if err := repo.Storer.SetReference(shadowRef); err != nil {
 		t.Fatalf("failed to create shadow branch: %v", err)
 	}
@@ -640,7 +640,7 @@ func TestCleanCmd_All_Subdirectory(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "trace/abc1234") {
+	if !strings.Contains(output, "entire/abc1234") {
 		t.Errorf("Should find shadow branches from subdirectory, got: %s", output)
 	}
 }
@@ -705,13 +705,13 @@ func TestCleanCmd_All_FindsSessionWithShadowBranch(t *testing.T) {
 func TestRunCleanAllWithItems_PartialFailure(t *testing.T) {
 	repo, commitHash := setupCleanTestRepo(t)
 
-	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("trace/abc1234"), commitHash)
+	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("entire/abc1234"), commitHash)
 	if err := repo.Storer.SetReference(shadowRef); err != nil {
 		t.Fatalf("failed to create shadow branch: %v", err)
 	}
 
 	items := []strategy.CleanupItem{
-		{Type: strategy.CleanupTypeShadowBranch, ID: "trace/abc1234", Reason: "test"},
+		{Type: strategy.CleanupTypeShadowBranch, ID: "entire/abc1234", Reason: "test"},
 		{Type: strategy.CleanupTypeShadowBranch, ID: "entire/nonexistent1234567", Reason: "test"},
 	}
 
@@ -789,7 +789,7 @@ func TestRunCleanAllWithItems_MixedTypes_Preview(t *testing.T) {
 	setupCleanTestRepo(t)
 
 	items := []strategy.CleanupItem{
-		{Type: strategy.CleanupTypeShadowBranch, ID: "trace/abc1234", Reason: "test"},
+		{Type: strategy.CleanupTypeShadowBranch, ID: "entire/abc1234", Reason: "test"},
 		{Type: strategy.CleanupTypeSessionState, ID: "session-123", Reason: "no checkpoints"},
 		{Type: strategy.CleanupTypeCheckpoint, ID: "checkpoint-abc", Reason: "orphaned"},
 	}

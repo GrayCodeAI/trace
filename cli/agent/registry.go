@@ -90,27 +90,19 @@ func DetectAll(ctx context.Context) []Agent {
 	return detected
 }
 
-// Detect attempts to auto-detect which agent is being used.
-// Iterates registered agents in sorted name order for deterministic results.
-// Returns the first agent whose DetectPresence reports true.
-func Detect(ctx context.Context) (Agent, error) {
-	detected := DetectAll(ctx)
-	if len(detected) == 0 {
-		return nil, fmt.Errorf("no agent detected (available: %v)", List())
-	}
-	return detected[0], nil
-}
-
 // AgentForTranscriptPath returns the registered agent whose session directory
-// contains transcriptPath. Returns (nil, false) if no agent matches.
-// Alias kept for parity with upstream naming; trace callers may use either.
+// for repoPath contains the given transcript path. Used to disambiguate which
+// agent owns a session when multiple agents' hooks fire for the same session
+// ID — a Cursor transcript path uniquely identifies a Cursor session even
+// when Claude Code's hook is the one firing.
+//
+// Returns (nil, false) if transcriptPath is empty, no agent claims it, or any
+// registry lookup fails. Match is by directory prefix (with a separator) so
+// "/x/.claude/projects/abc.jsonl" doesn't accidentally match an agent rooted
+// at "/x/.claude/projects/ab".
+//
+//nolint:revive // AgentForTranscriptPath: stutter is intentional for package callers (agent.AgentForTranscriptPath reads naturally)
 func AgentForTranscriptPath(transcriptPath, repoPath string) (Agent, bool) {
-	return ForTranscriptPath(transcriptPath, repoPath)
-}
-
-// ForTranscriptPath returns the registered agent whose session directory
-// contains transcriptPath. Returns (nil, false) if no agent matches.
-func ForTranscriptPath(transcriptPath, repoPath string) (Agent, bool) {
 	if transcriptPath == "" {
 		return nil, false
 	}
@@ -139,6 +131,13 @@ func ForTranscriptPath(transcriptPath, repoPath string) (Agent, bool) {
 }
 
 // pathHasDirPrefix reports whether path is contained within dir (or equals it).
+// Adds a trailing separator before prefix-matching so /a/bc doesn't match /a/b.
+//
+// On Windows, comparison is case-insensitive: NTFS/ReFS treat paths as
+// case-insensitive, and filepath.Abs preserves whatever casing the input had,
+// so a transcript path like `C:\Users\Bob\.cursor\...` and a session dir like
+// `c:\users\bob\.cursor\...` refer to the same location but would not match
+// under a byte-wise comparison.
 func pathHasDirPrefix(path, dir string) bool {
 	if runtime.GOOS == "windows" {
 		path = strings.ToLower(path)

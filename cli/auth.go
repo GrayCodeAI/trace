@@ -152,7 +152,7 @@ func newAuthTokenCmd() *cobra.Command {
 			"for that jurisdiction's entire-api cells (e.g.\n" +
 			"https://aws-us-east-2.api.entire.io/api/v1), which reject the control-plane\n" +
 			"bearer. The slug is a jurisdiction like 'us' or 'eu' (find yours with\n" +
-			"'trace auth status'); the token works against any cell in that\n" +
+			"'entire auth status'); the token works against any cell in that\n" +
 			"jurisdiction. It is minted by exchanging your login (or ENTIRE_TOKEN, when\n" +
 			"set) for the jurisdiction's audience.\n\n" +
 			"The output is a live credential — treat it as a secret. Only the token is\n" +
@@ -174,7 +174,7 @@ func newAuthTokenCmd() *cobra.Command {
 				if err != nil {
 					cmd.SilenceUsage = true
 					if errors.Is(err, auth.ErrNotLoggedIn) {
-						fmt.Fprintln(cmd.ErrOrStderr(), "Not logged in. Run 'trace login' to authenticate.")
+						fmt.Fprintln(cmd.ErrOrStderr(), "Not logged in. Run 'entire login' to authenticate.")
 						return NewSilentError(err)
 					}
 					return err //nolint:wrapcheck // JurisdictionToken already returns contextual auth errors
@@ -198,7 +198,7 @@ func newAuthTokenCmd() *cobra.Command {
 			}
 			if target.token == "" {
 				cmd.SilenceUsage = true
-				fmt.Fprintln(cmd.ErrOrStderr(), "Not logged in. Run 'trace login' to authenticate.")
+				fmt.Fprintln(cmd.ErrOrStderr(), "Not logged in. Run 'entire login' to authenticate.")
 				return NewSilentError(errors.New("not logged in"))
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), target.token)
@@ -235,7 +235,7 @@ func newAuthStatusCmd() *cobra.Command {
 	return cmd
 }
 
-// authProfile is the subset of the core API's GET /me that `trace auth
+// authProfile is the subset of the core API's GET /me that `entire auth
 // status` renders.
 type authProfile struct {
 	Handle         string
@@ -283,7 +283,7 @@ type statusTarget struct {
 	envToken      bool
 }
 
-// resolveAuthStatusTarget picks the target for `trace auth status`, honouring
+// resolveAuthStatusTarget picks the target for `entire auth status`, honouring
 // ENTIRE_TOKEN: when it is set the request dials the token's own aud (exactly
 // as coreapi.New does), so status must report that core, not a stored context
 // that the request never touches. `logout` deliberately does NOT use this —
@@ -309,10 +309,10 @@ func resolveEnvTokenStatusTarget(raw string) (statusTarget, error) {
 	return statusTarget{coreURL: coreURL, token: token, envToken: true}, nil
 }
 
-// resolveStatusTarget picks the core + token for `trace auth status` (and
+// resolveStatusTarget picks the core + token for `entire auth status` (and
 // `logout`) from the active contexts.json context (so `auth use` retargets
 // status onto that login server). No active context means not logged in —
-// the zero-token target renders the `trace login` hint.
+// the zero-token target renders the `entire login` hint.
 //
 // The token is resolved through resolveLogin, which transparently re-mints
 // an expired login JWT from the stored refresh token: an
@@ -349,7 +349,7 @@ func resolveStatusTarget(ctx context.Context, listContexts contextsProvider, res
 }
 
 // defaultFetchProfile fetches a user's profile from coreURL's GET /me with the
-// given bearer. It doubles as the liveness check for `trace auth status`: a
+// given bearer. It doubles as the liveness check for `entire auth status`: a
 // 401 (or an expired login) means the token is no longer usable, which
 // isKeychainTokenRejected maps to a re-login hint.
 func defaultFetchProfile(ctx context.Context, coreURL, token string) (*authProfile, error) {
@@ -390,7 +390,7 @@ func runAuthStatus(ctx context.Context, w io.Writer, fetchProfile profileFetcher
 		} else {
 			fmt.Fprintf(w, "Not logged in to %s\n", t.coreURL)
 		}
-		fmt.Fprintln(w, "Run 'trace login' to authenticate.")
+		fmt.Fprintln(w, "Run 'entire login' to authenticate.")
 		return nil
 	}
 
@@ -398,7 +398,7 @@ func runAuthStatus(ctx context.Context, w io.Writer, fetchProfile profileFetcher
 	if err != nil {
 		if isKeychainTokenRejected(err) {
 			fmt.Fprintf(w, "Login for %s is no longer valid.\n", t.coreURL)
-			fmt.Fprintln(w, "Run 'trace login' to re-authenticate.")
+			fmt.Fprintln(w, "Run 'entire login' to re-authenticate.")
 			return nil
 		}
 		return fmt.Errorf("validate token: %w", err)
@@ -430,18 +430,18 @@ func runAuthStatus(ctx context.Context, w io.Writer, fetchProfile profileFetcher
 		sortAuthSessionsByRecency(sessions)
 		fmt.Fprintf(w, "\nActive sessions (%d):\n", len(sessions))
 		renderAuthSessionsTable(w, newAuthTableStyles(w), sessions)
-		fmt.Fprintln(w, "\nRun 'trace logout' to end this session, or 'trace logout --everywhere' to end all of them.")
+		fmt.Fprintln(w, "\nRun 'entire logout' to end this session, or 'entire logout --everywhere' to end all of them.")
 	}
 
 	if t.totalContexts > 1 {
 		fmt.Fprintln(w)
-		fmt.Fprintf(w, "%d login contexts saved; run 'trace auth contexts' to list or 'trace auth use <name>' to switch.\n", t.totalContexts)
+		fmt.Fprintf(w, "%d login contexts saved; run 'entire auth contexts' to list or 'entire auth use <name>' to switch.\n", t.totalContexts)
 	}
 	return nil
 }
 
 // writeAuthStatusLine writes one aligned "  Label   value" row of the
-// `trace auth status` block. writeProfileLines and runAuthStatus both render
+// `entire auth status` block. writeProfileLines and runAuthStatus both render
 // into this same column, so the label width lives here in one place (it must be
 // ≥ the longest label, currently "Jurisdiction:").
 func writeAuthStatusLine(w io.Writer, label, value string) {
@@ -471,7 +471,7 @@ func writeProfileLines(w io.Writer, p *authProfile) {
 		}
 		writeAuthStatusLine(w, "Identity:", identity)
 	}
-	// The home jurisdiction slug is what 'trace auth token --jurisdiction'
+	// The home jurisdiction slug is what 'entire auth token --jurisdiction'
 	// takes; surface it so it's discoverable non-interactively.
 	if p.Jurisdiction != "" {
 		writeAuthStatusLine(w, "Jurisdiction:", p.Jurisdiction)
@@ -480,7 +480,7 @@ func writeProfileLines(w io.Writer, p *authProfile) {
 
 // --- auth tables -------------------------------------------------------------
 
-// authTableStyles holds the lipgloss styles for the `trace auth contexts`
+// authTableStyles holds the lipgloss styles for the `entire auth contexts`
 // table. Mirrors the approach in activity_render.go: keep style construction
 // tied to color detection, and render plain text when color is disabled.
 type authTableStyles struct {

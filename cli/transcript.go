@@ -1,14 +1,10 @@
 package cli
 
 import (
-	"bufio"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,16 +12,21 @@ import (
 	agentpkg "github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/transcript"
+	"github.com/GrayCodeAI/trace/cli/validation"
 )
-
-// compressGzipThreshold is the minimum size in bytes before a transcript
-// is gzip-compressed on disk. Small transcripts stay uncompressed for
-// faster reads and backward compatibility.
-const compressGzipThreshold = 32 * 1024 // 32 KiB
 
 // resolveTranscriptPath determines the correct file path for an agent's session transcript.
 // Computes the path dynamically from the current repo location for cross-machine portability.
 func resolveTranscriptPath(ctx context.Context, sessionID string, agent agentpkg.Agent) (string, error) {
+	// Session IDs reaching this restore path can originate from checkpoint
+	// metadata on the shared entire/checkpoints/v1 branch, which is attacker-
+	// influenceable. Reject path separators/absolute paths before they reach
+	// agent.ResolveSessionFile (some agents return absolute IDs verbatim),
+	// preventing transcript writes outside the agent session directory.
+	if err := validation.ValidateSessionID(sessionID); err != nil {
+		return "", fmt.Errorf("invalid session ID for transcript path: %w", err)
+	}
+
 	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get worktree root: %w", err)
@@ -139,7 +140,7 @@ func FindCheckpointUUID(lines []transcriptLine, toolUseID string) (string, bool)
 
 // TruncateTranscriptAtUUID returns transcript lines up to and including the
 // line with the given UUID. If the UUID is not found or is empty, returns
-// the trace transcript.
+// the entire transcript.
 //
 //nolint:revive // Exported for testing purposes
 func TruncateTranscriptAtUUID(lines []transcriptLine, uuid string) []transcriptLine {
@@ -158,135 +159,25 @@ func TruncateTranscriptAtUUID(lines []transcriptLine, uuid string) []transcriptL
 }
 
 // writeTranscript writes transcript lines to a file in JSONL format.
-// When the serialized content exceeds compressGzipThreshold bytes the file
-// is gzip-compressed (detected transparently by readTranscriptBytes).
 func writeTranscript(path string, lines []transcriptLine) error {
-	var buf bytes.Buffer
+	file, err := os.Create(path) //nolint:gosec // Writing to controlled git metadata path
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
 	for _, line := range lines {
 		data, err := json.Marshal(line)
 		if err != nil {
 			return fmt.Errorf("failed to marshal line: %w", err)
 		}
-		buf.Write(data)
-		buf.WriteByte('\n')
+		if _, err := file.Write(data); err != nil {
+			return fmt.Errorf("failed to write line: %w", err)
+		}
+		if _, err := file.WriteString("\n"); err != nil {
+			return fmt.Errorf("failed to write newline: %w", err)
+		}
 	}
 
-	raw := buf.Bytes()
-	if len(raw) >= compressGzipThreshold {
-		if err := os.WriteFile(path+".gz", gzipCompress(raw), 0o600); err != nil {
-			return fmt.Errorf("writing compressed transcript: %w", err)
-		}
-		return nil
-	}
-	if err := os.WriteFile(path, raw, 0o600); err != nil {
-		return fmt.Errorf("writing transcript: %w", err)
-	}
 	return nil
-}
-
-// gzipCompress returns the gzip-compressed form of data.
-func gzipCompress(data []byte) []byte {
-	var buf bytes.Buffer
-	w := gzip.NewWriter(&buf)
-	_, _ = w.Write(data) //nolint:errcheck // In-memory buffer write cannot fail
-	_ = w.Close()
-	return buf.Bytes()
-}
-
-// gzipDecompress returns the decompressed form of gzip-compressed data.
-func gzipDecompress(data []byte) ([]byte, error) {
-	r, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("gzip reader: %w", err)
-	}
-	defer func() { _ = r.Close() }()
-	data, err = io.ReadAll(r)
-	if err != nil {
-		return nil, fmt.Errorf("decompressing transcript: %w", err)
-	}
-	return data, nil
-}
-
-// readTranscriptBytes reads a transcript file, transparently decompressing
-// gzip if the file has a .gz extension. Returns (data, exists, error).
-func readTranscriptBytes(path string) ([]byte, bool, error) {
-	// Try compressed path first.
-	gzPath := path + ".gz"
-	// #nosec G304 -- internally constructed transcript path under git metadata, not external input
-	data, err := os.ReadFile(gzPath)
-	if err == nil {
-		decompressed, dErr := gzipDecompress(data)
-		if dErr != nil {
-			return nil, true, fmt.Errorf("failed to decompress transcript: %w", dErr)
-		}
-		return decompressed, true, nil
-	}
-
-	// Fall back to uncompressed path.
-	// #nosec G304 -- internally constructed transcript path under git metadata, not external input
-	data, err = os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, nil
-		}
-		return nil, false, fmt.Errorf("failed to read transcript: %w", err)
-	}
-	return data, true, nil
-}
-
-// TranscriptPosition contains the position information for a transcript file.
-type TranscriptPosition struct {
-	LastUUID  string // Last non-empty UUID (from user/assistant messages)
-	LineCount int    // Total number of lines
-}
-
-// GetTranscriptPosition reads a transcript file and returns the last UUID and line count.
-// Returns empty position if file doesn't exist or is empty.
-// Only considers UUIDs from actual messages (user/assistant), not summary rows which use leafUuid.
-// Transparently handles gzip-compressed transcripts (.gz files).
-func GetTranscriptPosition(path string) (TranscriptPosition, error) {
-	if path == "" {
-		return TranscriptPosition{}, nil
-	}
-
-	data, exists, err := readTranscriptBytes(path)
-	if err != nil {
-		return TranscriptPosition{}, err
-	}
-	if !exists {
-		return TranscriptPosition{}, nil
-	}
-
-	var pos TranscriptPosition
-	reader := bufio.NewReader(bytes.NewReader(data))
-
-	for {
-		lineBytes, err := reader.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			return TranscriptPosition{}, fmt.Errorf("failed to read transcript: %w", err)
-		}
-
-		if len(lineBytes) == 0 {
-			if err == io.EOF {
-				break
-			}
-			continue
-		}
-
-		pos.LineCount++
-
-		// Parse line to extract UUID (only from user/assistant messages, not summaries)
-		var line transcriptLine
-		if err := json.Unmarshal(lineBytes, &line); err == nil {
-			if line.UUID != "" {
-				pos.LastUUID = line.UUID
-			}
-		}
-
-		if err == io.EOF {
-			break
-		}
-	}
-
-	return pos, nil
 }

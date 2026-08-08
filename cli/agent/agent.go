@@ -66,6 +66,15 @@ type Agent interface {
 	GetSessionDir(repoPath string) (string, error)
 
 	// ResolveSessionFile returns the path to the session transcript file.
+	//
+	// SECURITY CONTRACT: agentSessionID is used to build a filesystem path and
+	// some implementations use it as a directory component or (Codex/Pi) return
+	// it verbatim when absolute. Callers that source agentSessionID from
+	// untrusted data (e.g. checkpoint metadata on the shared
+	// entire/checkpoints/v1 branch, hook input) MUST validate it with
+	// validation.ValidateSessionID first. The resume/rewind restore paths do
+	// this at their choke points (transcript.resolveTranscriptPath and
+	// strategy.RestoreLogsOnly); do not call this with unvalidated input.
 	ResolveSessionFile(sessionDir, agentSessionID string) string
 
 	// ReadSession reads session data from agent's storage.
@@ -80,7 +89,7 @@ type Agent interface {
 
 // HookSupport is implemented by agents with lifecycle hooks.
 // This optional interface allows agents like Claude Code and Cursor to
-// install and manage hooks that notify Trace of agent events.
+// install and manage hooks that notify Entire of agent events.
 //
 // The interface is organized into two groups:
 //   - Hook Mapping (2 methods): HookNames, ParseHookEvent
@@ -89,7 +98,7 @@ type HookSupport interface {
 	Agent
 
 	// HookNames returns the hook verbs this agent supports.
-	// These become subcommands under `trace hooks <agent>`.
+	// These become subcommands under `entire hooks <agent>`.
 	// e.g., ["stop", "user-prompt-submit", "session-start", "session-end"]
 	HookNames() []string
 
@@ -100,7 +109,7 @@ type HookSupport interface {
 
 	// InstallHooks installs agent-specific hooks.
 	// If localDev is true, hooks point to local development build.
-	// If force is true, removes existing Trace hooks before installing.
+	// If force is true, removes existing Entire hooks before installing.
 	// Returns the number of hooks installed.
 	InstallHooks(ctx context.Context, localDev bool, force bool) (int, error)
 
@@ -179,17 +188,8 @@ type TranscriptPreparer interface {
 	PrepareTranscript(ctx context.Context, sessionRef string) error
 }
 
-// TokenCalculator provides token usage calculation for a session.
-// The framework calls this during step save and checkpoint if implemented.
-type TokenCalculator interface {
-	Agent
-
-	// CalculateTokenUsage computes token usage from the transcript starting at the given offset.
-	CalculateTokenUsage(transcriptData []byte, fromOffset int) (*TokenUsage, error)
-}
-
 // SidecarImageProvider is implemented by agents that keep images OUTSIDE the
-// transcript Trace condenses — e.g. Cursor stores pasted images in a per-session
+// transcript Entire condenses — e.g. Cursor stores pasted images in a per-session
 // SQLite blob store, not the JSONL transcript. The strategy layer calls this
 // during condensation/finalize to capture those images as checkpoint assets so
 // they're preserved with the session. Best-effort: returns nil (no error) when
@@ -200,6 +200,38 @@ type SidecarImageProvider interface {
 	// SidecarImages returns images stored outside the transcript for the session
 	// identified by sessionRef (the transcript path).
 	SidecarImages(ctx context.Context, sessionRef string) ([]CompactedTranscriptAsset, error)
+}
+
+// TranscriptSanitizer is implemented by agents whose native transcript format
+// carries state that Entire must not keep in its own copy — e.g. Codex rollouts
+// embed encrypted reasoning payloads and compaction blobs that are bound to the
+// originating session and cannot be replayed out of a checkpoint.
+//
+// Entire always leaves the agent's own transcript untouched; this transform applies
+// only to the copy Entire stores. Sanitizing before redaction is what keeps
+// non-replayable payloads out of storage AND keeps the redaction layers from
+// scanning megabytes of ciphertext they would only discard afterwards (base64 is
+// the pathological input for the entropy layer).
+//
+// Implementations must be pure byte transforms: idempotent (sanitizing an
+// already-sanitized transcript is a no-op), safe to call from hooks, and never
+// dependent on the agent process being alive.
+type TranscriptSanitizer interface {
+	Agent
+
+	// SanitizeTranscriptForStorage returns the transcript with non-portable state
+	// removed. It must return the input unchanged rather than nil when it cannot
+	// parse the transcript, so a sanitizer failure never loses the session.
+	SanitizeTranscriptForStorage(data []byte) []byte
+}
+
+// TokenCalculator provides token usage calculation for a session.
+// The framework calls this during step save and checkpoint if implemented.
+type TokenCalculator interface {
+	Agent
+
+	// CalculateTokenUsage computes token usage from the transcript starting at the given offset.
+	CalculateTokenUsage(transcriptData []byte, fromOffset int) (*TokenUsage, error)
 }
 
 // ModelExtractor extracts the LLM model identifier from a transcript for agents
@@ -227,6 +259,37 @@ type TextGenerator interface {
 	GenerateText(ctx context.Context, prompt string, model string) (string, error)
 }
 
+// ProgressPhase identifies a coarse stage in streaming text generation.
+type ProgressPhase string
+
+const (
+	// PhaseConnecting is emitted once when the CLI signals it is making the upstream request.
+	PhaseConnecting ProgressPhase = "connecting"
+	// PhaseFirstToken is emitted once when the upstream responds with the first event,
+	// carrying TTFT and input/cache token counts.
+	PhaseFirstToken ProgressPhase = "first-token"
+	// PhaseGenerating is emitted repeatedly as text or thinking deltas arrive.
+	// OutputTokens carries a running estimate based on delta sizes.
+	PhaseGenerating ProgressPhase = "generating"
+	// PhaseDone is emitted once when the final result event is received without error.
+	PhaseDone ProgressPhase = "done"
+)
+
+// GenerationProgress reports a snapshot of streaming text generation progress.
+// Fields not relevant to the current Phase may be zero-valued.
+type GenerationProgress struct {
+	Phase             ProgressPhase
+	OutputTokens      int // running estimate during PhaseGenerating; final at PhaseDone
+	InputTokens       int // populated at PhaseFirstToken
+	CachedInputTokens int // populated at PhaseFirstToken
+	TTFTms            int // time-to-first-token, populated at PhaseFirstToken
+	DurationMs        int // populated at PhaseDone (final result event)
+}
+
+// ProgressFn receives streaming progress updates. It must not block — invoke it
+// from the same goroutine that reads the stream and keep handlers fast.
+type ProgressFn func(GenerationProgress)
+
 // StreamingTextGenerator is an optional interface for text generators whose
 // underlying CLI exposes a streaming output mode. Callers can use AsStreamingTextGenerator
 // to detect support and fall back to plain GenerateText when unavailable.
@@ -239,7 +302,7 @@ type StreamingTextGenerator interface {
 	GenerateTextStreaming(ctx context.Context, prompt, model string, progress ProgressFn) (string, error)
 }
 
-// CompactedTranscript contains the result of transcript compaction into Trace
+// CompactedTranscript contains the result of transcript compaction into Entire
 // Transcript Format. Assets are accepted in the protocol shape for forward
 // compatibility but may not yet be persisted by all call sites.
 type CompactedTranscript struct {
@@ -254,13 +317,13 @@ type CompactedTranscriptAsset struct {
 	Data      []byte
 }
 
-// TranscriptCompactor is implemented by agents that can produce Trace
+// TranscriptCompactor is implemented by agents that can produce Entire
 // Transcript Format directly from their native transcript representation.
 type TranscriptCompactor interface {
 	Agent
 
 	// CompactTranscript converts the transcript referenced by sessionRef into
-	// Trace Transcript Format and returns the compact transcript bytes.
+	// Entire Transcript Format and returns the compact transcript bytes.
 	CompactTranscript(ctx context.Context, sessionRef string) (*CompactedTranscript, error)
 }
 
@@ -277,22 +340,66 @@ type HookResponseWriter interface {
 }
 
 // RestoredSessionPathResolver is implemented by agents that need a
-// transcript-specific path when Trace reconstructs a session from checkpoint
+// transcript-specific path when Entire reconstructs a session from checkpoint
 // metadata. This is used for restored sessions only; live sessions still use
 // the agent's native hook/session references.
 type RestoredSessionPathResolver interface {
 	Agent
 
-	// ResolveRestoredSessionFile returns where Trace should write a restored
+	// ResolveRestoredSessionFile returns where Entire should write a restored
 	// transcript so the agent can discover it later.
 	ResolveRestoredSessionFile(sessionDir, agentSessionID string, transcript []byte) (string, error)
 }
 
 // TestOnly is implemented by agents that exist solely for testing (e.g., the Vogon canary agent).
-// These agents are excluded from the user-facing agent selection in `trace enable`.
+// These agents are excluded from the user-facing agent selection in `entire enable`.
 type TestOnly interface {
 	Agent
 	IsTestOnly() bool
+}
+
+// Launcher is implemented by agents that `entire` can subprocess-spawn.
+// This is used by `entire review` to start an agent with a pre-composed
+// initial prompt; other commands may use it later.
+//
+// Contract:
+//   - LaunchCmd builds an *exec.Cmd with stdin/stdout/stderr wired to the
+//     caller's TTY. The agent runs in the foreground and the call blocks.
+//   - The returned cmd is ready to Run() or Start(); it must NOT be modified
+//     by the caller except to set environment variables or working dir.
+//   - initialPrompt is the first user message to send to the agent.
+type Launcher interface {
+	LaunchCmd(ctx context.Context, initialPrompt string) (*exec.Cmd, error)
+}
+
+// DiscoveredSkill describes one review-adjacent skill found on disk by a
+// SkillDiscoverer. Name is the agent-native invocation form (e.g. a
+// slash-prefixed command); Description is scraped from on-disk metadata
+// if available; SourcePath is kept for debug logging and is not shown to
+// the user.
+type DiscoveredSkill struct {
+	Name        string
+	Description string
+	SourcePath  string
+}
+
+// SkillDiscoverer is implemented by agents that can enumerate review-adjacent
+// skills installed locally on disk (e.g. plugin skills under
+// ~/.claude/plugins/...). This powers the "Installed plugin skills" section
+// of the `entire review` picker and the runtime verification that configured
+// skills still exist before spawn.
+//
+// Contract:
+//   - Safe to call on fresh installs where no plugin dir exists yet —
+//     return (nil, nil), not an error.
+//   - Malformed individual skill metadata must be skipped with a Debug log,
+//     not propagated as an error.
+//   - A (nil, non-nil) error means "discovery could not run at all" (e.g.
+//     home dir inaccessible). Callers may treat all errors as "found nothing"
+//     and log at Debug — discovery must never block the picker.
+type SkillDiscoverer interface {
+	Agent
+	DiscoverReviewSkills(ctx context.Context) ([]DiscoveredSkill, error)
 }
 
 // SessionBaseDirProvider is implemented by agents that store transcripts in a
@@ -320,50 +427,24 @@ type SubagentAwareExtractor interface {
 	ExtractAllModifiedFiles(transcriptData []byte, fromOffset int, subagentsDir string) ([]string, error)
 
 	// CalculateTotalTokenUsage computes token usage including all spawned subagents.
-	// The subagentsDir parameter specifies where subagent transcripts are stored.
+	// The subagentsDir parameter specifies where subagent transcripts are stored
+	// (an empty subagentsDir skips subagent accounting and leaves SubagentTokens nil).
+	//
+	// CONTRACT — the returned SubagentTokens is a CUMULATIVE-SINCE-SESSION-START
+	// snapshot, NOT a delta scoped to fromOffset like the main-agent fields
+	// (InputTokens/OutputTokens/...). Implementations MUST discover spawned agent
+	// IDs from the FULL transcript prefix [0,end) — so a subagent spawned before
+	// fromOffset is still found (#329) — and re-read each subagent transcript from
+	// line 0 on every call. Consequently a subagent's full total repeats on every
+	// call after it is first discovered.
+	//
+	// Callers that accumulate across checkpoints/turns therefore MUST NOT sum
+	// SubagentTokens across calls: replace the running total with the latest
+	// snapshot, and rescope any window delta by subtracting a previously captured
+	// baseline (see accumulateTokenUsage / resetCheckpointWindow and
+	// session.State.SubagentTokensBaseline in cmd/entire/cli/strategy, and
+	// rescopeSubagentTokensToDeltas in cmd/entire/cli/agentimport for the import
+	// path). An implementation that instead returned per-window deltas would
+	// silently break that accounting with no compile-time or test signal.
 	CalculateTotalTokenUsage(transcriptData []byte, fromOffset int, subagentsDir string) (*TokenUsage, error)
-}
-
-// Launcher is implemented by agents that `trace` can subprocess-spawn.
-// This is used by `trace review` to start an agent with a pre-composed
-// initial prompt; other commands may use it later.
-//
-// Contract:
-//   - LaunchCmd builds an *exec.Cmd with stdin/stdout/stderr wired to the
-//     caller's TTY. The agent runs in the foreground and the call blocks.
-//   - The returned cmd is ready to Run() or Start(); it must NOT be modified
-//     by the caller except to set environment variables or working dir.
-//   - initialPrompt is the first user message to send to the agent.
-type Launcher interface {
-	LaunchCmd(ctx context.Context, initialPrompt string) (*exec.Cmd, error)
-}
-
-// DiscoveredSkill describes one review-adjacent skill found on disk by a
-// SkillDiscoverer. Name is the agent-native invocation form (e.g. a
-// slash-prefixed command); Description is scraped from on-disk metadata
-// if available; SourcePath is kept for debug logging and is not shown to
-// the user.
-type DiscoveredSkill struct {
-	Name        string
-	Description string
-	SourcePath  string
-}
-
-// SkillDiscoverer is implemented by agents that can enumerate review-adjacent
-// skills installed locally on disk (e.g. plugin skills under
-// ~/.claude/plugins/...). This powers the "Installed plugin skills" section
-// of the `trace review` picker and the runtime verification that configured
-// skills still exist before spawn.
-//
-// Contract:
-//   - Safe to call on fresh installs where no plugin dir exists yet —
-//     return (nil, nil), not an error.
-//   - Malformed individual skill metadata must be skipped with a Debug log,
-//     not propagated as an error.
-//   - A (nil, non-nil) error means "discovery could not run at all" (e.g.
-//     home dir inaccessible). Callers may treat all errors as "found nothing"
-//     and log at Debug — discovery must never block the picker.
-type SkillDiscoverer interface {
-	Agent
-	DiscoverReviewSkills(ctx context.Context) ([]DiscoveredSkill, error)
 }

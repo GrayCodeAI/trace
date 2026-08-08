@@ -60,20 +60,20 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 	}
 
 	// Verify commands use bash field and type is "command"
-	assertEntryBash(t, hooksFile.Hooks.UserPromptSubmitted, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli user-prompt-submitted"))
-	assertEntryBash(t, hooksFile.Hooks.SessionStart, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli session-start"))
-	assertEntryBash(t, hooksFile.Hooks.AgentStop, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli agent-stop"))
-	assertEntryBash(t, hooksFile.Hooks.SessionEnd, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli session-end"))
-	assertEntryBash(t, hooksFile.Hooks.SubagentStop, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli subagent-stop"))
-	assertEntryBash(t, hooksFile.Hooks.PreToolUse, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli pre-tool-use"))
-	assertEntryBash(t, hooksFile.Hooks.PostToolUse, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli post-tool-use"))
-	assertEntryBash(t, hooksFile.Hooks.ErrorOccurred, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli error-occurred"))
+	assertEntryBash(t, hooksFile.Hooks.UserPromptSubmitted, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli user-prompt-submitted"))
+	assertEntryBash(t, hooksFile.Hooks.SessionStart, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli session-start"))
+	assertEntryBash(t, hooksFile.Hooks.AgentStop, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli agent-stop"))
+	assertEntryBash(t, hooksFile.Hooks.SessionEnd, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli session-end"))
+	assertEntryBash(t, hooksFile.Hooks.SubagentStop, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli subagent-stop"))
+	assertEntryBash(t, hooksFile.Hooks.PreToolUse, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli pre-tool-use"))
+	assertEntryBash(t, hooksFile.Hooks.PostToolUse, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli post-tool-use"))
+	assertEntryBash(t, hooksFile.Hooks.ErrorOccurred, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli error-occurred"))
 
 	// Verify type field is "command"
 	assertEntryType(t, hooksFile.Hooks.AgentStop, "command")
 
 	// Verify comment field
-	assertEntryComment(t, hooksFile.Hooks.AgentStop, "Trace CLI")
+	assertEntryComment(t, hooksFile.Hooks.AgentStop, "Entire CLI")
 }
 
 func TestInstallHooks_Idempotent(t *testing.T) {
@@ -222,12 +222,12 @@ func TestInstallHooks_PreservesExistingHooks(t *testing.T) {
 
 	hooksFile := readHooksFile(t, tempDir)
 
-	// AgentStop should have user hook + trace hook
+	// AgentStop should have user hook + entire hook
 	if len(hooksFile.Hooks.AgentStop) != 2 {
-		t.Errorf("AgentStop hooks = %d, want 2 (user + trace)", len(hooksFile.Hooks.AgentStop))
+		t.Errorf("AgentStop hooks = %d, want 2 (user + entire)", len(hooksFile.Hooks.AgentStop))
 	}
 	assertEntryBash(t, hooksFile.Hooks.AgentStop, "echo user hook")
-	assertEntryBash(t, hooksFile.Hooks.AgentStop, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli agent-stop"))
+	assertEntryBash(t, hooksFile.Hooks.AgentStop, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli agent-stop"))
 }
 
 func TestInstallHooks_LocalDev(t *testing.T) {
@@ -241,7 +241,7 @@ func TestInstallHooks_LocalDev(t *testing.T) {
 	}
 
 	hooksFile := readHooksFile(t, tempDir)
-	assertEntryBash(t, hooksFile.Hooks.AgentStop, `go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace hooks copilot-cli agent-stop`)
+	assertEntryBash(t, hooksFile.Hooks.AgentStop, `"$(git rev-parse --show-toplevel)"/scripts/entire-dev hooks copilot-cli agent-stop`)
 }
 
 func TestInstallHooks_PreservesUnknownFields(t *testing.T) {
@@ -310,10 +310,10 @@ func TestInstallHooks_PreservesUnknownFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(agentStopHooks) != 2 {
-		t.Errorf("agentStop hooks = %d, want 2 (user + trace)", len(agentStopHooks))
+		t.Errorf("agentStop hooks = %d, want 2 (user + entire)", len(agentStopHooks))
 	}
 	assertEntryBash(t, agentStopHooks, "echo user stop")
-	assertEntryBash(t, agentStopHooks, agent.WrapProductionSilentHookCommand("hawk trace hooks copilot-cli agent-stop"))
+	assertEntryBash(t, agentStopHooks, agent.WrapProductionSilentHookCommand("entire hooks copilot-cli agent-stop"))
 }
 
 func TestUninstallHooks_PreservesUnknownFields(t *testing.T) {
@@ -386,9 +386,9 @@ func TestUninstallHooks_PreservesUnknownFields(t *testing.T) {
 		t.Error("unknown hook type 'onNotification' was dropped after uninstall")
 	}
 
-	// Verify Trace hooks were actually removed
+	// Verify Entire hooks were actually removed
 	if ag.AreHooksInstalled(context.Background()) {
-		t.Error("Trace hooks should be removed after uninstall")
+		t.Error("Entire hooks should be removed after uninstall")
 	}
 }
 
@@ -443,7 +443,7 @@ func TestInstallHooks_PreservesEntryLevelFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Install hooks (adds Trace entries alongside the user entry).
+	// Install hooks (adds Entire entries alongside the user entry).
 	ag := &CopilotCLIAgent{}
 	count, err := ag.InstallHooks(context.Background(), false, false)
 	if err != nil {
@@ -474,7 +474,7 @@ func TestInstallHooks_PreservesEntryLevelFields(t *testing.T) {
 		t.Fatalf("failed to parse agentStop entries: %v", err)
 	}
 
-	// Find the user's entry (not the Trace entry).
+	// Find the user's entry (not the Entire entry).
 	var userEntry *CopilotHookEntry
 	for i := range agentStopEntries {
 		if agentStopEntries[i].Bash == "echo user stop" {
@@ -561,15 +561,15 @@ func TestUninstallHooks_PreservesUserHooksInManagedTypes(t *testing.T) {
 	initGitRepo(t, tempDir)
 	t.Chdir(tempDir)
 
-	// Write a hooks file with both an Trace hook and a user hook in agentStop.
+	// Write a hooks file with both an Entire hook and a user hook in agentStop.
 	existingJSON := `{
   "version": 1,
   "hooks": {
     "agentStop": [
       {
         "type": "command",
-        "bash": "trace hooks copilot-cli agent-stop",
-        "comment": "Trace CLI"
+        "bash": "entire hooks copilot-cli agent-stop",
+        "comment": "Entire CLI"
       },
       {
         "type": "command",
@@ -592,7 +592,7 @@ func TestUninstallHooks_PreservesUserHooksInManagedTypes(t *testing.T) {
 		t.Fatalf("UninstallHooks() error = %v", err)
 	}
 
-	// Re-read and verify the user hook survived but the Trace hook was removed.
+	// Re-read and verify the user hook survived but the Entire hook was removed.
 	data, err := os.ReadFile(filepath.Join(githubHooksDir, HooksFileName))
 	if err != nil {
 		t.Fatalf("failed to read hooks file: %v", err)

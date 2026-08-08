@@ -37,7 +37,7 @@ func TestDefaultBranch_WorksOnMain(t *testing.T) {
 	}
 }
 
-// TestDefaultBranch_WorksOnFeatureBranch tests that Trace tracking works on feature branches.
+// TestDefaultBranch_WorksOnFeatureBranch tests that Entire tracking works on feature branches.
 func TestDefaultBranch_WorksOnFeatureBranch(t *testing.T) {
 	t.Parallel()
 	env := NewFeatureBranchEnv(t)

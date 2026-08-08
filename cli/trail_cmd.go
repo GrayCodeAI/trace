@@ -39,7 +39,7 @@ const (
 )
 
 func trailContextBlurb() string {
-	return "A trail ties together the context for a branch. Use `trace trail` to view, create, update, or watch it; use `trace trail finding` to manage agent findings."
+	return "A trail ties together the context for a branch. Use `entire trail` to view, create, update, or watch it; use `entire trail finding` to manage agent findings."
 }
 
 func newTrailCmd() *cobra.Command {
@@ -51,7 +51,7 @@ func newTrailCmd() *cobra.Command {
 		Short:  "Manage trails for your branches",
 		Hidden: true,
 		// Hidden from root help while the surface matures, but advertised to
-		// coding agents through `trace agent-help` — only when trails are
+		// coding agents through `entire agent-help` — only when trails are
 		// enabled for the repo, so we never point agents at trails they can't use.
 		Annotations: map[string]string{
 			agentHelpAnnotation:               agentHelpAnnotationEnabled,
@@ -231,14 +231,14 @@ func resolveTrailBySelector(ctx context.Context, client *api.Client, forge, owne
 	if selector == "" {
 		branch, err := resolveTrailBranch(ctx, branchOverride)
 		if err != nil {
-			return nil, fmt.Errorf("no trail selector given and current branch is unknown: %w\nhint: run 'trace trail list --status any' or pass a trail number, id, or branch", err)
+			return nil, fmt.Errorf("no trail selector given and current branch is unknown: %w\nhint: run 'entire trail list --status any' or pass a trail number, id, or branch", err)
 		}
 		found, err := findTrailByBranch(ctx, client, forge, owner, repo, branch)
 		if err != nil {
 			return nil, err
 		}
 		if found == nil {
-			return nil, fmt.Errorf("no trail found for current branch %q\nhint: run 'trace trail create' or 'trace trail list --status any'", branch)
+			return nil, fmt.Errorf("no trail found for current branch %q\nhint: run 'entire trail create' or 'entire trail list --status any'", branch)
 		}
 		return found, nil
 	}
@@ -247,7 +247,7 @@ func resolveTrailBySelector(ctx context.Context, client *api.Client, forge, owne
 		return nil, err
 	}
 	if found == nil {
-		return nil, fmt.Errorf("no trail %q found in %s/%s/%s (run 'trace trail list --status any')", selector, forge, owner, repo)
+		return nil, fmt.Errorf("no trail %q found in %s/%s/%s (run 'entire trail list --status any')", selector, forge, owner, repo)
 	}
 	return found, nil
 }
@@ -544,7 +544,7 @@ func trailListQueryWithOffset(statusFilters []trail.Status, author string, limit
 }
 
 // printTrailListEmpty renders the empty-state message. It names the active
-// status filter so a bare `trace trail list` (which defaults to open)
+// status filter so a bare `entire trail list` (which defaults to open)
 // doesn't read as "this repo has no trails" when trails exist in other
 // statuses. statusFilters is empty when the user passed --status any.
 func printTrailListEmpty(w io.Writer, authorFilter string, statusFilters []trail.Status) {
@@ -649,7 +649,7 @@ func printTrailListHeader(w io.Writer, opts trailListDisplayOptions, count int) 
 	label := opts.RequestedAuthor
 	// When --author me resolves to the same login the server already returned
 	// for the trail, render "Your trails (login)" so identity drift between
-	// gh and Trace is visible at a glance.
+	// gh and Entire is visible at a glance.
 	if opts.CurrentUser != "" && strings.EqualFold(opts.RequestedAuthor, opts.CurrentUser) {
 		label = fmt.Sprintf("Your trails (%s)", opts.CurrentUser)
 	}
@@ -1509,7 +1509,7 @@ branch. Without one, the trail for the current branch is used. The trail's branc
 is checked out, fetching it from origin first when it only exists there.
 
 With --worktree, the branch is checked out into a git worktree under
-.trace/worktrees at the repo root instead of switching this checkout, and the
+.entire/worktrees at the repo root instead of switching this checkout, and the
 command prints a cd command for the new worktree. Gitignored files matching
 .worktreeinclude patterns are copied into the worktree. When stdout is not a
 terminal, only the worktree path is printed, so scripts can use
@@ -1535,7 +1535,7 @@ trail is looked up against that repository's origin remote.`,
 
 	cmd.Flags().StringVar(&trailSelector, "trail", "", "Trail to check out (number, id, or branch; defaults to the current branch's trail)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip the prompt before fetching a remote-only branch")
-	cmd.Flags().BoolVar(&worktree, "worktree", false, "Check out the trail branch in a worktree under .trace/worktrees instead of switching this checkout")
+	cmd.Flags().BoolVar(&worktree, "worktree", false, "Check out the trail branch in a worktree under .entire/worktrees instead of switching this checkout")
 
 	return cmd
 }
@@ -1619,7 +1619,7 @@ func parseTrailNumberArg(args []string) (int, error) {
 	}
 	n, err := strconv.Atoi(args[0])
 	if err != nil || n <= 0 {
-		return 0, fmt.Errorf("invalid trail number %q: expected a positive integer (see 'trace trail list')", args[0])
+		return 0, fmt.Errorf("invalid trail number %q: expected a positive integer (see 'entire trail list')", args[0])
 	}
 	return n, nil
 }
@@ -2056,7 +2056,7 @@ func parseTrailRepoArg(raw string) (forge, owner, repo string, err error) {
 func checkTrailResponse(resp *http.Response) error {
 	if err := api.CheckResponse(resp); err != nil {
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			return fmt.Errorf("%w — run 'trace login' to re-authenticate", err)
+			return fmt.Errorf("%w — run 'entire login' to re-authenticate", err)
 		}
 		return fmt.Errorf("trail API: %w", err)
 	}

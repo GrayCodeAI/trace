@@ -16,7 +16,7 @@ import (
 	"github.com/GrayCodeAI/trace/cli/provenance"
 )
 
-// Investigate env vars. Names live in cli/provenance; aliased
+// Investigate env vars. Names live in cmd/entire/cli/provenance; aliased
 // here for the package's call sites.
 const (
 	EnvSession     = provenance.InvestigateSession
@@ -28,7 +28,7 @@ const (
 	EnvStartingSHA = provenance.InvestigateStartingSHA
 )
 
-// AppendOptions carries the data needed to populate the TRACE_INVESTIGATE_*
+// AppendOptions carries the data needed to populate the ENTIRE_INVESTIGATE_*
 // env vars on a spawned agent process.
 type AppendOptions struct {
 	AgentName   string
@@ -39,15 +39,15 @@ type AppendOptions struct {
 	StartingSHA string
 }
 
-// AppendInvestigateEnv adds the TRACE_INVESTIGATE_* env vars to base,
+// AppendInvestigateEnv adds the ENTIRE_INVESTIGATE_* env vars to base,
 // returning the new slice. Used by the loop driver when spawning each per-turn
 // agent process to propagate the investigate-session contract.
 //
-// Any pre-existing TRACE_INVESTIGATE_* AND TRACE_REVIEW_* entries in base
+// Any pre-existing ENTIRE_INVESTIGATE_* AND ENTIRE_REVIEW_* entries in base
 // are stripped before the new values are appended. Stripping investigate
 // entries handles nested invocations and stale inheritance from a parent
 // shell — duplicate keys would otherwise have implementation-defined
-// precedence. Stripping review entries prevents an outer `trace review`
+// precedence. Stripping review entries prevents an outer `entire review`
 // session from mis-tagging a child investigate session if invoked nested.
 func AppendInvestigateEnv(base []string, opts AppendOptions) []string {
 	out := make([]string, 0, len(base)+10)
@@ -67,10 +67,4 @@ func AppendInvestigateEnv(base []string, opts AppendOptions) []string {
 		EnvStateDoc+"="+opts.StateDoc,
 		EnvStartingSHA+"="+opts.StartingSHA,
 	)
-}
-
-// IsInvestigateEnvEntry reports whether kv is a "KEY=VALUE" entry whose key
-// is one of the TRACE_INVESTIGATE_* contract variables.
-func IsInvestigateEnvEntry(kv string) bool {
-	return provenance.IsInvestigateEntry(kv)
 }

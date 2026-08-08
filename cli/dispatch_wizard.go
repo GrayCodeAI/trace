@@ -192,7 +192,7 @@ func (s dispatchWizardState) previewScope(opts dispatchpkg.Options) string {
 
 func buildDispatchCommand(opts dispatchpkg.Options) string {
 	return strings.Join(compactStrings([]string{
-		"trace dispatch",
+		"entire dispatch",
 		mapBoolToFlag(opts.Mode == dispatchpkg.ModeLocal, "--local"),
 		renderStringFlag("--since", strings.TrimSpace(opts.Since)),
 		mapBoolToFlag(opts.AllBranches, "--all-branches"),

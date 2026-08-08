@@ -2,6 +2,10 @@ package agent
 
 import "github.com/GrayCodeAI/trace/cli/agent/types"
 
+// The skill-event types and their constants live in the leaf agent/types
+// package so the checkpoint contract can construct and reference skill events
+// without importing the full agent package. These aliases keep existing
+// agent.SkillEvent* references working.
 const (
 	SkillEventTypePromptInvocation = types.SkillEventTypePromptInvocation
 	SkillEventTypeToolInvocation   = types.SkillEventTypeToolInvocation

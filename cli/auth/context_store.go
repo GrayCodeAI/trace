@@ -134,7 +134,7 @@ func deleteContextKeychain(c *contexts.Context) error {
 func SetCurrentContext(name string) error {
 	if err := contexts.Modify(userdirs.Config(), func(f *contexts.File) (bool, error) {
 		if f.Find(name) == nil {
-			return false, fmt.Errorf("no login context named %q (run `trace auth contexts` to list)", name)
+			return false, fmt.Errorf("no login context named %q (run `entire auth contexts` to list)", name)
 		}
 		if f.CurrentContext == name {
 			return false, nil
@@ -155,27 +155,4 @@ func Contexts() ([]*contexts.Context, string, error) {
 		return nil, "", fmt.Errorf("load contexts: %w", err)
 	}
 	return f.Contexts, f.CurrentContext, nil
-}
-
-// LoginTokenForContext returns the login JWT stored for c, read from the
-// OS keyring slot the context points at. The encoded expiry is stripped;
-// the server is the authority on validity and the device-flow login holds
-// no refresh token, so an expired token surfaces as a 401 the caller can
-// translate into a re-login hint.
-func LoginTokenForContext(c *contexts.Context) (string, error) {
-	if c == nil {
-		return "", errors.New("nil context")
-	}
-	if c.KeychainService == "" || c.Handle == "" {
-		return "", fmt.Errorf("context %q has no keychain slot", c.Name)
-	}
-	encoded, err := tokenstore.Get(c.KeychainService, c.Handle)
-	if err != nil {
-		return "", fmt.Errorf("read token for context %q: %w", c.Name, err)
-	}
-	if encoded == "" {
-		return "", fmt.Errorf("no token stored for context %q (run `trace login`)", c.Name)
-	}
-	token, _ := tokenstore.DecodeTokenWithExpiration(encoded)
-	return token, nil
 }

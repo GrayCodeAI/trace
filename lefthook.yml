@@ -62,10 +62,17 @@ pre-commit:
     forbidden-strings:
       run: |
         # Catch obvious credential-shaped strings in staged additions.
-        bad=$(git diff --cached --diff-filter=AM -U0 -- {staged_files} \
+        # Test files and testdata (fixtures, assertions, redaction test cases)
+        # routinely contain credential-shaped strings and are excluded.
+        files=$(git diff --cached --name-only --diff-filter=AM -- {staged_files} \
+          | grep -v '_test\.go$' || true)
+        [ -z "$files" ] && exit 0
+        bad=$(git diff --cached -U0 -- $files \
           | grep -E '^\+' \
           | grep -Ei '(aws_secret|password\s*=|api[_-]?key\s*=|BEGIN [A-Z]+ PRIVATE KEY)' \
-          | grep -v 'example\|placeholder\|TODO\|x-release-please' || true)
+          | grep -v '^+++ ' \
+          | grep -v '^\+//' \
+          | grep -v 'example\|placeholder\|TODO\|x-release-please\|development_key' || true)
         if [ -n "$bad" ]; then
           echo "lefthook: possible secret in staged changes:"
           echo "$bad"

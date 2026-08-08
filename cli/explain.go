@@ -111,18 +111,18 @@ func generateOrRawLabel(generate bool) string {
 }
 
 // printNoTrailerMessage renders the friendly message shown when a resolved
-// commit has no Trace-Checkpoint trailer in read-only modes. Takes the
+// commit has no Entire-Checkpoint trailer in read-only modes. Takes the
 // repo so the hash can be abbreviated to the minimum unique length for
 // this repo's object set (matching git's --abbrev behavior).
 func printNoTrailerMessage(w io.Writer, repo *git.Repository, hash plumbing.Hash) {
 	styles := newStatusStyles(w)
 	rows := []explainRow{
 		{Label: "commit", Value: abbreviateCommitHash(repo, hash)},
-		{Label: "reason", Value: "no Trace-Checkpoint trailer"},
-		{Label: "hint", Value: "the commit exists but was not created during an Trace session"},
+		{Label: "reason", Value: "no Entire-Checkpoint trailer"},
+		{Label: "hint", Value: "the commit exists but was not created during an Entire session"},
 		{Label: "", Value: "(or its trailer was removed)"},
 	}
-	fmt.Fprint(w, styles.renderFailure("No associated Trace checkpoint", rows))
+	fmt.Fprint(w, styles.renderFailure("No associated Entire checkpoint", rows))
 }
 
 // errAmbiguousCommitPrefix is returned by resolveCommitUnambiguous when a
@@ -250,9 +250,9 @@ By default, shows checkpoints on the current branch. Pass a checkpoint ID or
 commit SHA as a positional argument to explain a specific item, or use flags.
 
 Viewing specific items:
-  trace checkpoint explain <id-or-sha>           Auto-detects checkpoint ID or commit SHA
-  trace checkpoint explain --checkpoint <id>     Force interpretation as checkpoint ID
-  trace checkpoint explain --commit <ref>        Force interpretation as commit ref
+  entire checkpoint explain <id-or-sha>           Auto-detects checkpoint ID or commit SHA
+  entire checkpoint explain --checkpoint <id>     Force interpretation as checkpoint ID
+  entire checkpoint explain --commit <ref>        Force interpretation as commit ref
 
 Filtering the list view:
   --session      Filter checkpoints by session ID (or prefix)
@@ -297,13 +297,13 @@ Note: --session filters the list view; the positional arg, --commit, and --check
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Check if Trace is disabled
+			// Check if Entire is disabled
 			if checkDisabledGuard(cmd.Context(), cmd.OutOrStdout()) {
 				return nil
 			}
 
 			// Only initialize logging when inside a git worktree to avoid
-			// creating .trace/logs/ in arbitrary directories.
+			// creating .entire/logs/ in arbitrary directories.
 			if _, err := paths.WorktreeRoot(cmd.Context()); err == nil {
 				logging.SetLogLevelGetter(GetLogLevel)
 				if err := logging.Init(cmd.Context(), ""); err == nil {
@@ -322,7 +322,7 @@ Note: --session filters the list view; the positional arg, --commit, and --check
 
 			// --generate and --raw-transcript need a specific target — either the
 			// positional arg, --checkpoint/-c, or --commit (which forwards to
-			// the checkpoint path via the commit's Trace-Checkpoint trailer).
+			// the checkpoint path via the commit's Entire-Checkpoint trailer).
 			hasCheckpointTarget := checkpointFlag != "" || commitFlag != "" || positional != ""
 			if generateFlag && !hasCheckpointTarget {
 				return errors.New("--generate requires a checkpoint ID or commit SHA (positional), --checkpoint/-c, or --commit flag")
@@ -536,7 +536,7 @@ func runExplainAuto(ctx context.Context, w, errW io.Writer, target string, noPag
 		// Side-effect modes must error — silently succeeding would leave
 		// scripts unable to distinguish "done" from "didn't happen".
 		if generate || rawTranscript {
-			return fmt.Errorf("cannot %s: commit %s has no Trace-Checkpoint trailer", generateOrRawLabel(generate), abbreviateCommitHash(lookup.repo, hash))
+			return fmt.Errorf("cannot %s: commit %s has no Entire-Checkpoint trailer", generateOrRawLabel(generate), abbreviateCommitHash(lookup.repo, hash))
 		}
 		printNoTrailerMessage(w, lookup.repo, hash)
 		return nil
@@ -548,7 +548,7 @@ func runExplainAuto(ctx context.Context, w, errW io.Writer, target string, noPag
 	if err := runExplainCheckpointWithLookup(ctx, w, errW, cpID.String(), noPager, verbose, full, rawTranscript, generate, force, searchAll, lookup, nil, summaryTimeoutSeconds); err != nil {
 		// The user typed a commit, not this checkpoint ID — without the
 		// trailer linkage the error reads as if they asked for an unknown ID.
-		return fmt.Errorf("commit %s references checkpoint %s via its Trace-Checkpoint trailer: %w", abbreviateCommitHash(lookup.repo, hash), cpID, err)
+		return fmt.Errorf("commit %s references checkpoint %s via its Entire-Checkpoint trailer: %w", abbreviateCommitHash(lookup.repo, hash), cpID, err)
 	}
 	return nil
 }
@@ -756,7 +756,7 @@ func runExplainCheckpointWithLookup(ctx context.Context, w, errW io.Writer, chec
 		return nil
 	}
 
-	// Find associated commits (git commits with matching Trace-Checkpoint trailer)
+	// Find associated commits (git commits with matching Entire-Checkpoint trailer)
 	associatedCommits, _ := getAssociatedCommits(ctx, lookup.repo, fullCheckpointID, searchAll) //nolint:errcheck // Best-effort
 
 	// Derive author from the first associated commit (the user who made the commit).
@@ -942,7 +942,7 @@ func generateCheckpointSummary(ctx context.Context, w, errW io.Writer, store che
 	if content.Metadata.Summary != nil && !force {
 		return renderExplainFailure(errW, "Summary already exists", []explainRow{
 			{Label: "id", Value: checkpointID.String()},
-			{Label: "try", Value: fmt.Sprintf("trace checkpoint explain --generate --force %s", checkpointID)},
+			{Label: "try", Value: fmt.Sprintf("entire checkpoint explain --generate --force %s", checkpointID)},
 		}, fmt.Errorf("checkpoint %s already has a summary", checkpointID))
 	}
 
@@ -1642,7 +1642,7 @@ func explainTemporaryCheckpoint(ctx context.Context, w, errW io.Writer, repo *gi
 	sb.WriteString(styles.renderIdentity(label, "", rows))
 
 	intent := extractIntent(nil, sessionPrompt)
-	hint := "Not generated. Temporary checkpoints can be summarized after commit. Run trace explain --generate` on the resulting commit."
+	hint := "Not generated. Temporary checkpoints can be summarized after commit. Run `entire checkpoint explain --generate` on the resulting commit."
 	sb.WriteString(renderExplainBody(w, buildNoSummaryMarkdown(intent, nil, hint)))
 
 	// Transcript section: full shows entire session, verbose shows checkpoint scope
@@ -1690,7 +1690,7 @@ func explainTemporaryCheckpoint(ctx context.Context, w, errW io.Writer, repo *gi
 }
 
 // getAssociatedCommits finds git commits that reference the given checkpoint ID.
-// Searches commits on the current branch for Trace-Checkpoint trailer matches.
+// Searches commits on the current branch for Entire-Checkpoint trailer matches.
 // When searchAll is true, uses full DAG walk with no depth limit (may be slow).
 // This finds checkpoint commits on merged feature branches (second parents of merges).
 func getAssociatedCommits(ctx context.Context, repo *git.Repository, checkpointID id.CheckpointID, searchAll bool) ([]associatedCommit, error) {
@@ -1972,7 +1972,7 @@ func renderExplainBody(w io.Writer, md string) string {
 // where this checkpoint's content begins in the full session transcript.
 //
 // Author is displayed when available (only for committed checkpoints).
-// Associated commits are git commits that reference this checkpoint via Trace-Checkpoint trailer.
+// Associated commits are git commits that reference this checkpoint via Entire-Checkpoint trailer.
 func formatCheckpointOutput(ctx context.Context, summary *checkpoint.CheckpointSummary, content *checkpoint.SessionContent, checkpointID id.CheckpointID, associatedCommits []associatedCommit, author checkpoint.Author, verbose, full bool, w io.Writer) string {
 	var sb strings.Builder
 	meta := content.Metadata
@@ -2014,7 +2014,7 @@ func formatCheckpointOutput(ctx context.Context, summary *checkpoint.CheckpointS
 			files = meta.FilesTouched
 		}
 
-		hint := fmt.Sprintf("Not generated yet. Run trace explain --generate %s` to create an AI summary.", checkpointID)
+		hint := fmt.Sprintf("Not generated yet. Run `entire checkpoint explain --generate %s` to create an AI summary.", checkpointID)
 		if summary != nil && summary.Imported {
 			// Imported history is read-only; --generate is refused for it, so
 			// don't point users at a command that will error out.
@@ -2385,7 +2385,7 @@ func walkFirstParentCommits(ctx context.Context, repo *git.Repository, from plum
 // Behavior:
 //   - On feature branches: only show checkpoints unique to this branch (not in main)
 //   - On default branch (main/master): show all checkpoints in history (up to limit)
-//   - Includes both committed checkpoints (trace/checkpoints/v1) and temporary checkpoints (shadow branches)
+//   - Includes both committed checkpoints (entire/checkpoints/v1) and temporary checkpoints (shadow branches)
 //
 // The second return value is true when either the live (commit-linked +
 // temporary) or imported budget hit `limit`, i.e. older checkpoints were
@@ -2397,7 +2397,7 @@ func getBranchCheckpoints(ctx context.Context, repo *git.Repository, limit int) 
 	// Warn (once per process) if metadata branches are disconnected
 	strategy.WarnIfMetadataDisconnected()
 
-	// This is a user-facing enumeration (`trace checkpoint list` / the branch
+	// This is a user-facing enumeration (`entire checkpoint list` / the branch
 	// `explain` view), so opt into git-refs remote discovery: when a
 	// checkpoint_remote is configured, List enumerates it (names only) to
 	// surface refs-native checkpoints written on another machine, and the
@@ -2734,7 +2734,7 @@ func isShadowBranchReachable(ctx context.Context, repo *git.Repository, baseComm
 // Returns nil if the checkpoint should be skipped (no tree changes or can't be read).
 //
 // Filtering uses hasAnyChanges (O(1) tree hash comparison) rather than a full
-// O(files) diff. This means metadata-only checkpoints (.trace/ changes without
+// O(files) diff. This means metadata-only checkpoints (.entire/ changes without
 // code changes) are kept — only true no-ops (identical tree as parent) are dropped.
 // This trade-off is intentional for list-view performance.
 func convertTemporaryCheckpoint(repo *git.Repository, tc checkpoint.EphemeralCheckpointInfo) *strategy.RewindPoint {
@@ -2744,14 +2744,14 @@ func convertTemporaryCheckpoint(repo *git.Repository, tc checkpoint.EphemeralChe
 	}
 
 	// Skip no-op commits where the tree is identical to the parent's.
-	// Note: this keeps metadata-only changes (e.g. transcript updates in .trace/)
+	// Note: this keeps metadata-only changes (e.g. transcript updates in .entire/)
 	// since those produce a different tree hash. See hasAnyChanges godoc.
 	if !hasAnyChanges(shadowCommit) {
 		return nil
 	}
 
-	// Read session prompt from the shadow branch commit's tree (not from trace/checkpoints/v1)
-	// Temporary checkpoints store their metadata in the shadow branch, not in trace/checkpoints/v1
+	// Read session prompt from the shadow branch commit's tree (not from entire/checkpoints/v1)
+	// Temporary checkpoints store their metadata in the shadow branch, not in entire/checkpoints/v1
 	var sessionPrompt string
 	shadowTree, treeErr := shadowCommit.Tree()
 	if treeErr == nil {
@@ -2836,7 +2836,7 @@ func runExplainBranchWithFilter(ctx context.Context, w, errW io.Writer, noPager 
 	// flags).
 	if truncated {
 		fmt.Fprint(errW, "note: checkpoint list reached its scan limit; older checkpoints may be hidden. "+
-			"Run .trace checkpoint explain --json --limit <N>' to see more.\n")
+			"Run 'entire checkpoint explain --json --limit <N>' to see more.\n")
 	}
 	return nil
 }
@@ -2851,7 +2851,7 @@ func outputExplainContent(w io.Writer, content string, noPager bool) {
 }
 
 // runExplainCommit looks up the checkpoint associated with a commit.
-// Extracts the Trace-Checkpoint trailer and delegates to checkpoint detail view.
+// Extracts the Entire-Checkpoint trailer and delegates to checkpoint detail view.
 // If no trailer found, shows a message indicating no associated checkpoint.
 func runExplainCommit(ctx context.Context, w, errW io.Writer, commitRef string, noPager, verbose, full, rawTranscript, generate, force, searchAll bool, summaryTimeoutSeconds int) error {
 	repo, err := openRepository(ctx)
@@ -2878,13 +2878,13 @@ func runExplainCommit(ctx context.Context, w, errW io.Writer, commitRef string, 
 		return fmt.Errorf("failed to get commit: %w", err)
 	}
 
-	// Extract Trace-Checkpoint trailer
+	// Extract Entire-Checkpoint trailer
 	checkpointID, hasCheckpoint := trailers.ParseCheckpoint(commit.Message)
 	if !hasCheckpoint {
 		// Side-effect modes must error so scripts can distinguish "done"
 		// from "didn't happen"; read-only modes print a friendly message.
 		if generate || rawTranscript {
-			return fmt.Errorf("cannot %s: commit %s has no Trace-Checkpoint trailer", generateOrRawLabel(generate), abbreviateCommitHash(repo, hash))
+			return fmt.Errorf("cannot %s: commit %s has no Entire-Checkpoint trailer", generateOrRawLabel(generate), abbreviateCommitHash(repo, hash))
 		}
 		printNoTrailerMessage(w, repo, hash)
 		return nil

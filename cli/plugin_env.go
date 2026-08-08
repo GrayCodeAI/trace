@@ -53,10 +53,10 @@ var pluginEnvAllowed = map[string]struct{}{
 	"ACCESSIBLE": {},
 }
 
-// pluginEnvPrefixes are namespaces we either own (TRACE_*) or that are
+// pluginEnvPrefixes are namespaces we either own (ENTIRE_*) or that are
 // long-standing passthrough conventions (LC_*, XDG_*).
 var pluginEnvPrefixes = []string{
-	"TRACE_",
+	"ENTIRE_",
 	"LC_",
 	"XDG_",
 }
@@ -65,8 +65,8 @@ var pluginEnvPrefixes = []string{
 // without a CLI release. Comma-separated list of exact names or
 // `PREFIX_*` wildcards. Example:
 //
-//	TRACE_PLUGIN_ENV="AWS_*,GH_TOKEN,EDITOR"
-const pluginEnvOverrideVar = "TRACE_PLUGIN_ENV"
+//	ENTIRE_PLUGIN_ENV="AWS_*,GH_TOKEN,EDITOR"
+const pluginEnvOverrideVar = "ENTIRE_PLUGIN_ENV"
 
 // pluginEnv builds the child environment from the parent. Only allowlisted
 // names plus user-declared overrides are forwarded. Caller-provided extras
@@ -137,7 +137,7 @@ func parsePluginEnvOverride(s string) (exact map[string]struct{}, prefixes []str
 }
 
 // lookupEnv returns the value of name from a KEY=VALUE slice, or empty if
-// absent. Used to read TRACE_PLUGIN_ENV out of the parent slice without
+// absent. Used to read ENTIRE_PLUGIN_ENV out of the parent slice without
 // touching process state, so tests stay parallel-safe.
 func lookupEnv(env []string, name string) string {
 	prefix := name + "="

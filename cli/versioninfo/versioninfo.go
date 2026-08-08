@@ -9,7 +9,7 @@ import (
 //
 // Only release binaries (GoReleaser) stamp these via ldflags
 // (-X ...versioninfo.Version=...). Every other build -- `mise build`,
-// `go install github.com/entireio/cli/cmd/entire@<version>`, and plain
+// `go install github.com/GrayCodeAI/trace/cmd/trace@<version>`, and plain
 // `go build`/`go install ./...` -- carries no ldflags, so Load() recovers
 // them from Go's embedded build info instead and the CLI still self-reports
 // a real version and commit.

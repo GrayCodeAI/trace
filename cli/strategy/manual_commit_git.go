@@ -14,8 +14,8 @@ import (
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
-	"github.com/GrayCodeAI/trace/cli/perf"
 	"github.com/GrayCodeAI/trace/cli/trailers"
+	"github.com/GrayCodeAI/trace/perf"
 
 	"github.com/go-git/go-git/v6"
 )

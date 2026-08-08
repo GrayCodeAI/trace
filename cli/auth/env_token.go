@@ -3,7 +3,6 @@ package auth
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/entireio/auth-go/tokens"
@@ -13,13 +12,13 @@ import (
 // contexts.json and the keyring entirely: its value is used verbatim as the
 // bearer for control-plane and git data-plane requests. This is the CI /
 // workload-identity path — a runner injects a short-lived login or sa-session
-// JWT and clones without an interactive `trace login`. The explicit
-// `trace auth token --jurisdiction` command remains a separate path and uses
+// JWT and clones without an interactive `entire login`. The explicit
+// `entire auth token --jurisdiction` command remains a separate path and uses
 // the value as the subject of its requested jurisdiction-token exchange.
 const EnvTokenVar = "ENTIRE_TOKEN"
 
 // ParseEnvToken is the single owner of the ENTIRE_TOKEN validation sequence
-// shared by coreapi.New's bypass and `trace auth status`: it trims the raw
+// shared by coreapi.New's bypass and `entire auth status`: it trims the raw
 // value, enforces fail-closed that it is non-blank, and derives the control-
 // plane core origin from its aud via CoreURLFromEnvToken. Callers pass the raw
 // env value (presence is the caller's LookupEnv decision) and send the returned
@@ -47,7 +46,7 @@ func ParseEnvToken(raw string) (coreURL, token string, err error) {
 // helper uses the result only after checking it against the target cluster's
 // advertised CoreURLs, then sends the env token directly to the data plane.
 // Control-plane clients use the result as their bearer target, while the
-// explicit `trace auth token --jurisdiction` path uses it as the STS host for
+// explicit `entire auth token --jurisdiction` path uses it as the STS host for
 // that command's requested exchange.
 //
 // Structural rules, all required:
@@ -98,36 +97,4 @@ func validateCoreAudience(u *url.URL) (string, error) {
 		return "", fmt.Errorf("%s aud %q must not contain a fragment", EnvTokenVar, u.Redacted())
 	}
 	return strings.TrimRight(u.Scheme+"://"+u.Host, "/"), nil
-}
-
-// LocalIdentityCacheKey returns a non-secret local auth identity key.
-func LocalIdentityCacheKey() (string, error) {
-	if raw := strings.TrimSpace(os.Getenv(EnvTokenVar)); raw != "" {
-		claims, err := tokens.ParseClaims(raw)
-		if err != nil {
-			return "", fmt.Errorf("parse %s claims: %w", EnvTokenVar, err)
-		}
-		return strings.Join([]string{
-			"env",
-			strings.TrimRight(claims.Issuer, "/"),
-			claims.Subject,
-			claims.Handle,
-			strings.Join(claims.Audience, ","),
-		}, "|"), nil
-	}
-
-	c, ok, err := activeContext()
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		return "", nil
-	}
-	return strings.Join([]string{
-		"context",
-		strings.TrimRight(c.CoreURL, "/"),
-		c.Name,
-		c.Handle,
-		c.KeychainService,
-	}, "|"), nil
 }

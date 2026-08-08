@@ -21,15 +21,23 @@ import (
 )
 
 // External-command resolution, kubectl-style. When the user invokes
-// `trace <name>` and <name> isn't a built-in subcommand, look for an
-// `trace-<name>` binary on PATH and exec it with the remaining args.
+// `entire <name>` and <name> isn't a built-in subcommand, look for an
+// `entire-<name>` binary on PATH and exec it with the remaining args.
 // Stdio and exit codes pass through. Binaries matching the agent
 // protocol prefix are reserved for the external agent registry and
 // skipped here.
 const (
-	pluginBinaryPrefix      = "trace-"
-	agentPluginBinaryPrefix = "trace-agent-"
+	pluginBinaryPrefix      = "entire-"
+	agentPluginBinaryPrefix = "entire-agent-"
 )
+
+// selfUpdatePluginName is the plugin that replaces the entire binary on
+// disk (`entire upgrade` → entire-upgrade).
+const selfUpdatePluginName = "upgrade"
+
+// postPluginVersionCheck is a test seam for the version-check notice that
+// fires after a successful plugin run.
+var postPluginVersionCheck = versioncheck.CheckAndNotify
 
 // MaybeRunPlugin returns (true, exitCode) when an external command was
 // resolved and run. On launch failure (e.g. missing executable bit)
@@ -47,7 +55,15 @@ func MaybeRunPlugin(ctx context.Context, rootCmd *cobra.Command, args []string) 
 	exitCode = runPlugin(ctx, pluginName, binPath, pluginArgs)
 	if exitCode == 0 {
 		maybeTrackPluginInvocation(ctx, pluginName)
-		versioncheck.CheckAndNotify(ctx, os.Stdout, versioninfo.Version)
+		// Stderr, matching the built-in PersistentPostRun: the plugin's own
+		// stdout may be machine-readable and piped.
+		//
+		// Skipped after a self-update: this process still carries the
+		// pre-upgrade compiled-in version, so the check would see itself as
+		// outdated and prompt to redo the upgrade that just completed.
+		if pluginName != selfUpdatePluginName {
+			postPluginVersionCheck(ctx, os.Stderr, versioninfo.Version)
+		}
 	}
 	return true, exitCode
 }
@@ -59,7 +75,7 @@ func maybeTrackPluginInvocation(ctx context.Context, pluginName string) {
 	if !IsOfficialPlugin(pluginName) {
 		return
 	}
-	s, err := LoadTraceSettings(ctx)
+	s, err := LoadEntireSettings(ctx)
 	if err != nil {
 		return
 	}
@@ -79,8 +95,8 @@ func resolvePlugin(rootCmd *cobra.Command, args []string) (binPath string, plugi
 	}
 	// Cobra adds `help` and `completion` to the command tree inside Execute,
 	// not in the constructor / SetHelpCommand. Without priming them, Find
-	// reports "unknown command" for those names and an trace-help (or
-	// trace-completion) binary on PATH would shadow the built-in. Both
+	// reports "unknown command" for those names and an entire-help (or
+	// entire-completion) binary on PATH would shadow the built-in. Both
 	// initializers are idempotent and Execute calls them again later.
 	rootCmd.InitDefaultHelpCmd()
 	rootCmd.InitDefaultCompletionCmd(args...)
@@ -135,7 +151,7 @@ func isPluginCandidate(name string) bool {
 
 // isAgentProtocolBinary returns true when the binary name is reserved for
 // the external agent protocol. Strip Windows extensions first so
-// `trace-agent-foo.exe` is also recognized.
+// `entire-agent-foo.exe` is also recognized.
 func isAgentProtocolBinary(binPath string) bool {
 	base := external.StripExeExt(filepath.Base(binPath))
 	return strings.HasPrefix(base, agentPluginBinaryPrefix)
@@ -152,17 +168,17 @@ func runPlugin(ctx context.Context, pluginName, binPath string, args []string) i
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	extras := []string{"TRACE_CLI_VERSION=" + versioninfo.Version}
+	extras := []string{"ENTIRE_CLI_VERSION=" + versioninfo.Version}
 	if repoRoot, err := paths.WorktreeRoot(ctx); err == nil {
-		extras = append(extras, "TRACE_REPO_ROOT="+repoRoot)
+		extras = append(extras, "ENTIRE_REPO_ROOT="+repoRoot)
 	}
 	// Per-plugin durable storage. Passed regardless of where the binary lives
-	// so plugins installed via raw PATH and via `trace plugin install` get
+	// so plugins installed via raw PATH and via `entire plugin install` get
 	// the same contract. The dir is not pre-created — that's the plugin's
 	// responsibility on first use.
 	//
 	// PluginDataDir can only fail in degenerate environments (no resolvable
-	// home dir, or a relative TRACE_PLUGIN_DIR override). The plugin name
+	// home dir, or a relative ENTIRE_PLUGIN_DIR override). The plugin name
 	// itself already passed isPluginCandidate in resolvePlugin, so the name
 	// validator branch can't fire here. Proceed without the var rather than
 	// refuse to launch: a misconfigured environment is the user's problem to
@@ -175,11 +191,11 @@ func runPlugin(ctx context.Context, pluginName, binPath string, args []string) i
 	} else {
 		// Strip any inherited value so the plugin doesn't silently see a
 		// value we never sanctioned. Without this strip, a user with
-		// TRACE_PLUGIN_DATA_DIR pre-set in their shell would have that
-		// value pass through (TRACE_* is in the pluginEnv allowlist
+		// ENTIRE_PLUGIN_DATA_DIR pre-set in their shell would have that
+		// value pass through (ENTIRE_* is in the pluginEnv allowlist
 		// prefix), even though resolution here failed.
 		parentEnv = removeEnvKey(parentEnv, pluginEnvPluginData)
-		logging.Debug(ctx, "TRACE_PLUGIN_DATA_DIR unset for plugin",
+		logging.Debug(ctx, "ENTIRE_PLUGIN_DATA_DIR unset for plugin",
 			slog.String("plugin", pluginName),
 			slog.String("error", err.Error()))
 	}

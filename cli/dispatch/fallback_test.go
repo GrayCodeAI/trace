@@ -12,7 +12,7 @@ func TestApplyFallbackChain_UsesLocalSummaryFirst(t *testing.T) {
 		CheckpointID:      "cp1",
 		LocalSummaryTitle: "local summary",
 		CommitSubject:     "ship the thing",
-		RepoFullName:      "GrayCodeAI/cli",
+		RepoFullName:      "entireio/cli",
 		Branch:            "main",
 		CreatedAt:         time.Unix(1, 0).UTC(),
 	}})
@@ -30,7 +30,7 @@ func TestApplyFallbackChain_FallsBackToCommitMessage(t *testing.T) {
 	got := applyFallbackChain([]candidate{{
 		CheckpointID:  "cp1",
 		CommitSubject: "ship the thing",
-		RepoFullName:  "GrayCodeAI/cli",
+		RepoFullName:  "entireio/cli",
 		Branch:        "main",
 		CreatedAt:     time.Unix(1, 0).UTC(),
 	}})

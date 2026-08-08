@@ -10,7 +10,7 @@ import (
 )
 
 // spinnerFrames matches the bubbles/spinner Dot frames used by the activity
-// TUI, so a CLI spinner here visually matches `trace activity`.
+// TUI, so a CLI spinner here visually matches `entire activity`.
 var spinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
 
 const (

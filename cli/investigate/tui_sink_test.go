@@ -54,7 +54,8 @@ func TestTUIProgressSink_NilCtxStillWorks(t *testing.T) {
 		func() {}, &buf,
 	)
 	// Should not panic.
-	sink.Start(context.TODO())
+	//nolint:staticcheck // intentionally exercises the nil-ctx branch
+	sink.Start(nil)
 
 	// Drive the program to completion via RunFinished, then ensure Wait
 	// returns. RunFinished calls Wait internally; back it with a timeout.

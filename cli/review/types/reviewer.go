@@ -1,44 +1,48 @@
-// Package types defines the per-agent abstraction interfaces for `trace review`.
+// Package types defines the per-agent abstraction interfaces for `entire review`.
 //
 // AgentReviewer is the contract every supported agent (claude-code, codex,
-// gemini-cli, future additions) implements in its own package. The orchestrator
-// in cli/review/run.go consumes this interface, never importing
+// gemini, future additions) implements in its own package. The orchestrator
+// in cmd/entire/cli/review/run.go consumes this interface, never importing
 // concrete agent packages — that's how new agents land as additive files
 // without touching shared code.
 //
 // Events flow as a stream: implementations spawn the agent process, parse
 // stdout into a sequence of typed Events (Started, AssistantText, ToolCall,
 // Tokens, Finished, RunError), and surface them via Process.Events. Per-agent
-// quirks (codex's chrome stripping, gemini's stdin requirement, claude's argv
-// shape) are entirely encapsulated inside each agent's adapter — shared code
-// only sees the cleaned event stream.
+// quirks (codex's JSONL envelope shape, gemini's stdin requirement, claude's
+// argv shape) are entirely encapsulated inside each agent's adapter — shared
+// code only sees the cleaned event stream.
 //
 // Living in a subpackage (not the review root package) avoids import cycles:
 // per-agent reviewers and the orchestrator both depend on these types
 // without depending on each other.
 package types
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // AgentReviewer drives a single agent's review run.
 type AgentReviewer interface {
 	// Name returns the agent's registry key (e.g., "claude-code", "codex",
-	// "gemini-cli"). Stable identifier; do not change after release without
-	// updating settings migration.
+	// "gemini"). Stable identifier; do not change after release without
+	// updating profile settings.
 	Name() string
 
 	// Start spawns the agent with the given run configuration. The returned
 	// Process exposes streaming events via Events() and a Wait() that returns
 	// when the process exits.
 	//
-	// Implementations MUST set the TRACE_REVIEW_* env vars on the spawned
-	// child process (see cli/review/env.go) so the agent's
+	// Implementations MUST set the ENTIRE_REVIEW_* env vars on the spawned
+	// child process (see cmd/entire/cli/review/env.go) so the agent's
 	// lifecycle hooks adopt the session as a review session.
 	//
 	// Errors from Start indicate failure to construct or launch the process
-	// (e.g., binary not on PATH at exec.Cmd.Start time, invalid argv). Once
-	// Start returns nil, errors during the run flow through Process.Events
-	// (as RunError) and Process.Wait.
+	// (e.g., binary not on PATH at exec.Cmd.Start time, invalid argv). On error,
+	// Start must not retain background work that depends on ctx; no Process exists
+	// for the orchestrator to drain. Once Start returns nil, errors during the
+	// run flow through Process.Events (as RunError) and Process.Wait.
 	Start(ctx context.Context, run RunConfig) (Process, error)
 }
 
@@ -59,6 +63,13 @@ type Process interface {
 	// after the Events channel has closed. Consumers must drain Events until
 	// close before calling Wait; otherwise an implementation that forwards
 	// parsed events from another goroutine may block while sending.
+	//
+	// When Wait returns, the process has exited and any goroutines the Process
+	// spawned (stdout parsers, event forwarders) have finished — implementations
+	// MUST NOT leave goroutines running past Wait. The orchestrator relies on
+	// this: it releases the run context (cancelling any per-reviewer deadline)
+	// right after Wait returns, so a goroutine still bound to that context could
+	// otherwise be cancelled out from under it.
 	Wait() error
 }
 
@@ -75,23 +86,35 @@ type RunConfig struct {
 	// but they are not prepended to the prompt text.
 	PromptOverride string
 
+	// ProfileName is the named review profile being run (e.g. "general",
+	// "security", "accessibility"). It is included in the prompt and final
+	// adjudication context for traceability.
+	ProfileName string
+
+	// Task is the canonical review task for this profile. Every worker agent in
+	// a fan-out run receives the same task; per-agent Skills/AlwaysPrompt adapt
+	// execution mechanics without changing the task identity.
+	Task string
+
+	// Model is an optional model hint passed to the agent CLI. Empty means use
+	// the agent's default model.
+	Model string
+
 	// Skills are skill invocation strings passed to the agent verbatim.
 	Skills []string
 
-	// AlwaysPrompt is the per-agent always-prompt configured in settings.
-	// Concatenated with Skills + PerRunPrompt + a scope clause to form the
-	// composed agent prompt.
+	// AlwaysPrompt is the per-agent additional instruction configured in the
+	// selected review profile. Concatenated with Task + Skills + PerRunPrompt +
+	// a scope clause to form the composed agent prompt.
 	AlwaysPrompt string
-
-	// Model is an optional model hint.
-	Model string
 
 	// PerRunPrompt is optional textarea input from a single invocation.
 	PerRunPrompt string
 
-	// ScopeBaseRef is the git ref the review is scoped against (typically the
-	// closest ancestor branch). Used to compose the scope clause and as the
-	// base for `git diff` operations the agent may perform.
+	// ScopeBaseRef is the git ref the review is scoped against (mainline by
+	// default — origin/HEAD → origin/main → origin/master → main → master —
+	// or whatever `--base` overrides it to). Used to compose the scope clause
+	// and as the base for `git diff` operations the agent may perform.
 	ScopeBaseRef string
 
 	// CheckpointContext is best-effort context derived from checkpoints in the
@@ -102,9 +125,47 @@ type RunConfig struct {
 	CheckpointContext string
 
 	// StartingSHA is HEAD at invocation time, propagated to the lifecycle
-	// hook via TRACE_REVIEW_STARTING_SHA so checkpoint metadata records
+	// hook via ENTIRE_REVIEW_STARTING_SHA so checkpoint metadata records
 	// the commit that was reviewed.
 	StartingSHA string
+
+	// ReviewerTimeout bounds how long a single reviewer may run before the
+	// orchestrator cancels it (its process is killed and the run is marked
+	// failed-by-timeout). Positive is a hard cap; zero or negative means no
+	// cap — reviewers run until they finish, like a skill invoked directly
+	// in a session (there is deliberately no default: every wall-clock
+	// default shipped killed legitimate long-running work). Sibling
+	// reviewers and the judge are unaffected by one reviewer's timeout.
+	ReviewerTimeout time.Duration
+
+	// EnrichSummary optionally updates the completed run summary before sinks
+	// receive RunFinished. It is used for post-process data such as token
+	// totals that are only available after agent lifecycle hooks flush state.
+	//
+	// Timing: called on the orchestrator goroutine after every per-agent
+	// goroutine has exited, immediately before Sink.RunFinished is fanned
+	// out. The full RunSummary is consumed; any field the callback
+	// returns reaches the sinks.
+	//
+	// Contract: nil is valid (no enrichment). The callback must not block on
+	// a sink (deadlock), must not panic (no orchestrator-side recovery), and
+	// should honor ctx for cancellation when doing I/O.
+	EnrichSummary func(context.Context, RunSummary) RunSummary
+
+	// EnrichAgentRun optionally updates a single agent run after that agent
+	// exits, before the overall multi-agent run has necessarily completed.
+	//
+	// Timing: called on the per-agent forwarding goroutine in RunMulti,
+	// after proc.Wait() returns and after any synthetic RunError is queued.
+	// Only the returned Tokens field is consumed (emitted as a synthetic
+	// Tokens event so sinks see live token totals before sibling agents
+	// finish); other field changes are discarded. Returning Tokens{In:0,
+	// Out:0} suppresses emission entirely.
+	//
+	// Contract: nil is valid (no enrichment). The callback must be
+	// goroutine-safe across N agents and must not block on a sink. A panic
+	// is recovered; no synthetic Tokens event is emitted on panic.
+	EnrichAgentRun func(context.Context, AgentRun) AgentRun
 }
 
 // Event is the sealed sum type emitted by Process.Events. The unexported

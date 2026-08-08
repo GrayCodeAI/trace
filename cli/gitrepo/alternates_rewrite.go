@@ -45,7 +45,7 @@ func wrapAlternatesRewrite(fs billy.Filesystem) billy.Filesystem {
 	return &alternatesRewriteFS{Filesystem: fs}
 }
 
-func (fs *alternatesRewriteFS) Open(filename string) (billy.File, error) { //nolint:ireturn
+func (fs *alternatesRewriteFS) Open(filename string) (billy.File, error) {
 	if isAlternatesFile(filename) {
 		if content, ok := fs.absolutizedAlternates(); ok {
 			return inMemoryFile(content)
@@ -152,7 +152,7 @@ func isAlternatesObjectsPath(absPath string) bool {
 		filepath.Base(filepath.Dir(clean)) == "info"
 }
 
-func inMemoryFile(content string) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
+func inMemoryFile(content string) (billy.File, error) {
 	mem := memfs.New()
 	f, err := mem.Create(alternatesFilePath)
 	if err != nil {

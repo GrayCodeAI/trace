@@ -675,7 +675,7 @@ func TestCheckAndNotify_InstallerFailureKeepsCacheFresh(t *testing.T) {
 
 	// Simulate an interactive user who accepts the upgrade prompt, and an
 	// installer that fails (e.g. brew upgrade blew up mid-run).
-	t.Setenv("TRACE_TEST_TTY", "1")
+	t.Setenv("ENTIRE_TEST_TTY", "1")
 	useBrewExecutable(t)
 
 	origChoose := chooseUpdate

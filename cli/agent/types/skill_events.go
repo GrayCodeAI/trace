@@ -25,6 +25,8 @@ const (
 )
 
 // SkillEvent records a native agent skill signal without rewriting the raw transcript.
+// Consumers use TranscriptAnchor/Native to locate the underlying raw event and Collapse
+// to decide whether/how to hide verbose skill material by default.
 type SkillEvent struct {
 	ID        string           `json:"id,omitempty"`
 	EventType string           `json:"event_type"`

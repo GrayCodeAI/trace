@@ -20,6 +20,13 @@ import (
 // under the response's singular `org`/`project` field, or 404) — the CLI never
 // lists everything and filters client-side.
 
+// providerGitHub is the identity-provider slug for GitHub-backed accounts, the
+// provider half of a qualified grantee handle like "github:alice". GitHub is the
+// only provider with backing accounts today; other slugs resolve once they exist
+// server-side. (Distinct from setup.go's checkpointProviderGitHub, which names
+// the checkpoint hosting provider — same string, unrelated concern.)
+const providerGitHub = "github"
+
 // looksLikeULID reports whether s has the shape of a ULID: 26 characters drawn
 // from Crockford base32 (digits plus uppercase letters, excluding I, L, O, U).
 // The check is shape-only and case-insensitive on the alphabet; it never hits
@@ -149,7 +156,7 @@ func parseQualifiedHandle(ref string) (provider, handle string, err error) {
 
 // resolveProjectRef turns a project reference (ULID or name) into its ULID. A
 // ULID is returned unchanged; a name is resolved via the server's
-// case-insensitive by-name lookup (the same call `trace project list --name`
+// case-insensitive by-name lookup (the same call `entire project list --name`
 // uses). Project names are globally unique, so a name maps to at most one project.
 func resolveProjectRef(ctx context.Context, c *coreapi.Client, ref string) (string, error) {
 	if looksLikeULID(ref) {
@@ -202,15 +209,15 @@ func resolveRepoRef(ctx context.Context, c *coreapi.Client, ref, projectRef stri
 }
 
 func noOrgNamedErr(name string) error {
-	return fmt.Errorf("no org named %q (run `trace org list` to see names, or pass a ULID)", name)
+	return fmt.Errorf("no org named %q (run `entire org list` to see names, or pass a ULID)", name)
 }
 
 func noProjectNamedErr(name string) error {
-	return fmt.Errorf("no project named %q (run `trace project list` to see names, or pass a ULID)", name)
+	return fmt.Errorf("no project named %q (run `entire project list` to see names, or pass a ULID)", name)
 }
 
 func noRepoNamedErr(name string) error {
-	return fmt.Errorf("no repo named %q in that project (run `trace repo list <project>` to see names, or pass a ULID)", name)
+	return fmt.Errorf("no repo named %q in that project (run `entire repo list <project>` to see names, or pass a ULID)", name)
 }
 
 // resolvedRefLabel formats a reference for a success message so it always

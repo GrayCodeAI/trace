@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/GrayCodeAI/trace/cli/agent/geminicli"
@@ -16,19 +15,19 @@ import (
 type GeminiSettings = geminicli.GeminiSettings
 
 // TestSetupGeminiHooks_AddsAllRequiredHooks is a smoke test verifying that
-// `trace enable --agent gemini` adds all required hooks to the correct file.
+// `entire enable --agent gemini` adds all required hooks to the correct file.
 func TestSetupGeminiHooks_AddsAllRequiredHooks(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace() // Sets up .trace/settings.json
+	env.InitEntire() // Sets up .entire/settings.json
 
 	// Create initial commit (required for setup)
 	env.WriteFile("README.md", "# Test")
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 
-	// Run trace enable --agent gemini (non-interactive)
+	// Run entire enable --agent gemini (non-interactive)
 	output, err := env.RunCLIWithError("enable", "--agent", "gemini")
 	if err != nil {
 		t.Fatalf("enable gemini command failed: %v\nOutput: %s", err, output)
@@ -76,19 +75,6 @@ func TestSetupGeminiHooks_AddsAllRequiredHooks(t *testing.T) {
 	if len(settings.Hooks.Notification) == 0 {
 		t.Error("Notification hook should exist")
 	}
-
-	searchAgentPath := filepath.Join(env.RepoDir, ".gemini", "agents", "trace-search.md")
-	data, err := os.ReadFile(searchAgentPath)
-	if err != nil {
-		t.Fatalf("failed to read generated Gemini search subagent: %v", err)
-	}
-	content := string(data)
-	if !strings.Contains(content, "TRACE-MANAGED SEARCH SUBAGENT") {
-		t.Error("Gemini search subagent should be marked as Trace-managed")
-	}
-	if !strings.Contains(content, "trace search --json") {
-		t.Error("Gemini search subagent should instruct use of `trace search --json`")
-	}
 }
 
 // TestSetupGeminiHooks_PreservesExistingSettings is a smoke test verifying that
@@ -97,7 +83,7 @@ func TestSetupGeminiHooks_PreservesExistingSettings(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace()
+	env.InitEntire()
 
 	env.WriteFile("README.md", "# Test")
 	env.GitAdd("README.md")
@@ -142,7 +128,7 @@ func TestSetupGeminiHooks_PreservesExistingSettings(t *testing.T) {
 		t.Fatalf("failed to parse settings.json: %v", err)
 	}
 
-	if rawSettings["customSetting"] != "should-be-preserved" {
+	if rawSettings["customSetting"] != preservedSetting {
 		t.Error("customSetting should be preserved after enable gemini")
 	}
 

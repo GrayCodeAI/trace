@@ -317,7 +317,7 @@ func TestHookManagerWarning_Husky(t *testing.T) {
 		{Name: "Husky", ConfigPath: ".husky/", OverwritesHooks: true},
 	}
 
-	warning := hookManagerWarning(managers, "trace")
+	warning := hookManagerWarning(managers, "entire")
 
 	// Should contain all 4 hook file references
 	for _, hook := range gitHookNames {
@@ -327,7 +327,7 @@ func TestHookManagerWarning_Husky(t *testing.T) {
 	}
 
 	// Should contain the actual command lines from buildHookSpecs
-	specs := buildHookSpecs("trace")
+	specs := buildHookSpecs("entire")
 	for _, spec := range specs {
 		cmdLine := extractCommandLine(spec.content)
 		if cmdLine == "" {
@@ -355,14 +355,14 @@ func TestHookManagerWarning_GitHooksManager(t *testing.T) {
 		{Name: "Lefthook", ConfigPath: "lefthook.yml", OverwritesHooks: false},
 	}
 
-	warning := hookManagerWarning(managers, "trace")
+	warning := hookManagerWarning(managers, "entire")
 
 	// Category B: should be a Note, not a Warning
 	if !strings.Contains(warning, "Note: Lefthook detected") {
 		t.Error("warning should contain 'Note: Lefthook detected'")
 	}
-	if !strings.Contains(warning, "run 'trace enable' to restore") {
-		t.Error("warning should mention running 'trace enable'")
+	if !strings.Contains(warning, "run 'entire enable' to restore") {
+		t.Error("warning should mention running 'entire enable'")
 	}
 
 	// Should NOT contain hook file copy-paste instructions
@@ -374,12 +374,12 @@ func TestHookManagerWarning_GitHooksManager(t *testing.T) {
 func TestHookManagerWarning_Empty(t *testing.T) {
 	t.Parallel()
 
-	warning := hookManagerWarning(nil, "trace")
+	warning := hookManagerWarning(nil, "entire")
 	if warning != "" {
 		t.Errorf("expected empty string for nil managers, got %q", warning)
 	}
 
-	warning = hookManagerWarning([]hookManager{}, "trace")
+	warning = hookManagerWarning([]hookManager{}, "entire")
 	if warning != "" {
 		t.Errorf("expected empty string for empty managers, got %q", warning)
 	}
@@ -392,10 +392,10 @@ func TestHookManagerWarning_LocalDev(t *testing.T) {
 		{Name: "Husky", ConfigPath: ".husky/", OverwritesHooks: true},
 	}
 
-	warning := hookManagerWarning(managers, "go run ./cmd/trace/main.go")
+	warning := hookManagerWarning(managers, localDevHookCmdPrefix)
 
 	// Should use the local dev prefix in command lines
-	if !strings.Contains(warning, "go run ./cmd/trace/main.go hooks git") {
+	if !strings.Contains(warning, localDevHookCmdPrefix+" hooks git") {
 		t.Error("warning should use local dev command prefix")
 	}
 }
@@ -408,7 +408,7 @@ func TestHookManagerWarning_Multiple(t *testing.T) {
 		{Name: "Lefthook", ConfigPath: "lefthook.yml", OverwritesHooks: false},
 	}
 
-	warning := hookManagerWarning(managers, "trace")
+	warning := hookManagerWarning(managers, "entire")
 
 	if !strings.Contains(warning, "Warning: Husky detected") {
 		t.Error("should contain Husky warning")
@@ -428,13 +428,13 @@ func TestExtractCommandLine(t *testing.T) {
 	}{
 		{
 			name:    "standard hook",
-			content: "#!/bin/sh\n# Trace CLI hooks\ntrace hooks git post-commit 2>/dev/null || true\n",
-			want:    "trace hooks git post-commit 2>/dev/null || true",
+			content: "#!/bin/sh\n# Entire CLI hooks\nentire hooks git post-commit 2>/dev/null || true\n",
+			want:    "entire hooks git post-commit 2>/dev/null || true",
 		},
 		{
 			name:    "multiple comments",
-			content: "#!/bin/sh\n# comment 1\n# comment 2\ntrace hooks git pre-push \"$1\" || true\n",
-			want:    `trace hooks git pre-push "$1" || true`,
+			content: "#!/bin/sh\n# comment 1\n# comment 2\nentire hooks git pre-push \"$1\" || true\n",
+			want:    `entire hooks git pre-push "$1" || true`,
 		},
 		{
 			name:    "empty content",
@@ -448,8 +448,8 @@ func TestExtractCommandLine(t *testing.T) {
 		},
 		{
 			name:    "whitespace around command",
-			content: "#!/bin/sh\n# comment\n  trace hooks git commit-msg \"$1\" || exit 1  \n",
-			want:    `trace hooks git commit-msg "$1" || exit 1`,
+			content: "#!/bin/sh\n# comment\n  entire hooks git commit-msg \"$1\" || exit 1  \n",
+			want:    `entire hooks git commit-msg "$1" || exit 1`,
 		},
 	}
 

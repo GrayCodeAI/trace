@@ -52,7 +52,7 @@ var errStopIteration = errors.New("stop iteration")
 // unwrapped function.
 var chunkTranscript = agent.ChunkTranscript
 
-// writeSession writes a committed checkpoint to the trace/checkpoints/v1 branch.
+// writeSession writes a committed checkpoint to the entire/checkpoints/v1 branch.
 // Checkpoints are stored at sharded paths: <id[:2]>/<id[2:]>/
 //
 // For task checkpoints (IsTask=true), additional files are written under tasks/<tool-use-id>/:
@@ -623,7 +623,7 @@ func (s *treeWriter) writeStandardCheckpointEntries(ctx context.Context, opts Wr
 					slog.String("write_session_id", opts.SessionID),
 					slog.Bool("existing_summary_nil", existingSummary == nil))
 				return fmt.Errorf(
-					"refusing to overwrite session 0 of checkpoint %s: existing session ID %q differs from write session ID %q. The checkpoint tree is inconsistent (session 0 belongs to a different session than this write claims). No automated repair exists for this shape — please report it along with the output of `git ls-tree trace/checkpoints/v1 %s/`",
+					"refusing to overwrite session 0 of checkpoint %s: existing session ID %q differs from write session ID %q. The checkpoint tree is inconsistent (session 0 belongs to a different session than this write claims). No automated repair exists for this shape — please report it along with the output of `git ls-tree entire/checkpoints/v1 %s/`",
 					opts.CheckpointID, existingMeta.SessionID, opts.SessionID, opts.CheckpointID.Path(),
 				)
 			}
@@ -1020,6 +1020,28 @@ func aggregateTokenUsage(a, b *agent.TokenUsage) *agent.TokenUsage {
 	return result
 }
 
+// SanitizeTranscriptForAgentType strips non-portable agent state from a transcript
+// about to be stored (see agent.TranscriptSanitizer). It exists for callers that work
+// from a types.AgentType rather than a live agent.Agent: the store itself, as a
+// last-resort safety net, and `entire import`, which reads raw third-party rollouts
+// and calls this before its own redaction pass so the sanitize-before-redact order
+// holds there too.
+//
+// It dispatches on agent type explicitly rather than resolving via
+// agent.GetByAgentType: the registry is populated by package init, so that lookup
+// only succeeds when something else in the binary happens to import agent/codex, and
+// when it doesn't, sanitization silently degrades to a no-op — reintroducing the bug
+// this guards against with no signal. A compile-time dependency cannot fail that way.
+func SanitizeTranscriptForAgentType(agentType types.AgentType, data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	if agentType == agent.AgentTypeCodex {
+		return codex.SanitizePortableTranscript(data)
+	}
+	return data
+}
+
 // writeTranscript writes the transcript, compact transcript, and content hash
 // to the checkpoint entries. The compact transcript.jsonl (the full compacted
 // session) is written into the tree and pushed alongside full.jsonl. Returns
@@ -1041,7 +1063,10 @@ func (s *treeWriter) writeTranscript(ctx context.Context, opts WriteOptions, ses
 			rawData = nil
 		}
 		if len(rawData) > 0 {
-			redacted, redactErr := redact.JSONLBytes(rawData)
+			// Sanitize BEFORE redacting, matching the pipeline order everywhere else:
+			// redaction must not scan ciphertext that sanitization is about to
+			// discard. This is the one path that reaches the store with raw bytes.
+			redacted, redactErr := redact.JSONLBytes(SanitizeTranscriptForAgentType(opts.Agent, rawData))
 			if redactErr != nil {
 				return false, nil, fmt.Errorf("failed to redact transcript from file: %w", redactErr)
 			}
@@ -1052,9 +1077,11 @@ func (s *treeWriter) writeTranscript(ctx context.Context, opts WriteOptions, ses
 		return false, nil, nil
 	}
 
-	if opts.Agent == agent.AgentTypeCodex {
-		transcriptBytes = codex.SanitizePortableTranscript(transcriptBytes)
-	}
+	// Safety net for in-memory callers that reached the store without sanitizing
+	// (notably `entire import`, which writes raw third-party rollouts). Idempotent,
+	// so it is a no-op for the paths that already did it — including the fallback
+	// above.
+	transcriptBytes = SanitizeTranscriptForAgentType(opts.Agent, transcriptBytes)
 
 	// Chunk the transcript if it's too large
 	chunkStart := time.Now()
@@ -1329,7 +1356,7 @@ type taskCheckpointData struct {
 	AgentID        string `json:"agent_id,omitempty"`
 }
 
-// Read reads a committed checkpoint's summary by ID from the trace/checkpoints/v1 branch.
+// Read reads a committed checkpoint's summary by ID from the entire/checkpoints/v1 branch.
 // Returns only the CheckpointSummary (paths + aggregated stats), not actual content.
 // Use ReadSessionContent to read actual transcript/prompts/context.
 // Returns nil, nil if the checkpoint doesn't exist.
@@ -1583,7 +1610,7 @@ func (s *GitStore) ReadSessionContentByID(ctx context.Context, checkpointID id.C
 	return nil, fmt.Errorf("session %q not found in checkpoint %s", sessionID, checkpointID)
 }
 
-// List lists all committed checkpoints from the trace/checkpoints/v1 branch.
+// List lists all committed checkpoints from the entire/checkpoints/v1 branch.
 // Scans sharded paths: <id[:2]>/<id[2:]>/ directories containing metadata.json.
 //
 
@@ -2062,13 +2089,10 @@ func (s *treeWriter) replaceTranscript(ctx context.Context, transcript redact.Re
 	}
 
 	// Regenerate the compact transcript from the new content so the pushed
-	// transcript.jsonl stays current. Codex transcripts are sanitized first to
-	// match the initial-write path (writeTranscript), which sanitizes before
-	// compaction; this finalize path otherwise passes raw bytes.
-	compactBytes := transcript.Bytes()
-	if agentType == agent.AgentTypeCodex {
-		compactBytes = codex.SanitizePortableTranscript(compactBytes)
-	}
+	// transcript.jsonl stays current. Sanitized first to match the initial-write
+	// path (writeTranscript), which sanitizes before compaction; this finalize path
+	// otherwise passes raw bytes.
+	compactBytes := SanitizeTranscriptForAgentType(agentType, transcript.Bytes())
 	compactStart := s.writeCompactTranscript(ctx, agentType, startLine, compactBytes, sessionDir, entries)
 
 	// If regeneration produced no compact transcript (failure, empty, or
@@ -2297,7 +2321,7 @@ func (s *treeWriter) copyMetadataDir(ctx context.Context, metadataDir, sessionDi
 		// Post-commit emits regex-only blobs; the pre-push rewrite
 		// (strategy/manual_commit_opf_rewrite.go) walks the resulting
 		// tree, re-redacts these blobs with OPF when enabled, and
-		// rewrites trace/checkpoints/v1 into OPF-applied (9-layer)
+		// rewrites entire/checkpoints/v1 into OPF-applied (9-layer)
 		// commits before they leave the local machine.
 		blobHash, mode, err := createRedactedBlobFromFile(ctx, s.repo, path, relPath)
 		if err != nil {

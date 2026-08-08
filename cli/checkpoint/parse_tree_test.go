@@ -167,12 +167,12 @@ func TestApplyTreeChanges_SkipsInvalidPaths(t *testing.T) {
 	}{
 		{
 			name:        "leading slash windows path",
-			path:        "/C:/Users/r/Vaults/Flowsign/.trace/metadata/test-session/full.jsonl",
+			path:        "/C:/Users/r/Vaults/Flowsign/.entire/metadata/test-session/full.jsonl",
 			wantPresent: "valid.txt",
 		},
 		{
 			name:        "drive letter windows path",
-			path:        "C:/Users/r/Vaults/Flowsign/.trace/metadata/test-session/full.jsonl",
+			path:        "C:/Users/r/Vaults/Flowsign/.entire/metadata/test-session/full.jsonl",
 			wantPresent: "valid.txt",
 		},
 		{
@@ -188,6 +188,26 @@ func TestApplyTreeChanges_SkipsInvalidPaths(t *testing.T) {
 		{
 			name:        "dot dot segment",
 			path:        "../dir/file.txt",
+			wantPresent: "valid.txt",
+		},
+		{
+			name:        "dot git file at root",
+			path:        ".git",
+			wantPresent: "valid.txt",
+		},
+		{
+			name:        "dot git directory component",
+			path:        "sub/.git/config",
+			wantPresent: "valid.txt",
+		},
+		{
+			name:        "dot git uppercase component",
+			path:        ".GIT/config",
+			wantPresent: "valid.txt",
+		},
+		{
+			name:        "ntfs short name alias",
+			path:        "git~1/config",
 			wantPresent: "valid.txt",
 		},
 	}
@@ -244,6 +264,10 @@ func TestBuildTreeFromEntries_SkipsInvalidPaths(t *testing.T) {
 		{name: "empty segment", path: "dir//file.txt"},
 		{name: "dot segment", path: "./file.txt"},
 		{name: "dot dot segment", path: "../file.txt"},
+		{name: "dot git file at root", path: ".git"},
+		{name: "dot git directory component", path: "sub/.git/config"},
+		{name: "dot git uppercase component", path: ".GIT/config"},
+		{name: "ntfs short name alias", path: "git~1/config"},
 	}
 
 	for _, tt := range tests {

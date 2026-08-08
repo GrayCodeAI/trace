@@ -1,3 +1,3 @@
 // Package recap contains the server-backed data types and static renderer
-// behind `trace recap`.
+// behind `entire recap`.
 package recap

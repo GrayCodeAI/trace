@@ -16,7 +16,7 @@ func TestOpenCodeHookFlow(t *testing.T) {
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	env.InitTraceWithAgent(agent.AgentNameOpenCode)
+	env.InitEntireWithAgent(agent.AgentNameOpenCode)
 
 	// Create OpenCode session
 	session := env.NewOpenCodeSession()
@@ -78,7 +78,7 @@ func TestOpenCodeAgentStrategyComposition(t *testing.T) {
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	env.InitTraceWithAgent(agent.AgentNameOpenCode)
+	env.InitEntireWithAgent(agent.AgentNameOpenCode)
 
 	ag, err := agent.Get("opencode")
 	if err != nil {
@@ -135,7 +135,7 @@ func TestOpenCodeRewind(t *testing.T) {
 
 	env := NewFeatureBranchEnv(t)
 	// Test with manual-commit strategy as it has full file restoration on rewind
-	env.InitTraceWithAgent(agent.AgentNameOpenCode)
+	env.InitEntireWithAgent(agent.AgentNameOpenCode)
 
 	// First session
 	session := env.NewOpenCodeSession()
@@ -210,7 +210,7 @@ func TestOpenCodeMultiTurnCondensation(t *testing.T) {
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	env.InitTraceWithAgent(agent.AgentNameOpenCode)
+	env.InitEntireWithAgent(agent.AgentNameOpenCode)
 
 	session := env.NewOpenCodeSession()
 	transcriptPath := session.TranscriptPath
@@ -266,8 +266,8 @@ func TestOpenCodeMultiTurnCondensation(t *testing.T) {
 }
 
 // TestOpenCodeMidTurnCommit verifies that when OpenCode's agent commits mid-turn
-// (before turn-end), the commit gets an Trace-Checkpoint trailer AND the checkpoint
-// data is written to trace/checkpoints/v1.
+// (before turn-end), the commit gets an Entire-Checkpoint trailer AND the checkpoint
+// data is written to entire/checkpoints/v1.
 //
 // This tests the PrepareTranscript fix: OpenCode's transcript file is created lazily
 // at turn-end via `opencode export`. When a commit happens mid-turn, PrepareTranscript
@@ -276,7 +276,7 @@ func TestOpenCodeMidTurnCommit(t *testing.T) {
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	env.InitTraceWithAgent(agent.AgentNameOpenCode)
+	env.InitEntireWithAgent(agent.AgentNameOpenCode)
 
 	session := env.NewOpenCodeSession()
 
@@ -298,13 +298,13 @@ func TestOpenCodeMidTurnCommit(t *testing.T) {
 		{Path: "script.sh", Content: "#!/bin/bash\necho hello"},
 	})
 
-	// 5. Copy transcript to .trace/tmp/ where PrepareTranscript will find it.
+	// 5. Copy transcript to .entire/tmp/ where PrepareTranscript will find it.
 	// In production, `opencode export` refreshes this file on each call.
-	// In tests, TRACE_TEST_OPENCODE_MOCK_EXPORT makes fetchAndCacheExport
-	// read from the pre-written file at .trace/tmp/<sessionID>.json.
+	// In tests, ENTIRE_TEST_OPENCODE_MOCK_EXPORT makes fetchAndCacheExport
+	// read from the pre-written file at .entire/tmp/<sessionID>.json.
 	// PrepareTranscript ALWAYS calls fetchAndCacheExport (even if file exists)
 	// to ensure fresh data for resumed sessions.
-	env.CopyTranscriptToTraceTmp(session.ID, session.TranscriptPath)
+	env.CopyTranscriptToEntireTmp(session.ID, session.TranscriptPath)
 
 	// 6. Agent commits mid-turn (no turn-end yet!)
 	// This triggers: PrepareCommitMsg (adds trailer) → PostCommit (runs condensation)
@@ -315,11 +315,11 @@ func TestOpenCodeMidTurnCommit(t *testing.T) {
 	commitHash := env.GetHeadHash()
 	checkpointID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if checkpointID == "" {
-		t.Fatal("mid-turn agent commit should have Trace-Checkpoint trailer")
+		t.Fatal("mid-turn agent commit should have Entire-Checkpoint trailer")
 	}
 	t.Logf("Mid-turn commit has checkpoint ID: %s", checkpointID)
 
-	// 8. CRITICAL: Verify checkpoint data was written to trace/checkpoints/v1
+	// 8. CRITICAL: Verify checkpoint data was written to entire/checkpoints/v1
 	transcriptPath := SessionFilePath(checkpointID, paths.TranscriptFileName)
 	_, found := env.ReadFileFromBranch(paths.MetadataBranchName, transcriptPath)
 	if !found {
@@ -344,7 +344,7 @@ func TestOpenCodeResumedSessionAfterCommit(t *testing.T) {
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	env.InitTraceWithAgent(agent.AgentNameOpenCode)
+	env.InitEntireWithAgent(agent.AgentNameOpenCode)
 
 	session := env.NewOpenCodeSession()
 	transcriptPath := session.TranscriptPath

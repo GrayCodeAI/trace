@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/agent/external"
@@ -19,14 +20,17 @@ import (
 )
 
 var (
-	loadSummarySettings            = LoadTraceSettings
-	loadSummarySettingsFromFile    = settings.LoadFromFile
-	saveLocalSummarySettings       = SaveTraceSettingsLocal
-	getSummaryAgent                = agent.Get
-	listRegisteredAgents           = agent.List
-	isSummaryCLIAvailable          = agent.IsSummaryCLIAvailable
-	discoverSummaryProviders       = external.DiscoverAndRegister
-	discoverSummaryProvidersAlways = external.DiscoverAndRegisterAlways
+	loadSummarySettings             = LoadEntireSettings
+	loadSummarySettingsFromFile     = settings.LoadFromFile
+	saveLocalSummarySettings        = SaveEntireSettingsLocal
+	getSummaryAgent                 = agent.Get
+	listRegisteredAgents            = agent.List
+	isSummaryCLIAvailable           = agent.IsSummaryCLIAvailable
+	discoverSummaryProviders        = external.DiscoverAndRegister
+	discoverSummaryProvidersAlways  = external.DiscoverAndRegisterAlways
+	discoverDispatchSummaryProvider = external.DiscoverAndRegisterNamedAlways
+	canPromptForSummaryProvider     = interactive.CanPromptInteractively
+	promptSummaryProvider           = promptForSummaryProvider
 )
 
 type checkpointSummaryProvider struct {
@@ -40,6 +44,24 @@ type checkpointSummaryProvider struct {
 	// so the explain layer can attribute timeouts to the streaming diagnostic
 	// even when the provider stalls before its first progress event.
 	Streaming bool
+}
+
+func resolveDispatchSummaryProvider(ctx context.Context, w io.Writer, override string) (*checkpointSummaryProvider, error) {
+	override = strings.TrimSpace(override)
+	if override == "" {
+		return resolveCheckpointSummaryProvider(ctx, w)
+	}
+
+	providerName := types.AgentName(override)
+	if _, err := getSummaryAgent(providerName); err != nil {
+		if err := discoverDispatchSummaryProvider(ctx, providerName); err != nil {
+			return nil, err
+		}
+	}
+	if err := validateSummaryProvider(override); err != nil {
+		return nil, err
+	}
+	return buildCheckpointSummaryProvider(providerName, "")
 }
 
 func resolveCheckpointSummaryProvider(ctx context.Context, w io.Writer) (*checkpointSummaryProvider, error) {
@@ -59,7 +81,7 @@ func resolveCheckpointSummaryProvider(ctx context.Context, w io.Writer) (*checkp
 
 	// Use the always-variant so installed external plugins surface in the
 	// picker even when external_agents is currently off. Installation
-	// (placing trace-agent-* on $PATH) is the user's opt-in to "this
+	// (placing entire-agent-* on $PATH) is the user's opt-in to "this
 	// plugin exists"; selecting it in the picker is when external_agents
 	// flips on (handled by persistSummaryProviderSelection).
 	discoverSummaryProvidersAlways(ctx)
@@ -67,15 +89,15 @@ func resolveCheckpointSummaryProvider(ctx context.Context, w io.Writer) (*checkp
 
 	switch len(candidates) {
 	case 0:
-		return nil, errors.New("no summary-capable provider is available; install claude, codex, gemini, cursor, or copilot, install an external trace-agent-* plugin that declares text_generator, or set summary_generation.provider in settings")
+		return nil, errors.New("no summary-capable provider is available; install claude, codex, gemini, pi, cursor, or copilot, install an external entire-agent-* plugin that declares text_generator, or set summary_generation.provider in settings")
 	case 1:
 		return autoSelectSummaryProvider(ctx, w, candidates[0].Name, "non-interactive auto-select: single installed provider")
 	default:
-		if !interactive.CanPromptInteractively() {
+		if !canPromptForSummaryProvider() {
 			return autoSelectSummaryProvider(ctx, w, candidates[0].Name, "non-interactive auto-select: first detected of multiple")
 		}
 
-		selected, err := promptForSummaryProvider(candidates)
+		selected, err := promptSummaryProvider(candidates)
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +114,7 @@ func discoverSummaryProviderIfMissing(ctx context.Context, name types.AgentName)
 	if _, err := getSummaryAgent(name); err == nil {
 		return
 	}
-	discoverSummaryProviders(ctx)
+	discoverSummaryProvidersAlways(ctx)
 }
 
 // autoSelectSummaryProvider builds a provider for an auto-selected candidate
@@ -109,7 +131,7 @@ func autoSelectSummaryProvider(ctx context.Context, w io.Writer, name types.Agen
 	if saveErr != nil {
 		logging.Warn(ctx, "failed to save summary provider selection, continuing without persistence",
 			"error", saveErr.Error())
-		fmt.Fprintf(w, "Warning: could not save provider selection: %v\nUse `trace configure --summarize-provider %s` to set it manually.\n", saveErr, provider.Name)
+		fmt.Fprintf(w, "Warning: could not save provider selection: %v\nUse `entire configure --summarize-provider %s` to set it manually.\n", saveErr, provider.Name)
 	}
 	if flagFlipped {
 		fmt.Fprintln(w, externalAgentsAutoEnabledNotice)
@@ -160,7 +182,7 @@ func promptForSummaryProvider(providers []checkpointSummaryProvider) (types.Agen
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Choose a summary provider").
-				Description("This choice will be saved. Use `trace configure --summarize-provider <name>` to change it later.").
+				Description("This choice will be saved. Use `entire configure --summarize-provider <name>` to change it later.").
 				Options(options...).
 				Value(&selected),
 		),
@@ -173,6 +195,10 @@ func promptForSummaryProvider(providers []checkpointSummaryProvider) (types.Agen
 }
 
 func buildCheckpointSummaryProvider(name types.AgentName, model string) (*checkpointSummaryProvider, error) {
+	return buildCheckpointSummaryProviderWithEffectiveModel(name, summarize.ResolveModel(name, model))
+}
+
+func buildCheckpointSummaryProviderWithEffectiveModel(name types.AgentName, effectiveModel string) (*checkpointSummaryProvider, error) {
 	ag, err := getSummaryAgent(name)
 	if err != nil {
 		return nil, fmt.Errorf("loading summary provider %s: %w", name, err)
@@ -182,8 +208,6 @@ func buildCheckpointSummaryProvider(name types.AgentName, model string) (*checkp
 	if !ok {
 		return nil, fmt.Errorf("agent %s does not support summary generation", name)
 	}
-
-	effectiveModel := summarize.ResolveModel(name, model)
 
 	_, streaming := agent.AsStreamingTextGenerator(textGenerator)
 
@@ -229,7 +253,7 @@ func validateSummaryProvider(provider string) error {
 		return fmt.Errorf("agent %q does not support summary generation", provider)
 	}
 	if !isSummaryProviderAvailable(name, ag) {
-		return fmt.Errorf("summary provider %q is configured but its CLI binary is not on PATH; install it or choose another provider", provider)
+		return fmt.Errorf("summary provider %q CLI binary is not on PATH; install it or choose another provider", provider)
 	}
 	return nil
 }
@@ -241,9 +265,9 @@ func validateSummaryProvider(provider string) error {
 // caller can surface a one-time notice. The flag is written to local because
 // the provider choice is already machine-specific (depends on $PATH).
 func persistSummaryProviderSelection(ctx context.Context, provider types.AgentName, model string) (flagFlipped bool, err error) {
-	targetFileAbs, err := paths.AbsPath(ctx, settings.TraceSettingsLocalFile)
+	targetFileAbs, err := paths.AbsPath(ctx, settings.EntireSettingsLocalFile)
 	if err != nil {
-		targetFileAbs = settings.TraceSettingsLocalFile
+		targetFileAbs = settings.EntireSettingsLocalFile
 	}
 
 	s, err := loadSummarySettingsFromFile(targetFileAbs)

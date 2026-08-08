@@ -45,6 +45,17 @@ const (
 
 var errTrailReviewDefaultTargetNotFound = errors.New("default trail finding target not found")
 
+type trailReviewListOptions struct {
+	Status           string
+	StatusChanged    bool
+	Severity         string
+	Freshness        string
+	IncludeDismissed bool
+	Limit            int
+	Offset           int
+	JSON             bool
+}
+
 type trailReviewTargetOptions struct {
 	Selector string
 	Branch   string
@@ -66,9 +77,9 @@ func newTrailFindingCmd() *cobra.Command {
 		Short: "Manage a trail's agent findings",
 		Long: `Manage a trail's agent-native findings.
 
-Running 'trace trail finding' shows the finding dashboard for the current
+Running 'entire trail finding' shows the finding dashboard for the current
 branch's trail. Pass a trail selector (number, id, or branch) to inspect another
-trail in the same repo. Use 'trace trail list --status any' when you need to
+trail in the same repo. Use 'entire trail list --status any' when you need to
 discover a trail selector first.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -428,7 +439,7 @@ func runTrailReviewApply(cmd *cobra.Command, selector string, commentID string, 
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Applied %d suggested change(s).\n", applied)
 	if opts.Resolve {
-		updated, err := patchTrailReviewCommentStatus(cmd.Context(), client, target.Trail.ID, comment, trailReviewStatusResolved, "Applied via Trace CLI")
+		updated, err := patchTrailReviewCommentStatus(cmd.Context(), client, target.Trail.ID, comment, trailReviewStatusResolved, "Applied via Entire CLI")
 		if err != nil {
 			return err
 		}
@@ -495,19 +506,19 @@ func resolveTrailReviewTarget(ctx context.Context, client *api.Client, selector,
 			return trailReviewTarget{}, err
 		}
 		if found == nil {
-			return trailReviewTarget{}, fmt.Errorf("no trail %q found in %s/%s/%s (run 'trace trail list --status any')", selector, host, owner, repo)
+			return trailReviewTarget{}, fmt.Errorf("no trail %q found in %s/%s/%s (run 'entire trail list --status any')", selector, host, owner, repo)
 		}
 	} else {
 		branch, branchErr := resolveTrailBranch(ctx, branchOverride)
 		if branchErr != nil {
-			return trailReviewTarget{}, fmt.Errorf("%w: no trail selector given and current branch is unknown: %w\nhint: run 'trace trail list --status any' or pass --trail <number|id|branch>", errTrailReviewDefaultTargetNotFound, branchErr)
+			return trailReviewTarget{}, fmt.Errorf("%w: no trail selector given and current branch is unknown: %w\nhint: run 'entire trail list --status any' or pass --trail <number|id|branch>", errTrailReviewDefaultTargetNotFound, branchErr)
 		}
 		found, err = findTrailByBranch(ctx, client, host, owner, repo, branch)
 		if err != nil {
 			return trailReviewTarget{}, err
 		}
 		if found == nil {
-			return trailReviewTarget{}, fmt.Errorf("%w: no trail found for branch %q\nhint: run 'trace trail create', 'trace trail list --status any', or pass --trail <number|id|branch>", errTrailReviewDefaultTargetNotFound, branch)
+			return trailReviewTarget{}, fmt.Errorf("%w: no trail found for branch %q\nhint: run 'entire trail create', 'entire trail list --status any', or pass --trail <number|id|branch>", errTrailReviewDefaultTargetNotFound, branch)
 		}
 	}
 	if found.ID == "" {
@@ -1478,6 +1489,16 @@ func trailReviewTargetDisplay(target trailReviewTarget) string {
 	return "trail " + target.Trail.ID
 }
 
+type trailReviewCommentCounts struct {
+	Open       int
+	OpenHigh   int
+	OpenMedium int
+	OpenLow    int
+	Resolved   int
+	Dismissed  int
+	Stale      int
+}
+
 func countTrailReviewComments(comments []api.TrailReviewComment) trailReviewCommentCounts {
 	var counts trailReviewCommentCounts
 	for _, comment := range comments {
@@ -1560,13 +1581,13 @@ func trailReviewFreshnessDisplay(comment api.TrailReviewComment) string {
 func defaultTrailReviewStatusReason(status string) string {
 	switch status {
 	case trailReviewStatusResolved:
-		return "Resolved via Trace CLI"
+		return "Resolved via Entire CLI"
 	case trailReviewStatusDismissed:
-		return "Dismissed via Trace CLI"
+		return "Dismissed via Entire CLI"
 	case trailReviewStatusOpen:
-		return "Reopened via Trace CLI"
+		return "Reopened via Entire CLI"
 	default:
-		return "Updated via Trace CLI"
+		return "Updated via Entire CLI"
 	}
 }
 
@@ -1612,6 +1633,10 @@ func optionalStringPtr(s string) *string {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
+	return &s
+}
+
+func stringPtr(s string) *string {
 	return &s
 }
 

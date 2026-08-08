@@ -1,4 +1,4 @@
-// Package settings provides configuration loading for Trace.
+// Package settings provides configuration loading for Entire.
 // This package is separate from cli to allow strategy package to import it
 // without creating an import cycle (cli imports strategy).
 package settings
@@ -18,21 +18,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GrayCodeAI/trace/cli/internal/flock"
 	"github.com/GrayCodeAI/trace/cli/jsonutil"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
-	"github.com/GrayCodeAI/trace/internal/flock"
 	"github.com/GrayCodeAI/trace/redact"
 )
 
 const (
-	// TraceSettingsFile is the path to the Trace settings file
-	TraceSettingsFile = ".trace/settings.json"
-	// TraceSettingsLocalFile is the path to the local settings override file (not committed)
-	TraceSettingsLocalFile = ".trace/settings.local.json"
+	// EntireSettingsFile is the path to the Entire settings file
+	EntireSettingsFile = ".entire/settings.json"
+	// EntireSettingsLocalFile is the path to the local settings override file (not committed)
+	EntireSettingsLocalFile = ".entire/settings.local.json"
 	// ClonePreferencesFile is the path inside the git common dir for clone-local preferences.
-	ClonePreferencesFile = "trace/preferences.json"
+	ClonePreferencesFile = "entire/preferences.json"
 )
 
 type worktreeRootContextKey struct{}
@@ -59,9 +59,9 @@ const (
 	CommitLinkingPrompt = "prompt"
 )
 
-// TraceSettings represents the .entire/settings.json configuration
-type TraceSettings struct {
-	// Enabled indicates whether Trace is active. When false, CLI commands
+// EntireSettings represents the .entire/settings.json configuration
+type EntireSettings struct {
+	// Enabled indicates whether Entire is active. When false, CLI commands
 	// show a disabled message and hooks exit silently. Defaults to true.
 	Enabled bool `json:"enabled"`
 
@@ -90,52 +90,30 @@ type TraceSettings struct {
 	Redaction *RedactionSettings `json:"redaction,omitempty"`
 
 	// ReviewProfiles maps profile names (e.g. "general", "security") to
-	// named review setups. `trace review` runs one profile: its canonical task
+	// named review setups. `entire review` runs one profile: its canonical task
 	// is fanned out to the configured agents, then an optional master agent
 	// consolidates the worker reports.
 	ReviewProfiles map[string]ReviewProfileConfig `json:"review_profiles,omitempty"`
 
-	// ReviewDefaultProfile is the profile used by `trace review` when no
+	// ReviewDefaultProfile is the profile used by `entire review` when no
 	// profile is supplied. If empty, `general` is used when present, otherwise
 	// the single configured profile is used.
 	ReviewDefaultProfile string `json:"review_default_profile,omitempty"`
 
 	// Deprecated: legacy pre-profile review settings. Kept so old config files
-	// still parse. `trace review` reads this only as a compatibility fallback
+	// still parse. `entire review` reads this only as a compatibility fallback
 	// when no review_profiles are configured, exposing it as the general profile.
 	Review map[string]ReviewConfig `json:"review,omitempty"`
 
-	// ReviewFixAgent is a legacy saved fix-agent preference. The `trace review
+	// ReviewFixAgent is a legacy saved fix-agent preference. The `entire review
 	// --fix` flow has been removed; this field is retained only so older
 	// settings/preferences files still parse. It is no longer read by
-	// `trace review`.
+	// `entire review`.
 	ReviewFixAgent string `json:"review_fix_agent,omitempty"`
 
-	// Investigate holds configuration for `trace investigate`. Empty means
-	// `trace investigate` triggers the first-run picker.
+	// Investigate holds configuration for `entire investigate`. Empty means
+	// `entire investigate` triggers the first-run picker.
 	Investigate *InvestigateConfig `json:"investigate,omitempty"`
-
-	// Attribution controls how the agent identity is recorded on commits
-	// Trace creates. Nil means defaults (co-authored-by trailer on, author
-	// and committer overrides off — matching Aider's default behavior).
-	Attribution *AttributionSettings `json:"attribution,omitempty"`
-
-	// DirtyCommits controls whether Trace auto-commits a "work in progress"
-	// snapshot of uncommitted changes at the start of an agent session,
-	// before the agent makes any edits. nil/true = enabled (default, matching
-	// Aider), false = disabled. Can be overridden per-invocation with
-	// --no-dirty-commits.
-	DirtyCommits *bool `json:"dirty_commits,omitempty"`
-
-	// Webhooks configures best-effort HTTP notifications on session lifecycle
-	// events (session_start, checkpoint_created, session_end, error). Empty
-	// or nil disables notifications.
-	Webhooks *WebhookConfig `json:"webhooks,omitempty"`
-
-	// CI holds configuration written by `trace ci-init` to control session
-	// auto-capture and tagging when running inside a CI provider. Nil means
-	// no CI-specific configuration has been applied.
-	CI *CIConfig `json:"ci,omitempty"`
 
 	// CommitLinking controls how commits are linked to agent sessions.
 	// "always" = auto-link without prompting, "prompt" = ask on each commit.
@@ -152,11 +130,11 @@ type TraceSettings struct {
 	SummaryGeneration *SummaryGenerationSettings `json:"summary_generation,omitempty"`
 
 	// Vercel indicates that the repository uses Vercel and the metadata branch
-	// should include a vercel.json that disables deployments for Trace branches.
+	// should include a vercel.json that disables deployments for Entire branches.
 	Vercel bool `json:"vercel,omitempty"`
 
 	// SummaryTimeoutSeconds is an optional hard deadline (in seconds) for
-	// `trace explain --generate` summary generation. Zero or negative means
+	// `entire explain --generate` summary generation. Zero or negative means
 	// "unset" -- falls back to the per-run --summary-timeout-seconds flag
 	// (if set) or the package default (5 minutes). Raise for very large
 	// transcripts; lower (e.g. 30) for fast-fail in CI.
@@ -175,6 +153,26 @@ type TraceSettings struct {
 	// Deprecated: no longer used. Exists to tolerate old settings files
 	// that still contain "strategy": "auto-commit" or similar.
 	Strategy string `json:"strategy,omitempty"`
+
+	// Attribution controls git identity attribution for Trace-created
+	// commits (Co-authored-by trailer, agent author/committer). nil = defaults.
+	Attribution *AttributionSettings `json:"attribution,omitempty"`
+
+	// DirtyCommits controls whether Trace auto-commits a "work in progress"
+	// snapshot of uncommitted changes at the start of an agent session,
+	// before the agent makes any edits. nil/true = enabled (default, matching
+	// Aider), false = disabled.
+	DirtyCommits *bool `json:"dirty_commits,omitempty"`
+
+	// Webhooks configures best-effort HTTP notifications on session lifecycle
+	// events (session_start, checkpoint_created, session_end, error). Empty
+	// or nil disables notifications.
+	Webhooks *WebhookConfig `json:"webhooks,omitempty"`
+
+	// CI holds configuration written by `trace ci-init` to control session
+	// auto-capture and tagging when running inside a CI provider. Nil means
+	// no CI-specific configuration has been applied.
+	CI *CIConfig `json:"ci,omitempty"`
 }
 
 // ClonePreferences stores clone-local, uncommitted preferences that should be
@@ -189,13 +187,13 @@ type ClonePreferences struct {
 
 	// Deprecated: legacy pre-profile review settings. Kept so old preference
 	// files parse. New review setup writes ReviewProfiles instead, while
-	// `trace review` may read Review as a fallback when profiles are absent.
+	// `entire review` may read Review as a fallback when profiles are absent.
 	Review         map[string]ReviewConfig `json:"review,omitempty"`
 	ReviewFixAgent string                  `json:"review_fix_agent,omitempty"`
 
 	// ReviewMigrationDismissed records that the user declined the one-shot
 	// migration of review keys from project settings to clone-local prefs.
-	// Once true, `trace review` stops prompting on every invocation; the
+	// Once true, `entire review` stops prompting on every invocation; the
 	// user can re-enable by editing this file or deleting the key.
 	ReviewMigrationDismissed bool `json:"review_migration_dismissed,omitempty"`
 
@@ -218,106 +216,6 @@ type ClonePreferences struct {
 	TrailsAgentHelpFailureRepoKey  string     `json:"trails_agent_help_failure_repo_key,omitempty"`
 	TrailsAgentHelpFailureAPIBase  string     `json:"trails_agent_help_failure_api_base,omitempty"`
 	TrailsAgentHelpFailureAuthKey  string     `json:"trails_agent_help_failure_auth_key,omitempty"`
-}
-
-// WebhookConfig configures outbound webhook notifications for session
-// lifecycle events. Notifications are best-effort: delivery failures are
-// logged but never propagated to the caller (a session is never failed
-// because a webhook endpoint was unreachable).
-type WebhookConfig struct {
-	// URLs is the list of endpoints that receive a JSON POST for each event.
-	// Empty disables webhook delivery.
-	URLs []string `json:"urls,omitempty"`
-
-	// Events optionally restricts which lifecycle events are delivered. When
-	// empty, all events are sent. Valid values match the event constants in
-	// the webhook package ("session_start", "checkpoint_created",
-	// "session_end", "error").
-	Events []string `json:"events,omitempty"`
-
-	// TimeoutSeconds bounds each individual POST. Zero or negative means the
-	// caller picks a short default.
-	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
-}
-
-// IsZero reports whether the config has no deliverable endpoints.
-func (c *WebhookConfig) IsZero() bool {
-	return c == nil || len(c.URLs) == 0
-}
-
-// CIConfig records the CI auto-capture configuration applied by
-// `trace ci-init`. It is intentionally small: the run-time tags (run id, PR
-// number, branch) are read from the environment on each invocation rather
-// than persisted, so the committed config stays portable across runs.
-type CIConfig struct {
-	// AutoCapture indicates that sessions should be captured automatically
-	// when running inside a recognized CI provider.
-	AutoCapture bool `json:"auto_capture"`
-
-	// Provider records which CI provider was detected at init time
-	// (e.g. "github-actions", "gitlab-ci"). Empty when configured outside CI.
-	Provider string `json:"provider,omitempty"`
-
-	// Tags holds static key/value tags to attach to captured CI sessions, in
-	// addition to the dynamic env-derived tags resolved at run time.
-	Tags map[string]string `json:"tags,omitempty"`
-}
-
-// AttributionSettings holds the three independently-toggleable commit
-// attribution flags. Each defaults to the Aider-compatible behavior: the
-// co-authored-by trailer is on, while the author and committer identity
-// overrides are off. A nil *bool for any individual field falls back to that
-// default via the TraceSettings.Attribute* accessors.
-type AttributionSettings struct {
-	// AttributeAuthor, when true, sets the git author of Trace-created commits
-	// to the agent identity instead of the human's git user. Default off.
-	AttributeAuthor *bool `json:"attribute_author,omitempty"`
-
-	// AttributeCommitter, when true, sets the git committer of Trace-created
-	// commits to the agent identity instead of the human's git user.
-	// Default off.
-	AttributeCommitter *bool `json:"attribute_committer,omitempty"`
-
-	// AttributeCoAuthoredBy, when true, appends a
-	// "Co-authored-by: <agent> <email>" trailer to the commit message.
-	// Default on.
-	AttributeCoAuthoredBy *bool `json:"attribute_co_authored_by,omitempty"`
-}
-
-// AttributeAuthor reports whether the git author identity should be overridden
-// with the agent identity. Defaults to false when unset.
-func (s *TraceSettings) AttributeAuthor() bool {
-	if s == nil || s.Attribution == nil || s.Attribution.AttributeAuthor == nil {
-		return false
-	}
-	return *s.Attribution.AttributeAuthor
-}
-
-// AttributeCommitter reports whether the git committer identity should be
-// overridden with the agent identity. Defaults to false when unset.
-func (s *TraceSettings) AttributeCommitter() bool {
-	if s == nil || s.Attribution == nil || s.Attribution.AttributeCommitter == nil {
-		return false
-	}
-	return *s.Attribution.AttributeCommitter
-}
-
-// AttributeCoAuthoredBy reports whether a Co-authored-by trailer should be
-// appended to commit messages. Defaults to true when unset (Aider-compatible).
-func (s *TraceSettings) AttributeCoAuthoredBy() bool {
-	if s == nil || s.Attribution == nil || s.Attribution.AttributeCoAuthoredBy == nil {
-		return true
-	}
-	return *s.Attribution.AttributeCoAuthoredBy
-}
-
-// DirtyCommitsEnabled reports whether pre-session WIP auto-commits are enabled.
-// Defaults to true when unset (Aider-compatible).
-func (s *TraceSettings) DirtyCommitsEnabled() bool {
-	if s == nil || s.DirtyCommits == nil {
-		return true
-	}
-	return *s.DirtyCommits
 }
 
 // SummaryGenerationSettings configures provider selection for on-demand
@@ -430,7 +328,7 @@ const (
 // GetCommitLinking returns the effective commit linking mode.
 // Returns the explicit value if set, otherwise defaults to "prompt"
 // to preserve existing user behavior.
-func (s *TraceSettings) GetCommitLinking() string {
+func (s *EntireSettings) GetCommitLinking() string {
 	if s.CommitLinking != "" {
 		return s.CommitLinking
 	}
@@ -438,9 +336,9 @@ func (s *TraceSettings) GetCommitLinking() string {
 }
 
 // SummaryTimeoutValue returns the configured hard deadline for
-// `trace explain --generate` summary generation. Zero means "unset" --
+// `entire explain --generate` summary generation. Zero means "unset" --
 // the caller picks the default. Negative values are treated as unset.
-func (s *TraceSettings) SummaryTimeoutValue() time.Duration {
+func (s *EntireSettings) SummaryTimeoutValue() time.Duration {
 	if s.SummaryTimeoutSeconds < 1 {
 		return 0
 	}
@@ -524,18 +422,7 @@ func (c ReviewConfig) IsZero() bool {
 	return c.Agent == "" && c.Model == "" && len(c.Skills) == 0 && c.Prompt == ""
 }
 
-// ReviewConfigFor returns the configured review config for the given agent.
-// Returns a zero-value config when the agent has no entry; callers should
-// check IsZero (or the individual fields) to decide whether configuration
-// is present.
-func (s *TraceSettings) ReviewConfigFor(agentName string) ReviewConfig {
-	if s == nil {
-		return ReviewConfig{}
-	}
-	return s.Review[agentName]
-}
-
-// InvestigateConfig holds the configuration for `trace investigate`.
+// InvestigateConfig holds the configuration for `entire investigate`.
 // Unlike ReviewConfig, investigate runs the same shared prompt across
 // all configured agents, so the schema is a flat agent list with global
 // loop knobs rather than per-agent skill lists.
@@ -567,19 +454,19 @@ func (c *InvestigateConfig) IsZero() bool {
 // InvestigateConfig returns the configured investigate config. Returns nil
 // when no configuration is present; callers should check IsZero (or guard
 // for nil) to decide whether configuration is present.
-func (s *TraceSettings) InvestigateConfig() *InvestigateConfig {
+func (s *EntireSettings) InvestigateConfig() *InvestigateConfig {
 	if s == nil {
 		return nil
 	}
 	return s.Investigate
 }
 
-// Load loads the Trace settings from .entire/settings.json, then applies
+// Load loads the Entire settings from .entire/settings.json, then applies
 // clone-local preferences from the git common dir, then applies any overrides
 // from .entire/settings.local.json if it exists.
 // Returns default settings if no settings or preferences file exists.
 // Works correctly from any subdirectory within the repository.
-func Load(ctx context.Context) (*TraceSettings, error) {
+func Load(ctx context.Context) (*EntireSettings, error) {
 	if worktreeRoot, ok := worktreeRootFromContext(ctx); ok {
 		return loadForWorktreeRoot(ctx, worktreeRoot)
 	}
@@ -605,13 +492,13 @@ func Load(ctx context.Context) (*TraceSettings, error) {
 // the current working directory, falling back to the relative path when
 // absolute resolution fails.
 func settingsAbsPaths(ctx context.Context) (base, local string) {
-	base, err := paths.AbsPath(ctx, TraceSettingsFile)
+	base, err := paths.AbsPath(ctx, EntireSettingsFile)
 	if err != nil {
-		base = TraceSettingsFile // Fallback to relative
+		base = EntireSettingsFile // Fallback to relative
 	}
-	local, err = paths.AbsPath(ctx, TraceSettingsLocalFile)
+	local, err = paths.AbsPath(ctx, EntireSettingsLocalFile)
 	if err != nil {
-		local = TraceSettingsLocalFile // Fallback to relative
+		local = EntireSettingsLocalFile // Fallback to relative
 	}
 	return base, local
 }
@@ -619,10 +506,10 @@ func settingsAbsPaths(ctx context.Context) (base, local string) {
 // worktreeSettingsPaths resolves the base and local settings file paths under
 // an explicit worktree root.
 func worktreeSettingsPaths(worktreeRoot string) (base, local string) {
-	return filepath.Join(worktreeRoot, TraceSettingsFile), filepath.Join(worktreeRoot, TraceSettingsLocalFile)
+	return filepath.Join(worktreeRoot, EntireSettingsFile), filepath.Join(worktreeRoot, EntireSettingsLocalFile)
 }
 
-func loadForWorktreeRoot(ctx context.Context, worktreeRoot string) (*TraceSettings, error) {
+func loadForWorktreeRoot(ctx context.Context, worktreeRoot string) (*EntireSettings, error) {
 	settingsFileAbs, localSettingsFileAbs := worktreeSettingsPaths(worktreeRoot)
 	preferencesFileAbs := ""
 	if path, prefErr := clonePreferencesPathForWorktreeRoot(ctx, worktreeRoot); prefErr == nil {
@@ -648,7 +535,7 @@ func clonePreferencesPathForWorktreeRoot(ctx context.Context, worktreeRoot strin
 	return filepath.Join(filepath.Clean(commonDir), ClonePreferencesFile), nil
 }
 
-func loadMergedSettings(settingsFileAbs, preferencesFileAbs, localSettingsFileAbs string) (*TraceSettings, error) {
+func loadMergedSettings(settingsFileAbs, preferencesFileAbs, localSettingsFileAbs string) (*EntireSettings, error) {
 	// Load base settings
 	settings, err := loadFromFile(settingsFileAbs)
 	if err != nil {
@@ -690,7 +577,7 @@ func loadMergedSettings(settingsFileAbs, preferencesFileAbs, localSettingsFileAb
 // LoadFromFile loads settings from a specific file path without merging local overrides.
 // Returns default settings if the file doesn't exist.
 // Use this when you need to display individual settings files separately.
-func LoadFromFile(filePath string) (*TraceSettings, error) {
+func LoadFromFile(filePath string) (*EntireSettings, error) {
 	return loadFromFile(filePath)
 }
 
@@ -709,7 +596,7 @@ func LoadFromFile(filePath string) (*TraceSettings, error) {
 // from duplicating settings parsing in violation of the "Settings access must
 // go through the settings package" rule in CLAUDE.md.
 func LoadProjectRaw(ctx context.Context) (path string, raw map[string]json.RawMessage, exists bool, err error) {
-	return loadRaw(ctx, TraceSettingsFile, "project")
+	return loadRaw(ctx, EntireSettingsFile, "project")
 }
 
 // LoadLocalRaw reads .entire/settings.local.json as a generic JSON object,
@@ -720,7 +607,7 @@ func LoadProjectRaw(ctx context.Context) (path string, raw map[string]json.RawMe
 // Pair with SaveProjectRaw for read-modify-write flows that need to preserve
 // unrelated keys in the per-developer override file.
 func LoadLocalRaw(ctx context.Context) (path string, raw map[string]json.RawMessage, exists bool, err error) {
-	return loadRaw(ctx, TraceSettingsLocalFile, "local")
+	return loadRaw(ctx, EntireSettingsLocalFile, "local")
 }
 
 // loadRaw reads a settings file as a generic JSON object. label ("project" or
@@ -773,7 +660,7 @@ func saveRaw(path, label string, raw map[string]json.RawMessage) error {
 	}
 	// Ensure the parent directory exists, mirroring the struct save path
 	// (saveToFile). Without this, the raw save path fails in a repo that has
-	// never created .entire/ — e.g. a bare `trace disable` in a fresh repo,
+	// never created .entire/ — e.g. a bare `entire disable` in a fresh repo,
 	// which resolves to a raw flip before any directory is created.
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating %s settings directory: %w", label, err)
@@ -813,8 +700,8 @@ func ModifyClonePreferences(ctx context.Context, fn func(*ClonePreferences) erro
 
 // LoadFromBytes parses settings from raw JSON bytes without merging local overrides.
 // Use this when you have settings content from a non-file source (e.g., git show).
-func LoadFromBytes(data []byte) (*TraceSettings, error) {
-	s := &TraceSettings{Enabled: true}
+func LoadFromBytes(data []byte) (*EntireSettings, error) {
+	s := &EntireSettings{Enabled: true}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(s); err != nil {
@@ -857,8 +744,8 @@ func readConfined(filePath string) ([]byte, error) {
 
 // loadFromFile loads settings from a specific file path.
 // Returns default settings if the file doesn't exist.
-func loadFromFile(filePath string) (*TraceSettings, error) {
-	settings := &TraceSettings{
+func loadFromFile(filePath string) (*EntireSettings, error) {
+	settings := &EntireSettings{
 		Enabled: true, // Default to enabled
 	}
 
@@ -906,7 +793,7 @@ func loadClonePreferencesFromFile(filePath string) (*ClonePreferences, error) {
 	}
 
 	// Lenient decoding here (vs. strict via DisallowUnknownFields in
-	// loadFromFile for TraceSettings). Two reasons clone preferences need
+	// loadFromFile for EntireSettings). Two reasons clone preferences need
 	// the looser contract:
 	//   1. They are rewritten on every picker save — a newer binary can
 	//      introduce a field the older binary then sees as unknown, which
@@ -914,7 +801,7 @@ func loadClonePreferencesFromFile(filePath string) (*ClonePreferences, error) {
 	//      binary across the whole clone.
 	//   2. The file lives in .git/, so users rarely hand-edit it; the
 	//      typo-silently-ignored downside is theoretical here.
-	// TraceSettings stays strict because it's committed and team-edited,
+	// EntireSettings stays strict because it's committed and team-edited,
 	// where unknown keys usually mean typos worth surfacing immediately.
 	if err := json.Unmarshal(data, prefs); err != nil {
 		return nil, fmt.Errorf("parsing preferences file: %w", err)
@@ -985,7 +872,7 @@ func modifyClonePreferencesFile(filePath string, fn func(*ClonePreferences) erro
 	return saveClonePreferencesToFile(prefs, filePath)
 }
 
-func applyClonePreferences(settings *TraceSettings, prefs *ClonePreferences) {
+func applyClonePreferences(settings *EntireSettings, prefs *ClonePreferences) {
 	if prefs == nil {
 		return
 	}
@@ -1007,11 +894,11 @@ func applyClonePreferences(settings *TraceSettings, prefs *ClonePreferences) {
 // Most fields only apply non-zero values from JSON. The review map is replaced
 // whenever the key is present, so override files can clear or fully replace
 // project-level review configuration.
-func mergeJSON(settings *TraceSettings, data []byte) error {
+func mergeJSON(settings *EntireSettings, data []byte) error {
 	// Validate that there are no unknown keys using strict decoding.
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	var temp TraceSettings
+	var temp EntireSettings
 	if err := dec.Decode(&temp); err != nil {
 		return fmt.Errorf("parsing JSON: %w", err)
 	}
@@ -1064,62 +951,17 @@ func mergeJSON(settings *TraceSettings, data []byte) error {
 	if err := mergeInvestigate(settings, raw); err != nil {
 		return err
 	}
-
-	// Merge attribution sub-fields independently so a local override can flip
-	// a single flag without resetting the other two to their defaults.
-	if attrRaw, ok := raw["attribution"]; ok {
-		if settings.Attribution == nil {
-			settings.Attribution = &AttributionSettings{}
-		}
-		if err := mergeAttribution(settings.Attribution, attrRaw); err != nil {
-			return fmt.Errorf("parsing attribution field: %w", err)
-		}
-	}
-
-	// Webhooks and CI configs merge wholesale (small, self-contained structs).
-	if webhooksRaw, ok := raw["webhooks"]; ok {
-		if settings.Webhooks == nil {
-			settings.Webhooks = &WebhookConfig{}
-		}
-		if err := json.Unmarshal(webhooksRaw, settings.Webhooks); err != nil {
-			return fmt.Errorf("parsing webhooks field: %w", err)
-		}
-	}
-	if ciRaw, ok := raw["ci"]; ok {
-		if settings.CI == nil {
-			settings.CI = &CIConfig{}
-		}
-		if err := json.Unmarshal(ciRaw, settings.CI); err != nil {
-			return fmt.Errorf("parsing ci field: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// mergeAttribution merges the three attribution flags field-by-field so that
-// each may be overridden independently by a local settings file.
-func mergeAttribution(attr *AttributionSettings, data json.RawMessage) error {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return fmt.Errorf("parsing attribution: %w", err)
-	}
-	if err := mergeRawBoolPtr(fields, "attribute_author", &attr.AttributeAuthor); err != nil {
+	if err := mergeTraceExtensions(settings, raw); err != nil {
 		return err
 	}
-	if err := mergeRawBoolPtr(fields, "attribute_committer", &attr.AttributeCommitter); err != nil {
-		return err
-	}
-	if err := mergeRawBoolPtr(fields, "attribute_co_authored_by", &attr.AttributeCoAuthoredBy); err != nil {
-		return err
-	}
+
 	return nil
 }
 
 // mergeInvestigate replaces the investigate config from the override (whole-object
 // replacement, parallel to how summary_generation is handled but simpler — the
 // investigate schema is small and lacks per-field merge semantics).
-func mergeInvestigate(settings *TraceSettings, raw map[string]json.RawMessage) error {
+func mergeInvestigate(settings *EntireSettings, raw map[string]json.RawMessage) error {
 	investigateRaw, ok := raw["investigate"]
 	if !ok {
 		return nil
@@ -1133,7 +975,7 @@ func mergeInvestigate(settings *TraceSettings, raw map[string]json.RawMessage) e
 }
 
 // mergeScalarFields merges simple bool, *bool, string, and int fields from raw JSON.
-func mergeScalarFields(settings *TraceSettings, raw map[string]json.RawMessage) error {
+func mergeScalarFields(settings *EntireSettings, raw map[string]json.RawMessage) error {
 	if err := mergeRawBool(raw, "enabled", &settings.Enabled); err != nil {
 		return err
 	}
@@ -1153,9 +995,6 @@ func mergeScalarFields(settings *TraceSettings, raw map[string]json.RawMessage) 
 		return err
 	}
 	if err := mergeRawBoolPtr(raw, "sign_checkpoint_commits", &settings.SignCheckpointCommits); err != nil {
-		return err
-	}
-	if err := mergeRawBoolPtr(raw, "dirty_commits", &settings.DirtyCommits); err != nil {
 		return err
 	}
 	if err := mergeRawStringNonEmpty(raw, "log_level", &settings.LogLevel); err != nil {
@@ -1224,7 +1063,7 @@ func unmarshalField(key string, data json.RawMessage, dst any) error {
 	return nil
 }
 
-func mergeStrategyOptions(settings *TraceSettings, raw map[string]json.RawMessage) error {
+func mergeStrategyOptions(settings *EntireSettings, raw map[string]json.RawMessage) error {
 	optionsRaw, ok := raw["strategy_options"]
 	if !ok {
 		return nil
@@ -1243,7 +1082,7 @@ func mergeStrategyOptions(settings *TraceSettings, raw map[string]json.RawMessag
 	return nil
 }
 
-func mergeSummaryGeneration(settings *TraceSettings, raw map[string]json.RawMessage) error {
+func mergeSummaryGeneration(settings *EntireSettings, raw map[string]json.RawMessage) error {
 	summaryRaw, ok := raw["summary_generation"]
 	if !ok {
 		return nil
@@ -1285,7 +1124,7 @@ func mergeSummaryGeneration(settings *TraceSettings, raw map[string]json.RawMess
 	return nil
 }
 
-func mergeCommitLinking(settings *TraceSettings, raw map[string]json.RawMessage) error {
+func mergeCommitLinking(settings *EntireSettings, raw map[string]json.RawMessage) error {
 	commitLinkingRaw, ok := raw["commit_linking"]
 	if !ok {
 		return nil
@@ -1472,11 +1311,11 @@ func mergeStringMap(dst *map[string]string, raw json.RawMessage, field string) e
 	return nil
 }
 
-// IsSetUp returns true if Trace has been set up in the current repository.
+// IsSetUp returns true if Entire has been set up in the current repository.
 // This checks if .entire/settings.json exists.
-// Use this to avoid creating files/directories in repos where Trace was never enabled.
+// Use this to avoid creating files/directories in repos where Entire was never enabled.
 func IsSetUp(ctx context.Context) bool {
-	settingsFileAbs, err := paths.AbsPath(ctx, TraceSettingsFile)
+	settingsFileAbs, err := paths.AbsPath(ctx, EntireSettingsFile)
 	if err != nil {
 		return false
 	}
@@ -1484,14 +1323,14 @@ func IsSetUp(ctx context.Context) bool {
 	return err == nil
 }
 
-// IsSetUpAny returns true if Trace has been set up in the current repository,
+// IsSetUpAny returns true if Entire has been set up in the current repository,
 // checking both .entire/settings.json and .entire/settings.local.json.
 // Use this to detect any prior setup, even if only local settings exist.
 func IsSetUpAny(ctx context.Context) bool {
 	if IsSetUp(ctx) {
 		return true
 	}
-	localFileAbs, err := paths.AbsPath(ctx, TraceSettingsLocalFile)
+	localFileAbs, err := paths.AbsPath(ctx, EntireSettingsLocalFile)
 	if err != nil {
 		return false
 	}
@@ -1499,17 +1338,17 @@ func IsSetUpAny(ctx context.Context) bool {
 	return err == nil
 }
 
-// IsSetUpAndEnabled returns true if Trace is both set up and enabled.
+// IsSetUpAndEnabled returns true if Entire is both set up and enabled.
 // "Set up" spans either scope — .entire/settings.json OR
 // .entire/settings.local.json — so it must check IsSetUpAny, not IsSetUp.
-// `trace enable --local` writes only settings.local.json and never creates the
+// `entire enable --local` writes only settings.local.json and never creates the
 // base file; gating on the base file alone would treat such a local-only repo
 // as inactive and make every hook a silent no-op, dropping all checkpoint
 // capture for that documented workflow. The IsSetUpAny guard is still required
 // so a never-enabled repo (no settings file in any scope) is not treated as
 // enabled by Load's default Enabled: true. Any settings read error is treated
 // as disabled (fail closed).
-// Use this for hooks that should be no-ops when Trace is not active.
+// Use this for hooks that should be no-ops when Entire is not active.
 func IsSetUpAndEnabled(ctx context.Context) bool {
 	if !IsSetUpAny(ctx) {
 		return false
@@ -1559,7 +1398,7 @@ func IsImageExternalizationEnabled(ctx context.Context) bool {
 }
 
 // IsSummarizeEnabled checks if auto-summarize is enabled in this settings instance.
-func (s *TraceSettings) IsSummarizeEnabled() bool {
+func (s *EntireSettings) IsSummarizeEnabled() bool {
 	if s.StrategyOptions == nil {
 		return false
 	}
@@ -1596,7 +1435,7 @@ func (c *CheckpointRemoteConfig) Owner() string {
 // GetCheckpointRemote rejects (it returns nil for absent AND malformed, so it
 // cannot distinguish "no intent" from "botched intent"). Presence in any form
 // means the user intends a checkpoint remote.
-func (s *TraceSettings) HasCheckpointRemoteKey() bool {
+func (s *EntireSettings) HasCheckpointRemoteKey() bool {
 	if s.StrategyOptions == nil {
 		return false
 	}
@@ -1604,10 +1443,38 @@ func (s *TraceSettings) HasCheckpointRemoteKey() bool {
 	return ok
 }
 
+// CheckpointRemoteIsLocalOnly reports whether a checkpoint_remote entry is
+// present in .entire/settings.local.json.
+//
+// That file is gitignored and per-clone, so a checkpoint_remote living there
+// cannot have arrived by cloning or forking someone else's project — it is this
+// developer's own explicit choice. Callers use this to distinguish "I configured
+// where my checkpoints go" from "I inherited a committed setting that points at
+// the upstream project's checkpoint repo".
+//
+// Best-effort: an unreadable or malformed local file reports false, which is the
+// conservative answer (callers then fall back to weaker ownership signals).
+func CheckpointRemoteIsLocalOnly(ctx context.Context) bool {
+	_, raw, exists, err := LoadLocalRaw(ctx)
+	if err != nil || !exists {
+		return false
+	}
+	optionsRaw, ok := raw["strategy_options"]
+	if !ok {
+		return false
+	}
+	var options map[string]json.RawMessage
+	if err := json.Unmarshal(optionsRaw, &options); err != nil {
+		return false
+	}
+	_, ok = options["checkpoint_remote"]
+	return ok
+}
+
 // GetCheckpointRemote returns the configured checkpoint remote.
 // Expects a structured object: {"provider": "github", "repo": "org/repo"}.
 // Returns nil if not configured, wrong type, or missing required fields.
-func (s *TraceSettings) GetCheckpointRemote() *CheckpointRemoteConfig {
+func (s *EntireSettings) GetCheckpointRemote() *CheckpointRemoteConfig {
 	if s.StrategyOptions == nil {
 		return nil
 	}
@@ -1630,10 +1497,26 @@ func (s *TraceSettings) GetCheckpointRemote() *CheckpointRemoteConfig {
 	return &CheckpointRemoteConfig{Provider: provider, Repo: repo}
 }
 
+// GetCheckpointPushRemote returns the configured checkpoint push remote name.
+// Stored in strategy_options.checkpoint_push_remote as a plain git remote
+// name (e.g. "origin", "private"). This selects WHICH configured remote
+// carries checkpoint data — distinct from checkpoint_remote, which derives a
+// dedicated URL. Returns "" if unset, empty, or not a string.
+func (s *EntireSettings) GetCheckpointPushRemote() string {
+	if s.StrategyOptions == nil {
+		return ""
+	}
+	val, ok := s.StrategyOptions["checkpoint_push_remote"].(string)
+	if !ok {
+		return ""
+	}
+	return val
+}
+
 // IsFilteredFetchesEnabled checks if fetches should use --filter=blob:none.
 // When enabled, filtered fetches always use resolved URLs rather than remote
 // names to avoid persisting promisor settings onto named remotes.
-func (s *TraceSettings) IsFilteredFetchesEnabled() bool {
+func (s *EntireSettings) IsFilteredFetchesEnabled() bool {
 	if s.StrategyOptions == nil {
 		return false
 	}
@@ -1643,7 +1526,7 @@ func (s *TraceSettings) IsFilteredFetchesEnabled() bool {
 
 // IsPushSessionsDisabled checks if push_sessions is disabled in settings.
 // Returns true if push_sessions is explicitly set to false.
-func (s *TraceSettings) IsPushSessionsDisabled() bool {
+func (s *EntireSettings) IsPushSessionsDisabled() bool {
 	if s.StrategyOptions == nil {
 		return false
 	}
@@ -1669,7 +1552,7 @@ func IsExternalAgentsEnabled(ctx context.Context) bool {
 
 // IsSignCheckpointCommitsEnabled returns true if checkpoint commits should be signed.
 // Defaults to true when the setting is not explicitly set.
-func (s *TraceSettings) IsSignCheckpointCommitsEnabled() bool {
+func (s *EntireSettings) IsSignCheckpointCommitsEnabled() bool {
 	return s.SignCheckpointCommits == nil || *s.SignCheckpointCommits
 }
 
@@ -1684,17 +1567,17 @@ func IsSignCheckpointCommitsEnabled(ctx context.Context) bool {
 }
 
 // Save saves the settings to .entire/settings.json.
-func Save(ctx context.Context, settings *TraceSettings) error {
-	return saveToFile(ctx, settings, TraceSettingsFile)
+func Save(ctx context.Context, settings *EntireSettings) error {
+	return saveToFile(ctx, settings, EntireSettingsFile)
 }
 
 // SaveLocal saves the settings to .entire/settings.local.json.
-func SaveLocal(ctx context.Context, settings *TraceSettings) error {
-	return saveToFile(ctx, settings, TraceSettingsLocalFile)
+func SaveLocal(ctx context.Context, settings *EntireSettings) error {
+	return saveToFile(ctx, settings, EntireSettingsLocalFile)
 }
 
 // saveToFile saves settings to the specified file path.
-func saveToFile(ctx context.Context, settings *TraceSettings, filePath string) error {
+func saveToFile(ctx context.Context, settings *EntireSettings, filePath string) error {
 	// Get absolute path for the file
 	filePathAbs, err := paths.AbsPath(ctx, filePath)
 	if err != nil {
@@ -1716,112 +1599,4 @@ func saveToFile(ctx context.Context, settings *TraceSettings, filePath string) e
 		return fmt.Errorf("writing settings file: %w", err)
 	}
 	return nil
-}
-
-// EntireSettings is an alias for TraceSettings (CLI compatibility).
-type EntireSettings = TraceSettings
-
-// EntireSettingsFile is the settings file path.
-const EntireSettingsFile = TraceSettingsFile
-
-// EntireSettingsLocalFile is the local settings file path.
-const EntireSettingsLocalFile = TraceSettingsLocalFile
-
-// defaultGenerationRetentionDays is the default retention window for archived
-// checkpoints v2 full-transcript generations when no override is configured.
-const defaultGenerationRetentionDays = 30
-
-// GetFullTranscriptGenerationRetentionDays returns the configured retention
-// window for archived checkpoints v2 /full/* generations. Invalid, missing, or
-// non-positive values fall back to the documented default.
-func (s *TraceSettings) GetFullTranscriptGenerationRetentionDays() int {
-	if s.StrategyOptions == nil {
-		return defaultGenerationRetentionDays
-	}
-
-	val, ok := s.StrategyOptions["full_transcript_generation_retention_days"]
-	if !ok {
-		return defaultGenerationRetentionDays
-	}
-
-	switch days := val.(type) {
-	case int:
-		if days > 0 {
-			return days
-		}
-	case float64:
-		if days > 0 {
-			return int(days)
-		}
-	}
-	return defaultGenerationRetentionDays
-}
-
-// CheckpointsVersion reports the checkpoint backend version in effect: 1 for
-// the legacy git-branch (shadow-branch) backend, 2 for the git-refs backend.
-func (s *TraceSettings) CheckpointsVersion() int {
-	if s.IsCheckpointsV2Enabled(context.Background()) {
-		return 2
-	}
-	return 1
-}
-
-// IsCheckpointsV2Enabled reports whether the git-refs checkpoint backend is
-// the configured primary. It mirrors checkpoint.PrimaryIsRefs without
-// importing the checkpoint package (which imports settings).
-func (s *TraceSettings) IsCheckpointsV2Enabled(ctx context.Context) bool {
-	cfg, err := LoadCheckpointsConfig(ctx)
-	return err == nil && cfg != nil && cfg.Primary.Type == "git-refs"
-}
-
-// IsPushV2RefsEnabled reports whether pushing checkpoint refs to the remote is
-// enabled. Requires both the git-refs backend and the push_v2_refs option.
-func (s *TraceSettings) IsPushV2RefsEnabled() bool {
-	if !s.IsCheckpointsV2Enabled(context.Background()) {
-		return false
-	}
-	if s.StrategyOptions == nil {
-		return false
-	}
-	val, ok := s.StrategyOptions["push_v2_refs"].(bool)
-	return ok && val
-}
-
-// CheckpointsVersion reports the checkpoint backend version in effect.
-func CheckpointsVersion(ctx context.Context) int {
-	s, err := Load(ctx)
-	if err != nil {
-		return 1
-	}
-	return s.CheckpointsVersion()
-}
-
-// IsCheckpointsV2Enabled reports whether the git-refs checkpoint backend is
-// the configured primary.
-func IsCheckpointsV2Enabled(ctx context.Context) bool {
-	cfg, err := LoadCheckpointsConfig(ctx)
-	return err == nil && cfg != nil && cfg.Primary.Type == "git-refs"
-}
-
-// IsPushV2RefsEnabled reports whether pushing checkpoint refs to the remote is
-// enabled.
-func IsPushV2RefsEnabled(ctx context.Context) bool {
-	s, err := Load(ctx)
-	if err != nil {
-		return false
-	}
-	return s.IsPushV2RefsEnabled()
-}
-
-// LoadEntireSettings loads settings using the TraceSettings type.
-func LoadEntireSettings(ctx context.Context) (*TraceSettings, error) {
-	return Load(ctx)
-}
-
-// SaveClonePreferences replaces the clone-local preferences wholesale.
-func SaveClonePreferences(ctx context.Context, prefs *ClonePreferences) error {
-	return ModifyClonePreferences(ctx, func(p *ClonePreferences) error {
-		*p = *prefs
-		return nil
-	})
 }

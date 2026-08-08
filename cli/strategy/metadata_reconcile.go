@@ -60,11 +60,11 @@ func IsMetadataDisconnected(ctx context.Context, repo *git.Repository, remoteRef
 
 // WarnIfMetadataDisconnected checks (once per process) whether the metadata
 // branch is disconnected and prints a warning to stderr if so.
-// It does NOT fix the problem — users are directed to 'trace doctor'.
+// It does NOT fix the problem — users are directed to 'entire doctor'.
 //
 // Uses sync.Once, so a transient failure on the first call permanently suppresses
 // the warning. This is acceptable because the check is advisory only and
-// 'trace doctor' is the authoritative repair path.
+// 'entire doctor' is the authoritative repair path.
 func WarnIfMetadataDisconnected() {
 	disconnectedOnce.Do(func() {
 		ctx := context.Background()
@@ -88,8 +88,8 @@ func WarnIfMetadataDisconnected() {
 		if !disconnected {
 			return
 		}
-		fmt.Fprintln(os.Stderr, "[trace] Warning: Local and remote session metadata branches are disconnected.")
-		fmt.Fprintln(os.Stderr, "[trace] Some checkpoints from remote may not be visible. Run 'trace doctor' to fix.")
+		fmt.Fprintln(os.Stderr, "[entire] Warning: Local and remote session metadata branches are disconnected.")
+		fmt.Fprintln(os.Stderr, "[entire] Some checkpoints from remote may not be visible. Run 'entire doctor' to fix.")
 	})
 }
 
@@ -158,7 +158,7 @@ func ReconcileDisconnectedMetadataRef(
 	}
 
 	// Disconnected — cherry-pick local commits onto remote tip
-	fmt.Fprintln(w, "[trace] Detected disconnected session metadata (local and remote share no common ancestor)")
+	fmt.Fprintln(w, "[entire] Detected disconnected session metadata (local and remote share no common ancestor)")
 
 	shallow, err := loadShallowHashes(ctx, repoPath)
 	if err != nil {
@@ -188,11 +188,11 @@ func ReconcileDisconnectedMetadataRef(
 		if err := advance(remoteHash); err != nil {
 			return fmt.Errorf("failed to reset metadata ref to remote: %w", err)
 		}
-		fmt.Fprintln(w, "[trace] Done — local had no checkpoint data, reset to remote")
+		fmt.Fprintln(w, "[entire] Done — local had no checkpoint data, reset to remote")
 		return nil
 	}
 
-	fmt.Fprintf(w, "[trace] Cherry-picking %d local checkpoint(s) onto remote...\n", len(dataCommits))
+	fmt.Fprintf(w, "[entire] Cherry-picking %d local checkpoint(s) onto remote...\n", len(dataCommits))
 
 	newTip, err := cherryPickOnto(ctx, repo, remoteHash, dataCommits, shallow)
 	if err != nil {
@@ -203,7 +203,7 @@ func ReconcileDisconnectedMetadataRef(
 		return fmt.Errorf("failed to update metadata ref: %w", err)
 	}
 
-	fmt.Fprintln(w, "[trace] Done — all local and remote checkpoints preserved")
+	fmt.Fprintln(w, "[entire] Done — all local and remote checkpoints preserved")
 	return nil
 }
 

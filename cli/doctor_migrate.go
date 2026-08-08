@@ -20,7 +20,7 @@ func newDoctorMigrateCheckpointsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate-checkpoints",
 		Short: "Convert git-branch checkpoints into per-checkpoint git refs (git-refs store)",
-		Long: `Convert the checkpoints stored on the trace/checkpoints/v1 branch into
+		Long: `Convert the checkpoints stored on the entire/checkpoints/v1 branch into
 per-checkpoint refs under refs/entire/checkpoints/<shard>/<id>, the layout the
 git-refs checkpoint store uses.
 
@@ -82,6 +82,11 @@ next push once the git-refs store is the configured primary.`,
 				return nil
 			}
 
+			pushRemote, err := resolveMigratePushRemote(ctx, remote)
+			if err != nil {
+				return err
+			}
+
 			title := fmt.Sprintf("Push %d migrated checkpoint ref(s) now?", len(result.Migrated))
 			confirmed, err := confirmDoctorFix(ctx, out, title)
 			if err != nil {
@@ -92,7 +97,7 @@ next push once the git-refs store is the configured primary.`,
 				return nil
 			}
 
-			pushed, pushDisabled, err := strategy.PushQueuedCheckpointRefs(ctx, repo, remote)
+			pushed, pushDisabled, err := strategy.PushQueuedCheckpointRefs(ctx, repo, pushRemote)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					return NewSilentError(err)
@@ -115,6 +120,24 @@ next push once the git-refs store is the configured primary.`,
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Report what would be migrated without writing refs")
-	cmd.Flags().StringVar(&remote, "remote", "origin", "Remote to push migrated refs to when confirmed")
+	cmd.Flags().StringVar(&remote, "remote", "", "Remote to push migrated refs to (default: the checkpoint sync remote)")
 	return cmd
+}
+
+// resolveMigratePushRemote picks the remote migrated refs push to: the
+// explicit --remote value if given, else the elected checkpoint sync
+// remote. Fail-closed (spec: non-hook drain paths): a misconfigured
+// checkpoint_push_remote is an error, never a fallback to origin.
+func resolveMigratePushRemote(ctx context.Context, explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	syncRemote, err := strategy.ResolveCheckpointSyncRemote(ctx)
+	if err != nil {
+		return "", fmt.Errorf("cannot determine checkpoint sync remote (pass --remote explicitly): %w", err)
+	}
+	if syncRemote.Name == "" {
+		return "", errors.New("no git remotes configured; pass --remote explicitly")
+	}
+	return syncRemote.Name, nil
 }

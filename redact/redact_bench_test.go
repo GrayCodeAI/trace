@@ -26,7 +26,7 @@ func BenchmarkRedactJSONLBytes(b *testing.B) {
 	}{
 		{
 			name: "Fixture/ClaudeFull2",
-			data: readBenchmarkFixture(b, "../cli/transcript/compact/testdata/claude_full2.jsonl"),
+			data: readBenchmarkFixture(b, "../cmd/entire/cli/transcript/compact/testdata/claude_full2.jsonl"),
 		},
 		{
 			name: "Synthetic/CheckpointLog",
@@ -67,16 +67,16 @@ func generateBenchmarkJSONL(b *testing.B, lines int) []byte {
 	for i := range lines {
 		content := benchmarkLineContent(i)
 		entry := map[string]any{
-			testFieldType:      testFieldText,
-			testFieldSessionID: fmt.Sprintf("bench-session-%06d", i),
+			"type":       "text",
+			"session_id": fmt.Sprintf("bench-session-%06d", i),
 			"message": map[string]any{
-				"role":           roleForBenchmarkLine(i),
-				testFieldContent: content,
+				"role":    roleForBenchmarkLine(i),
+				"content": content,
 			},
 			"metadata": map[string]any{
-				testFieldCwd:      "/tmp/trace-redact-benchmark/repo",
-				"tool_id":         fmt.Sprintf("toolu_%06d", i),
-				testFieldFilePath: fmt.Sprintf("src/generated/file_%04d.go", i%200),
+				"cwd":       "/tmp/entire-redact-benchmark/repo",
+				"tool_id":   fmt.Sprintf("toolu_%06d", i),
+				"file_path": fmt.Sprintf("src/generated/file_%04d.go", i%200),
 			},
 		}
 		encoded, err := json.Marshal(entry)

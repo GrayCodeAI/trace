@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -20,6 +21,17 @@ const (
 	gitCmdCommit = "commit"
 	gitCmdConfig = "config"
 )
+
+// runGitHubBootstrapWith runs the full bootstrap (init + finalize) in one
+// call, used by tests that don't need to assert phasing. The real caller
+// runs the two phases around agent setup.
+func runGitHubBootstrapWith(ctx context.Context, w, errW io.Writer, opts GitHubBootstrapOptions, runner bootstrapRunner) error {
+	state, err := runGitHubBootstrapInitWith(ctx, w, errW, opts, runner)
+	if err != nil {
+		return err
+	}
+	return runGitHubBootstrapFinalize(ctx, w, state)
+}
 
 func TestSlugifyRepoName(t *testing.T) {
 	t.Parallel()
@@ -384,7 +396,9 @@ func TestRunGitHubBootstrap_GhMissingFallsBackToLocal(t *testing.T) {
 	r.set("git", []string{"add", "-A"}, "", nil)
 	r.set("git", []string{"status", "--porcelain"}, "", nil)
 
-	opts := GitHubBootstrapOptions{InitRepo: true}
+	// A repo flag is an explicit GitHub request, so gh is probed; since it's
+	// missing we warn and fall back to local-only.
+	opts := GitHubBootstrapOptions{InitRepo: true, RepoName: "wanted"}
 	var errBuf bytes.Buffer
 	err := runGitHubBootstrapWith(context.Background(), io.Discard, &errBuf, opts, r)
 	if err != nil {
@@ -424,6 +438,7 @@ func TestRunGitHubBootstrap_FullNonInteractive(t *testing.T) {
 		RepoName:             "my-new",
 		RepoVisibility:       "private",
 		InitialCommitMessage: "Seed",
+		Push:                 true,
 	}
 	err := runGitHubBootstrapWith(context.Background(), io.Discard, io.Discard, opts, r)
 	if err != nil {
@@ -506,7 +521,7 @@ func TestResolveCommitMessage_NonInteractiveDefault(t *testing.T) {
 	if !commit {
 		t.Fatal("commit should default to true non-interactively")
 	}
-	if msg != "Initial commit" {
+	if msg != defaultInitialCommitMessage {
 		t.Fatalf("message = %q, want Initial commit", msg)
 	}
 }
@@ -587,30 +602,79 @@ func TestGhFlagsProvided(t *testing.T) {
 	}
 }
 
-// TestRunGitHubBootstrap_NonInteractive_NoFlagsDefaultsToGitHub confirms the
-// non-interactive happy path still creates a GitHub repo when the user
-// didn't set any explicit flag (the confirm prompt is only interactive).
-func TestRunGitHubBootstrap_NonInteractive_NoFlagsDefaultsToGitHub(t *testing.T) {
+// TestRunGitHubBootstrap_NonInteractive_NoFlagsStaysLocal confirms that a
+// non-interactive bootstrap with no explicit GitHub signal stays local-only:
+// it does not probe gh, create a repo, or push. Creating and pushing are
+// explicit opt-ins (--repo-*, --push, --yes, or an interactive "yes").
+func TestRunGitHubBootstrap_NonInteractive_NoFlagsStaysLocal(t *testing.T) {
 	dir := t.TempDir()
 	restoreCwd(t, dir)
 
 	r := newFakeRunner()
 	r.setIdentityConfigured()
-	r.set("gh", []string{"--version"}, "gh", nil)
-	r.set("gh", []string{"auth", "status"}, "ok", nil)
-	r.set("gh", []string{"api", "user", "--jq", ".login"}, "octocat\n", nil)
-	r.set("gh", []string{"api", "user/orgs", "--jq", ".[].login"}, "", nil)
-	// Default folder slug derived from t.TempDir().
-	suggested := slugifyRepoName(filepath.Base(dir))
-	r.set("gh", []string{"repo", "view", "octocat/" + suggested, "--json", "name"}, "", errors.New("not found"))
 	r.set("git", []string{"init"}, "", nil)
 
 	state, err := runGitHubBootstrapInitWith(context.Background(), io.Discard, io.Discard, GitHubBootstrapOptions{InitRepo: true}, r)
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
-	if !state.useGitHub {
-		t.Fatal("non-interactive bootstrap should default to using GitHub")
+	if state.useGitHub {
+		t.Fatal("non-interactive bootstrap with no explicit signal must stay local-only")
+	}
+	if state.push {
+		t.Fatal("push must be false when staying local-only")
+	}
+	// gh must never be probed when no GitHub repo was requested.
+	if r.hasCall(func(c fakeCall) bool { return c.name == "gh" }) {
+		t.Fatal("must not invoke gh when no GitHub repo was requested")
+	}
+}
+
+// TestRunGitHubBootstrap_RepoFlagsCreateButDoNotPush confirms that repo flags
+// opt into creating the GitHub repo but NOT into pushing. Non-interactively,
+// the repo is created and origin configured, but nothing is pushed unless
+// --push or --yes is also given; the user is told how to publish manually.
+func TestRunGitHubBootstrap_RepoFlagsCreateButDoNotPush(t *testing.T) {
+	dir := t.TempDir()
+	restoreCwd(t, dir)
+
+	r := newFakeRunner()
+	r.setIdentityConfigured()
+	r.set("gh", []string{"--version"}, "gh 2.81.0", nil)
+	r.set("gh", []string{"auth", "status"}, "Logged in", nil)
+	r.set("gh", []string{"api", "user", "--jq", ".login"}, "octocat\n", nil)
+	r.set("gh", []string{"api", "user/orgs", "--jq", ".[].login"}, "", nil)
+	r.set("gh", []string{"repo", "view", "octocat/create-only", "--json", "name"}, "", errors.New("not found"))
+	r.set("git", []string{"init"}, "", nil)
+	r.set("git", []string{"add", "-A"}, "", nil)
+	r.set("git", []string{"status", "--porcelain"}, " M f\n", nil)
+	r.set("git", []string{"-c", "commit.gpgsign=false", "commit", "-m", "Seed"}, "", nil)
+	r.set("gh", []string{
+		"repo", "create", "octocat/create-only",
+		"--private",
+		"--source=.",
+		"--remote=origin",
+	}, "", nil)
+
+	opts := GitHubBootstrapOptions{
+		InitRepo:             true,
+		RepoName:             "create-only",
+		RepoVisibility:       "private",
+		InitialCommitMessage: "Seed",
+	}
+	var out bytes.Buffer
+	if err := runGitHubBootstrapWith(context.Background(), &out, io.Discard, opts, r); err != nil {
+		t.Fatalf("bootstrap failed: %v", err)
+	}
+
+	if !r.hasCall(argsMatch("gh", []string{"repo", "create"})) {
+		t.Fatal("expected gh repo create when repo flags are given")
+	}
+	if r.hasCall(argsMatch("git", []string{"push"})) {
+		t.Fatal("must not push without --push or --yes")
+	}
+	if !strings.Contains(out.String(), "Skipped push") {
+		t.Fatalf("expected 'Skipped push' guidance, got: %s", out.String())
 	}
 }
 
@@ -632,7 +696,7 @@ func TestRunGitHubBootstrap_InitBeforeFinalize(t *testing.T) {
 	r.set("gh", []string{"repo", "view", "octocat/phased", "--json", "name"}, "", errors.New("not found"))
 	r.set("git", []string{"init"}, "", nil)
 	r.set("git", []string{"add", "-A"}, "", nil)
-	r.set("git", []string{"status", "--porcelain"}, " A .trace/settings.json\n", nil)
+	r.set("git", []string{"status", "--porcelain"}, " A .entire/settings.json\n", nil)
 	r.set("git", []string{"-c", "commit.gpgsign=false", "commit", "-m", "First"}, "", nil)
 	r.set("gh", []string{
 		"repo", "create", "octocat/phased",
@@ -647,6 +711,7 @@ func TestRunGitHubBootstrap_InitBeforeFinalize(t *testing.T) {
 		RepoName:             "phased",
 		RepoVisibility:       "private",
 		InitialCommitMessage: "First",
+		Push:                 true,
 	}
 
 	// Phase 1: init. This must NOT call git add/commit/ gh repo create.
@@ -809,5 +874,658 @@ func TestEnsureGitIdentity_PreservesExistingEmail(t *testing.T) {
 		return c.name == cmdGit && len(c.args) >= 2 && c.args[0] == gitCmdConfig && c.args[1] == "user.email"
 	}) {
 		t.Fatal("ensureGitIdentity should not write user.email when it's already set globally")
+	}
+}
+
+func TestEnsureGitIdentity_NonInteractiveNoGh_Errors(t *testing.T) {
+	r := newFakeRunner()
+	r.set("git", []string{"config", "--get", "user.name"}, "", errors.New("not set"))
+	r.set("git", []string{"config", "--get", "user.email"}, "", errors.New("not set"))
+	r.set("gh", []string{"--version"}, "", errors.New("not found"))
+
+	err := ensureGitIdentity(context.Background(), io.Discard, io.Discard, r, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error when identity missing and gh unavailable")
+	}
+	if !strings.Contains(err.Error(), "git config --global user.name") {
+		t.Fatalf("expected guidance to set git config, got %v", err)
+	}
+}
+
+func TestGhUserIdentity_NameFallsBackToLogin(t *testing.T) {
+	t.Parallel()
+	r := newFakeRunner()
+	r.set("gh", []string{"api", "user"}, `{"id":7,"login":"dev","name":"","email":"dev@example.com"}`, nil)
+	name, email, err := ghUserIdentity(context.Background(), r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "dev" {
+		t.Fatalf("name = %q", name)
+	}
+	if email != "dev@example.com" {
+		t.Fatalf("email = %q", email)
+	}
+}
+
+// TestBootstrap_FreshMachine_RealGit is an integration-style test that runs
+// real git via execRunner on a temp dir isolated from the user's global git
+// config. Regression guard for the issue where bootstrap commits failed
+// without a configured identity or because of commit.gpgsign=true.
+func TestBootstrap_FreshMachine_RealGit(t *testing.T) {
+	// Isolate from any global git config: point HOME + GIT_CONFIG_* at
+	// empty/missing locations, and force a broken GPG signing config that
+	// would fail any commit if we did not pass -c commit.gpgsign=false.
+	emptyHome := t.TempDir()
+	t.Setenv("HOME", emptyHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	// A global config that demands signing with a non-existent program. If
+	// our bootstrap did not override gpgsign for its commit, git would
+	// error out here.
+	globalCfg := filepath.Join(emptyHome, ".gitconfig")
+	globalContent := "[user]\n\tname = Fresh User\n\temail = fresh@example.com\n[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = /does/not/exist\n"
+	if err := writeTempFile(globalCfg, globalContent); err != nil {
+		t.Fatalf("write global gitconfig: %v", err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalCfg)
+	// Ensure no system config interferes.
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+
+	projectDir := t.TempDir()
+	restoreCwd(t, projectDir)
+	// Create a file to commit.
+	if err := writeTempFile(filepath.Join(projectDir, "README.md"), "hello\n"); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	opts := GitHubBootstrapOptions{
+		InitRepo:             true,
+		NoGitHub:             true,
+		InitialCommitMessage: "Initial",
+	}
+	err := runGitHubBootstrapWith(context.Background(), io.Discard, io.Discard, opts, execRunner{})
+	if err != nil {
+		t.Fatalf("bootstrap failed: %v", err)
+	}
+
+	// Verify a commit actually landed on HEAD.
+	out, err := execRunner{}.RunInDir(context.Background(), projectDir, "git", "log", "--oneline")
+	if err != nil {
+		t.Fatalf("git log failed: %v", err)
+	}
+	if !strings.Contains(out, "Initial") {
+		t.Fatalf("expected 'Initial' commit in log, got: %q", out)
+	}
+}
+
+func writeTempFile(path, content string) error {
+	return os.WriteFile(path, []byte(content), 0o600)
+}
+
+// ghFailingRunner wraps another bootstrapRunner and forces all `gh`
+// invocations to fail, while letting real `git` calls through. This
+// lets tests deterministically exercise the "gh unavailable" path
+// regardless of whether `gh` is installed/authenticated on the host.
+type ghFailingRunner struct {
+	inner bootstrapRunner
+}
+
+func (r ghFailingRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if name == "gh" {
+		return "", errors.New("gh not available (test)")
+	}
+	return r.inner.Run(ctx, name, args...)
+}
+
+func (r ghFailingRunner) RunInDir(ctx context.Context, dir, name string, args ...string) (string, error) {
+	if name == "gh" {
+		return "", errors.New("gh not available (test)")
+	}
+	return r.inner.RunInDir(ctx, dir, name, args...)
+}
+
+// TestBootstrap_FreshMachine_NoIdentity_RealGit verifies that a fresh
+// machine without any git identity configured fails cleanly in
+// non-interactive mode with a helpful error message, instead of letting
+// `git commit` fail with a confusing "please tell me who you are" stderr.
+//
+// Uses a gh-failing runner wrapper rather than PATH manipulation so the
+// test isn't sensitive to whether `gh` + GH_TOKEN/GITHUB_TOKEN are set
+// on the host.
+func TestBootstrap_FreshMachine_NoIdentity_RealGit(t *testing.T) {
+	emptyHome := t.TempDir()
+	t.Setenv("HOME", emptyHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	// Empty global config: no user.name/user.email.
+	globalCfg := filepath.Join(emptyHome, ".gitconfig")
+	if err := writeTempFile(globalCfg, ""); err != nil {
+		t.Fatalf("write global gitconfig: %v", err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalCfg)
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+	// Belt-and-suspenders: unset any GitHub tokens so a wrapper bypass
+	// would still not find credentials.
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	projectDir := t.TempDir()
+	restoreCwd(t, projectDir)
+	if err := writeTempFile(filepath.Join(projectDir, "README.md"), "hi\n"); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	opts := GitHubBootstrapOptions{
+		InitRepo:             true,
+		NoGitHub:             true,
+		InitialCommitMessage: "x",
+	}
+	runner := ghFailingRunner{inner: execRunner{}}
+	err := runGitHubBootstrapWith(context.Background(), io.Discard, io.Discard, opts, runner)
+	if err == nil {
+		t.Fatal("expected error when identity missing and gh unavailable")
+	}
+	if !strings.Contains(err.Error(), "git config --global user.name") {
+		t.Fatalf("expected guidance to set git config, got: %v", err)
+	}
+}
+
+// TestErrSentinels_DistinctPrePostInit documents the contract that the two
+// error sentinels signal: errBootstrapDeclined before `git init`,
+// errBootstrapInterrupted after. setup.go relies on this to show the
+// right user-facing message.
+func TestErrSentinels_DistinctPrePostInit(t *testing.T) {
+	t.Parallel()
+	if errors.Is(errBootstrapDeclined, errBootstrapInterrupted) {
+		t.Fatal("errBootstrapDeclined and errBootstrapInterrupted must not match as the same sentinel")
+	}
+}
+
+func TestEnableCmd_PushNoGitHubMutuallyExclusive(t *testing.T) {
+	setupTestRepo(t)
+
+	cmd := newEnableCmd()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--push", "--no-github"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --push and --no-github are set")
+	}
+	if !strings.Contains(err.Error(), "push") || !strings.Contains(err.Error(), "no-github") {
+		t.Fatalf("expected error to mention both flags, got: %v", err)
+	}
+}
+
+func TestEnableCmd_InitCommitMessageFlagsMutuallyExclusive(t *testing.T) {
+	setupTestRepo(t)
+
+	cmd := newEnableCmd()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--initial-commit-message", "foo", "--skip-initial-commit"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --initial-commit-message and --skip-initial-commit are set")
+	}
+	if !strings.Contains(err.Error(), "initial-commit-message") || !strings.Contains(err.Error(), "skip-initial-commit") {
+		t.Fatalf("expected error to mention both flags, got: %v", err)
+	}
+}
+
+func TestEnableCmd_InitRepoFlagsMutuallyExclusive(t *testing.T) {
+	setupTestRepo(t)
+
+	cmd := newEnableCmd()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--init-repo", "--no-init-repo"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --init-repo and --no-init-repo are set")
+	}
+	if !strings.Contains(err.Error(), "init-repo") || !strings.Contains(err.Error(), "no-init-repo") {
+		t.Fatalf("expected error to mention both flags, got: %v", err)
+	}
+}
+
+// withInteractivePromptStdin forces interactive, accessible (text-based)
+// prompt mode and feeds input to os.Stdin for the duration of the test, so a
+// huh prompt reads a scripted answer instead of opening /dev/tty or blocking
+// on a real terminal. ENTIRE_TEST_TTY makes CanPromptInteractively report
+// true; ACCESSIBLE makes the form read os.Stdin rather than dial the terminal.
+func withInteractivePromptStdin(t *testing.T, input string) {
+	t.Helper()
+	t.Setenv("ENTIRE_TEST_TTY", "1")
+	t.Setenv("ACCESSIBLE", "1")
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pr.Close() })
+	go func() {
+		pw.WriteString(input) //nolint:errcheck // test helper
+		pw.Close()
+	}()
+	old := os.Stdin
+	os.Stdin = pr
+	t.Cleanup(func() { os.Stdin = old })
+}
+
+// TestConfirmInitRepo_DefaultsToNo verifies that pressing Enter (empty
+// input) at the init-repo prompt declines. `entire enable` is often run
+// reflexively, so a stray run in a non-repo directory must not initialize
+// a repo on the user's behalf. Regression guard for issue #1717.
+func TestConfirmInitRepo_DefaultsToNo(t *testing.T) {
+	withInteractivePromptStdin(t, "\n")
+
+	proceed, err := confirmInitRepo(io.Discard, t.TempDir(), GitHubBootstrapOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proceed {
+		t.Fatal("confirmInitRepo should default to No (decline) on empty input")
+	}
+}
+
+// TestConfirmInitRepo_ExplicitYesProceeds verifies an explicit "y" still
+// opts in, so the safer default doesn't block intentional use.
+func TestConfirmInitRepo_ExplicitYesProceeds(t *testing.T) {
+	withInteractivePromptStdin(t, "y\n")
+
+	proceed, err := confirmInitRepo(io.Discard, t.TempDir(), GitHubBootstrapOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !proceed {
+		t.Fatal("confirmInitRepo should proceed when the user explicitly answers yes")
+	}
+}
+
+func TestPromptBootstrapSetupChoice_DefaultsToLocalInitialCommit(t *testing.T) {
+	withInteractivePromptStdin(t, "\n")
+
+	var out bytes.Buffer
+	choice, err := promptBootstrapSetupChoice(&out, "/tmp/example", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if choice != bootstrapSetupLocal {
+		t.Fatalf("choice = %q, want %q", choice, bootstrapSetupLocal)
+	}
+	if !strings.Contains(out.String(), "Set one up?") {
+		t.Fatalf("expected merged init+setup prompt, got: %s", out.String())
+	}
+	// The wrong-directory guard: the prompt must show where the repo would
+	// be created (issue #1717's concern, carried over from the confirm).
+	if !strings.Contains(out.String(), "/tmp/example") {
+		t.Fatalf("expected prompt to show the target directory, got: %s", out.String())
+	}
+}
+
+func TestPromptBootstrapSetupChoice_SelectsGitHubPreset(t *testing.T) {
+	withInteractivePromptStdin(t, "2\n")
+
+	choice, err := promptBootstrapSetupChoice(io.Discard, "/tmp/example", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if choice != bootstrapSetupGitHub {
+		t.Fatalf("choice = %q, want %q", choice, bootstrapSetupGitHub)
+	}
+}
+
+func TestPromptBootstrapSetupChoice_WithoutGitHubOffersCustomizeSecond(t *testing.T) {
+	withInteractivePromptStdin(t, "2\n")
+
+	choice, err := promptBootstrapSetupChoice(io.Discard, "/tmp/example", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if choice != bootstrapSetupCustom {
+		t.Fatalf("choice = %q, want %q", choice, bootstrapSetupCustom)
+	}
+}
+
+func TestPromptBootstrapSetupChoice_OffersDecline(t *testing.T) {
+	withInteractivePromptStdin(t, "4\n")
+
+	choice, err := promptBootstrapSetupChoice(io.Discard, "/tmp/example", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if choice != bootstrapSetupDecline {
+		t.Fatalf("choice = %q, want %q", choice, bootstrapSetupDecline)
+	}
+}
+
+func TestRunGitHubBootstrapInit_InteractiveLocalPresetUsesOneSetupAnswer(t *testing.T) {
+	dir := t.TempDir()
+	restoreCwd(t, dir)
+	withInteractivePromptStdin(t, "\n")
+
+	r := newFakeRunner()
+	r.setIdentityConfigured()
+	r.set("git", []string{"init"}, "", nil)
+	r.set("gh", []string{"--version"}, "gh 2.81.0", nil)
+	r.set("gh", []string{"auth", "status"}, "Logged in", nil)
+
+	var out bytes.Buffer
+	state, err := runGitHubBootstrapInitWith(
+		context.Background(), &out, io.Discard,
+		GitHubBootstrapOptions{}, r,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if state.useGitHub {
+		t.Fatal("local preset should not create a GitHub repository")
+	}
+	if !state.commit || state.message != defaultInitialCommitMessage {
+		t.Fatalf("local preset commit = %v, message = %q", state.commit, state.message)
+	}
+	if state.push {
+		t.Fatal("local preset should not push")
+	}
+	if !strings.Contains(out.String(), "Set one up?") {
+		t.Fatalf("expected merged init+setup prompt, got: %s", out.String())
+	}
+}
+
+func TestRunGitHubBootstrapInit_InteractiveGitHubPresetUsesOneSetupAnswer(t *testing.T) {
+	dir := t.TempDir()
+	restoreCwd(t, dir)
+	withInteractivePromptStdin(t, "2\n")
+
+	r := newFakeRunner()
+	r.setIdentityConfigured()
+	r.set("git", []string{"init"}, "", nil)
+	r.set("gh", []string{"--version"}, "gh 2.81.0", nil)
+	r.set("gh", []string{"auth", "status"}, "Logged in", nil)
+	r.set("gh", []string{"api", "user", "--jq", ".login"}, "octocat\n", nil)
+	r.set("gh", []string{"api", "user/orgs", "--jq", ".[].login"}, "", nil)
+	repoName := filepath.Base(dir)
+	r.set("gh", []string{"repo", "view", "octocat/" + repoName, "--json", "name"}, "", errors.New("not found"))
+
+	state, err := runGitHubBootstrapInitWith(
+		context.Background(), io.Discard, io.Discard,
+		GitHubBootstrapOptions{}, r,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !state.useGitHub || state.fullName != "octocat/"+repoName {
+		t.Fatalf("GitHub preset repository = %q, useGitHub = %v", state.fullName, state.useGitHub)
+	}
+	if state.visibility != visibilityPrivate {
+		t.Fatalf("visibility = %q, want %q", state.visibility, visibilityPrivate)
+	}
+	if !state.commit || state.message != defaultInitialCommitMessage {
+		t.Fatalf("GitHub preset commit = %v, message = %q", state.commit, state.message)
+	}
+	if !state.push {
+		t.Fatal("GitHub preset should push")
+	}
+}
+
+// TestRunGitHubBootstrapInit_InteractiveDeclineRunsNoGit verifies that
+// declining the merged prompt leaves the folder untouched: the select runs
+// before `git init`, so "No" must not create a repository.
+func TestRunGitHubBootstrapInit_InteractiveDeclineRunsNoGit(t *testing.T) {
+	dir := t.TempDir()
+	restoreCwd(t, dir)
+	// gh is not stubbed: ghAvailable reports false, so the option list is
+	// local(1) / customize(2) / No(3).
+	withInteractivePromptStdin(t, "3\n")
+
+	r := newFakeRunner()
+	_, err := runGitHubBootstrapInitWith(
+		context.Background(), io.Discard, io.Discard,
+		GitHubBootstrapOptions{}, r,
+	)
+	if !errors.Is(err, errBootstrapDeclined) {
+		t.Fatalf("err = %v, want errBootstrapDeclined", err)
+	}
+	if r.hasCall(argsMatch("git", []string{"init"})) {
+		t.Fatal("declining the merged prompt must not run git init")
+	}
+}
+
+// TestConfirmCreateGitHubRepo_DefaultsToNo verifies that pressing Enter at
+// the GitHub-repo prompt declines. Creating and pushing a remote repository
+// publishes the directory's contents, so it must never happen just because
+// the user pressed Enter. Regression guard for issue #1717.
+func TestConfirmCreateGitHubRepo_DefaultsToNo(t *testing.T) {
+	withInteractivePromptStdin(t, "\n")
+
+	confirmed, err := confirmCreateGitHubRepo(t.TempDir())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if confirmed {
+		t.Fatal("confirmCreateGitHubRepo should default to No on empty input")
+	}
+}
+
+// TestConfirmPushToRemote_DefaultsToNo verifies that pressing Enter at the
+// push prompt declines. Pushing publishes the directory's contents, so it
+// must never happen just because the user pressed Enter, even after they
+// opted into creating the repo. Regression guard for issue #1717.
+func TestConfirmPushToRemote_DefaultsToNo(t *testing.T) {
+	withInteractivePromptStdin(t, "\n")
+
+	confirmed, err := confirmPushToRemote("octocat/example")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if confirmed {
+		t.Fatal("confirmPushToRemote should default to No on empty input")
+	}
+}
+
+// TestRunGitHubBootstrapFinalize_HonorsPushFalse verifies that finalize
+// respects state.push == false: the GitHub repo is still created and origin
+// configured, but nothing is pushed and the user is told how to publish
+// manually. The push *decision* (default No on Enter) is covered separately
+// by TestConfirmPushToRemote_DefaultsToNo; this test covers finalize honoring
+// that decision.
+func TestRunGitHubBootstrapFinalize_HonorsPushFalse(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	r := newFakeRunner()
+	r.set("git", []string{"add", "-A"}, "", nil)
+	r.set("git", []string{"status", "--porcelain"}, " M f\n", nil)
+	r.set("git", []string{"-c", "commit.gpgsign=false", "commit", "-m", "Seed"}, "", nil)
+	r.set("gh", []string{
+		"repo", "create", "octocat/no-push",
+		"--private",
+		"--source=.",
+		"--remote=origin",
+	}, "", nil)
+
+	s := &bootstrapState{
+		runner:     r,
+		cwd:        dir,
+		useGitHub:  true,
+		fullName:   "octocat/no-push",
+		visibility: "private",
+		commit:     true,
+		message:    "Seed",
+		push:       false,
+	}
+
+	var out bytes.Buffer
+	if err := runGitHubBootstrapFinalize(context.Background(), &out, s); err != nil {
+		t.Fatalf("finalize failed: %v", err)
+	}
+
+	// The repo is still created (create guard was accepted)...
+	if !r.hasCall(argsMatch("gh", []string{"repo", "create"})) {
+		t.Fatal("expected gh repo create to run")
+	}
+	// ...but the push guard was declined, so nothing is pushed.
+	if r.hasCall(argsMatch("git", []string{"push"})) {
+		t.Fatal("git push must not run when the push guard was declined")
+	}
+	if !strings.Contains(out.String(), "Skipped push") {
+		t.Fatalf("expected 'Skipped push' guidance in output, got: %s", out.String())
+	}
+}
+
+// restoreCwd chdirs into dir for the duration of the test.
+func restoreCwd(t *testing.T, dir string) {
+	t.Helper()
+	// macOS resolves /tmp → /private/tmp; canonicalize for safety.
+	canon, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		canon = dir
+	}
+	t.Chdir(canon)
+}
+
+func TestRunGitHubBootstrap_YesAcceptsAllDefaults(t *testing.T) {
+	// --yes should init repo, create GitHub repo under user's account (private),
+	// and use default commit message — without any interactive prompts.
+	dir := t.TempDir()
+	restoreCwd(t, dir)
+
+	r := newFakeRunner()
+	r.setIdentityConfigured()
+	r.set("gh", []string{"--version"}, "gh 2.81.0", nil)
+	r.set("gh", []string{"auth", "status"}, "Logged in", nil)
+	r.set("gh", []string{"api", "user", "--jq", ".login"}, "myuser\n", nil)
+	r.set("gh", []string{"api", "user/orgs", "--jq", ".[].login"}, "myorg\n", nil)
+	r.set("git", []string{"init"}, "", nil)
+	r.set("git", []string{"add", "-A"}, "", nil)
+	r.set("git", []string{"status", "--porcelain"}, " M f\n", nil)
+	r.set("git", []string{"-c", "commit.gpgsign=false", "commit", "-m", defaultInitialCommitMessage}, "", nil)
+
+	// Expect repo created under the user's account (not org), private
+	repoName := filepath.Base(dir)
+	fullName := "myuser/" + repoName
+	r.set("gh", []string{
+		"repo", "create", fullName,
+		"--private",
+		"--source=.",
+		"--remote=origin",
+	}, "", nil)
+	r.set("git", []string{"push", "-q", "--no-verify", "-u", "origin", "HEAD"}, "", nil)
+
+	opts := GitHubBootstrapOptions{Yes: true}
+	var stdout bytes.Buffer
+	err := runGitHubBootstrapWith(context.Background(), &stdout, io.Discard, opts, r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have used user's account, not org
+	output := stdout.String()
+	if !strings.Contains(output, "Using GitHub owner: myuser") {
+		t.Errorf("expected owner to be user's account, got: %s", output)
+	}
+	// Should have committed with default message
+	if !r.hasCall(argsMatch("git", []string{"-c", "commit.gpgsign=false", "commit", "-m", defaultInitialCommitMessage})) {
+		t.Error("expected commit with default 'Initial commit' message")
+	}
+	// Should have created the repo
+	if !r.hasCall(func(c fakeCall) bool {
+		return c.name == "gh" && len(c.args) > 3 && c.args[0] == ghSubcmdRepo && c.args[1] == ghActCreate
+	}) {
+		t.Error("expected gh repo create call")
+	}
+}
+
+func TestRunGitHubBootstrap_YesRepoExistsNoTTY_Fails(t *testing.T) {
+	// When --yes is set, the repo name is taken, and there's no TTY,
+	// we should get a clear error instead of a silent gh failure.
+	dir := t.TempDir()
+	restoreCwd(t, dir)
+
+	r := newFakeRunner()
+	r.setIdentityConfigured()
+	r.set("gh", []string{"--version"}, "gh 2.81.0", nil)
+	r.set("gh", []string{"auth", "status"}, "Logged in", nil)
+	r.set("gh", []string{"api", "user", "--jq", ".login"}, "myuser\n", nil)
+	r.set("gh", []string{"api", "user/orgs", "--jq", ".[].login"}, "", nil)
+	r.set("git", []string{"init"}, "", nil)
+
+	// The suggested repo name already exists.
+	repoName := filepath.Base(dir)
+	r.set("gh", []string{"repo", "view", "myuser/" + repoName, "--json", "name"}, `{"name":"`+repoName+`"}`, nil)
+
+	opts := GitHubBootstrapOptions{Yes: true}
+	err := runGitHubBootstrapWith(context.Background(), io.Discard, io.Discard, opts, r)
+	if err == nil {
+		t.Fatal("expected error when repo name exists and no TTY")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("expected 'already exists' in error, got: %v", err)
+	}
+}
+
+func TestResolveRepoName_YesRepoExistsWithTTY_FallsBackToPrompt(t *testing.T) {
+	// When --yes is set, the name is taken, and a TTY is available,
+	// resolveRepoName should print a conflict message and fall through
+	// to the interactive prompt. We verify the conflict message was
+	// printed (proving the fallback path was taken). Pipe a unique name so
+	// the form completes with it instead of blocking.
+	withInteractivePromptStdin(t, "unique-test-repo\n")
+
+	dir := t.TempDir()
+	restoreCwd(t, dir)
+
+	r := newFakeRunner()
+	repoName := filepath.Base(dir)
+	// The suggested name exists.
+	r.set("gh", []string{"repo", "view", "myuser/" + repoName, "--json", "name"}, `{"name":"`+repoName+`"}`, nil)
+	// The unique name typed at the prompt does not exist (fakeRunner returns
+	// an error for unknown calls, which ghRepoExists treats as "proceed").
+
+	var stdout bytes.Buffer
+	opts := GitHubBootstrapOptions{Yes: true}
+	name, err := resolveRepoName(context.Background(), &stdout, io.Discard, r, "myuser", dir, opts)
+
+	output := stdout.String()
+	if !strings.Contains(output, "already exists on GitHub") {
+		t.Errorf("expected conflict message in output, got: %s", output)
+	}
+	// The form should complete with the unique name (fakeRunner can't verify
+	// the name, so resolveRepoName proceeds with a warning).
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if name != "unique-test-repo" {
+		t.Errorf("expected name %q, got %q", "unique-test-repo", name)
+	}
+}
+
+func TestRunGitHubBootstrap_YesWithNoGitHub(t *testing.T) {
+	// --yes combined with --no-github should skip GitHub but still init + commit.
+	dir := t.TempDir()
+	restoreCwd(t, dir)
+
+	r := newFakeRunner()
+	r.setIdentityConfigured()
+	r.set("git", []string{"init"}, "", nil)
+	r.set("git", []string{"add", "-A"}, "", nil)
+	r.set("git", []string{"status", "--porcelain"}, " M f\n", nil)
+	r.set("git", []string{"-c", "commit.gpgsign=false", "commit", "-m", defaultInitialCommitMessage}, "", nil)
+
+	opts := GitHubBootstrapOptions{Yes: true, NoGitHub: true}
+	err := runGitHubBootstrapWith(context.Background(), io.Discard, io.Discard, opts, r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should NOT have called gh at all
+	if r.hasCall(func(c fakeCall) bool { return c.name == "gh" }) {
+		t.Error("expected no gh calls with --no-github")
+	}
+	// Should have committed
+	if !r.hasCall(argsMatch("git", []string{"-c", "commit.gpgsign=false", "commit", "-m", defaultInitialCommitMessage})) {
+		t.Error("expected commit with default message")
 	}
 }

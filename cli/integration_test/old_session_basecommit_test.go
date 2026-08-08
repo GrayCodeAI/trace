@@ -35,7 +35,7 @@ func TestOldIdleSession_BaseCommitNotUpdated(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/test-base-commit")
-	env.InitTrace()
+	env.InitEntire()
 
 	// ========================================
 	// Phase 1: Create first session (will become IDLE)
@@ -175,7 +175,7 @@ func TestOldEndedSession_BaseCommitNotUpdated(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/test-ended-base-commit")
-	env.InitTrace()
+	env.InitEntire()
 
 	// ========================================
 	// Phase 1: Create first session and END it

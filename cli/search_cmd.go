@@ -45,7 +45,7 @@ func newSearchCmd() *cobra.Command { //nolint:maintidx // command wiring is inhe
 		Long: `Search checkpoints, commits, and sessions using hybrid search (semantic + keyword),
 powered by the Entire search service.
 
-Requires authentication via 'trace login' (GitHub device flow).
+Requires authentication via 'entire login' (GitHub device flow).
 
 By default, results are scoped to the current repository. Use --all-repos to
 search across all accessible repos.

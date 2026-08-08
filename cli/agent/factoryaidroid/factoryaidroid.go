@@ -69,7 +69,6 @@ func (f *FactoryAIDroidAgent) DetectPresence(ctx context.Context) (bool, error) 
 
 // ReadTranscript reads the raw JSONL transcript bytes for a session.
 func (f *FactoryAIDroidAgent) ReadTranscript(sessionRef string) ([]byte, error) {
-	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read transcript: %w", err)
@@ -97,7 +96,7 @@ func (f *FactoryAIDroidAgent) GetSessionID(input *agent.HookInput) string { retu
 // GetSessionDir returns the directory where Factory AI Droid stores session transcripts.
 // Path: ~/.factory/sessions/<sanitized-repo-path>/
 func (f *FactoryAIDroidAgent) GetSessionDir(repoPath string) (string, error) {
-	if override := os.Getenv("TRACE_TEST_DROID_PROJECT_DIR"); override != "" {
+	if override := os.Getenv("ENTIRE_TEST_DROID_PROJECT_DIR"); override != "" {
 		return override, nil
 	}
 	homeDir, err := os.UserHomeDir()

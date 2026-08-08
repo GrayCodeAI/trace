@@ -126,7 +126,7 @@ func (s *ManualCommitStrategy) listAllSessionStates(ctx context.Context) ([]*Ses
 }
 
 // isWarnableStaleEndedSession reports whether an ENDED session is still both
-// expensive in PostCommit and actionable via 'trace doctor'.
+// expensive in PostCommit and actionable via 'entire doctor'.
 func isWarnableStaleEndedSession(repo *git.Repository, state *SessionState) bool {
 	if state.Phase != session.PhaseEnded || state.FullyCondensed || state.StepCount <= 0 {
 		return false
@@ -239,7 +239,7 @@ func (s *ManualCommitStrategy) findSessionsForWorktree(ctx context.Context, work
 // warnAmbiguousWorktreeSessions surfaces refused fallback matches: live
 // sessions exist in other worktrees of this repo, but they span multiple
 // worktrees so no automatic match is safe. Without this warning, commits made
-// here silently lose their Trace-Checkpoint linkage (#1852) with only a
+// here silently lose their Entire-Checkpoint linkage (#1852) with only a
 // DEBUG-level trace.
 func warnAmbiguousWorktreeSessions(ctx context.Context, worktreePath string, candidates []*SessionState) {
 	logCtx := logging.WithComponent(ctx, "checkpoint")

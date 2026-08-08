@@ -148,11 +148,6 @@ func signProgramFromRaw(signFormat programsigner.Format, raw *format.Config) str
 	return programName
 }
 
-// DefaultSSHSignProgram is the git-default SSH signing program, used to detect
-// whether gpg.ssh.program has been customized (custom programs such as
-// 1Password's op-ssh-sign use a signing mechanism go-git cannot invoke).
-const DefaultSSHSignProgram = "ssh-keygen"
-
 func defaultSignProgram(signFormat programsigner.Format) string {
 	switch signFormat {
 	case programsigner.FormatOpenPGP:

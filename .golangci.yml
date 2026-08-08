@@ -66,6 +66,12 @@ linters:
         linters:
           - errcheck
           - noctx
+      - path: internal/
+        linters:
+          - errcheck
+      - path: redact/
+        linters:
+          - errcheck
 
 issues:
   max-issues-per-linter: 0

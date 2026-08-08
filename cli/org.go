@@ -9,7 +9,7 @@ import (
 	"github.com/GrayCodeAI/trace/internal/coreapi"
 )
 
-// newOrgCmd is the `trace org` command group: create, list, get, and
+// newOrgCmd is the `entire org` command group: create, list, get, and
 // delete organizations on the Entire control plane.
 func newOrgCmd() *cobra.Command {
 	cmd := &cobra.Command{

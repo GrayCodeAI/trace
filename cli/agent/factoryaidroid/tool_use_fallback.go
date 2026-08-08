@@ -103,7 +103,7 @@ func newFallbackToolUseID() (string, error) {
 }
 
 func fallbackToolUseStatePath(ctx context.Context, sessionID string) (string, error) {
-	tmpDir, err := paths.AbsPath(ctx, paths.TraceTmpDir)
+	tmpDir, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve fallback tool_use_id tmp dir: %w", err)
 	}

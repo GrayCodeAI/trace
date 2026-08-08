@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ var (
 	_ agent.TokenCalculator             = (*CodexAgent)(nil)
 	_ agent.PromptExtractor             = (*CodexAgent)(nil)
 	_ agent.RestoredSessionPathResolver = (*CodexAgent)(nil)
+	_ agent.TranscriptSanitizer         = (*CodexAgent)(nil)
 )
 
 // rolloutLine is the top-level JSONL line structure in Codex rollout files.
@@ -73,9 +75,19 @@ type tokenUsageData struct {
 	TotalTokens           int `json:"total_tokens"`
 }
 
-// applyPatchFileRegex extracts file paths from apply_patch input.
-// Matches "*** Add File: <path>", "*** Update File: <path>", "*** Delete File: <path>"
-var applyPatchFileRegex = regexp.MustCompile(`\*\*\* (?:Add|Update|Delete) File: (.+)`)
+// Apply-patch envelope verbs Codex uses in tool_input.command — see
+// codex-rs/core/src/tools/handlers/apply_patch.rs. Capture group 1 is the
+// verb, group 2 is the path.
+const (
+	applyPatchVerbAdd    = "Add"
+	applyPatchVerbUpdate = "Update"
+	applyPatchVerbDelete = "Delete"
+)
+
+var (
+	applyPatchFileRegex = regexp.MustCompile(`\*\*\* (Add|Update|Delete) File: (.+)`)
+	applyPatchMoveRegex = regexp.MustCompile(`\*\*\* Move to: (.+)`)
+)
 
 // GetTranscriptPosition returns the current line count of a Codex rollout transcript.
 func (c *CodexAgent) GetTranscriptPosition(path string) (int, error) {
@@ -83,7 +95,6 @@ func (c *CodexAgent) GetTranscriptPosition(path string) (int, error) {
 		return 0, nil
 	}
 
-	// #nosec G304 -- path comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	file, err := os.Open(path) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -117,7 +128,6 @@ func (c *CodexAgent) ExtractModifiedFilesFromOffset(path string, startOffset int
 		return nil, 0, nil
 	}
 
-	// #nosec G304 -- path comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	file, openErr := os.Open(path) //nolint:gosec // Path comes from agent hook input
 	if openErr != nil {
 		return nil, 0, fmt.Errorf("failed to open transcript: %w", openErr)
@@ -178,22 +188,80 @@ func extractFilesFromLine(lineData []byte) []string {
 	return nil
 }
 
-// extractFilesFromApplyPatch parses apply_patch input for file paths.
-// Format: "*** Add File: <path>" or "*** Update File: <path>" or "*** Delete File: <path>"
+// extractFilesFromApplyPatch returns every file path in an apply_patch envelope,
+// across Add/Update/Delete entries, deduplicated.
 func extractFilesFromApplyPatch(input string) []string {
-	matches := applyPatchFileRegex.FindAllStringSubmatch(input, -1)
-	var files []string
-	seen := make(map[string]struct{})
-	for _, m := range matches {
-		path := strings.TrimSpace(m[1])
-		if path != "" {
-			if _, ok := seen[path]; !ok {
-				seen[path] = struct{}{}
-				files = append(files, path)
+	added, modified, deleted := classifyApplyPatchPaths(input)
+	total := len(added) + len(modified) + len(deleted)
+	if total == 0 {
+		return nil
+	}
+	files := make([]string, 0, total)
+	files = append(files, added...)
+	files = append(files, modified...)
+	files = append(files, deleted...)
+	return files
+}
+
+// classifyApplyPatchPaths splits an apply_patch envelope into added, modified,
+// and deleted file paths. The grammar (codex-rs/apply-patch/src/parser.rs)
+// supports renames via "*** Update File: old\n*** Move to: new", which we
+// reclassify as a Delete on the source path and an Add on the destination.
+// Add and Delete are sticky — subsequent Updates on the same path don't
+// downgrade them. Each bucket is sorted for deterministic output.
+func classifyApplyPatchPaths(input string) (added, modified, deleted []string) {
+	bucket := make(map[string]string)
+	var lastUpdate string
+	for _, line := range strings.Split(input, "\n") {
+		if m := applyPatchFileRegex.FindStringSubmatch(line); m != nil {
+			verb := m[1]
+			path := strings.TrimSpace(m[2])
+			if path == "" {
+				continue
 			}
+			if verb == applyPatchVerbUpdate {
+				lastUpdate = path
+			} else {
+				lastUpdate = ""
+			}
+			if existing, ok := bucket[path]; ok {
+				if existing == applyPatchVerbAdd || existing == applyPatchVerbDelete {
+					continue
+				}
+			}
+			bucket[path] = verb
+			continue
+		}
+		if m := applyPatchMoveRegex.FindStringSubmatch(line); m != nil {
+			target := strings.TrimSpace(m[1])
+			if target == "" {
+				continue
+			}
+			if lastUpdate != "" {
+				if existing, ok := bucket[lastUpdate]; !ok || (existing != applyPatchVerbAdd && existing != applyPatchVerbDelete) {
+					bucket[lastUpdate] = applyPatchVerbDelete
+				}
+			}
+			if existing, ok := bucket[target]; !ok || (existing != applyPatchVerbAdd && existing != applyPatchVerbDelete) {
+				bucket[target] = applyPatchVerbAdd
+			}
+			lastUpdate = ""
 		}
 	}
-	return files
+	for path, verb := range bucket {
+		switch verb {
+		case applyPatchVerbAdd:
+			added = append(added, path)
+		case applyPatchVerbUpdate:
+			modified = append(modified, path)
+		case applyPatchVerbDelete:
+			deleted = append(deleted, path)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(modified)
+	sort.Strings(deleted)
+	return added, modified, deleted
 }
 
 // CalculateTokenUsage computes token usage from the transcript starting at the given line offset.
@@ -264,7 +332,6 @@ func (c *CodexAgent) CalculateTokenUsage(transcriptData []byte, fromOffset int) 
 
 // ExtractPrompts returns user prompts from the transcript starting at the given offset.
 func (c *CodexAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]string, error) {
-	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -317,30 +384,74 @@ func (c *CodexAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]string
 }
 
 // SanitizePortableTranscript strips encrypted history fragments that cannot be
-// replayed when Trace reconstructs a Codex rollout outside its original
+// replayed when Entire reconstructs a Codex rollout outside its original
 // session context.
 func SanitizePortableTranscript(data []byte) []byte {
+	if !mayNeedSanitizing(data) {
+		return data
+	}
+
 	lines := splitJSONL(data)
 	if len(lines) == 0 {
 		return data
 	}
 
 	sanitized := make([][]byte, 0, len(lines))
+	changed := false
 	for _, lineData := range lines {
 		updated, keep := sanitizeRolloutLine(lineData)
 		if !keep {
+			changed = true
 			continue
+		}
+		if !bytes.Equal(updated, lineData) {
+			changed = true
 		}
 		sanitized = append(sanitized, updated)
 	}
 
+	// Nothing to strip: hand back the original bytes rather than paying the
+	// reassembly copy. Callers rely on this being cheap — sanitization is
+	// idempotent precisely so every storage path can call it without tracking
+	// whether an upstream path already did.
+	if !changed {
+		return data
+	}
 	if len(sanitized) == 0 {
 		return data
 	}
 	return agent.ReassembleJSONL(sanitized)
 }
 
-func sanitizeRestoredTranscript(data []byte) []byte {
+// sanitizeMarkers are the substrings that gate every transformation
+// sanitizeRolloutLine performs: dropping "compaction"/"compaction_summary" items,
+// rewriting "compacted" lines, and deleting "encrypted_content" from "reasoning"
+// items. A transcript containing none of them cannot be altered, so one scan lets
+// us skip unmarshalling every line.
+//
+// Deliberately over-broad ("compact" covers compacted/compaction/
+// compaction_summary): a false positive just falls through to the full pass, while
+// a false negative would silently skip sanitization.
+var sanitizeMarkers = [][]byte{
+	[]byte("encrypted_content"),
+	[]byte("compact"),
+	[]byte("reasoning"),
+}
+
+func mayNeedSanitizing(data []byte) bool {
+	for _, marker := range sanitizeMarkers {
+		if bytes.Contains(data, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// SanitizeTranscriptForStorage implements agent.TranscriptSanitizer. Codex rollouts
+// embed encrypted reasoning payloads and compaction blobs that are bound to the
+// originating session, so Entire strips them from its stored copy while leaving
+// Codex's own rollout file untouched.
+func (c *CodexAgent) SanitizeTranscriptForStorage(data []byte) []byte {
 	return SanitizePortableTranscript(data)
 }
 
@@ -366,10 +477,18 @@ func sanitizeRolloutLine(lineData []byte) ([]byte, bool) {
 		return lineData, true
 	}
 	switch itemType {
-	case "reasoning":
+	case "reasoning", "compaction", "compaction_summary":
+		// Strip the non-replayable payload but KEEP the line. Dropping these lines
+		// (as this used to) shortened the stored transcript relative to the agent's
+		// rollout, while CheckpointTranscriptStart is counted on the rollout — so
+		// every offset into a stored Codex transcript was off by the number of
+		// dropped lines before it. Stripping in place keeps the two line numberings
+		// identical, which is what the offset's five consumers assume.
+		//
+		// Nested compaction items inside a "compacted" line's replacement_history
+		// are still removed outright (see sanitizeHistoryItems): those are array
+		// elements within a single line, so removing them cannot shift line numbers.
 		delete(payload, "encrypted_content")
-	case "compaction", "compaction_summary":
-		return nil, false
 	default:
 		return lineData, true
 	}

@@ -30,8 +30,8 @@ import (
 
 // Config path display strings
 const (
-	configDisplayProject = ".trace/settings.json"
-	configDisplayLocal   = ".trace/settings.local.json"
+	configDisplayProject = ".entire/settings.json"
+	configDisplayLocal   = ".entire/settings.local.json"
 )
 
 // Flag names used across setup commands.
@@ -58,7 +58,7 @@ const (
 // underlying flag name or discovery mechanics.
 const externalAgentsAutoEnabledNotice = "Note: external agents are now enabled for the rest of Entire too — not just summaries."
 
-// EnableOptions holds the flags for `trace enable`.
+// EnableOptions holds the flags for `entire enable`.
 type EnableOptions struct {
 	LocalDev           bool
 	UseLocalSettings   bool
@@ -83,7 +83,7 @@ type EnableOptions struct {
 }
 
 // applyStrategyOptions sets strategy_options on settings from CLI flags.
-func (opts *EnableOptions) applyStrategyOptions(settings *TraceSettings) {
+func (opts *EnableOptions) applyStrategyOptions(settings *EntireSettings) {
 	if opts.SkipPushSessions {
 		if settings.StrategyOptions == nil {
 			settings.StrategyOptions = make(map[string]interface{})
@@ -137,7 +137,7 @@ func hasConfigureSettingsFlags(cmd *cobra.Command) bool {
 	return hasStrategyFlags(cmd) || hasCheckpointBackendFlag(cmd) || hasSummaryProviderFlags(cmd) || hasSummaryTimeoutFlag(cmd) || hasGlobalSettingsFlags(cmd)
 }
 
-// enableUsesSetupFlow reports whether `trace enable` should delegate to the
+// enableUsesSetupFlow reports whether `entire enable` should delegate to the
 // setup/configure flow instead of the lightweight re-enable path.
 // Bare `enable` and `enable --local/--project` remain state-toggle operations;
 // any other setup-mutating flag should share configure's behavior.
@@ -176,12 +176,12 @@ func updateStrategyOptions(ctx context.Context, w io.Writer, opts EnableOptions)
 
 	opts.applyStrategyOptions(s)
 
-	if targetFile == settings.TraceSettingsLocalFile {
-		if err := SaveTraceSettingsLocal(ctx, s); err != nil {
+	if targetFile == settings.EntireSettingsLocalFile {
+		if err := SaveEntireSettingsLocal(ctx, s); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	} else {
-		if err := SaveTraceSettings(ctx, s); err != nil {
+		if err := SaveEntireSettings(ctx, s); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	}
@@ -237,12 +237,12 @@ func updateSummaryGenerationSettings(ctx context.Context, w io.Writer, provider,
 
 	s.SummaryGeneration.SetProvider(provider, model)
 
-	if targetFile == settings.TraceSettingsLocalFile {
-		if err := SaveTraceSettingsLocal(ctx, s); err != nil {
+	if targetFile == settings.EntireSettingsLocalFile {
+		if err := SaveEntireSettingsLocal(ctx, s); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	} else {
-		if err := SaveTraceSettings(ctx, s); err != nil {
+		if err := SaveEntireSettings(ctx, s); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	}
@@ -272,12 +272,12 @@ func updateSummaryTimeoutSetting(ctx context.Context, w io.Writer, timeoutSecond
 
 	s.SummaryTimeoutSeconds = timeoutSeconds
 
-	if targetFile == settings.TraceSettingsLocalFile {
-		if err := SaveTraceSettingsLocal(ctx, s); err != nil {
+	if targetFile == settings.EntireSettingsLocalFile {
+		if err := SaveEntireSettingsLocal(ctx, s); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	} else {
-		if err := SaveTraceSettings(ctx, s); err != nil {
+		if err := SaveEntireSettings(ctx, s); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	}
@@ -331,37 +331,37 @@ func updateGlobalSettings(ctx context.Context, cmd *cobra.Command, w io.Writer, 
 // local-only repos by checking for settings.local.json when settings.json is absent.
 func settingsTargetFile(ctx context.Context, useLocal, useProject bool) (string, string) {
 	if useLocal {
-		return settings.TraceSettingsLocalFile, configDisplayLocal
+		return settings.EntireSettingsLocalFile, configDisplayLocal
 	}
 	if useProject {
-		return settings.TraceSettingsFile, configDisplayProject
+		return settings.EntireSettingsFile, configDisplayProject
 	}
 
 	// No explicit flag — write to whichever file exists.
 	// Check project file first, then local.
-	projectAbs, err := paths.AbsPath(ctx, settings.TraceSettingsFile)
+	projectAbs, err := paths.AbsPath(ctx, settings.EntireSettingsFile)
 	if err == nil {
 		if _, statErr := os.Lstat(projectAbs); statErr == nil {
-			return settings.TraceSettingsFile, configDisplayProject
+			return settings.EntireSettingsFile, configDisplayProject
 		}
 	}
-	localAbs, err := paths.AbsPath(ctx, settings.TraceSettingsLocalFile)
+	localAbs, err := paths.AbsPath(ctx, settings.EntireSettingsLocalFile)
 	if err == nil {
 		if _, statErr := os.Lstat(localAbs); statErr == nil {
-			return settings.TraceSettingsLocalFile, configDisplayLocal
+			return settings.EntireSettingsLocalFile, configDisplayLocal
 		}
 	}
 
 	// Neither exists — default to project
-	return settings.TraceSettingsFile, configDisplayProject
+	return settings.EntireSettingsFile, configDisplayProject
 }
 
-func saveSettingsToTarget(ctx context.Context, s *TraceSettings, targetFile string) error {
+func saveSettingsToTarget(ctx context.Context, s *EntireSettings, targetFile string) error {
 	switch targetFile {
-	case settings.TraceSettingsLocalFile:
-		return SaveTraceSettingsLocal(ctx, s)
-	case settings.TraceSettingsFile:
-		return SaveTraceSettings(ctx, s)
+	case settings.EntireSettingsLocalFile:
+		return SaveEntireSettingsLocal(ctx, s)
+	case settings.EntireSettingsFile:
+		return SaveEntireSettings(ctx, s)
 	default:
 		return fmt.Errorf("unknown settings target %q", targetFile)
 	}
@@ -394,7 +394,7 @@ func parseCheckpointRemoteFlag(value string) (provider, repo string, err error) 
 }
 
 // runSetupFlow runs the first-time setup flow (agent selection + hooks + settings).
-// Shared by root command (no args), `trace configure`, and `trace enable` on fresh repos.
+// Shared by root command (no args), `entire configure`, and `entire enable` on fresh repos.
 func runSetupFlow(ctx context.Context, w io.Writer, opts EnableOptions) error {
 	// Discover external agent plugins so they appear in agent selection.
 	// Use DiscoverAndRegisterAlways to bypass the external_agents setting —
@@ -486,7 +486,7 @@ func runManageAgents(ctx context.Context, w io.Writer, opts EnableOptions, selec
 			return NewSilentError(errors.New("skill install requires an agent in non-interactive mode"))
 		}
 		fmt.Fprintln(w, "Cannot show agent selection in non-interactive mode.")
-		fmt.Fprintln(w, "Use: trace agent add <name>")
+		fmt.Fprintln(w, "Use: entire agent add <name>")
 		return nil
 	}
 
@@ -543,7 +543,7 @@ func runManageAgents(ctx context.Context, w io.Writer, opts EnableOptions, selec
 
 	err := applyAgentChanges(ctx, w, selectedAgentNames, installedNames, opts)
 	if err == nil && len(selectedAgentNames) == 0 {
-		fmt.Fprintln(w, "To add agents again, run: trace agent add <name>")
+		fmt.Fprintln(w, "To add agents again, run: entire agent add <name>")
 	}
 	return err
 }
@@ -648,17 +648,17 @@ func applyAgentChanges(ctx context.Context, w io.Writer, selectedAgentNames []st
 	// Auto-enable external_agents setting if any new agent is external.
 	for _, ag := range append(successfullyAddedAgents, successfullyReinstalledAgents...) {
 		if external.IsExternal(ag) {
-			s, loadErr := LoadTraceSettings(ctx)
+			s, loadErr := LoadEntireSettings(ctx)
 			if loadErr != nil {
-				s = &TraceSettings{}
+				s = &EntireSettings{}
 			}
 			if !s.ExternalAgents {
 				s.ExternalAgents = true
 				var saveErr error
 				if opts.UseLocalSettings {
-					saveErr = SaveTraceSettingsLocal(ctx, s)
+					saveErr = SaveEntireSettingsLocal(ctx, s)
 				} else {
-					saveErr = SaveTraceSettings(ctx, s)
+					saveErr = SaveEntireSettings(ctx, s)
 				}
 				if saveErr != nil {
 					errs = append(errs, fmt.Errorf("failed to save external_agents setting: %w", saveErr))
@@ -715,23 +715,23 @@ func newSetupCmd() *cobra.Command {
 		Long: `Update non-agent Entire settings in the current repository.
 
 Manages telemetry, git-hook installation mode, strategy options, and summary
-provider configuration. Agent installation is handled by 'trace agent'.
+provider configuration. Agent installation is handled by 'entire agent'.
 
 Examples:
-  trace configure                                # Show this help
-  trace configure --telemetry=false              # Opt out of telemetry
-  trace configure --absolute-git-hook-path       # Reinstall git hook with absolute path
-  trace configure --force                        # Reinstall git hook
-  trace configure --checkpoint-remote github:org/checkpoints
-  trace configure --checkpoint-backend refs      # Store each checkpoint as its own git ref
-  trace configure --summarize-provider claude-code
-  trace configure --summarize-timeout-seconds 300   # 5m deadline for explain --generate`,
+  entire configure                                # Show this help
+  entire configure --telemetry=false              # Opt out of telemetry
+  entire configure --absolute-git-hook-path       # Reinstall git hook with absolute path
+  entire configure --force                        # Reinstall git hook
+  entire configure --checkpoint-remote github:org/checkpoints
+  entire configure --checkpoint-backend refs      # Store each checkpoint as its own git ref
+  entire configure --summarize-provider claude-code
+  entire configure --summarize-timeout-seconds 300   # 5m deadline for explain --generate`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
 			if _, err := paths.WorktreeRoot(ctx); err != nil {
 				cmd.SilenceUsage = true
-				fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Please run 'trace configure' from within a git repository.")
+				fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Please run 'entire configure' from within a git repository.")
 				return NewSilentError(errors.New("not a git repository"))
 			}
 
@@ -739,14 +739,14 @@ Examples:
 				if err := cmd.Help(); err != nil {
 					return fmt.Errorf("failed to render help: %w", err)
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "\nFor agent setup, use 'trace agent' (e.g. 'trace agent add claude-code').")
+				fmt.Fprintln(cmd.OutOrStdout(), "\nFor agent setup, use 'entire agent' (e.g. 'entire agent add claude-code').")
 				return nil
 			}
 
 			if !settings.IsSetUpAny(ctx) {
 				cmd.SilenceUsage = true
-				fmt.Fprintln(cmd.ErrOrStderr(), "Trace is not configured in this repository yet. Run 'trace enable' first.")
-				return NewSilentError(errors.New("trace not configured"))
+				fmt.Fprintln(cmd.ErrOrStderr(), "Entire is not configured in this repository yet. Run 'entire enable' first.")
+				return NewSilentError(errors.New("entire not configured"))
 			}
 
 			if hasStrategyFlags(cmd) {
@@ -780,12 +780,12 @@ Examples:
 
 	cmd.Flags().BoolVar(&opts.LocalDev, flagLocalDev, false, "Use go run instead of entire binary for hooks")
 	cmd.Flags().MarkHidden(flagLocalDev) //nolint:errcheck,gosec // flag is defined above
-	cmd.Flags().BoolVar(&opts.UseLocalSettings, "local", false, "Write settings to .trace/settings.local.json instead of .trace/settings.json")
-	cmd.Flags().BoolVar(&opts.UseProjectSettings, "project", false, "Write settings to .trace/settings.json even if it already exists")
+	cmd.Flags().BoolVar(&opts.UseLocalSettings, "local", false, "Write settings to .entire/settings.local.json instead of .entire/settings.json")
+	cmd.Flags().BoolVar(&opts.UseProjectSettings, "project", false, "Write settings to .entire/settings.json even if it already exists")
 	cmd.Flags().BoolVarP(&opts.ForceHooks, flagForce, "f", false, "Reinstall the Entire git hook")
 	cmd.Flags().BoolVar(&opts.SkipPushSessions, flagSkipPushSessions, false, "Disable automatic pushing of session logs on git push")
 	cmd.Flags().StringVar(&opts.CheckpointRemote, flagCheckpointRemote, "", "Checkpoint remote in provider:owner/repo format (e.g., github:org/checkpoints-repo)")
-	cmd.Flags().StringVar(&opts.CheckpointBackend, flagCheckpointBackend, "", "Checkpoint storage backend: refs (one git ref per checkpoint; recommended) or branch (shared trace/checkpoints/v1 branch)")
+	cmd.Flags().StringVar(&opts.CheckpointBackend, flagCheckpointBackend, "", "Checkpoint storage backend: refs (one git ref per checkpoint; recommended) or branch (shared entire/checkpoints/v1 branch)")
 	cmd.Flags().StringVar(&summarizeProvider, flagSummarizeAgent, "", "Set the provider used by explain --generate (e.g., claude-code, codex, gemini, pi, cursor, copilot-cli)")
 	cmd.Flags().StringVar(&summarizeModel, flagSummarizeModel, "", "Set the model hint used by explain --generate")
 	cmd.Flags().IntVar(&summarizeTimeoutSeconds, flagSummarizeTimeout, 0, "Set the hard deadline (seconds) for explain --generate summary generation. 0 clears (falls back to 5m default).")
@@ -807,8 +807,8 @@ func newEnableCmd() *cobra.Command {
 		Short: "Enable Entire in current repository",
 		Long: `Enable Entire with session tracking for your AI agent workflows.
 
-If Trace is not yet configured, this runs the full configuration flow.
-If Trace is already configured but disabled, this re-enables it.
+If Entire is not yet configured, this runs the full configuration flow.
+If Entire is already configured but disabled, this re-enables it.
 
 If the current directory is not a git repository, Entire can initialize one
 for you and (optionally) create a matching GitHub repository via the gh CLI.`,
@@ -842,18 +842,18 @@ for you and (optionally) create a matching GitHub repository via the gh CLI.`,
 			// The bootstrap runs in two phases: phase 1 (git init + identity
 			// + gather GitHub choices) before agent setup, phase 2
 			// (initial commit + gh repo create + push) after agent setup so
-			// the initial commit captures the .trace/, .claude/, hooks, and
+			// the initial commit captures the .entire/, .claude/, hooks, and
 			// settings files that setup writes.
 			var bootstrap *bootstrapState
 			if _, err := paths.WorktreeRoot(ctx); err != nil {
 				bootstrapOpts.Yes = opts.Yes
 				state, bootstrapErr := runGitHubBootstrapInit(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), bootstrapOpts)
 				if errors.Is(bootstrapErr, errBootstrapDeclined) {
-					fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Please run 'trace enable' from within a git repository, or pass --init-repo to initialize one here.")
+					fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Please run 'entire enable' from within a git repository, or pass --init-repo to initialize one here.")
 					return NewSilentError(errors.New("not a git repository"))
 				}
 				if errors.Is(bootstrapErr, errBootstrapInterrupted) {
-					fmt.Fprintln(cmd.ErrOrStderr(), "Bootstrap cancelled. A local git repository has been initialized but setup didn't complete. Run `trace enable` again to continue.")
+					fmt.Fprintln(cmd.ErrOrStderr(), "Bootstrap cancelled. A local git repository has been initialized but setup didn't complete. Run `entire enable` again to continue.")
 					return NewSilentError(errors.New("bootstrap interrupted"))
 				}
 				if bootstrapErr != nil {
@@ -925,17 +925,17 @@ for you and (optionally) create a matching GitHub repository via the gh CLI.`,
 	cmd.Flags().MarkHidden(flagLocalDev) //nolint:errcheck,gosec // flag is defined above
 	cmd.Flags().BoolVar(&ignoreUntracked, "ignore-untracked", false, "Commit all new files without tracking pre-existing untracked files")
 	cmd.Flags().MarkHidden("ignore-untracked") //nolint:errcheck,gosec // flag is defined above
-	cmd.Flags().BoolVar(&opts.UseLocalSettings, "local", false, "Write settings to .trace/settings.local.json instead of .trace/settings.json")
-	cmd.Flags().BoolVar(&opts.UseProjectSettings, "project", false, "Write settings to .trace/settings.json even if it already exists")
+	cmd.Flags().BoolVar(&opts.UseLocalSettings, "local", false, "Write settings to .entire/settings.local.json instead of .entire/settings.json")
+	cmd.Flags().BoolVar(&opts.UseProjectSettings, "project", false, "Write settings to .entire/settings.json even if it already exists")
 	cmd.Flags().StringVar(&agentName, agentFlagName, "", "Agent to set up hooks for (e.g., "+strings.Join(agent.StringList(), ", ")+"; external agents on $PATH are also available). Enables non-interactive mode.")
 	cmd.Flags().BoolVarP(&opts.ForceHooks, flagForce, "f", false, "Force reinstall hooks (removes existing Entire hooks first)")
 	cmd.Flags().BoolVar(&opts.SkipPushSessions, flagSkipPushSessions, false, "Disable automatic pushing of session logs on git push")
 	cmd.Flags().StringVar(&opts.CheckpointRemote, flagCheckpointRemote, "", "Checkpoint remote in provider:owner/repo format (e.g., github:org/checkpoints-repo)")
-	cmd.Flags().StringVar(&opts.CheckpointBackend, flagCheckpointBackend, "", "Checkpoint storage backend: refs (one git ref per checkpoint; recommended) or branch (shared trace/checkpoints/v1 branch)")
+	cmd.Flags().StringVar(&opts.CheckpointBackend, flagCheckpointBackend, "", "Checkpoint storage backend: refs (one git ref per checkpoint; recommended) or branch (shared entire/checkpoints/v1 branch)")
 	cmd.Flags().BoolVar(&opts.Telemetry, flagTelemetry, true, "Enable anonymous usage analytics")
 	cmd.Flags().BoolVar(&opts.AbsoluteGitHookPath, flagAbsoluteGitHookPath, false, "Embed full binary path in git hooks (for GUI git clients that don't source shell profiles)")
 	cmd.Flags().BoolVar(&opts.SearchSkill, flagSearchSkill, false, "Install the optional Entire search skill for selected agent(s)")
-	cmd.Flags().BoolVar(&opts.AgentHelpSkill, flagAgentHelpSkill, false, "Install the stable Entire agent-help skill (points agents at `trace agent-help`) for selected agent(s)")
+	cmd.Flags().BoolVar(&opts.AgentHelpSkill, flagAgentHelpSkill, false, "Install the stable Entire agent-help skill (points agents at `entire agent-help`) for selected agent(s)")
 	cmd.Flags().BoolVarP(&opts.Yes, "yes", "y", false, "Accept all defaults without prompting (in a non-repo directory: init git, create private GitHub repo, commit, and push; then enable all agents and accept telemetry)")
 	addInsecureHTTPAuthFlag(cmd, &insecureHTTPAuth)
 
@@ -968,7 +968,7 @@ for you and (optionally) create a matching GitHub repository via the gh CLI.`,
 	return cmd
 }
 
-// reportRepoEnabled records the `trace enable` against the backend so the web
+// reportRepoEnabled records the `entire enable` against the backend so the web
 // onboarding can reflect it. It is strictly best-effort and fully silent:
 // enabling works offline, and every outcome (no origin remote, not logged in,
 // network error, App-can't-reach-repo) is swallowed — the web onboarding
@@ -1063,7 +1063,7 @@ By default, this command will disable Entire. Hooks will exit silently and comma
 show a disabled message.
 
 To completely remove Entire integrations from this repository, use --uninstall:
-  - .trace/ directory (settings, logs, metadata)
+  - .entire/ directory (settings, logs, metadata)
   - Git hooks (prepare-commit-msg, commit-msg, post-commit, pre-push)
   - Session state files (.git/entire-sessions/)
   - Shadow branches (entire/<hash>)
@@ -1080,8 +1080,8 @@ To completely remove Entire integrations from this repository, use --uninstall:
 		},
 	}
 
-	cmd.Flags().BoolVar(&useLocalSettings, "local", false, "Update .trace/settings.local.json (the default) instead of .trace/settings.json")
-	cmd.Flags().BoolVar(&useProjectSettings, "project", false, "Update .trace/settings.json instead of .trace/settings.local.json")
+	cmd.Flags().BoolVar(&useLocalSettings, "local", false, "Update .entire/settings.local.json (the default) instead of .entire/settings.json")
+	cmd.Flags().BoolVar(&useProjectSettings, "project", false, "Update .entire/settings.json instead of .entire/settings.local.json")
 	cmd.Flags().BoolVar(&uninstall, "uninstall", false, "Completely remove Entire from this repository")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt (use with --uninstall)")
 
@@ -1090,7 +1090,7 @@ To completely remove Entire integrations from this repository, use --uninstall:
 
 // runEnableInteractive runs the interactive enable flow.
 // agents must be provided by the caller (via detectOrSelectAgent).
-// runEnableOnConfiguredRepo handles `trace enable` when the repo is already set
+// runEnableOnConfiguredRepo handles `entire enable` when the repo is already set
 // up. Setup-mutating flags (strategy options, checkpoint backend, agent
 // management) behave like `configure`; a bare re-enable just flips the enabled
 // flag or reports current status.
@@ -1119,11 +1119,11 @@ func runEnableOnConfiguredRepo(ctx context.Context, cmd *cobra.Command, opts Ena
 		}
 	}
 
-	// `trace enable` is an explicit, user-initiated recovery point. A repo
+	// `entire enable` is an explicit, user-initiated recovery point. A repo
 	// enabled before the checkpoint_remote bootstrap existed may still carry a
 	// local orphan disjoint from the checkpoint remote (#1374); EnsureSetup with
 	// the bootstrap flag heals it via EnsurePrimaryRef. This is the only path to
-	// the heal for a bare `trace enable` (which otherwise short-circuits on the
+	// the heal for a bare `entire enable` (which otherwise short-circuits on the
 	// already-enabled branch below). EnsureSetup is idempotent and silent on a
 	// healthy repo (hooks stay installed, gitignore/vercel config already present),
 	// so this adds only the heal to the already-configured path.
@@ -1134,12 +1134,12 @@ func runEnableOnConfiguredRepo(ctx context.Context, cmd *cobra.Command, opts Ena
 	// Resolve the target scope first, then decide whether there is anything to
 	// do. Enable writes to the scope resolved by settingsTargetFile, which is
 	// also what strategy/checkpoint-backend updates above use. Without this, a
-	// plain `trace enable` (no --project/--local) resolved the strategy write
+	// plain `entire enable` (no --project/--local) resolved the strategy write
 	// to the existing project settings.json but wrote the enabled flag to
 	// settings.local.json, leaving the project file the user disabled still
 	// enabled=false.
 	targetFile, _ := settingsTargetFile(ctx, opts.UseLocalSettings, opts.UseProjectSettings)
-	useProject := targetFile == settings.TraceSettingsFile
+	useProject := targetFile == settings.EntireSettingsFile
 
 	// The merged view can report enabled while the resolved target file is
 	// itself still disabled — exactly the legacy split state a pre-fix binary
@@ -1152,7 +1152,7 @@ func runEnableOnConfiguredRepo(ctx context.Context, cmd *cobra.Command, opts Ena
 	enabled, err := IsEnabled(ctx)
 	if err == nil && enabled && !scopeExplicitlyDisabled(ctx, useProject) {
 		if !usedSetupFlow {
-			fmt.Fprintln(w, "Trace is already enabled.")
+			fmt.Fprintln(w, "Entire is already enabled.")
 		}
 		printEnabledStatus(ctx, w)
 		return nil
@@ -1215,10 +1215,10 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	}
 
 	// Load existing settings to preserve other options (like strategy_options.push)
-	settings, err := LoadTraceSettings(ctx)
+	settings, err := LoadEntireSettings(ctx)
 	if err != nil {
 		// If we can't load, start with defaults
-		settings = &TraceSettings{}
+		settings = &EntireSettings{}
 	}
 	// Update the specific fields
 	settings.Enabled = true
@@ -1239,19 +1239,16 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 
 	opts.applyStrategyOptions(settings)
 
-	backend, err := resolveFirstRunCheckpointBackend(ctx, w, opts, firstRun)
-	if err != nil {
-		return err
-	}
+	backend := resolveFirstRunCheckpointBackend(opts, firstRun)
 	if err := applyCheckpointBackendFlag(settings, backend); err != nil {
 		return err
 	}
 
 	// Determine which settings file to write to
 	// First run always creates settings.json (no prompt)
-	entireDirAbs, err := paths.AbsPath(ctx, paths.TraceDir)
+	entireDirAbs, err := paths.AbsPath(ctx, paths.EntireDir)
 	if err != nil {
-		entireDirAbs = paths.TraceDir // Fallback to relative
+		entireDirAbs = paths.EntireDir // Fallback to relative
 	}
 	shouldUseLocal, showNotification := determineSettingsTarget(entireDirAbs, opts.UseLocalSettings, opts.UseProjectSettings)
 
@@ -1261,9 +1258,9 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	}
 
 	// Save settings to the appropriate file.
-	targetFile := TraceSettingsFile
+	targetFile := EntireSettingsFile
 	if shouldUseLocal {
-		targetFile = TraceSettingsLocalFile
+		targetFile = EntireSettingsLocalFile
 	}
 	saveSettings := func() error {
 		return saveSettingsToTarget(ctx, settings, targetFile)
@@ -1273,7 +1270,7 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	}
 
 	// Use settings values (merged from existing config + flags) for hook installation
-	// This ensures re-running `trace enable` without flags preserves existing settings
+	// This ensures re-running `entire enable` without flags preserves existing settings
 	if _, err := strategy.InstallGitHook(ctx, true, settings.LocalDev, settings.AbsoluteGitHookPath); err != nil {
 		return fmt.Errorf("failed to install git hooks: %w", err)
 	}
@@ -1340,59 +1337,41 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		if strategy.IsEmptyRepository(repo) {
 			fmt.Fprintln(w)
 			fmt.Fprintln(w, "Note: Session checkpoints require at least one commit. To get started,")
-			fmt.Fprintln(w, "commit the configuration files (e.g. .trace/, .claude/).")
+			fmt.Fprintln(w, "commit the configuration files (e.g. .entire/, .claude/).")
 		}
 	}
+
+	printCheckpointDestinationNote(ctx, w, "\nNote: this repo's remotes make the checkpoint destination ambiguous.")
 
 	return nil
 }
 
-// printEnabledStatus prints agents and a hint about `trace agent`.
+// printEnabledStatus prints agents and a hint about `entire agent`.
 func printEnabledStatus(ctx context.Context, w io.Writer) {
 	if displayNames := InstalledAgentDisplayNames(ctx); len(displayNames) > 0 {
 		fmt.Fprintf(w, "Agents: %s\n", strings.Join(displayNames, ", "))
 	}
-	fmt.Fprintln(w, "\nTo add more agents, run `trace agent add <name>`.")
+	fmt.Fprintln(w, "\nTo add more agents, run `entire agent add <name>`.")
+	printCheckpointDestinationNote(ctx, w, "\nNote: this repo's remotes make the checkpoint destination ambiguous.")
 }
 
 // resolveFirstRunCheckpointBackend decides the checkpoint storage backend
-// the setup flow writes. An explicit --checkpoint-backend always wins.
-// Otherwise a first interactive setup asks, with git-refs pre-selected as
-// the recommendation (one Enter for most users); non-interactive/--yes
-// first runs take the recommendation silently, and a cancelled prompt takes
-// it with an explicit note (unless the command context itself was cancelled
-// — then enable stops). Either way the choice is written explicitly into
-// the new settings file, and the config-less runtime fallback stays
-// git-branch so existing repos are untouched. The prompt is skipped while
-// ENTIRE_CHECKPOINTS_PRIMARY is active (firstRunCheckpointBackendDefault
-// returns ""): the env fully replaces settings, so an answer could not take
-// effect and would only write diverging config.
-func resolveFirstRunCheckpointBackend(ctx context.Context, w io.Writer, opts EnableOptions, firstRun bool) (string, error) {
-	backend := opts.CheckpointBackend
-	if backend == "" && firstRun && !opts.Yes &&
-		firstRunCheckpointBackendDefault() != "" && interactive.CanPromptInteractively() {
-		chosen, err := promptCheckpointBackend(ctx, w)
-		if err != nil {
-			return "", err
-		}
-		if ctx.Err() != nil {
-			// A cancelled command context (SIGINT/SIGTERM) surfaces as a
-			// form cancellation, but the user asked to stop: setup must not
-			// adopt a default and keep mutating the repo.
-			return "", fmt.Errorf("checkpoint storage selection: %w", ctx.Err())
-		}
-		if chosen == "" {
-			// Cancelled prompt: the recommendation is adopted, but never
-			// silently — every other cancelled setup prompt skips its
-			// action, so persisting a choice here must be disclosed.
-			fmt.Fprintln(w, "Using the recommended git-refs checkpoint storage.")
-		}
-		backend = chosen // "" (cancelled) falls through to the recommendation
+// the setup flow writes. An explicit --checkpoint-backend always wins;
+// otherwise a first run takes the git-refs default silently (branch remains
+// selectable via --checkpoint-backend branch). The choice is written
+// explicitly into the new settings file, and the config-less runtime
+// fallback stays git-branch so existing repos are untouched. The default is
+// empty — write nothing — while ENTIRE_CHECKPOINTS_PRIMARY is active
+// (firstRunCheckpointBackendDefault returns ""): the env fully replaces
+// settings, so persisting a default would only write diverging config.
+func resolveFirstRunCheckpointBackend(opts EnableOptions, firstRun bool) string {
+	if opts.CheckpointBackend != "" {
+		return opts.CheckpointBackend
 	}
-	if backend == "" && firstRun {
-		backend = firstRunCheckpointBackendDefault()
+	if firstRun {
+		return firstRunCheckpointBackendDefault()
 	}
-	return backend, nil
+	return ""
 }
 
 // firstRunCheckpointBackendDefault is the backend written on first-time
@@ -1411,14 +1390,14 @@ func firstRunCheckpointBackendDefault() string {
 
 // runEnable flips the enabled flag to true in the scope chosen by the caller
 // (see setEnabledFlag). Callers resolve the scope: runEnableOnConfiguredRepo
-// uses settingsTargetFile so a bare `trace enable` targets the committed
+// uses settingsTargetFile so a bare `entire enable` targets the committed
 // settings.json when present and can recover a repo disabled there.
 func runEnable(ctx context.Context, w io.Writer, useProjectSettings bool) error {
 	if err := setEnabledFlag(ctx, true, useProjectSettings); err != nil {
 		return err
 	}
 
-	fmt.Fprintln(w, "Trace is now enabled.")
+	fmt.Fprintln(w, "Entire is now enabled.")
 	printEnabledStatus(ctx, w)
 	return nil
 }
@@ -1427,7 +1406,7 @@ func runEnable(ctx context.Context, w io.Writer, useProjectSettings bool) error 
 //
 // Scope resolution is deliberately asymmetric with enable because
 // settings.local.json overrides settings.json in the merged view:
-//   - bare `trace disable` (and --local) writes settings.local.json — the
+//   - bare `entire disable` (and --local) writes settings.local.json — the
 //     minimal, always-effective way to silence Entire on one machine without
 //     editing committed team config;
 //   - --project writes the committed settings.json (and setEnabledFlag also
@@ -1440,18 +1419,18 @@ func runEnable(ctx context.Context, w io.Writer, useProjectSettings bool) error 
 // settingsTargetFile (see runEnableOnConfiguredRepo). --local is accepted for
 // symmetry with enable; for disable it is the same as the bare default.
 func runDisable(ctx context.Context, w io.Writer, useProjectSettings bool) error {
-	targetFile := settings.TraceSettingsLocalFile
+	targetFile := settings.EntireSettingsLocalFile
 	configDisplay := configDisplayLocal
 	if useProjectSettings {
-		targetFile = settings.TraceSettingsFile
+		targetFile = settings.EntireSettingsFile
 		configDisplay = configDisplayProject
 	}
 
-	if err := setEnabledFlag(ctx, false, targetFile == settings.TraceSettingsFile); err != nil {
+	if err := setEnabledFlag(ctx, false, targetFile == settings.EntireSettingsFile); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(w, "Trace is now disabled (%s).\n", configDisplay)
+	fmt.Fprintf(w, "Entire is now disabled (%s).\n", configDisplay)
 	return nil
 }
 
@@ -1466,7 +1445,7 @@ func runDisable(ctx context.Context, w io.Writer, useProjectSettings bool) error
 // whole enable/disable surface follows; other sites point here.
 //
 // The write path stays scoped to a single file's own raw JSON on purpose.
-// Enable/disable *read* current state through the LoadTraceSettings merged
+// Enable/disable *read* current state through the LoadEntireSettings merged
 // view (e.g. IsEnabled), which flattens settings.local.json overrides
 // (local_dev, log_level, personal strategy_options/checkpoint_remote, ...) on
 // top of settings.json. Writing that merged struct back into one file would
@@ -1522,9 +1501,9 @@ func setEnabledRaw(
 // would overwrite that file's own fields (local_dev, log_level, personal
 // strategy_options, ...) — the same leak this rule prevents, in the other
 // direction.
-func saveEnabledState(ctx context.Context, s *TraceSettings, useProjectSettings bool) error {
+func saveEnabledState(ctx context.Context, s *EntireSettings, useProjectSettings bool) error {
 	if useProjectSettings {
-		if err := SaveTraceSettings(ctx, s); err != nil {
+		if err := SaveEntireSettings(ctx, s); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 		// Also sync just the enabled key to local if it exists, so it doesn't override.
@@ -1534,7 +1513,7 @@ func saveEnabledState(ctx context.Context, s *TraceSettings, useProjectSettings 
 			}
 		}
 	} else {
-		if err := SaveTraceSettingsLocal(ctx, s); err != nil {
+		if err := SaveEntireSettingsLocal(ctx, s); err != nil {
 			return fmt.Errorf("failed to save local settings: %w", err)
 		}
 	}
@@ -1543,7 +1522,7 @@ func saveEnabledState(ctx context.Context, s *TraceSettings, useProjectSettings 
 
 // localExists checks if settings.local.json exists.
 func localExists(ctx context.Context) bool {
-	localFile := settings.TraceSettingsLocalFile
+	localFile := settings.EntireSettingsLocalFile
 	if abs, err := paths.AbsPath(ctx, localFile); err == nil {
 		localFile = abs
 	}
@@ -1577,11 +1556,11 @@ func runRemoveAgent(ctx context.Context, w io.Writer, name string) error {
 	return nil
 }
 
-// DisabledMessage is the message shown when Trace is disabled
-const DisabledMessage = "Trace is disabled. Run `trace enable` to re-enable."
+// DisabledMessage is the message shown when Entire is disabled
+const DisabledMessage = "Entire is disabled. Run `entire enable` to re-enable."
 
-// checkDisabledGuard checks if Trace is disabled and prints a message if so.
-// Returns true if the caller should exit (i.e., Trace is disabled).
+// checkDisabledGuard checks if Entire is disabled and prints a message if so.
+// Returns true if the caller should exit (i.e., Entire is disabled).
 // On error reading settings, defaults to enabled (returns false).
 func checkDisabledGuard(ctx context.Context, w io.Writer) bool {
 	enabled, err := IsEnabled(ctx)
@@ -1598,7 +1577,7 @@ func checkDisabledGuard(ctx context.Context, w io.Writer) bool {
 
 // uninstallDeselectedAgentHooks removes hooks for agents that were previously
 // installed but are not in the selected list. This handles the case where a user
-// re-runs `trace enable` and deselects an agent.
+// re-runs `entire enable` and deselects an agent.
 func uninstallDeselectedAgentHooks(ctx context.Context, w io.Writer, selectedAgents []agent.Agent) error {
 	installedNames := GetAgentsWithHooksInstalled(ctx)
 	if len(installedNames) == 0 {
@@ -1928,7 +1907,7 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 		targetSettings.Telemetry = &f
 	}
 
-	if err := saveEnabledState(ctx, targetSettings, targetFile == TraceSettingsFile); err != nil {
+	if err := saveEnabledState(ctx, targetSettings, targetFile == EntireSettingsFile); err != nil {
 		return fmt.Errorf("failed to save settings: %w", err)
 	}
 
@@ -1941,7 +1920,7 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 	// which uses the merged view for the same two fields; only the *write*
 	// path (saveEnabledState above) stays scoped to the target file (see
 	// setEnabledFlag for why).
-	mergedSettings, err := LoadTraceSettings(ctx)
+	mergedSettings, err := LoadEntireSettings(ctx)
 	if err != nil {
 		logging.Warn(ctx, "could not load merged settings for hook installation; proceeding with target-scoped settings only, so local overrides (e.g. local_dev, absolute_git_hook_path) may not be applied to the generated git hook", "error", err)
 		mergedSettings = targetSettings
@@ -1999,7 +1978,7 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 		if strategy.IsEmptyRepository(repo) {
 			fmt.Fprintln(w)
 			fmt.Fprintln(w, "Note: Session checkpoints require at least one commit. To get started,")
-			fmt.Fprintln(w, "commit the configuration files (e.g. .trace/, .claude/).")
+			fmt.Fprintln(w, "commit the configuration files (e.g. .entire/, .claude/).")
 		}
 	}
 
@@ -2044,9 +2023,9 @@ func determineSettingsTarget(entireDir string, useLocal, useProject bool) (bool,
 // Returns true if the directory was created, false if it already existed.
 func setupEntireDirectory(ctx context.Context) (bool, error) { //nolint:unparam // already present in codebase
 	// Get absolute path for the .entire directory
-	entireDirAbs, err := paths.AbsPath(ctx, paths.TraceDir)
+	entireDirAbs, err := paths.AbsPath(ctx, paths.EntireDir)
 	if err != nil {
-		entireDirAbs = paths.TraceDir // Fallback to relative
+		entireDirAbs = paths.EntireDir // Fallback to relative
 	}
 
 	// Check if directory already exists
@@ -2085,7 +2064,7 @@ func newCurlBashPostInstallCmd() *cobra.Command {
 }
 
 // shellCompletionComment is the comment preceding the completion line
-const shellCompletionComment = "# Trace CLI shell completion"
+const shellCompletionComment = "# Entire CLI shell completion"
 
 // errUnsupportedShell is returned when the user's shell is not supported for completion.
 var errUnsupportedShell = errors.New("unsupported shell")
@@ -2103,7 +2082,7 @@ func shellCompletionTarget() (shellName, rcFile, completionLine string, err erro
 	case strings.Contains(shell, "zsh"):
 		return "Zsh",
 			filepath.Join(home, ".zshrc"),
-			"autoload -Uz compinit && compinit && source <(trace completion zsh)",
+			"autoload -Uz compinit && compinit && source <(entire completion zsh)",
 			nil
 	case strings.Contains(shell, "bash"):
 		bashRC := filepath.Join(home, ".bashrc")
@@ -2112,12 +2091,12 @@ func shellCompletionTarget() (shellName, rcFile, completionLine string, err erro
 		}
 		return "Bash",
 			bashRC,
-			"source <(trace completion bash)",
+			"source <(entire completion bash)",
 			nil
 	case strings.Contains(shell, "fish"):
 		return "Fish",
 			filepath.Join(home, ".config", "fish", "config.fish"),
-			"trace completion fish | source",
+			"entire completion fish | source",
 			nil
 	default:
 		return "", "", "", errUnsupportedShell
@@ -2180,7 +2159,7 @@ func isCompletionConfigured(rcFile string) bool {
 	if err != nil {
 		return false // File doesn't exist or can't read, treat as not configured
 	}
-	return strings.Contains(string(content), "trace completion")
+	return strings.Contains(string(content), "entire completion")
 }
 
 // appendShellCompletion adds the completion line to the rc file.
@@ -2205,7 +2184,7 @@ func appendShellCompletion(rcFile, completionLine string) error {
 // promptTelemetryConsent asks the user if they want to enable telemetry.
 // It modifies settings.Telemetry based on the user's choice or flags.
 // The caller is responsible for saving settings.
-func promptTelemetryConsent(settings *TraceSettings, telemetryFlag bool) error {
+func promptTelemetryConsent(settings *EntireSettings, telemetryFlag bool) error {
 	// Handle --telemetry=false flag first (always overrides existing setting)
 	if !telemetryFlag {
 		f := false
@@ -2229,7 +2208,7 @@ func promptTelemetryConsent(settings *TraceSettings, telemetryFlag bool) error {
 	form := NewAccessibleForm(
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title("Help improve Trace CLI?").
+				Title("Help improve Entire CLI?").
 				Description("Share anonymous usage data. No code or personal info collected.").
 				Affirmative("Yes").
 				Negative("No").
@@ -2278,7 +2257,7 @@ func maybePromptVercelDeploymentDisable(ctx context.Context, w io.Writer, target
 		}
 
 		configDisplay := configDisplayProject
-		if targetFile == settings.TraceSettingsLocalFile {
+		if targetFile == settings.EntireSettingsLocalFile {
 			configDisplay = configDisplayLocal
 		}
 
@@ -2303,7 +2282,7 @@ func maybePromptVercelDeploymentDisable(ctx context.Context, w io.Writer, target
 
 		if promptFn == nil {
 			if !interactive.CanPromptInteractively() {
-				fmt.Fprintf(w, "Note: Vercel detected. Run `trace configure` interactively to disable deployments for `%s` branches.\n", vercelconfig.BranchPattern)
+				fmt.Fprintf(w, "Note: Vercel detected. Run `entire configure` interactively to disable deployments for `%s` branches.\n", vercelconfig.BranchPattern)
 				return false, nil
 			}
 			promptFn = promptVercelDeploymentDisable
@@ -2367,7 +2346,7 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 	// Check if there's anything to uninstall
 	if !entireDirExists && !gitHooksInstalled && sessionStateCount == 0 &&
 		shadowBranchCount == 0 && len(agentsWithInstalledHooks) == 0 {
-		fmt.Fprintln(w, "Trace is not installed in this repository.")
+		fmt.Fprintln(w, "Entire is not installed in this repository.")
 		return nil
 	}
 
@@ -2375,7 +2354,7 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 	if !force {
 		fmt.Fprintln(w, "\nThis will completely remove Entire from this repository:")
 		if entireDirExists {
-			fmt.Fprintln(w, "  - .trace/ directory")
+			fmt.Fprintln(w, "  - .entire/ directory")
 		}
 		if gitHooksInstalled {
 			fmt.Fprintln(w, "  - Git hooks (prepare-commit-msg, commit-msg, post-commit, pre-push)")
@@ -2412,7 +2391,7 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 		}
 	}
 
-	fmt.Fprintln(w, "\nUninstalling Trace CLI...")
+	fmt.Fprintln(w, "\nUninstalling Entire CLI...")
 
 	// 1. Remove agent hooks (lowest risk)
 	if err := removeAgentHooks(ctx, w); err != nil {
@@ -2435,7 +2414,7 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 		fmt.Fprintf(w, "  Removed session states (%d)\n", statesRemoved)
 	}
 
-	// 4. Remove .trace/ directory
+	// 4. Remove .entire/ directory
 	if err := removeEntireDirectory(ctx); err != nil {
 		fmt.Fprintf(errW, "Warning: failed to remove .entire directory: %v\n", err)
 	} else if entireDirExists {
@@ -2450,7 +2429,7 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 		fmt.Fprintf(w, "  Removed %d shadow branches\n", branchesRemoved)
 	}
 
-	fmt.Fprintln(w, "\nTrace CLI uninstalled successfully.")
+	fmt.Fprintln(w, "\nEntire CLI uninstalled successfully.")
 	return nil
 }
 
@@ -2478,9 +2457,9 @@ func countShadowBranches(ctx context.Context) int {
 
 // checkEntireDirExists checks if the .entire directory exists.
 func checkEntireDirExists(ctx context.Context) bool {
-	entireDirAbs, err := paths.AbsPath(ctx, paths.TraceDir)
+	entireDirAbs, err := paths.AbsPath(ctx, paths.EntireDir)
 	if err != nil {
-		entireDirAbs = paths.TraceDir
+		entireDirAbs = paths.EntireDir
 	}
 	_, err = os.Lstat(entireDirAbs)
 	return err == nil
@@ -2540,9 +2519,9 @@ func removeAllSessionStates(ctx context.Context) (int, error) {
 
 // removeEntireDirectory removes the .entire directory.
 func removeEntireDirectory(ctx context.Context) error {
-	entireDirAbs, err := paths.AbsPath(ctx, paths.TraceDir)
+	entireDirAbs, err := paths.AbsPath(ctx, paths.EntireDir)
 	if err != nil {
-		entireDirAbs = paths.TraceDir
+		entireDirAbs = paths.EntireDir
 	}
 	if err := os.RemoveAll(entireDirAbs); err != nil {
 		return fmt.Errorf("failed to remove .entire directory: %w", err)

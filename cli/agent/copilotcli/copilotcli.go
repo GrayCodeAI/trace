@@ -48,8 +48,8 @@ func (c *CopilotCLIAgent) Description() string {
 // IsPreview returns true because this is a new integration.
 func (c *CopilotCLIAgent) IsPreview() bool { return true }
 
-// DetectPresence checks if Trace hooks are installed in the Copilot CLI config.
-// Delegates to AreHooksInstalled which checks .github/hooks/trace.json for Trace hook entries.
+// DetectPresence checks if Entire hooks are installed in the Copilot CLI config.
+// Delegates to AreHooksInstalled which checks .github/hooks/entire.json for Entire hook entries.
 func (c *CopilotCLIAgent) DetectPresence(ctx context.Context) (bool, error) {
 	return c.AreHooksInstalled(ctx), nil
 }
@@ -61,7 +61,7 @@ func (c *CopilotCLIAgent) GetSessionID(input *agent.HookInput) string {
 
 // GetSessionDir returns the directory where Copilot CLI stores session transcripts.
 func (c *CopilotCLIAgent) GetSessionDir(_ string) (string, error) {
-	if override := os.Getenv("TRACE_TEST_COPILOT_SESSION_DIR"); override != "" {
+	if override := os.Getenv("ENTIRE_TEST_COPILOT_SESSION_DIR"); override != "" {
 		return override, nil
 	}
 
@@ -147,7 +147,6 @@ func (c *CopilotCLIAgent) FormatResumeCommand(sessionID string) string {
 
 // ReadTranscript reads the raw JSONL transcript bytes for a session.
 func (c *CopilotCLIAgent) ReadTranscript(sessionRef string) ([]byte, error) {
-	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read transcript: %w", err)

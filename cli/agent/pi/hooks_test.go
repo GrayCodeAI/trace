@@ -22,18 +22,18 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 		t.Errorf("count = %d, want 1", count)
 	}
 
-	path := filepath.Join(dir, ".pi", "extensions", "trace", "index.ts")
+	path := filepath.Join(dir, ".pi", "extensions", "entire", "index.ts")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("extension not written: %v", err)
 	}
 	body := string(data)
 
-	if !strings.Contains(body, `const TRACE_CMD = "hawk trace"`) {
-		t.Error("production TRACE_CMD missing")
+	if !strings.Contains(body, `const ENTIRE_CMD = 'entire'`) {
+		t.Error("production ENTIRE_CMD missing")
 	}
 	if !strings.Contains(body, "hooks pi ") {
-		t.Error("missing call to `trace hooks pi`")
+		t.Error("missing call to `entire hooks pi`")
 	}
 	if !strings.Contains(body, entireMarker) {
 		t.Error("entireMarker missing")
@@ -49,12 +49,17 @@ func TestInstallHooks_LocalDev(t *testing.T) {
 	if _, err := (&PiAgent{}).InstallHooks(context.Background(), true, false); err != nil {
 		t.Fatalf("InstallHooks: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, ".pi", "extensions", "trace", "index.ts"))
+	data, err := os.ReadFile(filepath.Join(dir, ".pi", "extensions", "entire", "index.ts"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace`) {
-		t.Error("local-dev extension should reference git rev-parse path")
+	// Assert the exact, well-formed line. The launcher value carries its own
+	// shell quotes, so the template must wrap the placeholder in single quotes;
+	// wrapping in double quotes yields the malformed `""$(...)"/..."` (a broken
+	// JS string literal). A substring check alone would pass on that broken
+	// output, so pin the whole line.
+	if !strings.Contains(string(data), `const ENTIRE_CMD = '"$(git rev-parse --show-toplevel)"/scripts/entire-dev'`) {
+		t.Errorf("local-dev ENTIRE_CMD malformed; got:\n%s", data)
 	}
 }
 
@@ -120,7 +125,7 @@ func TestUninstallHooks(t *testing.T) {
 func TestAreHooksInstalled_RejectsForeignFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	path := filepath.Join(dir, ".pi", "extensions", "trace", "index.ts")
+	path := filepath.Join(dir, ".pi", "extensions", "entire", "index.ts")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +142,7 @@ func TestInstallHooks_RefusesForeignFileWithoutForce(t *testing.T) {
 	// not clobber it. With --force we replace it.
 	dir := t.TempDir()
 	t.Chdir(dir)
-	path := filepath.Join(dir, ".pi", "extensions", "trace", "index.ts")
+	path := filepath.Join(dir, ".pi", "extensions", "entire", "index.ts")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}

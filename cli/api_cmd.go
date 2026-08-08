@@ -47,8 +47,8 @@ func newAPICmd() *cobra.Command {
 	f := &apiFlags{}
 	cmd := &cobra.Command{
 		Use:   "api <path>",
-		Short: "Make an authenticated request to an Trace API and print the response",
-		Long: "Make an authenticated HTTP request to an Trace API and print the JSON response.\n\n" +
+		Short: "Make an authenticated request to an Entire API and print the response",
+		Long: "Make an authenticated HTTP request to an Entire API and print the JSON response.\n\n" +
 			"The CLI attaches the right bearer token and dials the right host for the\n" +
 			"chosen backend, so you don't have to plumb auth yourself:\n\n" +
 			"  --to core   the control plane (default): orgs, repos, mirrors, clusters, /me\n" +
@@ -60,11 +60,11 @@ func newAPICmd() *cobra.Command {
 			"  {owner} {repo}   the GitHub owner / repo\n" +
 			"  {repo_id}        the repo's Entire ULID (from its mirror) — cells key on this\n\n" +
 			"The method is GET unless a field/body is given (then POST); override with -X.",
-		Example: "  trace api /api/v1/clusters\n" +
-			"  trace api --to cell /api/v1/me/activity\n" +
-			"  trace api --jurisdiction eu /api/v1/me/activity\n" +
-			"  trace api --to cell \"/api/v1/me/recap?repo={repo_id}\"\n" +
-			"  trace api -X POST /api/v1/projects -f name=demo",
+		Example: "  entire api /api/v1/clusters\n" +
+			"  entire api --to cell /api/v1/me/activity\n" +
+			"  entire api --jurisdiction eu /api/v1/me/activity\n" +
+			"  entire api --to cell \"/api/v1/me/recap?repo={repo_id}\"\n" +
+			"  entire api -X POST /api/v1/projects -f name=demo",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAPI(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), args[0], f, cmd.Flags().Changed("to"))

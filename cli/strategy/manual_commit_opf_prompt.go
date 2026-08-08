@@ -84,7 +84,7 @@ func resolveOPFDecisionForPrePush(ctx context.Context, opf *settings.OPFSettings
 
 // askOPFPrompt shows the 3-option huh form. Ctrl-C / SIGINT returns
 // OPFAbort. Selecting "Always" persists prompt_default=always to
-// .trace/settings.local.json so future pushes don't ask.
+// .entire/settings.local.json so future pushes don't ask.
 //
 // Style matches other entire CLI prompts via uiform.New, which applies the
 // shared base16 palette theme and accessibility handling (the same wiring
@@ -130,7 +130,7 @@ func askOPFPrompt(ctx context.Context) (OPFDecision, error) {
 
 // persistOPFPromptDefaultAlways writes
 // redaction.openai_privacy_filter.prompt_default = "always" to
-// .trace/settings.local.json, preserving any unrelated fields by
+// .entire/settings.local.json, preserving any unrelated fields by
 // using a generic JSON-map round-trip.
 func persistOPFPromptDefaultAlways(ctx context.Context) error {
 	path, raw, _, err := settings.LoadLocalRaw(ctx)

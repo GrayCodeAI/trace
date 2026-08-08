@@ -1,5 +1,5 @@
 // Package skilldiscovery holds the per-agent registries (curated built-ins,
-// install hints) and the keyword match helper that the `trace review`
+// install hints) and the keyword match helper that the `entire review`
 // picker uses to discover review-adjacent skills.
 package skilldiscovery
 

@@ -54,14 +54,14 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 	}
 
 	// Verify hook commands
-	assertFactoryHookExists(t, settings.Hooks.SessionStart, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid session-start"), "SessionStart")
-	assertFactoryHookExists(t, settings.Hooks.SessionStart, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid user-prompt-submit"), "SessionStart user-prompt-submit")
-	assertFactoryHookExists(t, settings.Hooks.SessionEnd, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid session-end"), "SessionEnd")
-	assertFactoryHookExists(t, settings.Hooks.Stop, "", agentpkg.WrapProductionPlainTextWarningHookCommand("hawk trace hooks factoryai-droid stop", agentpkg.WarningFormatSingleLine), "Stop")
-	assertFactoryHookExists(t, settings.Hooks.UserPromptSubmit, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid user-prompt-submit"), "UserPromptSubmit")
-	assertFactoryHookExists(t, settings.Hooks.PreToolUse, "Task", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid pre-tool-use"), "PreToolUse[Task]")
-	assertFactoryHookExists(t, settings.Hooks.PostToolUse, "Task", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid post-tool-use"), "PostToolUse[Task]")
-	assertFactoryHookExists(t, settings.Hooks.PreCompact, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid pre-compact"), "PreCompact")
+	assertFactoryHookExists(t, settings.Hooks.SessionStart, "", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid session-start"), "SessionStart")
+	assertFactoryHookExists(t, settings.Hooks.SessionStart, "", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid user-prompt-submit"), "SessionStart user-prompt-submit")
+	assertFactoryHookExists(t, settings.Hooks.SessionEnd, "", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid session-end"), "SessionEnd")
+	assertFactoryHookExists(t, settings.Hooks.Stop, "", agentpkg.WrapProductionPlainTextWarningHookCommand("entire hooks factoryai-droid stop", agentpkg.WarningFormatSingleLine), "Stop")
+	assertFactoryHookExists(t, settings.Hooks.UserPromptSubmit, "", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid user-prompt-submit"), "UserPromptSubmit")
+	assertFactoryHookExists(t, settings.Hooks.PreToolUse, "Task", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid pre-tool-use"), "PreToolUse[Task]")
+	assertFactoryHookExists(t, settings.Hooks.PostToolUse, "Task", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid post-tool-use"), "PostToolUse[Task]")
+	assertFactoryHookExists(t, settings.Hooks.PreCompact, "", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid pre-compact"), "PreCompact")
 
 	// Verify AreHooksInstalled returns true
 	if !agent.AreHooksInstalled(context.Background()) {
@@ -115,8 +115,9 @@ func TestInstallHooks_LocalDev(t *testing.T) {
 
 	settings := readFactorySettings(t, tempDir)
 
-	// Verify local dev commands use git rev-parse for runtime repo root resolution
-	prefix := `go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace hooks factoryai-droid `
+	// Verify local dev commands delegate to the entire-dev launcher, resolving
+	// the repo root at runtime via git.
+	prefix := `"$(git rev-parse --show-toplevel)"/scripts/entire-dev hooks factoryai-droid `
 	assertFactoryHookExists(t, settings.Hooks.SessionStart, "",
 		prefix+"session-start", "SessionStart localDev")
 	assertFactoryHookExists(t, settings.Hooks.SessionStart, "",
@@ -230,7 +231,7 @@ func TestInstallHooks_PermissionsDeny_PreservesUserRules(t *testing.T) {
 		t.Errorf("permissions.deny = %v, want to contain user rule", perms.Deny)
 	}
 	if !slices.Contains(perms.Deny, metadataDenyRule) {
-		t.Errorf("permissions.deny = %v, want to contain Trace rule", perms.Deny)
+		t.Errorf("permissions.deny = %v, want to contain Entire rule", perms.Deny)
 	}
 }
 
@@ -352,7 +353,7 @@ func TestInstallHooks_PreservesUserHooksOnSameType(t *testing.T) {
 			t.Fatalf("failed to parse Stop hooks: %v", err)
 		}
 		assertFactoryHookExists(t, matchers, "", "echo user stop hook", "user Stop hook")
-		assertFactoryHookExists(t, matchers, "", agentpkg.WrapProductionPlainTextWarningHookCommand("hawk trace hooks factoryai-droid stop", agentpkg.WarningFormatSingleLine), "Trace Stop hook")
+		assertFactoryHookExists(t, matchers, "", agentpkg.WrapProductionPlainTextWarningHookCommand("entire hooks factoryai-droid stop", agentpkg.WarningFormatSingleLine), "Entire Stop hook")
 	})
 
 	t.Run("SessionStart", func(t *testing.T) {
@@ -362,8 +363,8 @@ func TestInstallHooks_PreservesUserHooksOnSameType(t *testing.T) {
 			t.Fatalf("failed to parse SessionStart hooks: %v", err)
 		}
 		assertFactoryHookExists(t, matchers, "", "echo user session start", "user SessionStart hook")
-		assertFactoryHookExists(t, matchers, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid session-start"), "Trace SessionStart hook")
-		assertFactoryHookExists(t, matchers, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid user-prompt-submit"), "Trace SessionStart user-prompt-submit hook")
+		assertFactoryHookExists(t, matchers, "", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid session-start"), "Entire SessionStart hook")
+		assertFactoryHookExists(t, matchers, "", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid user-prompt-submit"), "Entire SessionStart user-prompt-submit hook")
 	})
 
 	t.Run("PostToolUse", func(t *testing.T) {
@@ -373,7 +374,7 @@ func TestInstallHooks_PreservesUserHooksOnSameType(t *testing.T) {
 			t.Fatalf("failed to parse PostToolUse hooks: %v", err)
 		}
 		assertFactoryHookExists(t, matchers, "Write", "echo user wrote file", "user Write hook")
-		assertFactoryHookExists(t, matchers, "Task", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid post-tool-use"), "Trace Task hook")
+		assertFactoryHookExists(t, matchers, "Task", agentpkg.WrapProductionSilentHookCommand("entire hooks factoryai-droid post-tool-use"), "Entire Task hook")
 	})
 }
 
@@ -505,7 +506,7 @@ func TestUninstallHooks_PreservesUserHooks(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 
-	// Create settings with both user and trace hooks
+	// Create settings with both user and entire hooks
 	writeFactorySettingsFile(t, tempDir, `{
   "hooks": {
     "Stop": [
@@ -515,7 +516,7 @@ func TestUninstallHooks_PreservesUserHooks(t *testing.T) {
       },
       {
         "matcher": "",
-        "hooks": [{"type": "command", "command": "trace hooks factoryai-droid stop"}]
+        "hooks": [{"type": "command", "command": "entire hooks factoryai-droid stop"}]
       }
     ]
   }
@@ -577,15 +578,15 @@ func TestUninstallHooks_PreservesUserDenyRules(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 
-	// Create settings with user deny rule and trace deny rule
+	// Create settings with user deny rule and entire deny rule
 	writeFactorySettingsFile(t, tempDir, `{
   "permissions": {
-    "deny": ["Bash(rm -rf *)", "Read(./.trace/metadata/**)"]
+    "deny": ["Bash(rm -rf *)", "Read(./.entire/metadata/**)"]
   },
   "hooks": {
     "Stop": [
       {
-        "hooks": [{"type": "command", "command": "trace hooks factoryai-droid stop"}]
+        "hooks": [{"type": "command", "command": "entire hooks factoryai-droid stop"}]
       }
     ]
   }
@@ -604,9 +605,9 @@ func TestUninstallHooks_PreservesUserDenyRules(t *testing.T) {
 		t.Errorf("user deny rule was removed, got: %v", perms.Deny)
 	}
 
-	// Verify trace deny rule is removed
+	// Verify entire deny rule is removed
 	if slices.Contains(perms.Deny, metadataDenyRule) {
-		t.Errorf("trace deny rule should be removed, got: %v", perms.Deny)
+		t.Errorf("entire deny rule should be removed, got: %v", perms.Deny)
 	}
 }
 
@@ -614,13 +615,13 @@ func TestUninstallHooks_PreservesUnknownHookTypes(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 
-	// Create settings with Trace hooks AND unknown hook types
+	// Create settings with Entire hooks AND unknown hook types
 	writeFactorySettingsFile(t, tempDir, `{
   "hooks": {
     "Stop": [
       {
         "matcher": "",
-        "hooks": [{"type": "command", "command": "trace hooks factoryai-droid stop"}]
+        "hooks": [{"type": "command", "command": "entire hooks factoryai-droid stop"}]
       }
     ],
     "Notification": [

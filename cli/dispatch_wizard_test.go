@@ -64,7 +64,7 @@ func TestDispatchWizardState_CloudIgnoresLocalBranchMode(t *testing.T) {
 	state := newDispatchWizardState()
 	state.modeChoice = dispatchWizardModeServer
 	state.currentBranch = testDispatchPreviewBranch
-	state.selectedRepos = []string{"GrayCodeAI/cli"}
+	state.selectedRepos = []string{"entireio/cli"}
 	state.localBranchMode = dispatchWizardBranchAll
 
 	opts, err := state.resolve()
@@ -91,8 +91,8 @@ func TestDispatchWizardState_LocalBranchModes(t *testing.T) {
 func TestBuildDispatchRepoOptions_UsesFullSlugLabels(t *testing.T) {
 	t.Parallel()
 
-	options := buildDispatchRepoOptions([]string{"GrayCodeAI/trace.io", "GrayCodeAI/cli"})
-	if got := strings.Join(optionKeys(options), ","); got != "GrayCodeAI/trace.io,GrayCodeAI/cli" {
+	options := buildDispatchRepoOptions([]string{"entireio/entire.io", "entireio/cli"})
+	if got := strings.Join(optionKeys(options), ","); got != "entireio/entire.io,entireio/cli" {
 		t.Fatalf("expected repo options to use org/repo labels in caller order, got %q", got)
 	}
 }
@@ -103,13 +103,13 @@ func TestDispatchWizardState_CloudResolvesSelectedRepos(t *testing.T) {
 	state := newDispatchWizardState()
 	state.modeChoice = dispatchWizardModeServer
 	state.currentBranch = testDispatchPreviewBranch
-	state.selectedRepos = []string{"GrayCodeAI/cli"}
+	state.selectedRepos = []string{"entireio/cli"}
 
 	opts, err := state.resolve()
 	if err != nil {
 		t.Fatalf("expected cloud mode to resolve selected repos, got %v", err)
 	}
-	if got := strings.Join(opts.RepoPaths, ","); got != "GrayCodeAI/cli" {
+	if got := strings.Join(opts.RepoPaths, ","); got != "entireio/cli" {
 		t.Fatalf("expected selected repo path to propagate, got %q", got)
 	}
 }
@@ -227,7 +227,7 @@ func TestBuildDispatchWizardSummary(t *testing.T) {
 
 	summary = buildDispatchWizardSummary(dispatchpkg.Options{
 		Mode:        dispatchpkg.ModeServer,
-		RepoPaths:   []string{"GrayCodeAI/cli"},
+		RepoPaths:   []string{"entireio/cli"},
 		AllBranches: false,
 	}, "")
 	if !strings.Contains(summary, "Mode: cloud") {
@@ -246,16 +246,16 @@ func TestBuildDispatchCommand(t *testing.T) {
 		Since:       "7d",
 		Branches:    nil,
 		Voice:       testDispatchVoicePresetMarvin,
-		RepoPaths:   []string{"GrayCodeAI/cli"},
+		RepoPaths:   []string{"entireio/cli"},
 		AllBranches: false,
 	})
-	if !strings.Contains(command, "trace dispatch") {
+	if !strings.Contains(command, "entire dispatch") {
 		t.Fatalf("expected base command, got %q", command)
 	}
 	if !strings.Contains(command, "--voice marvin") {
 		t.Fatalf("expected preset voice flag, got %q", command)
 	}
-	if !strings.Contains(command, "--repos GrayCodeAI/cli") {
+	if !strings.Contains(command, "--repos entireio/cli") {
 		t.Fatalf("expected cloud repos flag, got %q", command)
 	}
 	if strings.Contains(command, "--local") {
@@ -289,8 +289,8 @@ func TestBuildDispatchCommand_AllBranches(t *testing.T) {
 func TestBuildDispatchRepoOptions_DedupesAndPreservesOrder(t *testing.T) {
 	t.Parallel()
 
-	options := buildDispatchRepoOptions([]string{"GrayCodeAI/trace.io", "GrayCodeAI/cli", "GrayCodeAI/cli"})
-	if got := strings.Join(optionValues(options), ","); got != "GrayCodeAI/trace.io,GrayCodeAI/cli" {
+	options := buildDispatchRepoOptions([]string{"entireio/entire.io", "entireio/cli", "entireio/cli"})
+	if got := strings.Join(optionValues(options), ","); got != "entireio/entire.io,entireio/cli" {
 		t.Fatalf("unexpected repo options: %v", optionValues(options))
 	}
 }
@@ -379,13 +379,13 @@ func TestDispatchWizardState_CloudIgnoresCurrentBranchResolutionError(t *testing
 	state := newDispatchWizardState()
 	state.modeChoice = dispatchWizardModeServer
 	state.currentBranchErr = errors.New("not on a branch (detached HEAD)")
-	state.selectedRepos = []string{"GrayCodeAI/cli"}
+	state.selectedRepos = []string{"entireio/cli"}
 
 	opts, err := state.resolve()
 	if err != nil {
 		t.Fatalf("expected cloud mode to ignore current branch resolution error, got %v", err)
 	}
-	if got := strings.Join(opts.RepoPaths, ","); got != "GrayCodeAI/cli" {
+	if got := strings.Join(opts.RepoPaths, ","); got != "entireio/cli" {
 		t.Fatalf("expected selected repo path to propagate, got %q", got)
 	}
 }
@@ -396,9 +396,9 @@ func TestDiscoverAuthenticatedDispatchWizardRepos_FiltersEmptyCheckpointsAndPres
 	old := listDispatchWizardRepoResources
 	listDispatchWizardRepoResources = func(context.Context) ([]api.Repository, error) {
 		return []api.Repository{
-			{FullName: "GrayCodeAI/most-recent", CheckpointCount: 3},
-			{FullName: "GrayCodeAI/never-dispatched", CheckpointCount: 0},
-			{FullName: "GrayCodeAI/older", CheckpointCount: 1},
+			{FullName: "entireio/most-recent", CheckpointCount: 3},
+			{FullName: "entireio/never-dispatched", CheckpointCount: 0},
+			{FullName: "entireio/older", CheckpointCount: 1},
 			{FullName: "", CheckpointCount: 5},
 		}, nil
 	}
@@ -410,7 +410,7 @@ func TestDiscoverAuthenticatedDispatchWizardRepos_FiltersEmptyCheckpointsAndPres
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(slugs, ","); got != "GrayCodeAI/most-recent,GrayCodeAI/older" {
+	if got := strings.Join(slugs, ","); got != "entireio/most-recent,entireio/older" {
 		t.Fatalf("expected recent-first order with empty-checkpoint and blank repos filtered, got %q", got)
 	}
 }

@@ -54,12 +54,12 @@ func TestShadowStrategy_OneCheckpointPerCommit(t *testing.T) {
 	}
 	firstCheckpointID := env.GetCheckpointIDFromCommitMessage(firstCommitHash)
 	if firstCheckpointID == "" {
-		t.Fatal("First commit should have Trace-Checkpoint trailer")
+		t.Fatal("First commit should have Entire-Checkpoint trailer")
 	}
 	t.Logf("First commit checkpoint ID: %s", firstCheckpointID)
 
-	// Verify checkpoint exists on trace/checkpoints/v1
-	checkpointPath := paths.CheckpointPath(id.MustCheckpointID(firstCheckpointID))
+	// Verify checkpoint exists on entire/checkpoints/v1
+	checkpointPath := id.MustCheckpointID(firstCheckpointID).Path()
 	if !env.FileExistsInBranch(paths.MetadataBranchName, checkpointPath+"/"+paths.MetadataFileName) {
 		t.Errorf("Checkpoint metadata should exist at %s on %s branch",
 			checkpointPath, paths.MetadataBranchName)
@@ -303,11 +303,11 @@ func TestShadowStrategy_ShadowBranchCleanedUpAfterCondensation(t *testing.T) {
 		t.Errorf("Shadow branch %s should be deleted after condensation", shadowBranchName)
 	}
 
-	// Verify data exists on trace/checkpoints/v1
+	// Verify data exists on entire/checkpoints/v1
 	checkpointID := env.GetLatestCheckpointID()
-	checkpointPath := paths.CheckpointPath(id.MustCheckpointID(checkpointID))
+	checkpointPath := id.MustCheckpointID(checkpointID).Path()
 	if !env.FileExistsInBranch(paths.MetadataBranchName, checkpointPath+"/"+paths.MetadataFileName) {
-		t.Error("Checkpoint metadata should exist on trace/checkpoints/v1 branch")
+		t.Error("Checkpoint metadata should exist on entire/checkpoints/v1 branch")
 	}
 }
 
@@ -348,7 +348,7 @@ func TestShadowStrategy_BaseCommitUpdatedAfterCondensation(t *testing.T) {
 
 	checkpointID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if checkpointID == "" {
-		t.Fatal("Commit should have Trace-Checkpoint trailer")
+		t.Fatal("Commit should have Entire-Checkpoint trailer")
 	}
 	t.Logf("Commit: %s, checkpoint: %s", commitHash[:7], checkpointID)
 

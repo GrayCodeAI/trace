@@ -3,7 +3,6 @@ package pi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +14,7 @@ import (
 	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
+	"github.com/GrayCodeAI/trace/cli/validation"
 )
 
 // Hook names — these match Pi's native event names exactly (snake_case),
@@ -28,7 +28,7 @@ const (
 	HookNameSessionShutdown  = "session_shutdown"
 )
 
-// HookNames returns the verbs registered as `trace hooks pi <name>`.
+// HookNames returns the verbs registered as `entire hooks pi <name>`.
 func (a *PiAgent) HookNames() []string {
 	return []string{
 		HookNameSessionStart,
@@ -52,31 +52,106 @@ func (a *PiAgent) GetSupportedHooks() []agent.HookType {
 	}
 }
 
+// Compile-time assertion that Pi can inject context into the model.
+var _ agent.ContextInjector = (*PiAgent)(nil)
+
+// InjectionEvent reports that Pi injects model context at TurnStart
+// (before_agent_start) — the only Pi event where the embedded extension can
+// return a message that Pi stores in the session and sends to the LLM.
+func (a *PiAgent) InjectionEvent() agent.EventType { return agent.TurnStart }
+
+// RenderContextInjection emits a {"inject_context":"..."} envelope on stdout.
+// The embedded extension (entire_extension.ts) reads it from the
+// before_agent_start hook's stdout and returns it to Pi as a hidden persistent
+// message. An empty Text renders nothing.
+func (a *PiAgent) RenderContextInjection(inj agent.ContextInjection) ([]byte, error) {
+	if strings.TrimSpace(inj.Text) == "" {
+		return nil, nil
+	}
+	b, err := json.Marshal(struct {
+		InjectContext string `json:"inject_context"`
+	}{InjectContext: inj.Text})
+	if err != nil {
+		return nil, fmt.Errorf("marshal pi context injection: %w", err)
+	}
+	return append(b, '\n'), nil
+}
+
 // piHookPayload is the JSON the embedded TypeScript extension pipes to
-// `trace hooks pi <event>` on stdin.
+// `entire hooks pi <event>` on stdin.
 type piHookPayload struct {
-	Type        string `json:"type"`
-	Cwd         string `json:"cwd,omitempty"`
-	SessionFile string `json:"session_file,omitempty"`
-	SessionID   string `json:"session_id,omitempty"`
-	Prompt      string `json:"prompt,omitempty"`
+	Type        string              `json:"type"`
+	Cwd         string              `json:"cwd,omitempty"`
+	SessionFile string              `json:"session_file,omitempty"`
+	SessionID   string              `json:"session_id,omitempty"`
+	Prompt      string              `json:"prompt,omitempty"`
+	SkillEvents []piSkillEventInput `json:"skill_events,omitempty"`
+}
+
+type piSkillEventInput struct {
+	SkillName  string `json:"skill_name"`
+	Invocation string `json:"invocation"`
+	Timestamp  string `json:"timestamp,omitempty"`
+}
+
+// piSkillEvents converts the Pi extension's live skill-invocation reports into
+// agent.SkillEvents. This is Pi's only skill-capture path. PiAgent intentionally
+// does NOT implement agent.SkillEventExtractor: a transcript extractor would
+// double-count these live events at condensation (see
+// TestPiAgent_UsesLiveSkillCaptureNotTranscriptExtraction).
+func piSkillEvents(in []piSkillEventInput) []agent.SkillEvent {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]agent.SkillEvent, 0, len(in))
+	for i, ev := range in {
+		skillName := strings.TrimSpace(ev.SkillName)
+		if skillName == "" {
+			continue
+		}
+		invocation := strings.TrimSpace(ev.Invocation)
+		if invocation == "" {
+			invocation = "/skill:" + skillName
+		}
+		id := ""
+		if ev.Timestamp != "" {
+			id = fmt.Sprintf("pi-skill-%s-%s-%d", skillName, ev.Timestamp, i)
+		}
+		out = append(out, agent.SkillEvent{
+			ID:        id,
+			EventType: agent.SkillEventTypePromptInvocation,
+			Skill: agent.SkillEventSkill{
+				Name: skillName,
+			},
+			Source: agent.SkillEventSource{
+				Agent:      string(agent.AgentNamePi),
+				Signal:     agent.SkillSignalPiInputSlashCommand,
+				Confidence: agent.SkillConfidenceExplicit,
+			},
+			Timestamp: ev.Timestamp,
+			Native: map[string]string{
+				"command": invocation,
+			},
+			Collapse: agent.SkillEventCollapse{
+				Target:           agent.SkillCollapseTargetUserMessage,
+				Label:            invocation,
+				DefaultCollapsed: true,
+			},
+		})
+	}
+	return out
 }
 
 // ParseHookEvent translates a Pi hook invocation into a normalised lifecycle
 // event. Implements agent.HookSupport.
 func (a *PiAgent) ParseHookEvent(ctx context.Context, hookName string, stdin io.Reader) (*agent.Event, error) {
-	data, err := io.ReadAll(stdin)
+	// Stream one JSON value rather than io.ReadAll so the hook never blocks
+	// waiting for stdin EOF that some agents don't send on Windows (issue #1398).
+	parsed, err := agent.ReadAndParseHookInput[piHookPayload](stdin)
 	if err != nil {
-		return nil, fmt.Errorf("read pi hook input: %w", err)
+		return nil, err
 	}
-	if len(data) == 0 {
-		return nil, errors.New("empty pi hook input")
-	}
-
-	var payload piHookPayload
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("parse pi hook payload: %w", err)
-	}
+	payload := *parsed
 
 	sessionID := payload.SessionID
 	if sessionID == "" {
@@ -106,26 +181,28 @@ func (a *PiAgent) ParseHookEvent(ctx context.Context, hookName string, stdin io.
 		// is populated before any mid-turn commits. Without this, the
 		// post-commit hook cannot condense when no shadow branch exists yet.
 		return &agent.Event{
-			Type:       agent.TurnStart,
-			SessionID:  sessionID,
-			SessionRef: payload.SessionFile,
-			Prompt:     payload.Prompt,
-			Timestamp:  now,
+			Type:        agent.TurnStart,
+			SessionID:   sessionID,
+			SessionRef:  payload.SessionFile,
+			Prompt:      payload.Prompt,
+			Timestamp:   now,
+			SkillEvents: piSkillEvents(payload.SkillEvents),
 		}, nil
 
 	case HookNameAgentEnd:
 		if sessionID == "" {
 			sessionID = readCachedSessionID(ctx)
 		}
-		// Capture the Pi JSONL into <repo>/.trace/tmp/pi/<id>.json so the
+		// Capture the Pi JSONL into <repo>/.entire/tmp/pi/<id>.json so the
 		// strategy has a stable transcript reference even if the user later
 		// deletes Pi sessions. The pi/ subdir avoids colliding with paths
-		// other agents (or test harnesses) stage under .trace/tmp/.
+		// other agents (or test harnesses) stage under .entire/tmp/.
 		sessionRef := captureTranscript(ctx, sessionID, payload.SessionFile)
 		return &agent.Event{
 			Type:       agent.TurnEnd,
 			SessionID:  sessionID,
 			SessionRef: sessionRef,
+			Model:      extractModelFromPiSessionFile(sessionRef),
 			Timestamp:  now,
 		}, nil
 
@@ -134,7 +211,7 @@ func (a *PiAgent) ParseHookEvent(ctx context.Context, hookName string, stdin io.
 		// emit SessionEnd here.
 		//
 		// Pi fires session_shutdown and agent_end on session teardown, and the
-		// TypeScript extension dispatches both via separate `trace hooks pi …`
+		// TypeScript extension dispatches both via separate `entire hooks pi …`
 		// child processes (execFile is non-blocking). Child-process startup
 		// ordering then decides which event reaches the lifecycle dispatcher
 		// first; if session_shutdown wins, an emitted SessionEnd transitions
@@ -165,9 +242,9 @@ func (a *PiAgent) ParseHookEvent(ctx context.Context, hookName string, stdin io.
 
 const activeSessionFile = "pi-active-session"
 
-// piHookCacheSubdir is the subdirectory under .trace/tmp/ where hook
+// piHookCacheSubdir is the subdirectory under .entire/tmp/ where hook
 // flow caches the active-session ID file and the agent_end transcript
-// snapshot. Agent-specific (not just .trace/tmp/) so other agents'
+// snapshot. Agent-specific (not just .entire/tmp/) so other agents'
 // integration tests and tooling don't shadow each other under the cache
 // root.
 const piHookCacheSubdir = "pi"
@@ -189,11 +266,11 @@ func resolveSessionDir(ctx context.Context) string {
 		//nolint:forbidigo // fallback when no git repo (tests run outside repos)
 		wd, wdErr := os.Getwd()
 		if wdErr != nil {
-			return filepath.Join(paths.TraceTmpDir, piHookCacheSubdir)
+			return filepath.Join(paths.EntireTmpDir, piHookCacheSubdir)
 		}
 		root = wd
 	}
-	return filepath.Join(root, paths.TraceTmpDir, piHookCacheSubdir)
+	return filepath.Join(root, paths.EntireTmpDir, piHookCacheSubdir)
 }
 
 func cacheSessionID(ctx context.Context, id string) {
@@ -211,9 +288,25 @@ func cacheSessionID(ctx context.Context, id string) {
 	}
 }
 
+func extractModelFromPiSessionFile(path string) string {
+	if path == "" {
+		return ""
+	}
+	//nolint:gosec // path comes from Pi's hook payload or our captured transcript path
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	model, err := (&PiAgent{}).ExtractModel(data)
+	if err != nil {
+		return ""
+	}
+	return model
+}
+
 func readCachedSessionID(ctx context.Context) string {
 	dir := resolveSessionDir(ctx)
-	// #nosec G304 -- path constructed from validated repo root
+	//nolint:gosec // path constructed from validated repo root
 	data, err := os.ReadFile(filepath.Join(dir, activeSessionFile))
 	if err != nil {
 		return ""
@@ -227,12 +320,21 @@ func clearCachedSessionID(ctx context.Context) {
 }
 
 // captureTranscript copies the Pi JSONL session file to
-// <repo>/.trace/tmp/pi/<id>.json so Trace has a stable transcript
+// <repo>/.entire/tmp/pi/<id>.json so Entire has a stable transcript
 // reference. Returns the path to the cached file, or "" if either input is
-// missing. The pi/ namespace under .trace/tmp/ is intentional — see
+// missing. The pi/ namespace under .entire/tmp/ is intentional — see
 // GetSessionDir / piHookCacheSubdir for the rationale.
 func captureTranscript(ctx context.Context, sessionID, piSessionFile string) string {
 	if sessionID == "" || piSessionFile == "" {
+		return ""
+	}
+	// sessionID comes from the hook payload (or the locally cached active
+	// session) and is used to build dst below, before the lifecycle dispatcher
+	// validates it. Validate here at the choke point so an unsafe ID cannot
+	// write the transcript outside the cache directory; "" signals no capture.
+	if err := validation.ValidateSessionID(sessionID); err != nil {
+		logging.Warn(ctx, "pi: refusing to capture transcript for unsafe session ID",
+			slog.String("session_id", sessionID), slog.String("err", err.Error()))
 		return ""
 	}
 	dir := resolveSessionDir(ctx)
@@ -242,14 +344,14 @@ func captureTranscript(ctx context.Context, sessionID, piSessionFile string) str
 		return ""
 	}
 	dst := filepath.Join(dir, sessionID+".json")
-	// #nosec G304 -- piSessionFile from trusted Pi extension stdin payload
+	//nolint:gosec // G703: piSessionFile from trusted Pi extension stdin payload
 	data, err := os.ReadFile(piSessionFile)
 	if err != nil {
 		logging.Warn(ctx, "pi: capture transcript read failed",
 			slog.String("src", piSessionFile), slog.String("err", err.Error()))
 		return ""
 	}
-	//nolint:gosec // G703: dst constructed from validated session ID inside .trace/tmp
+	//nolint:gosec // G703: dst is sessionID (validated above) under .entire/tmp/pi
 	if err := os.WriteFile(dst, data, 0o600); err != nil {
 		logging.Warn(ctx, "pi: capture transcript write failed",
 			slog.String("dst", dst), slog.String("err", err.Error()))

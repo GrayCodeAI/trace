@@ -11,7 +11,7 @@ import (
 // in the same directory, fsyncing it, renaming into place, and fsyncing the
 // parent directory. A crash or signal mid-write leaves the original file
 // intact rather than a truncated partial — important for config files like
-// .trace/settings.json that callers expect to remain parseable across
+// .entire/settings.json that callers expect to remain parseable across
 // interrupted writes.
 //
 // The fsync between Write and Close guarantees the temp file's bytes are on
@@ -64,7 +64,6 @@ func WriteFileAtomic(filePath string, data []byte, perm fs.FileMode) error {
 	// Directory fsync isn't supported on Windows, and on POSIX an error
 	// after a successful rename would mislead callers who already have the
 	// file in place.
-	// #nosec G304 -- dir is filepath.Dir of caller-supplied filePath, not user input
 	if d, err := os.Open(dir); err == nil { //nolint:gosec // G304: dir is filepath.Dir of caller-supplied filePath, not user input
 		_ = d.Sync() //nolint:errcheck // best-effort directory fsync; failure does not roll back the rename
 		_ = d.Close()

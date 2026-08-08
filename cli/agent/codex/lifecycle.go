@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/GrayCodeAI/trace/cli/agent"
@@ -16,6 +15,7 @@ import (
 var (
 	_ agent.HookSupport        = (*CodexAgent)(nil)
 	_ agent.HookResponseWriter = (*CodexAgent)(nil)
+	_ agent.ContextInjector    = (*CodexAgent)(nil)
 )
 
 // WriteHookResponse outputs a JSON hook response to stdout.
@@ -30,7 +30,22 @@ func (c *CodexAgent) WriteHookResponse(message string) error {
 	return nil
 }
 
-// Codex hook names — these become subcommands under `trace hooks codex`
+// InjectionEvent reports that Codex injects model context at TurnStart (its
+// user-prompt-submit hook). Codex hosts Claude-compatible hooks, so it consumes
+// the same hookSpecificOutput.additionalContext shape.
+func (c *CodexAgent) InjectionEvent() agent.EventType { return agent.TurnStart }
+
+// RenderContextInjection renders the Claude-style additionalContext payload
+// Codex injects into the model context at user-prompt-submit.
+func (c *CodexAgent) RenderContextInjection(inj agent.ContextInjection) ([]byte, error) {
+	out, err := agent.RenderAdditionalContextHookOutput("UserPromptSubmit", inj.Text)
+	if err != nil {
+		return nil, fmt.Errorf("render codex context injection: %w", err)
+	}
+	return out, nil
+}
+
+// Codex hook names — these become subcommands under `entire hooks codex`
 const (
 	HookNameSessionStart     = "session-start"
 	HookNameUserPromptSubmit = "user-prompt-submit"
@@ -99,6 +114,62 @@ func (c *CodexAgent) parseTurnStart(stdin io.Reader) (*agent.Event, error) {
 	}, nil
 }
 
+// Codex PostToolUse tool_name values that represent file mutations. The
+// canonical Codex name is apply_patch; Write and Edit are matcher aliases
+// Codex registers for compatibility with Claude-style hook configs — see
+// codex-rs/core/src/tools/hook_names.rs:apply_patch.
+const (
+	toolNameApplyPatch = "apply_patch"
+	toolAliasWrite     = "Write"
+	toolAliasEdit      = "Edit"
+)
+
+// parsePostToolUse turns a Codex PostToolUse hook into a ToolUse lifecycle event.
+// Non-mutating tools (shell, MCP) produce a nil event so the dispatcher skips
+// them — extracting files from arbitrary shell commands would be unreliable.
+func (c *CodexAgent) parsePostToolUse(stdin io.Reader) (*agent.Event, error) {
+	raw, err := agent.ReadAndParseHookInput[postToolUseRaw](stdin)
+	if err != nil {
+		return nil, err
+	}
+
+	if !isApplyPatchTool(raw.ToolName) {
+		return nil, nil //nolint:nilnil // non-mutating tools have no lifecycle action
+	}
+
+	var input applyPatchToolInput
+	// Best-effort: an unparseable tool_input means we can't extract files, but
+	// we shouldn't fail the hook (which would block the agent's tool call).
+	_ = json.Unmarshal(raw.ToolInput, &input) //nolint:errcheck // input.Command stays empty on failure
+
+	added, modified, deleted := classifyApplyPatchPaths(input.Command)
+	if len(added) == 0 && len(modified) == 0 && len(deleted) == 0 {
+		return nil, nil //nolint:nilnil // empty or unparseable envelope
+	}
+
+	return &agent.Event{
+		Type:          agent.ToolUse,
+		SessionID:     raw.SessionID,
+		SessionRef:    derefString(raw.TranscriptPath),
+		Model:         raw.Model,
+		ToolUseID:     raw.ToolUseID,
+		CWD:           raw.CWD,
+		ModifiedFiles: modified,
+		NewFiles:      added,
+		DeletedFiles:  deleted,
+		Timestamp:     time.Now(),
+	}, nil
+}
+
+func isApplyPatchTool(name string) bool {
+	switch name {
+	case toolNameApplyPatch, toolAliasWrite, toolAliasEdit:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *CodexAgent) parseTurnEnd(stdin io.Reader) (*agent.Event, error) {
 	raw, err := agent.ReadAndParseHookInput[stopRaw](stdin)
 	if err != nil {
@@ -111,65 +182,4 @@ func (c *CodexAgent) parseTurnEnd(stdin io.Reader) (*agent.Event, error) {
 		Model:      raw.Model,
 		Timestamp:  time.Now(),
 	}, nil
-}
-
-func (c *CodexAgent) parsePostToolUse(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[postToolUseRaw](stdin)
-	if err != nil {
-		return nil, err
-	}
-
-	// Only apply_patch carries file changes worth tracking.
-	if raw.ToolName != "apply_patch" {
-		return nil, nil //nolint:nilnil // non-mutating tools have no lifecycle action
-	}
-
-	var input applyPatchInput
-	if err := json.Unmarshal(raw.ToolInput, &input); err != nil {
-		return nil, fmt.Errorf("failed to parse apply_patch input: %w", err)
-	}
-
-	added, updated, deleted := parseApplyPatchFiles(input.Patch)
-	if len(added) == 0 && len(updated) == 0 && len(deleted) == 0 {
-		return nil, nil //nolint:nilnil // empty patch has no lifecycle action
-	}
-
-	return &agent.Event{
-		Type:          agent.ToolUse,
-		SessionID:     raw.SessionID,
-		SessionRef:    derefString(raw.TranscriptPath),
-		ToolName:      raw.ToolName,
-		ToolUseID:     raw.ToolUseID,
-		ModifiedFiles: updated,
-		NewFiles:      added,
-		DeletedFiles:  deleted,
-		Timestamp:     time.Now(),
-	}, nil
-}
-
-// parseApplyPatchFiles extracts file paths from a Codex apply_patch envelope.
-// The patch format uses markers:
-//
-//	*** Add File: path
-//	*** Update File: path
-//	*** Delete File: path
-func parseApplyPatchFiles(patch string) (added, updated, deleted []string) {
-	for line := range strings.SplitSeq(patch, "\n") {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "*** Add File:"):
-			if p := strings.TrimSpace(strings.TrimPrefix(line, "*** Add File:")); p != "" {
-				added = append(added, p)
-			}
-		case strings.HasPrefix(line, "*** Update File:"):
-			if p := strings.TrimSpace(strings.TrimPrefix(line, "*** Update File:")); p != "" {
-				updated = append(updated, p)
-			}
-		case strings.HasPrefix(line, "*** Delete File:"):
-			if p := strings.TrimSpace(strings.TrimPrefix(line, "*** Delete File:")); p != "" {
-				deleted = append(deleted, p)
-			}
-		}
-	}
-	return added, updated, deleted
 }

@@ -19,7 +19,7 @@ func TestRun_ServerAllowsRepos(t *testing.T) {
 
 	_, err := Run(context.Background(), Options{
 		Mode:      ModeServer,
-		RepoPaths: []string{"GrayCodeAI/cli"},
+		RepoPaths: []string{"entireio/cli"},
 	})
 	if err == nil {
 		t.Fatal("expected login error")

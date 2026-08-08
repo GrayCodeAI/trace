@@ -42,7 +42,7 @@ func newSemanticSearcher(insecureHTTP bool) semanticSearcher {
 // errors pass through unchanged.
 func loginHintErr(err error) error {
 	if errors.Is(err, auth.ErrNotLoggedIn) {
-		return errors.New("not authenticated. Run 'trace login' to authenticate")
+		return errors.New("not authenticated. Run 'entire login' to authenticate")
 	}
 	return err
 }

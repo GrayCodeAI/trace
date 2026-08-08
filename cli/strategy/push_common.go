@@ -14,8 +14,8 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/logging"
-	"github.com/GrayCodeAI/trace/cli/perf"
 	"github.com/GrayCodeAI/trace/cli/settings"
+	"github.com/GrayCodeAI/trace/perf"
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -160,7 +160,7 @@ func doPushRef(ctx context.Context, target string, ref plumbing.ReferenceName) e
 	displayTarget := displayPushTarget(target)
 	refLabel := refDisplayName(ref)
 
-	fmt.Fprintf(os.Stderr, "[trace] Pushing %s to %s...", refLabel, displayTarget)
+	fmt.Fprintf(os.Stderr, "[entire] Pushing %s to %s...", refLabel, displayTarget)
 	stop := startProgressDots(os.Stderr)
 
 	// Try pushing first
@@ -182,7 +182,7 @@ func doPushRef(ctx context.Context, target string, ref plumbing.ReferenceName) e
 	// fetch+rebase, and retrying would just reprint the same opaque error.
 	// Surface an actionable ssh-agent hint and skip recovery (issue #1523).
 	if nonInteractiveSSHAuthFailure(ctx, err) {
-		fmt.Fprintf(os.Stderr, "[trace] Warning: couldn't push %s: %v\n", refLabel, err)
+		fmt.Fprintf(os.Stderr, "[entire] Warning: couldn't push %s: %v\n", refLabel, err)
 		printNonInteractiveSSHAuthHint()
 		printCheckpointRemoteHint(target)
 		return nil
@@ -191,7 +191,7 @@ func doPushRef(ctx context.Context, target string, ref plumbing.ReferenceName) e
 	// Push failed - likely non-fast-forward. Try to fetch and rebase.
 	// Spanned (with the network fetch as a child) so the trace distinguishes
 	// "the raw push is slow" from "we keep hitting contention and re-syncing".
-	fmt.Fprintf(os.Stderr, "[trace] Syncing %s with remote...", refLabel)
+	fmt.Fprintf(os.Stderr, "[entire] Syncing %s with remote...", refLabel)
 	stop = startProgressDots(os.Stderr)
 
 	frCtx, fetchRebaseSpan := perf.Start(ctx, "fetch_and_rebase")
@@ -200,7 +200,7 @@ func doPushRef(ctx context.Context, target string, ref plumbing.ReferenceName) e
 	fetchRebaseSpan.End()
 	if syncErr != nil {
 		stop("")
-		fmt.Fprintf(os.Stderr, "[trace] Warning: couldn't sync %s: %v\n", refLabel, syncErr)
+		fmt.Fprintf(os.Stderr, "[entire] Warning: couldn't sync %s: %v\n", refLabel, syncErr)
 		if nonInteractiveSSHAuthFailure(ctx, syncErr) {
 			printNonInteractiveSSHAuthHint()
 		}
@@ -210,12 +210,12 @@ func doPushRef(ctx context.Context, target string, ref plumbing.ReferenceName) e
 	stop(" done")
 
 	// Try pushing again after rebase
-	fmt.Fprintf(os.Stderr, "[trace] Pushing %s to %s...", refLabel, displayTarget)
+	fmt.Fprintf(os.Stderr, "[entire] Pushing %s to %s...", refLabel, displayTarget)
 	stop = startProgressDots(os.Stderr)
 
 	if result, err := tryPushRefCommon(ctx, target, ref); err != nil {
 		stop("")
-		fmt.Fprintf(os.Stderr, "[trace] Warning: failed to push %s after sync: %v\n", refLabel, err)
+		fmt.Fprintf(os.Stderr, "[entire] Warning: failed to push %s after sync: %v\n", refLabel, err)
 		if nonInteractiveSSHAuthFailure(ctx, err) {
 			printNonInteractiveSSHAuthHint()
 		}
@@ -228,7 +228,7 @@ func doPushRef(ctx context.Context, target string, ref plumbing.ReferenceName) e
 }
 
 // refDisplayName returns a user-readable name for ref. Branch refs use the
-// short name (e.g. "trace/checkpoints/v1"); other refs use the full name.
+// short name (e.g. "entire/checkpoints/v1"); other refs use the full name.
 func refDisplayName(ref plumbing.ReferenceName) string {
 	if ref.IsBranch() {
 		return ref.Short()
@@ -249,8 +249,8 @@ func printCheckpointRemoteHint(target string) {
 	if !remote.IsURL(target) {
 		return
 	}
-	fmt.Fprintln(os.Stderr, "[trace] A checkpoint remote is configured in Entire settings (.trace/settings.json or .trace/settings.local.json) but could not be reached.")
-	fmt.Fprintln(os.Stderr, "[trace] Checkpoints are saved locally but not synced. Ensure you have access to the checkpoint remote.")
+	fmt.Fprintln(os.Stderr, "[entire] A checkpoint remote is configured in Entire settings (.entire/settings.json or .entire/settings.local.json) but could not be reached.")
+	fmt.Fprintln(os.Stderr, "[entire] Checkpoints are saved locally but not synced. Ensure you have access to the checkpoint remote.")
 }
 
 // sshAuthHintOnce ensures the ssh-agent hint prints at most once per process
@@ -261,9 +261,9 @@ var sshAuthHintOnce sync.Once
 // that failed because SSH needed interactive auth under BatchMode (issue #1523).
 func printNonInteractiveSSHAuthHint() {
 	sshAuthHintOnce.Do(func() {
-		fmt.Fprintln(os.Stderr, "[trace] Checkpoint push skipped: SSH needs interactive auth (passphrase/PIN) and cannot prompt during git hooks.")
-		fmt.Fprintln(os.Stderr, "[trace] Load your key into ssh-agent (`ssh-add`), then push again. Checkpoints are saved locally until then.")
-		fmt.Fprintln(os.Stderr, "[trace] PIN-protected security keys: unlock/add them to the agent first. To allow prompts in this path, set GIT_SSH_COMMAND (or core.sshCommand) with an explicit BatchMode=no.")
+		fmt.Fprintln(os.Stderr, "[entire] Checkpoint push skipped: SSH needs interactive auth (passphrase/PIN) and cannot prompt during git hooks.")
+		fmt.Fprintln(os.Stderr, "[entire] Load your key into ssh-agent (`ssh-add`), then push again. Checkpoints are saved locally until then.")
+		fmt.Fprintln(os.Stderr, "[entire] PIN-protected security keys: unlock/add them to the agent first. To allow prompts in this path, set GIT_SSH_COMMAND (or core.sshCommand) with an explicit BatchMode=no.")
 	})
 }
 
@@ -271,9 +271,9 @@ func printNonInteractiveSSHAuthHint() {
 var settingsHintOnce sync.Once
 
 // printSettingsCommitHint prints a hint after a successful checkpoint remote push
-// when the committed .trace/settings.json does not contain a checkpoint_remote config.
-// trace.io discovers the external checkpoint repo by reading the committed project
-// settings, so the checkpoint_remote must be present in HEAD:.trace/settings.json
+// when the committed .entire/settings.json does not contain a checkpoint_remote config.
+// entire.io discovers the external checkpoint repo by reading the committed project
+// settings, so the checkpoint_remote must be present in HEAD:.entire/settings.json
 // (not just in settings.local.json or uncommitted local changes).
 // Uses sync.Once to avoid duplicates when multiple branches/refs are pushed in a
 // single pre-push invocation.
@@ -285,16 +285,16 @@ func printSettingsCommitHint(ctx context.Context, target string) {
 		if isCheckpointRemoteCommitted(ctx) {
 			return
 		}
-		fmt.Fprintln(os.Stderr, "[trace] Note: Checkpoints were pushed to a separate checkpoint remote, but .trace/settings.json does not contain checkpoint_remote in the latest commit. trace.io will not be able to discover these checkpoints until checkpoint_remote is committed and pushed in .trace/settings.json.")
+		fmt.Fprintln(os.Stderr, "[entire] Note: Checkpoints were pushed to a separate checkpoint remote, but .entire/settings.json does not contain checkpoint_remote in the latest commit. entire.io will not be able to discover these checkpoints until checkpoint_remote is committed and pushed in .entire/settings.json.")
 	})
 }
 
-// isCheckpointRemoteCommitted returns true if the committed .trace/settings.json
+// isCheckpointRemoteCommitted returns true if the committed .entire/settings.json
 // at HEAD contains a valid checkpoint_remote configuration. This is the true
-// discoverability check: trace.io reads from committed project settings, not from
+// discoverability check: entire.io reads from committed project settings, not from
 // local overrides or uncommitted changes.
 func isCheckpointRemoteCommitted(ctx context.Context) bool {
-	cmd := exec.CommandContext(ctx, "git", "show", "HEAD:.trace/settings.json")
+	cmd := exec.CommandContext(ctx, "git", "show", "HEAD:.entire/settings.json")
 	output, err := cmd.Output()
 	if err != nil {
 		return false // file doesn't exist at HEAD
@@ -441,15 +441,15 @@ func classifyPushFailure(ctx context.Context, output string, pushErr error) erro
 
 // printProtectedRefBlock explains that checkpoint syncing was blocked remotely.
 func printProtectedRefBlock(w io.Writer, ref, target string) {
-	const banner = "[trace] ============================================================"
+	const banner = "[entire] ============================================================"
 	displayTarget := displayPushTarget(target)
 	fmt.Fprintln(w, banner)
-	fmt.Fprintf(w, "[trace] BLOCKED: remote rejected push to %s\n", ref)
-	fmt.Fprintln(w, "[trace] Reason:  GitHub branch protection or repository ruleset (e.g. GH013)")
-	fmt.Fprintf(w, "[trace] Target:  %s\n", displayTarget)
-	fmt.Fprintln(w, "[trace] Impact:  checkpoints are saved locally but NOT synced to this remote.")
-	fmt.Fprintln(w, "[trace] Action:  allow pushes to `trace/*` in your ruleset, or set")
-	fmt.Fprintln(w, "[trace]          `checkpoint_remote` in .trace/settings.json to a separate repo.")
+	fmt.Fprintf(w, "[entire] BLOCKED: remote rejected push to %s\n", ref)
+	fmt.Fprintln(w, "[entire] Reason:  GitHub branch protection or repository ruleset (e.g. GH013)")
+	fmt.Fprintf(w, "[entire] Target:  %s\n", displayTarget)
+	fmt.Fprintln(w, "[entire] Impact:  checkpoints are saved locally but NOT synced to this remote.")
+	fmt.Fprintln(w, "[entire] Action:  allow pushes to `entire/*` in your ruleset, or set")
+	fmt.Fprintln(w, "[entire]          `checkpoint_remote` in .entire/settings.json to a separate repo.")
 	fmt.Fprintln(w, banner)
 }
 

@@ -4,7 +4,7 @@
 // It exists to detect agent sessions left in an ACTIVE state when the owning
 // process went away — a clean exit, a crash, a kill, a closed terminal, or a
 // reboot — without firing a SessionStop hook. Recording the owner's identity at
-// turn start lets `trace status` / `trace doctor` notice the process is gone
+// turn start lets `entire status` / `entire doctor` notice the process is gone
 // immediately, instead of waiting out a coarse inactivity timeout.
 //
 // This package is a leaf: it imports only the standard library and

@@ -1,5 +1,5 @@
 // Package external provides an adapter that bridges external agent binaries
-// (discovered via PATH as trace-agent-<name>) to the agent.Agent interface.
+// (discovered via PATH as entire-agent-<name>) to the agent.Agent interface.
 // Communication uses a subcommand-based protocol with JSON over stdin/stdout.
 package external
 

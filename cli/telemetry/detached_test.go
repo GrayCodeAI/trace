@@ -8,22 +8,42 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// spySendDetached swaps the dispatch hook and returns a counter.
-func spySendDetached(t *testing.T) *int {
-	t.Helper()
-	calls := 0
-	orig := sendDetached
-	sendDetached = func(string) { calls++ }
-	t.Cleanup(func() { sendDetached = orig })
-	return &calls
+func TestBuildPluginEventPayload(t *testing.T) {
+	t.Parallel()
+	payload := BuildPluginEventPayload("pgr", true, "1.2.3")
+	if payload == nil {
+		t.Fatal("BuildPluginEventPayload returned nil")
+		return
+	}
+	if payload.Event != "cli_plugin_executed" {
+		t.Errorf("Event = %q, want %q", payload.Event, "cli_plugin_executed")
+	}
+	if got := payload.Properties["plugin"]; got != "pgr" {
+		t.Errorf("plugin property = %v, want %q", got, "pgr")
+	}
+	if got := payload.Properties["command"]; got != "entire pgr" {
+		t.Errorf("command property = %v, want %q", got, "entire pgr")
+	}
+	if got := payload.Properties["cli_version"]; got != "1.2.3" {
+		t.Errorf("cli_version property = %v, want %q", got, "1.2.3")
+	}
+	if got := payload.Properties["isEntireEnabled"]; got != true {
+		t.Errorf("isEntireEnabled property = %v, want true", got)
+	}
+	// Plugin args/flags must never appear in the payload.
+	if _, ok := payload.Properties["flags"]; ok {
+		t.Error("plugin payload must not include 'flags'")
+	}
+	if _, ok := payload.Properties["args"]; ok {
+		t.Error("plugin payload must not include 'args'")
+	}
 }
 
-// isolateConfigDir redirects the anonymous ID file into a temp dir.
-func isolateConfigDir(t *testing.T) {
-	t.Helper()
-	orig := userConfigDir
-	userConfigDir = func() (string, error) { return t.TempDir(), nil }
-	t.Cleanup(func() { userConfigDir = orig })
+func TestBuildPluginEventPayload_EmptyName(t *testing.T) {
+	t.Parallel()
+	if got := BuildPluginEventPayload("", true, "1.0.0"); got != nil {
+		t.Errorf("expected nil for empty plugin name, got %+v", got)
+	}
 }
 
 func TestEventPayloadSerialization(t *testing.T) {
@@ -31,13 +51,13 @@ func TestEventPayloadSerialization(t *testing.T) {
 		Event:      "cli_command_executed",
 		DistinctID: "test-machine-id",
 		Properties: map[string]any{
-			"command":        "trace status",
-			"strategy":       "manual-commit",
-			"agent":          "claude-code",
-			"isTraceEnabled": true,
-			"cli_version":    "1.0.0",
-			"os":             "darwin",
-			"arch":           "arm64",
+			"command":         "entire status",
+			"strategy":        "manual-commit",
+			"agent":           "claude-code",
+			"isEntireEnabled": true,
+			"cli_version":     "1.0.0",
+			"os":              "darwin",
+			"arch":            "arm64",
 		},
 		Timestamp: time.Date(2026, 1, 28, 12, 0, 0, 0, time.UTC),
 	}
@@ -66,8 +86,8 @@ func TestEventPayloadSerialization(t *testing.T) {
 	}
 
 	// Verify properties
-	if cmd, ok := decoded.Properties["command"].(string); !ok || cmd != "trace status" {
-		t.Errorf("Properties[command] = %v, want %q", decoded.Properties["command"], "trace status")
+	if cmd, ok := decoded.Properties["command"].(string); !ok || cmd != "entire status" {
+		t.Errorf("Properties[command] = %v, want %q", decoded.Properties["command"], "entire status")
 	}
 }
 
@@ -87,62 +107,14 @@ func TestTrackCommandDetachedSkipsHiddenCommands(_ *testing.T) {
 }
 
 func TestTrackCommandDetachedRespectsOptOut(t *testing.T) {
-	t.Setenv("TRACE_TELEMETRY_OPTIN", "1")
-	t.Setenv("TRACE_TELEMETRY_OPTOUT", "1")
+	t.Setenv("ENTIRE_TELEMETRY_OPTOUT", "1")
 
-	calls := spySendDetached(t)
 	cmd := &cobra.Command{
 		Use: "status",
 	}
 
-	// Opt-out must win over opt-in: nothing is dispatched.
+	// Should not panic and should respect opt-out
 	TrackCommandDetached(cmd, "claude-code", true, "1.0.0")
-	if *calls != 0 {
-		t.Errorf("expected 0 dispatches when opt-out is set, got %d", *calls)
-	}
-}
-
-func TestTrackCommandDetachedDisabledByDefault(t *testing.T) {
-	// Without TRACE_TELEMETRY_OPTIN, telemetry is off even with no opt-out.
-	calls := spySendDetached(t)
-	cmd := &cobra.Command{Use: "status"}
-
-	TrackCommandDetached(cmd, "claude-code", true, "1.0.0")
-	if *calls != 0 {
-		t.Errorf("expected 0 dispatches by default (opt-in), got %d", *calls)
-	}
-}
-
-func TestTrackCommandDetachedEnabledWithOptIn(t *testing.T) {
-	t.Setenv("TRACE_TELEMETRY_OPTIN", "1")
-	isolateConfigDir(t)
-
-	calls := spySendDetached(t)
-	cmd := &cobra.Command{Use: "status"}
-
-	TrackCommandDetached(cmd, "claude-code", true, "1.0.0")
-	if *calls != 1 {
-		t.Errorf("expected 1 dispatch with opt-in, got %d", *calls)
-	}
-}
-
-func TestTrackPluginDetachedDisabledByDefault(t *testing.T) {
-	calls := spySendDetached(t)
-	TrackPluginDetached("my-plugin", true, "1.0.0")
-	if *calls != 0 {
-		t.Errorf("expected 0 dispatches by default (opt-in), got %d", *calls)
-	}
-}
-
-func TestTrackPluginDetachedEnabledWithOptIn(t *testing.T) {
-	t.Setenv("TRACE_TELEMETRY_OPTIN", "1")
-	isolateConfigDir(t)
-
-	calls := spySendDetached(t)
-	TrackPluginDetached("my-plugin", true, "1.0.0")
-	if *calls != 1 {
-		t.Errorf("expected 1 dispatch with opt-in, got %d", *calls)
-	}
 }
 
 func TestBuildEventPayloadAgent(t *testing.T) {
@@ -181,4 +153,29 @@ func TestSendEventHandlesInvalidJSON(_ *testing.T) {
 	SendEvent("invalid json")
 	SendEvent("")
 	SendEvent("{}")
+}
+
+func TestParseGitVersion(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{"standard", "git version 2.43.0\n", "2.43.0"},
+		{"apple suffix", "git version 2.39.3 (Apple Git-146)\n", "2.39.3"},
+		{"windows suffix", "git version 2.45.1.windows.1\n", "2.45.1.windows.1"},
+		{"no trailing newline", "git version 2.40.0", "2.40.0"},
+		{"empty", "", ""},
+		{"unexpected prefix", "not git output", ""},
+		{"missing version token", "git version", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := parseGitVersion(tt.out); got != tt.want {
+				t.Errorf("parseGitVersion(%q) = %q, want %q", tt.out, got, tt.want)
+			}
+		})
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -111,7 +112,7 @@ func (g *GeminiCLIAgent) ResolveSessionFile(sessionDir, agentSessionID string) s
 // Gemini stores sessions in ~/.gemini/tmp/<project-hash>/chats/
 func (g *GeminiCLIAgent) GetSessionDir(repoPath string) (string, error) {
 	// Check for test environment override
-	if override := os.Getenv("TRACE_TEST_GEMINI_PROJECT_DIR"); override != "" {
+	if override := os.Getenv("ENTIRE_TEST_GEMINI_PROJECT_DIR"); override != "" {
 		return override, nil
 	}
 
@@ -126,7 +127,7 @@ func (g *GeminiCLIAgent) GetSessionDir(repoPath string) (string, error) {
 }
 
 // GetSessionBaseDir returns the base directory containing per-project session subdirectories.
-// Unlike GetSessionDir, this does NOT use TRACE_TEST_GEMINI_PROJECT_DIR because the
+// Unlike GetSessionDir, this does NOT use ENTIRE_TEST_GEMINI_PROJECT_DIR because the
 // test override points to a specific project dir, not the base containing all projects.
 func (g *GeminiCLIAgent) GetSessionBaseDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -216,7 +217,6 @@ func (g *GeminiCLIAgent) GetTranscriptPosition(path string) (int, error) {
 		return 0, nil
 	}
 
-	// #nosec G304 -- reading from controlled transcript path, not remote/untrusted input
 	data, err := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -248,7 +248,6 @@ func (g *GeminiCLIAgent) ExtractModifiedFilesFromOffset(path string, startOffset
 		return nil, 0, nil
 	}
 
-	// #nosec G304 -- reading from controlled transcript path, not remote/untrusted input
 	data, readErr := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
 	if readErr != nil {
 		if os.IsNotExist(readErr) {
@@ -379,6 +378,23 @@ func (g *GeminiCLIAgent) ChunkTranscript(ctx context.Context, content []byte, ma
 	}
 
 	return chunks, nil
+}
+
+// LaunchCmd builds an exec.Cmd for `gemini "<initialPrompt>"`. Stdio is wired
+// to the caller's TTY so the agent runs foreground and the user interacts
+// normally. The call site is expected to Run() and wait. Hooks inherit the
+// parent environment.
+func (g *GeminiCLIAgent) LaunchCmd(ctx context.Context, initialPrompt string) (*exec.Cmd, error) {
+	bin, err := exec.LookPath("gemini")
+	if err != nil {
+		return nil, fmt.Errorf("gemini binary not on PATH: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, bin, initialPrompt)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+	return cmd, nil
 }
 
 // ReassembleTranscript merges Gemini JSON chunks by combining their message arrays.

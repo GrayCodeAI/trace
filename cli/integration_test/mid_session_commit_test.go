@@ -35,13 +35,16 @@ func TestShadowStrategy_MidSessionCommit_FromTranscript(t *testing.T) {
 		"session_id":      session.ID,
 		"transcript_path": session.TranscriptPath,
 	}
-	inputJSON, _ := json.Marshal(input)
-	cmd := exec.Command(getTestBinary(), "hooks", "claude-code", "user-prompt-submit")
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("failed to marshal input: %v", err)
+	}
+	cmd := exec.CommandContext(t.Context(), getTestBinary(), "hooks", agentClaudeCode, "user-prompt-submit")
 	cmd.Dir = env.RepoDir
 	cmd.Stdin = bytes.NewReader(inputJSON)
 	cmd.Env = append(
 		testutil.GitIsolatedEnv(),
-		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("user-prompt-submit failed: %v\nOutput: %s", err, output)
@@ -69,7 +72,7 @@ func TestShadowStrategy_MidSessionCommit_FromTranscript(t *testing.T) {
 	})
 
 	// Verify NO shadow branch exists (Stop hasn't been called)
-	shadowBranches := env.ListBranchesWithPrefix("trace/")
+	shadowBranches := env.ListBranchesWithPrefix("entire/")
 	hasShadowBranch := false
 	for _, b := range shadowBranches {
 		if b != paths.MetadataBranchName && b != paths.TrailsBranchName {
@@ -97,7 +100,7 @@ func TestShadowStrategy_MidSessionCommit_FromTranscript(t *testing.T) {
 	// This is the fix for ENT-112 scenario 2: detect work from live transcript
 	checkpointID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if checkpointID == "" {
-		t.Error("Mid-session commit should have Trace-Checkpoint trailer when transcript shows file modifications")
+		t.Error("Mid-session commit should have Entire-Checkpoint trailer when transcript shows file modifications")
 	} else {
 		t.Logf("Mid-session commit has checkpoint ID: %s", checkpointID)
 	}
@@ -149,13 +152,16 @@ func TestShadowStrategy_MidSessionCommit_NoTrailerForUnrelatedFile(t *testing.T)
 		"session_id":      session.ID,
 		"transcript_path": session.TranscriptPath,
 	}
-	inputJSON, _ := json.Marshal(input)
-	cmd := exec.Command(getTestBinary(), "hooks", "claude-code", "user-prompt-submit")
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("failed to marshal input: %v", err)
+	}
+	cmd := exec.CommandContext(t.Context(), getTestBinary(), "hooks", agentClaudeCode, "user-prompt-submit")
 	cmd.Dir = env.RepoDir
 	cmd.Stdin = bytes.NewReader(inputJSON)
 	cmd.Env = append(
 		testutil.GitIsolatedEnv(),
-		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("user-prompt-submit failed: %v\nOutput: %s", err, output)
@@ -234,13 +240,16 @@ func TestShadowStrategy_MidSessionCommit_FilesTouchedFallback(t *testing.T) {
 		"session_id":      session.ID,
 		"transcript_path": session.TranscriptPath,
 	}
-	inputJSON, _ := json.Marshal(input)
-	cmd := exec.Command(getTestBinary(), "hooks", "claude-code", "user-prompt-submit")
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("failed to marshal input: %v", err)
+	}
+	cmd := exec.CommandContext(t.Context(), getTestBinary(), "hooks", agentClaudeCode, "user-prompt-submit")
 	cmd.Dir = env.RepoDir
 	cmd.Stdin = bytes.NewReader(inputJSON)
 	cmd.Env = append(
 		testutil.GitIsolatedEnv(),
-		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("user-prompt-submit failed: %v\nOutput: %s", err, output)
@@ -274,7 +283,7 @@ func TestShadowStrategy_MidSessionCommit_FilesTouchedFallback(t *testing.T) {
 	commitHash := env.GetHeadHash()
 	checkpointID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if checkpointID == "" {
-		t.Fatal("Mid-session commit should have Trace-Checkpoint trailer")
+		t.Fatal("Mid-session commit should have Entire-Checkpoint trailer")
 	}
 	t.Logf("Mid-session commit has checkpoint ID: %s", checkpointID)
 
@@ -294,7 +303,7 @@ func TestShadowStrategy_MidSessionCommit_FilesTouchedFallback(t *testing.T) {
 // TestShadowStrategy_MidTurnCommit_DifferentFilesThanCheckpoint tests that when
 // an agent's Turn 1 touches file A (saved via Stop/checkpoint), and Turn 2 commits
 // different files B and C, the PostCommit hook still condenses the session data
-// to trace/checkpoints/v1.
+// to entire/checkpoints/v1.
 //
 // This is a regression test for the bug where shouldCondenseWithOverlapCheck
 // incorrectly skipped condensation for ACTIVE sessions because filesTouchedBefore
@@ -359,13 +368,13 @@ func TestShadowStrategy_MidTurnCommit_DifferentFilesThanCheckpoint(t *testing.T)
 	checkpointID := env.GetCheckpointIDFromCommitMessage(commitHash)
 
 	if checkpointID == "" {
-		t.Fatal("Commit should have Trace-Checkpoint trailer")
+		t.Fatal("Commit should have Entire-Checkpoint trailer")
 	}
 	t.Logf("Mid-turn commit has checkpoint ID: %s", checkpointID)
 
-	// The critical assertion: trace/checkpoints/v1 branch should exist with data
+	// The critical assertion: entire/checkpoints/v1 branch should exist with data
 	if !env.BranchExists(paths.MetadataBranchName) {
-		t.Fatal("trace/checkpoints/v1 branch should exist — ACTIVE session with different files must still condense")
+		t.Fatal("entire/checkpoints/v1 branch should exist — ACTIVE session with different files must still condense")
 	}
 
 	// Validate checkpoint data was written correctly
@@ -375,5 +384,5 @@ func TestShadowStrategy_MidTurnCommit_DifferentFilesThanCheckpoint(t *testing.T)
 		Strategy:     strategy.StrategyNameManualCommit,
 	})
 
-	t.Log("Mid-turn commit with different files correctly condensed to trace/checkpoints/v1")
+	t.Log("Mid-turn commit with different files correctly condensed to entire/checkpoints/v1")
 }

@@ -3,33 +3,69 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 )
 
 type experimentalCommandInfo struct {
-	Name       string
-	Invocation string
-	Summary    string
+	CommandPath []string
+	Invocation  string
+	Summary     string
 }
 
 var experimentalCommands = []experimentalCommandInfo{
 	{
-		Name:       "review",
-		Invocation: "trace review",
-		Summary:    "Run configured review skills against the current branch",
+		CommandPath: []string{"review"},
+		Invocation:  "entire review",
+		Summary:     "Run a multi-agent review against the current branch",
 	},
 	{
-		Name:       "investigate",
-		Invocation: "trace investigate",
-		Summary:    "multi-agent investigation loop for code analysis",
+		CommandPath: []string{"investigate"},
+		Invocation:  "entire investigate",
+		Summary:     "Run a multi-agent investigation against a topic, issue, or seed doc",
+	},
+	{
+		CommandPath: []string{"import", "claude-code"},
+		Invocation:  "entire import claude-code",
+		Summary:     "Import existing Claude Code transcripts as local, read-only history",
+	},
+	{
+		CommandPath: []string{"tokens"},
+		Invocation:  "entire tokens",
+		Summary:     "Analyze experimental token usage diagnostics",
+	},
+	{
+		CommandPath: []string{"tokens", "profile"},
+		Invocation:  "entire tokens profile",
+		Summary:     "Aggregate token usage across committed checkpoints",
+	},
+	{
+		CommandPath: []string{"session", "tokens"},
+		Invocation:  "entire session tokens",
+		Summary:     "Show token usage and recommendations for a session",
+	},
+	{
+		CommandPath: []string{"blame"},
+		Invocation:  "entire blame",
+		Summary:     "Show which lines came from Entire checkpoints",
+	},
+	{
+		CommandPath: []string{"why"},
+		Invocation:  "entire why",
+		Summary:     "Show why a line exists (commit, checkpoint, prompt, session)",
+	},
+	{
+		CommandPath: []string{"experts"},
+		Invocation:  "entire experts",
+		Summary:     "Show agent, skill, and tool provenance for files or topics",
 	},
 }
 
 func newLabsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "labs",
-		Short: "Explore experimental Trace workflows",
+		Short: "Explore experimental Entire workflows",
 		Long:  labsOverview(),
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -37,7 +73,7 @@ func newLabsCmd() *cobra.Command {
 			}
 			err := fmt.Errorf("unknown labs topic %q", args[0])
 			fmt.Fprintf(cmd.ErrOrStderr(),
-				"%v\n\nRun `trace labs` to see available experimental commands, or run `trace review --help` or `trace investigate --help` for command-specific help.\n",
+				"%v\n\nRun `entire labs` to see available experimental commands, or run `entire review --help` for command-specific help.\n",
 				err)
 			return NewSilentError(err)
 		},
@@ -58,22 +94,35 @@ No experimental commands are available in this build.
 
 	return `Labs
 
-These are newer Trace workflows we are actively refining. They are available
+These are newer Entire workflows we are actively refining. They are available
 to try now, but details may change based on feedback.
 
 Available experimental commands:
 ` + renderExperimentalCommands(experimentalCommands) + `
 Try:
-  trace review --help
-  trace investigate --help
+  entire review --help
+  entire investigate --help
+  entire tokens --help
+  entire tokens profile --help
+  entire session tokens --help
+  entire blame --help
+  entire why --help
+  entire experts --help
 `
 }
 
 func renderExperimentalCommands(commands []experimentalCommandInfo) string {
+	width := 0
+	for _, info := range commands {
+		if w := utf8.RuneCountInString(info.Invocation); w > width {
+			width = w
+		}
+	}
+
 	var out strings.Builder
 	for _, info := range commands {
 		out.WriteString("  ")
-		out.WriteString(padRight(info.Invocation, 16))
+		out.WriteString(padRight(info.Invocation, width))
 		out.WriteByte(' ')
 		out.WriteString(info.Summary)
 		out.WriteByte('\n')
@@ -82,8 +131,9 @@ func renderExperimentalCommands(commands []experimentalCommandInfo) string {
 }
 
 func padRight(value string, width int) string {
-	if len(value) >= width {
+	n := utf8.RuneCountInString(value)
+	if n >= width {
 		return value
 	}
-	return value + strings.Repeat(" ", width-len(value))
+	return value + strings.Repeat(" ", width-n)
 }

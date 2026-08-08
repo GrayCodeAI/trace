@@ -8,7 +8,7 @@ import (
 )
 
 // TestReviewAttach_Help verifies that `trace review attach --help` surfaces
-// the expected flags (--force, --agent, --skills) and the session-id argument.
+// the expected flags (--configure, --set-*) and the session-id argument.
 func TestReviewAttach_Help(t *testing.T) {
 	t.Parallel()
 	rootCmd := cli.NewRootCmd()
@@ -19,7 +19,7 @@ func TestReviewAttach_Help(t *testing.T) {
 		t.Fatalf("execute: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{"attach", "--force", "--agent", "--skills", "session-id"} {
+	for _, want := range []string{"attach", "--configure", "--set-agents", "--timeout"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("attach --help missing %q:\n%s", want, out)
 		}

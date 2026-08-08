@@ -13,7 +13,7 @@ import (
 )
 
 // BackendTypeGitBranch is the built-in git-branch checkpoint backend: it stores
-// the committed record on a git branch (trace/checkpoints/v1) in this repo. It
+// the committed record on a git branch (entire/checkpoints/v1) in this repo. It
 // is git-backed (see registeredBackend.gitBacked) and is the default primary
 // when no backend is configured.
 const BackendTypeGitBranch = "git-branch"

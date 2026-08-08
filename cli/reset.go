@@ -17,12 +17,12 @@ func newResetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:        "reset",
 		Short:      "Reset the shadow branch and session state for current HEAD",
-		Deprecated: "use 'trace clean' instead (or 'trace clean --all' for repo-wide cleanup)",
+		Deprecated: "use 'entire clean' instead (or 'entire clean --all' for repo-wide cleanup)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
 			// Check if in git repository before initializing logging,
-			// to avoid creating .trace/logs in arbitrary directories.
+			// to avoid creating .entire/logs in arbitrary directories.
 			if _, err := paths.WorktreeRoot(ctx); err != nil {
 				return errors.New("not a git repository")
 			}

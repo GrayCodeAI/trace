@@ -14,10 +14,10 @@ import (
 
 // runnersDir is the canonical location of the trail runner configs for a repo.
 func runnersDir(repoRoot string) string {
-	return filepath.Join(repoRoot, paths.TraceDir, "runners")
+	return filepath.Join(repoRoot, paths.EntireDir, "runners")
 }
 
-// tuneRunner is one .trace/runners/*.json file loaded for tuning. Raw holds
+// tuneRunner is one .entire/runners/*.json file loaded for tuning. Raw holds
 // the verbatim file bytes (used for surgical template replacement); Template is
 // the current prompt.template extracted for display in the prompt.
 type tuneRunner struct {
@@ -27,7 +27,7 @@ type tuneRunner struct {
 	Template string
 }
 
-// loadTuneRunners reads the runner configs under <repoRoot>/.trace/runners.
+// loadTuneRunners reads the runner configs under <repoRoot>/.entire/runners.
 // When filter is non-empty it keeps only the runner whose id matches (with or
 // without the "trail-" prefix). Returns an error when the directory is missing
 // or the filter matches nothing.

@@ -21,8 +21,8 @@ import (
 )
 
 // TestInvestigate_EnvVarAdoptionCondensesMetadataOnNextCommit pins the full
-// investigate adoption pipeline: TRACE_INVESTIGATE_* env vars are set on the
-// UserPromptSubmit hook subprocess (as `trace investigate` would do when
+// investigate adoption pipeline: ENTIRE_INVESTIGATE_* env vars are set on the
+// UserPromptSubmit hook subprocess (as `entire investigate` would do when
 // spawning each per-turn agent), the lifecycle handler tags the session as
 // agent_investigate, and the metadata is condensed into the checkpoint on the
 // next git commit.
@@ -33,7 +33,7 @@ func TestInvestigate_EnvVarAdoptionCondensesMetadataOnNextCommit(t *testing.T) {
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	enableInvestigateAgent(t, env, "claude-code")
+	enableInvestigateAgent(t, env, agentClaudeCode)
 
 	const (
 		runID    = "0123456789ab"
@@ -43,7 +43,7 @@ func TestInvestigate_EnvVarAdoptionCondensesMetadataOnNextCommit(t *testing.T) {
 		stateP   = "/tmp/investigate-state.json"
 	)
 
-	// Simulate the env vars that `trace investigate` sets on the spawned
+	// Simulate the env vars that `entire investigate` sets on the spawned
 	// agent process before running the hook. Mirrors the
 	// AppendInvestigateEnv contract.
 	investigateEnv := []string{
@@ -91,7 +91,7 @@ func TestInvestigate_EnvVarAdoptionCondensesMetadataOnNextCommit(t *testing.T) {
 
 	checkpointID := env.GetCheckpointIDFromCommitMessage(env.GetHeadHash())
 	if checkpointID == "" {
-		t.Fatal("expected Trace-Checkpoint trailer on HEAD after commit")
+		t.Fatal("expected Entire-Checkpoint trailer on HEAD after commit")
 	}
 
 	summary := readCheckpointSummary(t, env, checkpointID)
@@ -116,19 +116,19 @@ func TestInvestigate_EnvVarAdoptionCondensesMetadataOnNextCommit(t *testing.T) {
 
 // TestInvestigate_FakeAgentLoop_TagsSessionViaLifecycleHook exercises the
 // loop-driven investigate adoption pipeline with a fake agent that calls
-// back into the trace hooks binary to drive lifecycle adoption.
+// back into the entire hooks binary to drive lifecycle adoption.
 //
 // Simplification (per Task 11 guidance): we drive
 // investigate.RunInvestigateLoop directly with a fake spawner rather than
-// running the full `trace investigate` cobra command. The spawner uses
+// running the full `entire investigate` cobra command. The spawner uses
 // /bin/sh to:
-//   - Append a stance block to TRACE_INVESTIGATE_TIMELINE_DOC.
-//   - Invoke `trace hooks claude-code user-prompt-submit` with the same
-//     TRACE_INVESTIGATE_* env it inherited, exercising the lifecycle
+//   - Append a stance block to ENTIRE_INVESTIGATE_TIMELINE_DOC.
+//   - Invoke `entire hooks claude-code user-prompt-submit` with the same
+//     ENTIRE_INVESTIGATE_* env it inherited, exercising the lifecycle
 //     adoption path end-to-end.
 //
 // What this covers:
-//   - The loop populates TRACE_INVESTIGATE_* on the spawned process.
+//   - The loop populates ENTIRE_INVESTIGATE_* on the spawned process.
 //   - The hook child inherits those vars and tags the session.
 //   - LoopResult/Outcome reflects the recorded stance.
 //
@@ -138,13 +138,13 @@ func TestInvestigate_EnvVarAdoptionCondensesMetadataOnNextCommit(t *testing.T) {
 //   - writeRunManifest. (Manifest writing is exercised separately in unit
 //     tests for the manifest package; we don't re-test it here.)
 func TestInvestigate_FakeAgentLoop_TagsSessionViaLifecycleHook(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("fake agent uses a POSIX shell script")
 	}
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	enableInvestigateAgent(t, env, "claude-code")
+	enableInvestigateAgent(t, env, agentClaudeCode)
 
 	const (
 		runID    = "abcdef012345"
@@ -169,7 +169,7 @@ func TestInvestigate_FakeAgentLoop_TagsSessionViaLifecycleHook(t *testing.T) {
 	//   1. Rewrites state.json with pending_turn set to {"stance":"approve"}
 	//      via python3 (always available in our CI environment) so the loop
 	//      records "approve".
-	//   2. Invokes `trace hooks claude-code user-prompt-submit` to drive
+	//   2. Invokes `entire hooks claude-code user-prompt-submit` to drive
 	//      lifecycle adoption with the env vars the spawner inherited.
 	//
 	// The session_id in stdin is read by the lifecycle handler, which
@@ -178,22 +178,22 @@ func TestInvestigate_FakeAgentLoop_TagsSessionViaLifecycleHook(t *testing.T) {
 	fakeAgentScript := fmt.Sprintf(`set -eu
 python3 -c '
 import json, os, sys
-p = os.environ["TRACE_INVESTIGATE_STATE_DOC"]
+p = os.environ["ENTIRE_INVESTIGATE_STATE_DOC"]
 with open(p, "r") as f:
     state = json.load(f)
 state["pending_turn"] = {"stance": "approve"}
 with open(p, "w") as f:
     json.dump(state, f, indent=2)
 '
-printf '%%s\n' '{"session_id":"%s","transcript_path":"","prompt":"%s"}' | "$TRACE_TEST_BINARY" hooks claude-code user-prompt-submit
+printf '%%s\n' '{"session_id":"%s","transcript_path":"","prompt":"%s"}' | "$ENTIRE_TEST_BINARY" hooks claude-code user-prompt-submit
 `, sessionID, userText)
 
 	spawner := &investigateFakeSpawner{
-		name:   "claude-code",
+		name:   agentClaudeCode,
 		script: fakeAgentScript,
 		extraEnv: []string{
-			"TRACE_TEST_BINARY=" + getTestBinary(),
-			"TRACE_TEST_CLAUDE_PROJECT_DIR=" + env.ClaudeProjectDir,
+			"ENTIRE_TEST_BINARY=" + getTestBinary(),
+			"ENTIRE_TEST_CLAUDE_PROJECT_DIR=" + env.ClaudeProjectDir,
 			// Force the hook child to operate inside env.RepoDir so it
 			// resolves the same git repo the test set up.
 			"PWD=" + env.RepoDir,
@@ -204,7 +204,7 @@ printf '%%s\n' '{"session_id":"%s","transcript_path":"","prompt":"%s"}' | "$TRAC
 	in := investigate.LoopInput{
 		RunID:       runID,
 		Topic:       topic,
-		Agents:      []string{"claude-code"},
+		Agents:      []string{agentClaudeCode},
 		MaxTurns:    1,
 		Quorum:      1,
 		FindingsDoc: findingsDoc,
@@ -212,7 +212,7 @@ printf '%%s\n' '{"session_id":"%s","transcript_path":"","prompt":"%s"}' | "$TRAC
 	}
 	deps := investigate.LoopDeps{
 		SpawnerFor: func(name string) spawn.Spawner {
-			if name == "claude-code" {
+			if name == agentClaudeCode {
 				return spawner
 			}
 			return nil
@@ -270,13 +270,13 @@ printf '%%s\n' '{"session_id":"%s","transcript_path":"","prompt":"%s"}' | "$TRAC
 // spawned agent to be agents[1], not agents[0].
 //
 // Simplification (per Task 11 guidance): we drive RunInvestigateLoop
-// directly with LoopInput.Resume rather than running `trace investigate
+// directly with LoopInput.Resume rather than running `entire investigate
 // --continue`. The cobra command's --continue path (runContinue in
 // investigate/cmd.go) is a thin wrapper that loads the persisted RunState
 // and feeds it into LoopInput.Resume; this test pins that wrapper's
 // contract by exercising the loop with a synthetic Resume state.
 func TestInvestigate_Continue_ResumesAtRecordedAgentIdx(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("fake agent uses a POSIX shell script")
 	}
 	t.Parallel()
@@ -297,14 +297,14 @@ func TestInvestigate_Continue_ResumesAtRecordedAgentIdx(t *testing.T) {
 	resume := &investigate.RunState{
 		RunID:           runID,
 		Topic:           "resume-topic",
-		Agents:          []string{"claude-code", "codex"},
+		Agents:          []string{agentClaudeCode, "codex"},
 		MaxTurns:        1,
 		Quorum:          2,
 		CompletedRounds: 0,
 		Turn:            1,
 		NextAgentIdx:    1,
 		Stances: []investigate.TurnStance{
-			{Round: 1, Turn: 1, Agent: "claude-code", Stance: "approve"},
+			{Round: 1, Turn: 1, Agent: agentClaudeCode, Stance: "approve"},
 		},
 		FindingsDoc: findings,
 		StartingSHA: "deadbeef",
@@ -327,7 +327,7 @@ func TestInvestigate_Continue_ResumesAtRecordedAgentIdx(t *testing.T) {
 			script: `set -eu
 python3 -c '
 import json, os
-p = os.environ["TRACE_INVESTIGATE_STATE_DOC"]
+p = os.environ["ENTIRE_INVESTIGATE_STATE_DOC"]
 with open(p, "r") as f:
     state = json.load(f)
 state["pending_turn"] = {"stance": "approve"}
@@ -374,7 +374,7 @@ with open(p, "w") as f:
 	}
 }
 
-// TestInvestigate_IssueLink_ResolvesViaFakeGh runs `trace investigate` with
+// TestInvestigate_IssueLink_ResolvesViaFakeGh runs `entire investigate` with
 // a fake `gh` binary on PATH that returns canned issue JSON. Asserts that
 // the bootstrapped findings doc contains the issue title (used as topic)
 // and that the seed-doc body carries the fixture body and at least one
@@ -383,19 +383,19 @@ with open(p, "w") as f:
 // We pass --max-turns 1 with a fake claude that just exits 0 (no stance),
 // causing the loop to terminate stalled after one turn — far enough to
 // confirm bootstrap ran. We then inspect the on-disk findings doc (under
-// .trace/investigations/<slug>.md) for the resolved title + body.
+// .entire/investigations/<slug>.md) for the resolved title + body.
 func TestInvestigate_IssueLink_ResolvesViaFakeGh(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("fake gh + fake claude rely on POSIX shell scripts")
 	}
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	enableInvestigateAgent(t, env, "claude-code")
+	enableInvestigateAgent(t, env, agentClaudeCode)
 	env.WriteSettings(map[string]any{
 		"enabled": true,
 		"investigate": map[string]any{
-			"agents":    []string{"claude-code"},
+			"agents":    []string{agentClaudeCode},
 			"max_turns": 1,
 			"quorum":    1,
 		},
@@ -450,16 +450,16 @@ func TestInvestigate_IssueLink_ResolvesViaFakeGh(t *testing.T) {
 		"--issue-link", "https://github.com/foo/bar/issues/1",
 		"--allow-untrusted-seed",
 		"--max-turns", "1",
-		"--agents", "claude-code")
+		"--agents", agentClaudeCode)
 	cmd.Dir = env.RepoDir
 	cmd.Env = envWithOverrides(
 		env.cliEnv(),
 		"PATH="+fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"TRACE_TEST_BINARY="+getTestBinary(),
+		"ENTIRE_TEST_BINARY="+getTestBinary(),
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("trace investigate failed: %v\nOutput:\n%s", err, output)
+		t.Fatalf("entire investigate failed: %v\nOutput:\n%s", err, output)
 	}
 
 	// The per-run dir is auto-cleaned on terminal outcomes (Quorum/Stalled).
@@ -467,10 +467,10 @@ func TestInvestigate_IssueLink_ResolvesViaFakeGh(t *testing.T) {
 	// field, so we read it from there. Glob the manifests directory rather
 	// than re-deriving the run ID, which keeps the test resilient to
 	// implementation tweaks.
-	manifestsDir := filepath.Join(env.RepoDir, ".git", "trace-investigations", "manifests")
+	manifestsDir := filepath.Join(env.RepoDir, ".git", "entire-investigations", "manifests")
 	entries, err := os.ReadDir(manifestsDir)
 	if err != nil {
-		t.Fatalf("read .git/trace-investigations/manifests: %v\nOutput:\n%s", err, output)
+		t.Fatalf("read .git/entire-investigations/manifests: %v\nOutput:\n%s", err, output)
 	}
 	var bodyStr string
 	for _, e := range entries {
@@ -508,30 +508,33 @@ func TestInvestigate_IssueLink_ResolvesViaFakeGh(t *testing.T) {
 
 // --- helpers --------------------------------------------------------------
 
-// enableInvestigateAgent installs the named agent's hooks via `trace enable`.
+// enableInvestigateAgent installs the named agent's hooks via `entire enable`.
 // Mirrors enableReviewAgent.
 func enableInvestigateAgent(t *testing.T, env *TestEnv, name string) {
 	t.Helper()
-	env.RunCLI("enable", "--agent", name, "--telemetry=false")
+	// Pin the git-branch backend, matching enableReviewAgent: this file's
+	// helpers read checkpoint content from the v1 metadata branch, and
+	// first-run enable now defaults new setups to git-refs.
+	env.RunCLI("enable", "--agent", name, "--telemetry=false", "--checkpoint-backend", "branch")
 }
 
 // SimulateUserPromptSubmitWithInvestigateEnvVars fires UserPromptSubmit with
-// the given prompt and a set of TRACE_INVESTIGATE_* env vars on the hook
+// the given prompt and a set of ENTIRE_INVESTIGATE_* env vars on the hook
 // child process. Mirrors SimulateUserPromptSubmitWithReviewEnvVars.
 func (env *TestEnv) SimulateUserPromptSubmitWithInvestigateEnvVars(sessionID, prompt string, extraEnv []string) error {
 	env.T.Helper()
 	runner := NewHookRunner(env.RepoDir, env.ClaudeProjectDir, env.T)
 	// Reuse the runner's review-env helper: it just appends extraEnv
 	// verbatim on top of the hook subprocess env, so it works for any
-	// TRACE_*_* vars regardless of name.
+	// ENTIRE_*_* vars regardless of name.
 	return runner.SimulateUserPromptSubmitWithReviewEnvVars(sessionID, prompt, extraEnv)
 }
 
 // investigateFakeSpawner is a spawn.Spawner whose BuildCmd returns a
-// /bin/sh process running a canned script with TRACE_INVESTIGATE_* +
+// /bin/sh process running a canned script with ENTIRE_INVESTIGATE_* +
 // extra env. The script may also write a stance to the timeline file
-// (resolved via $TRACE_INVESTIGATE_TIMELINE_DOC) and call back into the
-// real trace test binary to drive lifecycle hooks.
+// (resolved via $ENTIRE_INVESTIGATE_TIMELINE_DOC) and call back into the
+// real entire test binary to drive lifecycle hooks.
 type investigateFakeSpawner struct {
 	name     string
 	script   string

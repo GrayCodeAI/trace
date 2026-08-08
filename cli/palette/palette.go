@@ -1,5 +1,5 @@
 // Package palette is the single source of truth for terminal colors used
-// across the Trace CLI. Every color is a base16 (ANSI 0–15) slot so the UI
+// across the Entire CLI. Every color is a base16 (ANSI 0–15) slot so the UI
 // respects the user's terminal theme and stays internally consistent.
 //
 // Colors are plain string constants (not lipgloss.Color values) so this package

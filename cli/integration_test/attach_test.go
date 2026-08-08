@@ -13,7 +13,7 @@ import (
 )
 
 // TestAttach_NewSession_NoHooks tests attaching a session that was never tracked by hooks.
-// Scenario: agent ran outside of Trace's hooks, user wants to import the session.
+// Scenario: agent ran outside of Entire's hooks, user wants to import the session.
 func TestAttach_NewSession_NoHooks(t *testing.T) {
 	t.Parallel()
 	env := NewFeatureBranchEnv(t)
@@ -30,7 +30,7 @@ func TestAttach_NewSession_NoHooks(t *testing.T) {
 	}
 
 	// Run attach
-	output := env.RunCLI("session", "attach", sessionID, "-a", "claude-code", "-f")
+	output := env.RunCLI("session", "attach", sessionID, "-a", agentClaudeCode, "-f")
 
 	// Verify output
 	if !strings.Contains(output, "Attached session") {
@@ -39,7 +39,7 @@ func TestAttach_NewSession_NoHooks(t *testing.T) {
 	if !strings.Contains(output, "Created checkpoint") {
 		t.Errorf("expected 'Created checkpoint' in output, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Trace-Checkpoint") {
+	if !strings.Contains(output, "Entire-Checkpoint") {
 		t.Errorf("expected checkpoint trailer in output, got:\n%s", output)
 	}
 
@@ -47,11 +47,11 @@ func TestAttach_NewSession_NoHooks(t *testing.T) {
 	headMsg := env.GetCommitMessage(env.GetHeadHash())
 	cpID := env.GetCheckpointIDFromCommitMessage(env.GetHeadHash())
 	if cpID == "" {
-		t.Errorf("expected Trace-Checkpoint trailer on HEAD, commit message:\n%s", headMsg)
+		t.Errorf("expected Entire-Checkpoint trailer on HEAD, commit message:\n%s", headMsg)
 	}
 
 	// Verify session state was created
-	sessionStateFile := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
+	sessionStateFile := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
 	if _, err := os.Stat(sessionStateFile); err != nil {
 		t.Errorf("expected session state file at %s: %v", sessionStateFile, err)
 	}
@@ -75,7 +75,7 @@ func TestAttach_ResearchSession_NoFileChanges(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	output := env.RunCLI("session", "attach", sessionID, "-a", "claude-code", "-f")
+	output := env.RunCLI("session", "attach", sessionID, "-a", agentClaudeCode, "-f")
 
 	if !strings.Contains(output, "Attached session") {
 		t.Errorf("expected 'Attached session' in output, got:\n%s", output)
@@ -84,7 +84,7 @@ func TestAttach_ResearchSession_NoFileChanges(t *testing.T) {
 	// Verify checkpoint was created and linked
 	cpID := env.GetCheckpointIDFromCommitMessage(env.GetHeadHash())
 	if cpID == "" {
-		t.Error("expected Trace-Checkpoint trailer on HEAD")
+		t.Error("expected Entire-Checkpoint trailer on HEAD")
 	}
 }
 
@@ -130,7 +130,7 @@ func TestAttach_ExistingCheckpoint_AddSession(t *testing.T) {
 	}
 
 	// Attach the second session
-	output := env.RunCLI("session", "attach", session2ID, "-a", "claude-code")
+	output := env.RunCLI("session", "attach", session2ID, "-a", agentClaudeCode)
 
 	if !strings.Contains(output, "Attached session") {
 		t.Errorf("expected 'Attached session' in output, got:\n%s", output)
@@ -187,7 +187,7 @@ func TestAttach_AlreadyTracked_NoCheckpoint(t *testing.T) {
 	env.GitCommit("add research notes")
 
 	// Now attach — session state exists but has no checkpoint.
-	output := env.RunCLI("session", "attach", session1.ID, "-a", "claude-code", "-f")
+	output := env.RunCLI("session", "attach", session1.ID, "-a", agentClaudeCode, "-f")
 
 	if !strings.Contains(output, "Attached session") {
 		t.Errorf("expected 'Attached session' in output, got:\n%s", output)
@@ -197,7 +197,7 @@ func TestAttach_AlreadyTracked_NoCheckpoint(t *testing.T) {
 	}
 
 	// Verify session state was updated with checkpoint ID.
-	sessionStateFile := filepath.Join(env.RepoDir, ".git", "trace-sessions", session1.ID+".json")
+	sessionStateFile := filepath.Join(env.RepoDir, ".git", "entire-sessions", session1.ID+".json")
 	if _, err := os.Stat(sessionStateFile); err != nil {
 		t.Errorf("expected session state file: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestAttach_AlreadyTracked_HasCheckpoint(t *testing.T) {
 	}
 
 	// Re-attach the same session
-	output := env.RunCLI("session", "attach", session1.ID, "-a", "claude-code")
+	output := env.RunCLI("session", "attach", session1.ID, "-a", agentClaudeCode)
 
 	if !strings.Contains(output, "already has checkpoint") {
 		t.Errorf("expected 'already has checkpoint' in output, got:\n%s", output)
@@ -280,15 +280,15 @@ func TestAttach_DifferentWorkingDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Set TRACE_TEST_CLAUDE_PROJECT_DIR to an empty dir so the primary lookup fails,
+	// Set ENTIRE_TEST_CLAUDE_PROJECT_DIR to an empty dir so the primary lookup fails,
 	// and set HOME to fakeHome so the fallback search finds our transcript.
 	emptyProjectDir := t.TempDir()
-	cmd := exec.Command(getTestBinary(), "attach", sessionID, "-a", "claude-code", "-f")
+	cmd := exec.CommandContext(t.Context(), getTestBinary(), "attach", sessionID, "-a", agentClaudeCode, "-f")
 	cmd.Dir = env.RepoDir
 	cmd.Env = append(
 		env.cliEnv(),
 		"HOME="+fakeHome,
-		"TRACE_TEST_CLAUDE_PROJECT_DIR="+emptyProjectDir,
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+emptyProjectDir,
 	)
 	outputBytes, err := cmd.CombinedOutput()
 	output := string(outputBytes)
@@ -326,11 +326,11 @@ func TestAttach_CodexSessionTreeLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(getTestBinary(), "attach", sessionID, "-a", "codex", "-f")
+	cmd := exec.CommandContext(t.Context(), getTestBinary(), "attach", sessionID, "-a", "codex", "-f")
 	cmd.Dir = env.RepoDir
 	cmd.Env = append(
 		env.cliEnv(),
-		"TRACE_TEST_CODEX_SESSION_DIR="+codexDir,
+		"ENTIRE_TEST_CODEX_SESSION_DIR="+codexDir,
 	)
 
 	outputBytes, err := cmd.CombinedOutput()
@@ -345,11 +345,11 @@ func TestAttach_CodexSessionTreeLayout(t *testing.T) {
 	if !strings.Contains(output, "Created checkpoint") {
 		t.Errorf("expected 'Created checkpoint' in output, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Trace-Checkpoint") {
+	if !strings.Contains(output, "Entire-Checkpoint") {
 		t.Errorf("expected checkpoint trailer in output, got:\n%s", output)
 	}
 
-	sessionStateFile := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
+	sessionStateFile := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
 	if _, statErr := os.Stat(sessionStateFile); statErr != nil {
 		t.Errorf("expected session state file at %s: %v", sessionStateFile, statErr)
 	}
@@ -360,7 +360,7 @@ func TestAttach_InvalidSessionID(t *testing.T) {
 	t.Parallel()
 	env := NewFeatureBranchEnv(t)
 
-	_, err := env.RunCLIWithError("session", "attach", "../path-traversal", "-a", "claude-code")
+	_, err := env.RunCLIWithError("session", "attach", "../path-traversal", "-a", agentClaudeCode)
 	if err == nil {
 		t.Error("expected error for invalid session ID")
 	}

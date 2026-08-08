@@ -19,7 +19,6 @@ import (
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/interactive"
 	"github.com/GrayCodeAI/trace/cli/logging"
-	"github.com/GrayCodeAI/trace/cli/perf"
 	cliReview "github.com/GrayCodeAI/trace/cli/review"
 	"github.com/GrayCodeAI/trace/cli/session"
 	"github.com/GrayCodeAI/trace/cli/settings"
@@ -27,6 +26,7 @@ import (
 	"github.com/GrayCodeAI/trace/cli/trailers"
 	"github.com/GrayCodeAI/trace/cli/validation"
 	"github.com/GrayCodeAI/trace/cli/versioninfo"
+	"github.com/GrayCodeAI/trace/perf"
 	"github.com/GrayCodeAI/trace/redact"
 
 	"charm.land/huh/v2"
@@ -52,7 +52,7 @@ type attachOptions struct {
 	ReviewSkillsOverride []string
 	// ReviewPromptOverride, when non-empty, is recorded instead of the
 	// transcript's first user prompt. Set from a pending-review marker when
-	// `trace attach --review` adopts the prompt the user was asked to run.
+	// `entire attach --review` adopts the prompt the user was asked to run.
 	ReviewPromptOverride string
 }
 
@@ -96,7 +96,7 @@ Pass --skills to declare which skills were actually run; omit to
 attach a review without a declared skills list.
 
 Works with any registered agent, including external agents enabled via
-external_agents in settings. Run 'trace agent list' to see the full list.
+external_agents in settings. Run 'entire agent list' to see the full list.
 
 If --agent doesn't locate a transcript, Entire auto-detects the agent from
 the transcript and prints the detected agent name.`,
@@ -116,7 +116,7 @@ the transcript and prints the detected agent name.`,
 				ReviewSkillsOverride: skillsFlag,
 			}
 			// When tagging as a review, consume any pending-review marker left
-			// by `trace review` for an agent it could not launch itself: adopt
+			// by `entire review` for an agent it could not launch itself: adopt
 			// its agent / skills / prompt so the manual attach matches what the
 			// user was asked to run, then clear it after a successful attach.
 			useMarker := false
@@ -146,7 +146,7 @@ the transcript and prints the detected agent name.`,
 		},
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation and amend the last commit with the checkpoint trailer (best-effort; if the amend fails the checkpoint is still created and the trailer is printed for manual paste)")
-	cmd.Flags().StringVarP(&agentFlag, "agent", "a", string(agent.DefaultAgentName), "Agent that created the session (see 'trace agent list' for registered agents, including external)")
+	cmd.Flags().StringVarP(&agentFlag, "agent", "a", string(agent.DefaultAgentName), "Agent that created the session (see 'entire agent list' for registered agents, including external)")
 	cmd.Flags().BoolVar(&reviewFlag, "review", false, "Tag the attached session as an agent review")
 	cmd.Flags().StringSliceVar(&skillsFlag, "skills", nil, "Optional: declare which review skills were run in this session. Only used with --review")
 	return cmd
@@ -155,7 +155,7 @@ the transcript and prints the detected agent name.`,
 // resolveReviewSkills returns the skills list to record on an
 // attach-as-review. Only the user's --skills flag counts: configured
 // settings.Review[agent] is the spawn-path default ("what I'd run if I
-// used 'trace review'"), not a claim about what actually happened in a
+// used 'entire review'"), not a claim about what actually happened in a
 // given manual session. Silently attaching configured skills would
 // misrepresent the session as having run skills it may not have.
 //
@@ -202,7 +202,7 @@ func attachPrompts(meta transcriptMetadata) []string {
 }
 
 func runAttach(ctx context.Context, w, errW io.Writer, sessionID string, agentName types.AgentName, opts attachOptions) error {
-	// Initialize structured logger so logging.Warn/Info write to .trace/logs/ not stderr.
+	// Initialize structured logger so logging.Warn/Info write to .entire/logs/ not stderr.
 	if err := logging.Init(ctx, sessionID); err != nil {
 		// Init failed — logging will use stderr fallback, non-fatal.
 		_ = err
@@ -240,7 +240,7 @@ func runAttach(ctx context.Context, w, errW io.Writer, sessionID string, agentNa
 	if existingState != nil && !existingState.LastCheckpointID.IsEmpty() {
 		// Review-upgrade isn't supported yet: the existing checkpoint's
 		// metadata tree would need to be rewritten with Kind/ReviewSkills/
-		// ReviewPrompt set, and a new commit pushed onto trace/checkpoints/v1.
+		// ReviewPrompt set, and a new commit pushed onto entire/checkpoints/v1.
 		// Error out with a concrete message rather than silently linking the
 		// checkpoint without the review metadata.
 		if opts.Review {
@@ -403,7 +403,7 @@ func amendOrPrintTrailer(logCtx context.Context, w, errW io.Writer, headCommit *
 		// output into the error; keep the stderr note to the first line so it
 		// stays brief. The full error is preserved in the debug log above.
 		fmt.Fprintf(errW, "Could not amend the commit automatically (%s).\n", firstLine(err.Error()))
-		fmt.Fprintf(w, "\nCopy to your commit message to attach:\n\n  Trace-Checkpoint: %s\n", checkpointIDStr)
+		fmt.Fprintf(w, "\nCopy to your commit message to attach:\n\n  Entire-Checkpoint: %s\n", checkpointIDStr)
 	}
 }
 
@@ -603,7 +603,7 @@ func checkpointPresentLocally(ctx context.Context, repo *git.Repository, refs cp
 // checkpoint is still absent locally after a refresh attempt. The storage it
 // names and the fetch command it suggests are backend-aware.
 func missingCheckpointError(ctx context.Context, checkpointID id.CheckpointID, primaryIsRefs bool) error {
-	location := "trace/checkpoints/v1 branch"
+	location := "entire/checkpoints/v1 branch"
 	fetchCmd := suggestCheckpointFetchCommand(ctx)
 	if primaryIsRefs {
 		location = "checkpoint refs"
@@ -618,7 +618,7 @@ func missingCheckpointError(ctx context.Context, checkpointID id.CheckpointID, p
 // suggestCheckpointFetchCommand returns a git fetch command the user can paste to
 // pull the missing v1 metadata branch (git-branch backend).
 func suggestCheckpointFetchCommand(ctx context.Context) string {
-	return suggestFetchCommand(ctx, "trace/checkpoints/v1:trace/checkpoints/v1")
+	return suggestFetchCommand(ctx, "entire/checkpoints/v1:entire/checkpoints/v1")
 }
 
 // suggestCheckpointRefFetchCommand returns a git fetch command the user can paste
@@ -675,7 +675,7 @@ func saveAttachSessionState(ctx context.Context, repo *git.Repository, existingS
 	}
 
 	// Populate BaseCommit from HEAD if not already set, so the session becomes
-	// active and future commits in the same session receive Trace-Checkpoint trailers.
+	// active and future commits in the same session receive Entire-Checkpoint trailers.
 	if state.BaseCommit == "" {
 		if head, headErr := repo.Head(); headErr == nil {
 			headHash := head.Hash().String()
@@ -849,7 +849,7 @@ func promptAmendCommit(ctx context.Context, w io.Writer, headCommit *object.Comm
 	// Skip amending if this exact checkpoint ID is already in the commit.
 	for _, existing := range trailers.ParseAllCheckpoints(headCommit.Message) {
 		if existing.String() == checkpointIDStr {
-			fmt.Fprintf(w, "Commit %s already has Trace-Checkpoint: %s\n", shortHash, checkpointIDStr)
+			fmt.Fprintf(w, "Commit %s already has Entire-Checkpoint: %s\n", shortHash, checkpointIDStr)
 			return nil
 		}
 	}
@@ -860,7 +860,7 @@ func promptAmendCommit(ctx context.Context, w io.Writer, headCommit *object.Comm
 	if !force {
 		if !interactive.CanPromptInteractively() {
 			// Non-interactive: can't prompt, print trailer for manual use.
-			fmt.Fprintf(w, "\nCopy to your commit message to attach:\n\n  Trace-Checkpoint: %s\n", checkpointIDStr)
+			fmt.Fprintf(w, "\nCopy to your commit message to attach:\n\n  Entire-Checkpoint: %s\n", checkpointIDStr)
 			return nil
 		}
 		form := NewAccessibleForm(
@@ -878,7 +878,7 @@ func promptAmendCommit(ctx context.Context, w io.Writer, headCommit *object.Comm
 	}
 
 	if !amend {
-		fmt.Fprintf(w, "\nCopy to your commit message to attach:\n\n  Trace-Checkpoint: %s\n", checkpointIDStr)
+		fmt.Fprintf(w, "\nCopy to your commit message to attach:\n\n  Entire-Checkpoint: %s\n", checkpointIDStr)
 		return nil
 	}
 
@@ -889,6 +889,6 @@ func promptAmendCommit(ctx context.Context, w io.Writer, headCommit *object.Comm
 		return fmt.Errorf("failed to amend commit: %w\n%s", err, output)
 	}
 
-	fmt.Fprintf(w, "Amended commit %s with Trace-Checkpoint: %s\n", shortHash, checkpointIDStr)
+	fmt.Fprintf(w, "Amended commit %s with Entire-Checkpoint: %s\n", shortHash, checkpointIDStr)
 	return nil
 }

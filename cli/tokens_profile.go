@@ -59,8 +59,8 @@ Commands:
   profile  Aggregate token usage across committed checkpoints
 
 Examples:
-  trace tokens profile
-  trace tokens profile --json`,
+  entire tokens profile
+  entire tokens profile --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -286,7 +286,7 @@ func tokensProfileRecommendations(report tokensProfileReport) []sessionTokensRec
 		recs = append(recs, sessionTokensRecommendation{
 			ID:       "search-before-reinvestigation",
 			Severity: "high",
-			Message:  "Use `trace search` for prior decisions/checkpoints before broad re-investigation.",
+			Message:  "Use `entire search` for prior decisions/checkpoints before broad re-investigation.",
 			Signals:  []string{"cache_read_tokens", "api_call_count"},
 		})
 	}

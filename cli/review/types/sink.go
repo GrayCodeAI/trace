@@ -16,8 +16,10 @@ import "time"
 // multi-agent runs (CU8 fans events from N agents into one dispatch
 // loop). Sinks need not internally synchronize.
 //
-// Sinks MUST NOT block. AgentEvent runs on the dispatch goroutine; a
-// slow sink stalls the entire run and starves all other sinks.
+// AgentEvent implementations MUST NOT block: AgentEvent runs on the dispatch
+// goroutine, so a slow sink stalls the live run and starves all other sinks.
+// RunFinished is serialized after all agent processes have drained; post-run
+// sinks may do bounded work there (render dumps, run synthesis, tear down TUI).
 type Sink interface {
 	// AgentEvent is called for every event emitted by an agent's
 	// process during the run. Events are delivered in-order within a
@@ -48,19 +50,31 @@ type RunSummary struct {
 	AgentRuns []AgentRun
 }
 
-// AgentRun is per-agent post-run data.
+// AgentRun is per-worker post-run data.
 type AgentRun struct {
-	Name   string
+	// Name is the display/worker name shown in review output. It may be an alias
+	// such as "claude-code:sonnet" when the same underlying agent runs more than
+	// once with different models.
+	Name string
+
+	// AgentName is the underlying agent registry key used for lifecycle/session
+	// matching. Empty means Name is also the agent name.
+	AgentName string
+
+	// Model is the optional model hint used for this worker.
+	Model string
+
 	Status AgentStatus
 	Tokens Tokens
 
 	// Buffer accumulates the full event log per agent for post-hoc
 	// rendering (DumpSink, TUI dump, synthesis).
 	//
-	// At review lengths typical today (~100s of events, ~few KB) this is
-	// fine. If profiling shows reviews regularly exceed ~10MB of buffered
-	// events or ~10000 events, swap to a token-budgeted ring or stream
-	// events to sinks incrementally and drop the buffer.
+	// TODO(memory): At review lengths typical today (~100s of events,
+	// ~few KB) this is fine. If profiling shows reviews regularly
+	// exceed ~10MB of buffered events or ~10000 events, swap to a
+	// token-budgeted ring or stream events to sinks incrementally
+	// and drop the buffer.
 	Buffer []Event
 
 	StartedAt time.Time

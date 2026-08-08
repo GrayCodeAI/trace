@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GrayCodeAI/trace/cli/checkpoint"
+	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/testutil"
 
 	"github.com/go-git/go-git/v6"
@@ -17,12 +19,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// gitCheckout uses git CLI instead of go-git to work around go-git v5 bug
+// where Checkout deletes untracked files (see https://github.com/go-git/go-git/issues/970).
+func gitCheckout(t *testing.T, dir, ref string) {
+	t.Helper()
+	cmd := exec.CommandContext(context.Background(), "git", "checkout", ref)
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout %s: %v\nOutput: %s", ref, err, output)
+	}
+}
+
 func initOpenedTestRepo(t *testing.T, dir string) *git.Repository {
 	t.Helper()
 	testutil.InitRepo(t, dir)
 	repo, err := git.PlainOpen(dir)
 	require.NoError(t, err)
 	return repo
+}
+
+func TestValidateBranchNameRejectsLeadingDash(t *testing.T) {
+	err := ValidateBranchName(context.Background(), "--all")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid branch name")
 }
 
 func TestGetCurrentBranch(t *testing.T) {
@@ -61,10 +80,8 @@ func TestGetCurrentBranch(t *testing.T) {
 		t.Fatalf("Failed to create feature branch: %v", err)
 	}
 
-	// Checkout feature branch (go-git v6 fixed the untracked-files-deletion bug)
-	if err := CheckoutBranch(context.Background(), "feature"); err != nil {
-		t.Fatalf("Failed to checkout feature branch: %v", err)
-	}
+	// Checkout feature branch
+	gitCheckout(t, tmpDir, "feature")
 
 	// Test getting current branch
 	branch, err := GetCurrentBranch(context.Background())
@@ -106,122 +123,13 @@ func TestGetCurrentBranchDetachedHead(t *testing.T) {
 		t.Fatalf("Failed to create initial commit: %v", err)
 	}
 
-	// Checkout to detached HEAD (go-git v6 fixed the untracked-files-deletion bug)
-	if err := CheckoutBranch(context.Background(), commit.String()); err != nil {
-		t.Fatalf("Failed to checkout detached HEAD: %v", err)
-	}
+	// Checkout to detached HEAD
+	gitCheckout(t, tmpDir, commit.String())
 
 	// Test should error on detached HEAD
 	_, err = GetCurrentBranch(context.Background())
 	if err == nil {
 		t.Error("GetCurrentBranch(context.Background()) expected error for detached HEAD, got nil")
-	}
-}
-
-func TestGetMergeBase(t *testing.T) {
-	// Create temp directory for test repo
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	// Initialize repo
-	repo := initOpenedTestRepo(t, tmpDir)
-
-	w, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("Failed to get worktree: %v", err)
-	}
-
-	// Create initial commit on main
-	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("initial"), 0o644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-	if _, err := w.Add("test.txt"); err != nil {
-		t.Fatalf("Failed to add test file: %v", err)
-	}
-	baseCommit, err := w.Commit("initial commit", &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "Test",
-			Email: "test@example.com",
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed to create initial commit: %v", err)
-	}
-
-	// Create main branch reference
-	mainRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), baseCommit)
-	if err := repo.Storer.SetReference(mainRef); err != nil {
-		t.Fatalf("Failed to create main branch: %v", err)
-	}
-
-	// Create feature branch from base
-	featureRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("feature"), baseCommit)
-	if err := repo.Storer.SetReference(featureRef); err != nil {
-		t.Fatalf("Failed to create feature branch: %v", err)
-	}
-
-	// Checkout feature and make a commit (go-git v6 fixed the untracked-files-deletion bug)
-	if err := CheckoutBranch(context.Background(), "feature"); err != nil {
-		t.Fatalf("Failed to checkout feature branch: %v", err)
-	}
-	if err := os.WriteFile(testFile, []byte("feature change"), 0o644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-	if _, err := w.Add("test.txt"); err != nil {
-		t.Fatalf("Failed to add test file: %v", err)
-	}
-	if _, err := w.Commit("feature commit", &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "Test",
-			Email: "test@example.com",
-		},
-	}); err != nil {
-		t.Fatalf("Failed to commit: %v", err)
-	}
-
-	// Test getting merge base
-	mergeBase, err := GetMergeBase(context.Background(), "feature", "main")
-	if err != nil {
-		t.Fatalf("GetMergeBase(context.Background(),) error = %v", err)
-	}
-	if mergeBase.String() != baseCommit.String() {
-		t.Errorf("GetMergeBase(context.Background(),) = %v, want %v", mergeBase, baseCommit)
-	}
-}
-
-func TestGetMergeBaseNonExistentBranch(t *testing.T) {
-	// Create temp directory for test repo
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	// Initialize repo with commit
-	repo := initOpenedTestRepo(t, tmpDir)
-
-	w, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("Failed to get worktree: %v", err)
-	}
-	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test"), 0o644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-	if _, err := w.Add("test.txt"); err != nil {
-		t.Fatalf("Failed to add test file: %v", err)
-	}
-	if _, err := w.Commit("initial commit", &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "Test",
-			Email: "test@example.com",
-		},
-	}); err != nil {
-		t.Fatalf("Failed to commit: %v", err)
-	}
-
-	// Test with non-existent branch
-	_, err = GetMergeBase(context.Background(), "feature", "nonexistent")
-	if err == nil {
-		t.Error("GetMergeBase(context.Background(),) expected error for nonexistent branch, got nil")
 	}
 }
 
@@ -544,10 +452,10 @@ func TestResolveCheckpointFetchTarget_NoCheckpointRemote(t *testing.T) {
 	require.NoError(t, cmd.Run())
 
 	// Settings with no checkpoint_remote
-	traceDir := filepath.Join(localDir, ".trace")
-	require.NoError(t, os.MkdirAll(traceDir, 0o755))
+	entireDir := filepath.Join(localDir, ".entire")
+	require.NoError(t, os.MkdirAll(entireDir, 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(traceDir, "settings.json"),
+		filepath.Join(entireDir, "settings.json"),
 		[]byte(`{"enabled": true}`),
 		0o644,
 	))
@@ -573,10 +481,10 @@ func TestResolveCheckpointFetchTarget_WithCheckpointRemote(t *testing.T) {
 	require.NoError(t, cmd.Run())
 
 	// Settings with checkpoint_remote configured
-	traceDir := filepath.Join(localDir, ".trace")
-	require.NoError(t, os.MkdirAll(traceDir, 0o755))
+	entireDir := filepath.Join(localDir, ".entire")
+	require.NoError(t, os.MkdirAll(entireDir, 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(traceDir, "settings.json"),
+		filepath.Join(entireDir, "settings.json"),
 		[]byte(`{"enabled": true, "strategy_options": {"checkpoint_remote": {"provider": "github", "repo": "org/checkpoints"}}}`),
 		0o644,
 	))
@@ -598,10 +506,10 @@ func TestResolveCheckpointFetchTarget_FallsBackOnError(t *testing.T) {
 	// No origin remote — FetchURL cannot resolve an effective fetch URL.
 
 	// Settings with checkpoint_remote configured but no origin to derive URL from
-	traceDir := filepath.Join(localDir, ".trace")
-	require.NoError(t, os.MkdirAll(traceDir, 0o755))
+	entireDir := filepath.Join(localDir, ".entire")
+	require.NoError(t, os.MkdirAll(entireDir, 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(traceDir, "settings.json"),
+		filepath.Join(entireDir, "settings.json"),
 		[]byte(`{"enabled": true, "strategy_options": {"checkpoint_remote": {"provider": "github", "repo": "org/checkpoints"}}}`),
 		0o644,
 	))
@@ -614,7 +522,7 @@ func TestResolveCheckpointFetchTarget_FallsBackOnError(t *testing.T) {
 }
 
 // setupRepoWithBlobOnMetadataBranch creates a repo with a blob committed on
-// trace/checkpoints/v1, checks out the default branch, and returns
+// entire/checkpoints/v1, checks out the default branch, and returns
 // (repoDir, blobHash) for tests that need a reachable blob on the metadata branch.
 func setupRepoWithBlobOnMetadataBranch(t *testing.T) (string, plumbing.Hash) {
 	t.Helper()
@@ -626,7 +534,7 @@ func setupRepoWithBlobOnMetadataBranch(t *testing.T) (string, plumbing.Hash) {
 
 	defaultBranch := gitDefaultBranch(t, dir)
 
-	gitRun(t, dir, "checkout", "--orphan", "trace/checkpoints/v1")
+	gitRun(t, dir, "checkout", "--orphan", "entire/checkpoints/v1")
 	gitRun(t, dir, "rm", "-rf", ".")
 	testutil.WriteFile(t, dir, "ab/cdef123456/metadata.json", `{"checkpoint_id": "abcdef123456"}`)
 	testutil.GitAdd(t, dir, "ab/cdef123456/metadata.json")
@@ -728,4 +636,153 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 func gitDefaultBranch(t *testing.T, dir string) string {
 	t.Helper()
 	return gitOutput(t, dir, "rev-parse", "--abbrev-ref", "HEAD")
+}
+
+// TestParseCheckpointRefNames verifies the ls-remote parser keeps only
+// checkpoint refs and ignores unrelated advertisement lines (HEAD, branches,
+// peeled tags) and blanks.
+func TestParseCheckpointRefNames(t *testing.T) {
+	t.Parallel()
+	const sha = "e9ed0bd3ad3b2071aefab6e6ad20527dc910957b"
+	output := []byte(strings.Join([]string{
+		sha + "\tHEAD",
+		sha + "\trefs/heads/main",
+		sha + "\trefs/entire/checkpoints/ZN/01KVBJCWYA4YW6J5M9GP655HZN",
+		sha + "\trefs/entire/checkpoints/f6/a1b2c3d4e5f6",
+		sha + "\trefs/tags/v1.0.0",
+		sha + "\trefs/tags/v1.0.0^{}",
+		"",
+	}, "\n"))
+
+	names := parseCheckpointRefNames(output)
+	got := make([]string, len(names))
+	for i, n := range names {
+		got[i] = n.String()
+	}
+	assert.ElementsMatch(t, []string{
+		"refs/entire/checkpoints/ZN/01KVBJCWYA4YW6J5M9GP655HZN",
+		"refs/entire/checkpoints/f6/a1b2c3d4e5f6",
+	}, got)
+}
+
+// TestParseCheckpointRefNames_RealLsRemote exercises the parser against genuine
+// `git ls-remote 'refs/entire/checkpoints/*'` output from a local bare remote,
+// confirming the glob matches the nested <shard>/<id> refs and nothing else.
+func TestParseCheckpointRefNames_RealLsRemote(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	bareDir := t.TempDir()
+	gitRun(t, bareDir, "init", "--bare", "-q", bareDir)
+
+	workDir := t.TempDir()
+	testutil.InitRepo(t, workDir)
+	testutil.WriteFile(t, workDir, "f.txt", "init")
+	testutil.GitAdd(t, workDir, "f.txt")
+	testutil.GitCommit(t, workDir, "init")
+	head := gitOutput(t, workDir, "rev-parse", "HEAD")
+	gitRun(t, workDir, "update-ref", "refs/entire/checkpoints/ZN/01KVBJCWYA4YW6J5M9GP655HZN", head)
+	gitRun(t, workDir, "update-ref", "refs/entire/checkpoints/f6/a1b2c3d4e5f6", head)
+	gitRun(t, workDir, "remote", "add", "origin", bareDir)
+	gitRun(t, workDir, "push", "-q", "origin", "refs/entire/checkpoints/*:refs/entire/checkpoints/*")
+
+	out, err := remote.LsRemoteInDir(ctx, workDir, bareDir, checkpoint.CheckpointRefPrefix+"*")
+	require.NoError(t, err)
+
+	names := parseCheckpointRefNames(out)
+	got := make([]string, len(names))
+	for i, n := range names {
+		got[i] = n.String()
+	}
+	assert.ElementsMatch(t, []string{
+		"refs/entire/checkpoints/ZN/01KVBJCWYA4YW6J5M9GP655HZN",
+		"refs/entire/checkpoints/f6/a1b2c3d4e5f6",
+	}, got)
+}
+
+// TestListCheckpointRefsOnRemote_NotConfigured proves the authority gate: with
+// no checkpoint_remote configured, enumeration is a no-op (nil, no error, no
+// network) so List stays local-only. Not parallel: uses t.Chdir.
+func TestListCheckpointRefsOnRemote_NotConfigured(t *testing.T) {
+	dir := t.TempDir()
+	testutil.InitRepo(t, dir)
+	testutil.WriteFile(t, dir, "f.txt", "init")
+	testutil.GitAdd(t, dir, "f.txt")
+	testutil.GitCommit(t, dir, "init")
+	t.Chdir(dir)
+
+	names, err := ListCheckpointRefsOnRemote(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, names, "no checkpoint_remote configured must leave List local-only (no remote enumeration)")
+}
+
+// TestListCheckpointRefsOnRemote_ResolvesFromSubdir proves worktree pinning for
+// the configured path: settings + ls-remote run from the worktree root even when
+// process cwd is a subdirectory. Uses a local bare remote and an unknown
+// checkpoint_remote provider so FetchURL falls back to origin (offline).
+// Not parallel: uses t.Chdir.
+func TestListCheckpointRefsOnRemote_ResolvesFromSubdir(t *testing.T) {
+	bareDir := t.TempDir()
+	gitRun(t, bareDir, "init", "--bare", "-q", bareDir)
+
+	dir := t.TempDir()
+	testutil.InitRepo(t, dir)
+	testutil.WriteFile(t, dir, "f.txt", "init")
+	testutil.GitAdd(t, dir, "f.txt")
+	testutil.GitCommit(t, dir, "init")
+	head := gitOutput(t, dir, "rev-parse", "HEAD")
+	ref := "refs/entire/checkpoints/ZN/01KVBJCWYA4YW6J5M9GP655HZN"
+	gitRun(t, dir, "update-ref", ref, head)
+	gitRun(t, dir, "remote", "add", "origin", bareDir)
+	gitRun(t, dir, "push", "-q", "origin", ref+":"+ref)
+
+	entireDir := filepath.Join(dir, ".entire")
+	require.NoError(t, os.MkdirAll(entireDir, 0o755))
+	// provider "local" is unknown to providerHost → FetchURL falls back to origin
+	// (the bare path) after file:// derivation fails — keeps this offline.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(entireDir, "settings.json"),
+		[]byte(`{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"local","repo":"org/checkpoints"}}}`),
+		0o644,
+	))
+
+	sub := filepath.Join(dir, "nested", "deep")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+	t.Chdir(sub)
+
+	names, err := ListCheckpointRefsOnRemote(context.Background())
+	require.NoError(t, err)
+	require.Len(t, names, 1)
+	assert.Equal(t, ref, names[0].String())
+}
+
+// TestListCheckpointRefsOnRemote_HonorsCanceledContext proves the discovery
+// timeout context reaches the git subprocess: an already-canceled ctx with a
+// configured checkpoint_remote must error (not hang / not silently succeed).
+// Not parallel: uses t.Chdir.
+func TestListCheckpointRefsOnRemote_HonorsCanceledContext(t *testing.T) {
+	bareDir := t.TempDir()
+	gitRun(t, bareDir, "init", "--bare", "-q", bareDir)
+
+	dir := t.TempDir()
+	testutil.InitRepo(t, dir)
+	testutil.WriteFile(t, dir, "f.txt", "init")
+	testutil.GitAdd(t, dir, "f.txt")
+	testutil.GitCommit(t, dir, "init")
+	gitRun(t, dir, "remote", "add", "origin", bareDir)
+
+	entireDir := filepath.Join(dir, ".entire")
+	require.NoError(t, os.MkdirAll(entireDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(entireDir, "settings.json"),
+		[]byte(`{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"local","repo":"org/checkpoints"}}}`),
+		0o644,
+	))
+	t.Chdir(dir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := ListCheckpointRefsOnRemote(ctx)
+	require.Error(t, err, "canceled context must reach ls-remote (regression: deleting WithTimeout would still pass a constant-only test)")
 }

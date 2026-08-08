@@ -21,12 +21,10 @@ func handleStatelessConnect(ctx context.Context, t Transport, service string, st
 	switch service {
 	case serviceUploadPack:
 	case serviceReceivePack:
-		fmt.Fprintln(stdout) //nolint:errcheck // best-effort protocol output
-
+		fmt.Fprintln(stdout)
 		return handleConnect(ctx, t, service, stdin, stdout)
 	default:
-		fmt.Fprintln(stdout, "fallback") //nolint:errcheck // best-effort protocol output
-
+		fmt.Fprintln(stdout, "fallback")
 		return nil
 	}
 
@@ -34,15 +32,14 @@ func handleStatelessConnect(ctx context.Context, t Transport, service string, st
 	if err != nil {
 		return fmt.Errorf("stateless-connect v2 info/refs: %w", err)
 	}
-	defer refs.Close() //nolint:errcheck // best-effort close
+	defer refs.Close()
 
 	advertisement, err := io.ReadAll(refs)
 	if err != nil {
 		return fmt.Errorf("reading v2 info/refs: %w", err)
 	}
 	if !gitproto.IsV2Advertisement(advertisement) {
-		fmt.Fprintln(stdout, "fallback") //nolint:errcheck // best-effort protocol output
-
+		fmt.Fprintln(stdout, "fallback")
 		return nil
 	}
 
@@ -55,8 +52,7 @@ func handleStatelessConnect(ctx context.Context, t Transport, service string, st
 	// with a Bearer token in plain text on disk to make this Just
 	// Work; the security trade-off wasn't worth the convenience.
 
-	fmt.Fprintln(stdout) //nolint:errcheck // best-effort protocol output
-
+	fmt.Fprintln(stdout)
 	if _, err := stdout.Write(advertisement); err != nil {
 		return fmt.Errorf("streaming v2 capabilities: %w", err)
 	}

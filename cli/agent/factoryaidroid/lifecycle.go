@@ -35,7 +35,7 @@ func (f *FactoryAIDroidAgent) WriteHookResponse(message string) error {
 }
 
 // HookNames returns the hook verbs Factory AI Droid supports.
-// These become subcommands: trace hooks factoryai-droid <verb>
+// These become subcommands: entire hooks factoryai-droid <verb>
 func (f *FactoryAIDroidAgent) HookNames() []string {
 	return []string{
 		HookNameSessionStart,
@@ -55,19 +55,19 @@ func (f *FactoryAIDroidAgent) HookNames() []string {
 func (f *FactoryAIDroidAgent) ParseHookEvent(ctx context.Context, hookName string, stdin io.Reader) (*agent.Event, error) {
 	switch hookName {
 	case HookNameSessionStart:
-		return f.parseSessionStart(stdin)
+		return f.parseSessionInfoEvent(stdin, agent.SessionStart)
 	case HookNameUserPromptSubmit:
 		return f.parseTurnStart(stdin)
 	case HookNameStop:
 		return f.parseTurnEnd(stdin)
 	case HookNameSessionEnd:
-		return f.parseSessionEnd(stdin)
+		return f.parseSessionInfoEvent(stdin, agent.SessionEnd)
 	case HookNamePreToolUse:
 		return f.parseSubagentStart(ctx, stdin)
 	case HookNamePostToolUse:
 		return f.parseSubagentEnd(ctx, stdin)
 	case HookNamePreCompact:
-		return f.parseCompaction(stdin)
+		return f.parseSessionInfoEvent(stdin, agent.Compaction)
 	case HookNameSubagentStop, HookNameNotification:
 		// Acknowledged hooks with no lifecycle action
 		return nil, nil //nolint:nilnil // nil event = no lifecycle action
@@ -119,7 +119,6 @@ func (f *FactoryAIDroidAgent) ExtractPrompts(sessionRef string, fromOffset int) 
 
 // ExtractSummary extracts the last assistant message as a session summary.
 func (f *FactoryAIDroidAgent) ExtractSummary(sessionRef string) (string, error) {
-	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return "", fmt.Errorf("failed to read transcript: %w", err)
@@ -167,13 +166,15 @@ func (f *FactoryAIDroidAgent) CalculateTotalTokenUsage(transcriptData []byte, fr
 
 // --- Internal hook parsing functions ---
 
-func (f *FactoryAIDroidAgent) parseSessionStart(stdin io.Reader) (*agent.Event, error) {
+// parseSessionInfoEvent parses the hooks whose payload is sessionInfoRaw —
+// SessionStart, SessionEnd, and PreCompact differ only in the event type.
+func (f *FactoryAIDroidAgent) parseSessionInfoEvent(stdin io.Reader, eventType agent.EventType) (*agent.Event, error) {
 	raw, err := agent.ReadAndParseHookInput[sessionInfoRaw](stdin)
 	if err != nil {
 		return nil, err
 	}
 	return &agent.Event{
-		Type:       agent.SessionStart,
+		Type:       eventType,
 		SessionID:  raw.SessionID,
 		SessionRef: raw.TranscriptPath,
 		Timestamp:  time.Now(),
@@ -212,19 +213,6 @@ func (f *FactoryAIDroidAgent) parseTurnEnd(stdin io.Reader) (*agent.Event, error
 		SessionID:  raw.SessionID,
 		SessionRef: raw.TranscriptPath,
 		Model:      model,
-		Timestamp:  time.Now(),
-	}, nil
-}
-
-func (f *FactoryAIDroidAgent) parseSessionEnd(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[sessionInfoRaw](stdin)
-	if err != nil {
-		return nil, err
-	}
-	return &agent.Event{
-		Type:       agent.SessionEnd,
-		SessionID:  raw.SessionID,
-		SessionRef: raw.TranscriptPath,
 		Timestamp:  time.Now(),
 	}, nil
 }
@@ -275,19 +263,6 @@ func (f *FactoryAIDroidAgent) parseSubagentEnd(ctx context.Context, stdin io.Rea
 		event.SubagentID = agentID
 	}
 	return event, nil
-}
-
-func (f *FactoryAIDroidAgent) parseCompaction(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[sessionInfoRaw](stdin)
-	if err != nil {
-		return nil, err
-	}
-	return &agent.Event{
-		Type:       agent.Compaction,
-		SessionID:  raw.SessionID,
-		SessionRef: raw.TranscriptPath,
-		Timestamp:  time.Now(),
-	}, nil
 }
 
 func parseHookToolResponseAgentID(raw json.RawMessage) string {

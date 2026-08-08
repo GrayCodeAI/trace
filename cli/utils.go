@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,38 +12,29 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/osroot"
 	"github.com/GrayCodeAI/trace/cli/paths"
+	"github.com/GrayCodeAI/trace/cli/uiform"
 )
 
-// IsAccessibleMode returns true if accessibility mode should be enabled.
-// This checks the ACCESSIBLE environment variable.
-// Set ACCESSIBLE=1 (or any non-empty value) to enable accessible mode,
-// which uses simpler prompts that work better with screen readers.
+// IsAccessibleMode returns true if accessibility mode is enabled via the
+// ACCESSIBLE environment variable.
 func IsAccessibleMode() bool {
-	return os.Getenv("ACCESSIBLE") != ""
+	return uiform.IsAccessibleMode()
 }
 
-// traceTheme returns the Dracula theme for consistent styling.
-func traceTheme() huh.Theme { //nolint:ireturn // huh.Theme is an interface in v2
-	return huh.ThemeFunc(huh.ThemeDracula)
-}
-
-// NewAccessibleForm creates a new huh form with accessibility mode
-// enabled if the ACCESSIBLE environment variable is set.
-// Note: WithAccessible() is only available on forms, not individual fields.
-// Always wrap confirmations and other prompts in a form to enable accessibility.
+// NewAccessibleForm creates a new huh form with Entire's standard theme,
+// switching to accessibility mode when ACCESSIBLE is set.
 func NewAccessibleForm(groups ...*huh.Group) *huh.Form {
-	form := huh.NewForm(groups...).WithTheme(traceTheme())
-	if IsAccessibleMode() {
-		form = form.WithAccessible(true)
-	}
-	return form
+	return uiform.New(groups...)
 }
 
 // handleFormCancellation handles cancellation from huh form prompts.
-// User abort (Ctrl+C) and timeout both print a cancelled message and return nil.
-// Other errors are wrapped with the action name for context.
+// User abort (Ctrl+C), timeout, and a cancelled/expired context (when the form
+// ran via RunWithContext and the command's context was cancelled) all print a
+// cancelled message and return nil. Other errors are wrapped with the action
+// name for context.
 func handleFormCancellation(w io.Writer, action string, err error) error {
-	if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, huh.ErrTimeout) {
+	if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, huh.ErrTimeout) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		fmt.Fprintf(w, "%s cancelled.\n", action)
 		return nil
 	}
@@ -163,13 +153,4 @@ func appendResolved(dirs []string, dir string) []string {
 		return append(dirs, resolved)
 	}
 	return append(dirs, dir)
-}
-
-func writeJSONPretty(w io.Writer, v any) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		return fmt.Errorf("encode json: %w", err)
-	}
-	return nil
 }

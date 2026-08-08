@@ -25,7 +25,7 @@ Copilot CLI has a complete hook system with 8 hook types, JSONL transcripts, and
 ## Hook Mechanism
 
 - Config file: `.github/hooks/*.json` (all JSON files in directory are auto-discovered)
-- Our file: `.github/hooks/trace.json` (dedicated file, avoids conflicts)
+- Our file: `.github/hooks/entire.json` (dedicated file, avoids conflicts)
 - Config format: JSON
 - Hook registration: Array of hook entries per event name, each with `type: "command"` and `bash` field
 
@@ -38,7 +38,7 @@ Copilot CLI has a complete hook system with 8 hook types, JSONL transcripts, and
     "hookName": [
       {
         "type": "command",
-        "bash": "trace hooks copilot-cli hook-name"
+        "bash": "entire hooks copilot-cli hook-name"
       }
     ]
   }
@@ -49,7 +49,7 @@ Note: Uses `bash` key (not `command` like Claude Code/Gemini). Also supports `po
 
 ### Hook Names and Event Mapping
 
-| Native Hook Name | When It Fires | Stdin Payload Fields | Trace EventType |
+| Native Hook Name | When It Fires | Stdin Payload Fields | Entire EventType |
 |-----------------|---------------|---------------------|-----------------|
 | `userPromptSubmitted` | User submits a prompt | `timestamp`, `cwd`, `sessionId`, `prompt` | `TurnStart` |
 | `sessionStart` | Agent session begins/resumes | `timestamp`, `cwd`, `sessionId`, `source`, `initialPrompt` | `SessionStart` |
@@ -62,7 +62,7 @@ Note: Uses `bash` key (not `command` like Claude Code/Gemini). Also supports `po
 
 **Event ordering quirk:** `userPromptSubmitted` fires BEFORE `sessionStart` on the first prompt. This matches Claude Code's behavior and the framework's session phase state machine handles it correctly (TurnStart can arrive before SessionStart).
 
-**Valid Trace EventTypes:** `SessionStart`, `TurnStart`, `TurnEnd`, `Compaction`, `SessionEnd`, `SubagentStart`, `SubagentEnd`
+**Valid Entire EventTypes:** `SessionStart`, `TurnStart`, `TurnEnd`, `Compaction`, `SessionEnd`, `SubagentStart`, `SubagentEnd`
 
 ### Hook Input Payloads (Captured)
 
@@ -147,9 +147,9 @@ The `TranscriptAnalyzer` interface is implemented for Copilot CLI, providing:
 ## Config Preservation
 
 - Hook config is in `.github/hooks/*.json` — each file is auto-discovered
-- We create a **dedicated** `.github/hooks/trace.json` file, leaving other hook files untouched
+- We create a **dedicated** `.github/hooks/entire.json` file, leaving other hook files untouched
 - No need for read-modify-write of existing files
-- If `trace.json` already exists, read-modify-write to preserve any user additions
+- If `entire.json` already exists, read-modify-write to preserve any user additions
 
 ## CLI Flags
 
@@ -165,7 +165,7 @@ The `TranscriptAnalyzer` interface is implemented for Copilot CLI, providing:
 
 ### Summary Text Generation Invocation
 
-For `explain --generate` and auto-summarize, Trace invokes Copilot via stdin
+For `explain --generate` and auto-summarize, Entire invokes Copilot via stdin
 rather than the documented `-p "prompt"` form:
 
 ```
@@ -183,14 +183,14 @@ summary generation has been verified against the installed CLI.
 If a future Copilot release changes this, the error surface is clear — the
 generator helper returns either "CLI returned empty output" or a non-zero
 exit with stderr. At that point reverting to `-p <prompt>` with a prompt-size
-cap is the obvious fallback. See `cli/agent/copilotcli/generate.go`
+cap is the obvious fallback. See `cmd/entire/cli/agent/copilotcli/generate.go`
 for the implementation.
 
 ## Presence Detection
 
 - No repo-level `.copilot/` directory (unlike other agents)
-- `DetectPresence` delegates to `AreHooksInstalled`, which reads `.github/hooks/trace.json` and checks if any hook entry has a Trace command prefix (`trace ` or `go run "$(git rev-parse --show-toplevel)"/cmd/trace/main.go `)
-- Simply having a `.github/hooks/` directory is NOT sufficient -- the directory must contain `trace.json` with Trace hook entries
+- `DetectPresence` delegates to `AreHooksInstalled`, which reads `.github/hooks/entire.json` and checks if any hook entry has an Entire command prefix (`entire ` or `go run "$(git rev-parse --show-toplevel)"/cmd/entire/main.go `)
+- Simply having a `.github/hooks/` directory is NOT sufficient -- the directory must contain `entire.json` with Entire hook entries
 - Alternative: check for `copilot` binary in PATH
 
 ## Protected Directories
@@ -211,7 +211,7 @@ which could be used as an alternative mechanism for `SubagentStart`/`SubagentEnd
 Because there is no `SubagentStart` hook, the framework cannot capture pre-task state (untracked
 files snapshot). The `handleLifecycleSubagentEnd` dispatcher falls back to the session's
 pre-prompt state to avoid spurious task checkpoints from pre-existing untracked files
-(e.g., `.github/hooks/trace.json`).
+(e.g., `.github/hooks/entire.json`).
 
 ## Gaps & Limitations
 

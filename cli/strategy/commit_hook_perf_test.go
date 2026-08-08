@@ -26,10 +26,10 @@ import (
 
 const hookPerfRepoURL = "https://github.com/GrayCodeAI/trace.git"
 
-// TestCommitHookPerformance measures the real overhead of Trace's commit hooks
-// by comparing a control commit (no Trace) against a commit with hooks active.
+// TestCommitHookPerformance measures the real overhead of Entire's commit hooks
+// by comparing a control commit (no Entire) against a commit with hooks active.
 //
-// It uses a full-history clone of GrayCodeAI/cli (single branch) with seeded
+// It uses a full-history clone of entireio/cli (single branch) with seeded
 // branches and packed refs so that go-git operates on a realistic object
 // database. Each session is generated with a unique base commit (drawn from
 // real repo history) so that listAllSessionStates scans different shadow
@@ -38,7 +38,7 @@ const hookPerfRepoURL = "https://github.com/GrayCodeAI/trace.git"
 // Prerequisites:
 //   - GitHub access (gh auth login) for cloning the private repo
 //
-// Run: go test -v -run TestCommitHookPerformance -tags hookperf -timeout 15m ./cli/strategy/
+// Run: go test -v -run TestCommitHookPerformance -tags hookperf -timeout 15m ./cmd/entire/cli/strategy/
 func TestCommitHookPerformance(t *testing.T) {
 	// Clone once, reuse across scenarios via cheap local clones.
 	cacheDir := cloneSourceRepo(t)
@@ -76,14 +76,14 @@ func TestCommitHookPerformance(t *testing.T) {
 			seedBranches(t, dir, 200)
 			gitRun(t, dir, "pack-refs", "--all")
 
-			// --- CONTROL: commit without Trace ---
+			// --- CONTROL: commit without Entire ---
 			controlDur := timeControlCommit(t, dir)
 
 			// Reset back to pre-commit state so the test commit is identical.
 			gitRun(t, dir, "reset", "HEAD~1")
 			gitRun(t, dir, "add", "perf_control.txt")
 
-			// --- TEST: commit with Trace hooks ---
+			// --- TEST: commit with Entire hooks ---
 			createHookPerfSettings(t, dir)
 
 			// Collect diverse base commits from real repo history so each
@@ -92,7 +92,7 @@ func TestCommitHookPerformance(t *testing.T) {
 			seedHookPerfSessions(t, dir, baseCommits, sc.ended, sc.idle, sc.active)
 
 			// Simulate TTY path with commit_linking=always.
-			t.Setenv("TRACE_TEST_TTY", "1")
+			t.Setenv("ENTIRE_TEST_TTY", "1")
 			paths.ClearWorktreeRootCache()
 			session.ClearGitCommonDirCache()
 
@@ -227,7 +227,7 @@ func collectBaseCommits(t *testing.T, dir string, need int) []string {
 	return commits
 }
 
-// timeControlCommit stages a file and times a bare `git commit` with no Trace
+// timeControlCommit stages a file and times a bare `git commit` with no Entire
 // hooks/settings present. Returns the wall-clock duration.
 func timeControlCommit(t *testing.T, dir string) time.Duration {
 	t.Helper()
@@ -239,7 +239,7 @@ func timeControlCommit(t *testing.T, dir string) time.Duration {
 	gitRun(t, dir, "add", "perf_control.txt")
 
 	start := time.Now()
-	gitRun(t, dir, "commit", "-m", "control commit (no Trace)")
+	gitRun(t, dir, "commit", "-m", "control commit (no Entire)")
 	return time.Since(start)
 }
 
@@ -268,7 +268,7 @@ func seedBranches(t *testing.T, dir string, count int) {
 	t.Logf("  Seeded %d branches", count)
 }
 
-// cloneSourceRepo does a one-time full-history clone of GrayCodeAI/cli into a temp
+// cloneSourceRepo does a one-time full-history clone of entireio/cli into a temp
 // directory. Returns the path to use as a local clone source for each scenario.
 //
 // Uses --single-branch to limit network transfer to one branch while still
@@ -329,16 +329,16 @@ func gitRun(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// createHookPerfSettings writes .trace/settings.json with commit_linking=always
+// createHookPerfSettings writes .entire/settings.json with commit_linking=always
 // so PrepareCommitMsg auto-links without prompting.
 func createHookPerfSettings(t *testing.T, dir string) {
 	t.Helper()
-	traceDir := filepath.Join(dir, ".trace")
-	if err := os.MkdirAll(traceDir, 0o755); err != nil {
-		t.Fatalf("mkdir .trace: %v", err)
+	entireDir := filepath.Join(dir, ".entire")
+	if err := os.MkdirAll(entireDir, 0o755); err != nil {
+		t.Fatalf("mkdir .entire: %v", err)
 	}
 	settings := `{"enabled": true, "strategy": "manual-commit", "commit_linking": "always"}`
-	if err := os.WriteFile(filepath.Join(traceDir, "settings.json"), []byte(settings), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(entireDir, "settings.json"), []byte(settings), 0o644); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 }
@@ -347,12 +347,12 @@ func createHookPerfSettings(t *testing.T, dir string) {
 // which need actual files on disk via seedSessionWithShadowBranch).
 var perfFileSets = [][]string{
 	{"main.go", "go.mod"},
-	{"cmd/trace/main.go", "cli/root.go"},
+	{"cmd/entire/main.go", "cmd/entire/cli/root.go"},
 	{"go.sum", "README.md", "Makefile"},
-	{"cli/strategy/common.go"},
-	{"cli/session/state.go", "cli/session/phase.go"},
-	{"cli/paths/paths.go", "cli/paths/worktree.go", "go.mod"},
-	{"cli/agent/claude.go"},
+	{"cmd/entire/cli/strategy/common.go"},
+	{"cmd/entire/cli/session/state.go", "cmd/entire/cli/session/phase.go"},
+	{"cmd/entire/cli/paths/paths.go", "cmd/entire/cli/paths/worktree.go", "go.mod"},
+	{"cmd/entire/cli/agent/claude.go"},
 	{"docs/architecture/README.md", "CLAUDE.md"},
 }
 
@@ -362,15 +362,15 @@ var perfFileSets = [][]string{
 // overlap detection finds a match between staged files and FilesTouched.
 var perfLargeFileSets = func() [][]string {
 	dirs := []string{
-		"cli/strategy",
-		"cli/session",
-		"cli/checkpoint",
-		"cli/agent/claudecode",
-		"cli/agent/geminicli",
-		"cli/paths",
-		"cli/logging",
-		"cli/settings",
-		"cli",
+		"cmd/entire/cli/strategy",
+		"cmd/entire/cli/session",
+		"cmd/entire/cli/checkpoint",
+		"cmd/entire/cli/agent/claudecode",
+		"cmd/entire/cli/agent/geminicli",
+		"cmd/entire/cli/paths",
+		"cmd/entire/cli/logging",
+		"cmd/entire/cli/settings",
+		"cmd/entire/cli",
 		"docs/architecture",
 	}
 	var sets [][]string
@@ -410,7 +410,7 @@ var perfPrompts = []string{
 // Each session gets a unique base commit (from repo history), varied FilesTouched,
 // and unique prompts — avoiding template duplication artifacts.
 //
-// Phase distribution matches real-world observations from .git/trace-sessions/:
+// Phase distribution matches real-world observations from .git/entire-sessions/:
 //
 //	ENDED sessions (75%): shadow branch ref + data, NO LastCheckpointID.
 //	    These exercise the expensive hot path: ref lookup → commit → tree →
@@ -447,14 +447,14 @@ func seedHookPerfSessions(t *testing.T, dir string, baseCommits []string, ended,
 	s := &ManualCommitStrategy{}
 
 	// --- Seed ENDED sessions ---
-	// Real-world distribution (from .git/trace-sessions/ analysis):
+	// Real-world distribution (from .git/entire-sessions/ analysis):
 	//   ~75% have shadow branches with data but no LastCheckpointID (not yet committed)
 	//   ~25% have LastCheckpointID set and no shadow branch (already committed)
 	//
 	// The 75% exercise the expensive hot path per session:
 	//   listAllSessionStates: packed-refs linear scan to resolve shadow branch ref
 	//   sessionHasNewContent: ref → commit → tree → transcript/overlap check
-	//   PostCommit condensation: write metadata to trace/checkpoints/v1 branch
+	//   PostCommit condensation: write metadata to entire/checkpoints/v1 branch
 	endedWithShadow := ended * 3 / 4
 	endedWithoutShadow := ended - endedWithShadow
 
@@ -644,7 +644,7 @@ func seedSessionWithShadowBranch(t *testing.T, s *ManualCommitStrategy, dir, ses
 		}
 	}
 
-	metadataDir := ".trace/metadata/" + sessionID
+	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
 	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
 		t.Fatalf("mkdir metadata: %v", err)

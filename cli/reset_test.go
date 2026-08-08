@@ -10,6 +10,7 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/paths"
+	"github.com/GrayCodeAI/trace/cli/testutil"
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -23,9 +24,10 @@ func setupResetTestRepo(t *testing.T) (*git.Repository, plumbing.Hash) {
 	t.Helper()
 
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("failed to init git repo: %v", err)
+		t.Fatalf("failed to open git repo: %v", err)
 	}
 
 	t.Chdir(dir)
@@ -76,8 +78,8 @@ func TestResetCmd_IsDeprecated(t *testing.T) {
 	if cmd.Deprecated == "" {
 		t.Error("reset command should have Deprecated field set")
 	}
-	if !strings.Contains(cmd.Deprecated, "trace clean") {
-		t.Errorf("Deprecated message should mention 'trace clean', got: %s", cmd.Deprecated)
+	if !strings.Contains(cmd.Deprecated, "entire clean") {
+		t.Errorf("Deprecated message should mention 'entire clean', got: %s", cmd.Deprecated)
 	}
 }
 
@@ -118,7 +120,7 @@ func TestResetCmd_WithForce(t *testing.T) {
 
 	// Create session state file
 	repoRoot := worktreePath
-	sessionStateDir := filepath.Join(repoRoot, ".git", "trace-sessions")
+	sessionStateDir := filepath.Join(repoRoot, ".git", "entire-sessions")
 	if err := os.MkdirAll(sessionStateDir, 0o755); err != nil {
 		t.Fatalf("failed to create session state dir: %v", err)
 	}

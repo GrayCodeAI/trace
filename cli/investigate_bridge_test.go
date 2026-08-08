@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/GrayCodeAI/trace/cli/experimental"
 )
 
 // TestBuildInvestigateDeps_HasRequiredFields asserts that the bridge
@@ -67,9 +69,13 @@ func TestLaunchableSpawnerFor_KnownAgents(t *testing.T) {
 	}
 }
 
-// TestRootCommand_HasInvestigate confirms `trace investigate` is wired
-// into the root command tree. It also checks that the command is
-// Hidden (the experimental discovery happens via `entire labs`).
+// TestRootCommand_HasInvestigate confirms `entire investigate` is wired
+// into the root command tree as an experimental command. Experimental
+// commands are gated by the build-time visibility flag (see the
+// experimental package): shown and grouped in developer builds, hidden
+// in shipped releases. This test runs with the default (developer)
+// visibility, so it asserts the command is visible and filed under the
+// experimental group.
 func TestRootCommand_HasInvestigate(t *testing.T) {
 	t.Parallel()
 
@@ -84,8 +90,8 @@ func TestRootCommand_HasInvestigate(t *testing.T) {
 	if cmd.Name() != "investigate" {
 		t.Fatalf("resolved command name = %q, want %q", cmd.Name(), "investigate")
 	}
-	if !cmd.Hidden {
-		t.Fatal("investigate should be Hidden during maturation")
+	if cmd.GroupID != experimental.GroupID {
+		t.Fatalf("investigate GroupID = %q, want %q (experimental)", cmd.GroupID, experimental.GroupID)
 	}
 }
 
@@ -103,7 +109,7 @@ func TestRootCommand_InvestigateHelpRuns(t *testing.T) {
 	root.SetArgs([]string{"investigate", "--help"})
 
 	if err := root.Execute(); err != nil {
-		t.Fatalf("trace investigate --help failed: %v", err)
+		t.Fatalf("entire investigate --help failed: %v", err)
 	}
 	got := out.String()
 	if !strings.Contains(got, "investigate") {
@@ -118,9 +124,9 @@ func TestLabs_ListsInvestigate(t *testing.T) {
 
 	got := labsOverview()
 	for _, want := range []string{
-		"trace investigate",
+		"entire investigate",
 		"multi-agent investigation",
-		"trace investigate --help",
+		"entire investigate --help",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("labsOverview missing %q:\n%s", want, got)

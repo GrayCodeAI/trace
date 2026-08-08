@@ -205,8 +205,7 @@ func traceStepChildIndex(parentName, childName string) (int, bool) {
 // ordered newest first. If hookFilter is non-empty, only entries with a matching
 // Op field are included.
 func collectTraceEntries(logFile string, last int, hookFilter string) ([]traceEntry, error) {
-	// #nosec G304 -- logFile is a CLI-resolved log path, not external input
-	f, err := os.Open(logFile)
+	f, err := os.Open(logFile) //nolint:gosec // logFile is a CLI-resolved path, not user-supplied input
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -250,8 +249,8 @@ func collectTraceEntries(logFile string, last int, hookFilter string) ([]traceEn
 func renderTraceEntries(w io.Writer, entries []traceEntry) {
 	if len(entries) == 0 {
 		fmt.Fprintln(w, "No trace entries found.")
-		fmt.Fprintln(w, `Traces are logged at DEBUG level. Make sure TRACE_LOG_LEVEL=DEBUG is set`)
-		fmt.Fprintln(w, `in your shell profile, or set log_level to "DEBUG" in .trace/settings.json.`)
+		fmt.Fprintln(w, `Traces are logged at DEBUG level. Make sure ENTIRE_LOG_LEVEL=DEBUG is set`)
+		fmt.Fprintln(w, `in your shell profile, or set log_level to "DEBUG" in .entire/settings.json.`)
 		return
 	}
 

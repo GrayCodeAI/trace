@@ -109,6 +109,117 @@ func TestParseHookEvent_PreToolUse_ReturnsNil(t *testing.T) {
 	require.Nil(t, event)
 }
 
+func TestParseHookEvent_PostToolUse_ApplyPatch(t *testing.T) {
+	t.Parallel()
+	ag := &CodexAgent{}
+	// Match the wire shape from codex-rs/hooks/src/schema.rs PostToolUseCommandInput.
+	// tool_input.command carries the patch envelope as a single string.
+	input := `{
+		"session_id": "550e8400-e29b-41d4-a716-446655440000",
+		"turn_id": "turn-1",
+		"transcript_path": "/tmp/rollout.jsonl",
+		"cwd": "/tmp/testrepo",
+		"hook_event_name": "PostToolUse",
+		"model": "gpt-5",
+		"permission_mode": "default",
+		"tool_name": "apply_patch",
+		"tool_use_id": "call-abc",
+		"tool_input": {"command": "*** Begin Patch\n*** Add File: a.txt\n+hi\n*** Update File: b.txt\n@@\n-old\n+new\n*** Delete File: c.txt\n*** End Patch\n"},
+		"tool_response": "Success."
+	}`
+
+	event, err := ag.ParseHookEvent(context.Background(), HookNamePostToolUse, strings.NewReader(input))
+	require.NoError(t, err)
+	require.NotNil(t, event)
+	require.Equal(t, agent.ToolUse, event.Type)
+	require.Equal(t, "550e8400-e29b-41d4-a716-446655440000", event.SessionID)
+	require.Equal(t, "/tmp/rollout.jsonl", event.SessionRef)
+	require.Equal(t, "/tmp/testrepo", event.CWD)
+	require.Equal(t, "call-abc", event.ToolUseID)
+	require.Equal(t, []string{"a.txt"}, event.NewFiles)
+	require.Equal(t, []string{"b.txt"}, event.ModifiedFiles)
+	require.Equal(t, []string{"c.txt"}, event.DeletedFiles)
+}
+
+func TestParseHookEvent_PostToolUse_AcceptsClaudeAliases(t *testing.T) {
+	t.Parallel()
+	// Codex registers Write and Edit as matcher aliases for apply_patch
+	// (codex-rs/core/src/tools/hook_names.rs). Hook stdin still carries one of
+	// those aliases as tool_name when a Claude-style hook config matches by
+	// alias, so the parser must accept all three.
+	for _, name := range []string{"apply_patch", "Write", "Edit"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ag := &CodexAgent{}
+			input := `{
+				"session_id": "s",
+				"cwd": "/tmp/r",
+				"tool_name": "` + name + `",
+				"tool_use_id": "id",
+				"tool_input": {"command": "*** Begin Patch\n*** Add File: x.txt\n+x\n*** End Patch\n"}
+			}`
+			event, err := ag.ParseHookEvent(context.Background(), HookNamePostToolUse, strings.NewReader(input))
+			require.NoError(t, err)
+			require.NotNil(t, event)
+			require.Equal(t, []string{"x.txt"}, event.NewFiles)
+		})
+	}
+}
+
+func TestParseHookEvent_PostToolUse_NonMutatingTool_ReturnsNil(t *testing.T) {
+	t.Parallel()
+	ag := &CodexAgent{}
+	// Shell calls fire PostToolUse too, but we can't extract files from them
+	// without parsing the shell command. Skip them entirely so we don't churn
+	// session state on every command.
+	input := `{
+		"session_id": "s",
+		"cwd": "/tmp/r",
+		"tool_name": "shell",
+		"tool_use_id": "id",
+		"tool_input": {"command": ["echo", "hi"]},
+		"tool_response": "hi\n"
+	}`
+	event, err := ag.ParseHookEvent(context.Background(), HookNamePostToolUse, strings.NewReader(input))
+	require.NoError(t, err)
+	require.Nil(t, event)
+}
+
+func TestParseHookEvent_PostToolUse_EmptyPatch_ReturnsNil(t *testing.T) {
+	t.Parallel()
+	ag := &CodexAgent{}
+	// A patch envelope with no Add/Update/Delete lines (e.g. malformed input
+	// that still parses as JSON) should be a no-op rather than an error.
+	input := `{
+		"session_id": "s",
+		"cwd": "/tmp/r",
+		"tool_name": "apply_patch",
+		"tool_use_id": "id",
+		"tool_input": {"command": "*** Begin Patch\n*** End Patch\n"}
+	}`
+	event, err := ag.ParseHookEvent(context.Background(), HookNamePostToolUse, strings.NewReader(input))
+	require.NoError(t, err)
+	require.Nil(t, event)
+}
+
+func TestParseHookEvent_PostToolUse_MissingToolInput_ReturnsNil(t *testing.T) {
+	t.Parallel()
+	ag := &CodexAgent{}
+	// Defensive: if Codex ever fires PostToolUse for apply_patch with a
+	// non-string tool_input shape, we should drop the event rather than fail
+	// the hook (which would block the agent's tool call).
+	input := `{
+		"session_id": "s",
+		"cwd": "/tmp/r",
+		"tool_name": "apply_patch",
+		"tool_use_id": "id",
+		"tool_input": null
+	}`
+	event, err := ag.ParseHookEvent(context.Background(), HookNamePostToolUse, strings.NewReader(input))
+	require.NoError(t, err)
+	require.Nil(t, event)
+}
+
 func TestParseHookEvent_UnknownHook_ReturnsNil(t *testing.T) {
 	t.Parallel()
 	ag := &CodexAgent{}
@@ -131,118 +242,13 @@ func TestParseHookEvent_MalformedJSON_ReturnsError(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestParseHookEvent_PostToolUse_ApplyPatch(t *testing.T) {
+func TestCodexAgent_ContextInjector(t *testing.T) {
 	t.Parallel()
-	ag := &CodexAgent{}
-	input := `{
-		"session_id": "test-uuid",
-		"turn_id": "turn-1",
-		"transcript_path": null,
-		"cwd": "/tmp/repo",
-		"hook_event_name": "PostToolUse",
-		"model": "gpt-5",
-		"permission_mode": "default",
-		"tool_name": "apply_patch",
-		"tool_use_id": "call-patch",
-		"tool_input": {"patch": "*** Add File: a.go\n+hello\n*** Update File: b.go\n@@\n-old\n+new\n*** Delete File: c.go\n*** End Patch\n"},
-		"tool_response": "Patch applied successfully."
-	}`
-
-	event, err := ag.ParseHookEvent(context.Background(), HookNamePostToolUse, strings.NewReader(input))
+	c := &CodexAgent{}
+	require.Equal(t, agent.TurnStart, c.InjectionEvent())
+	out, err := c.RenderContextInjection(agent.ContextInjection{Text: "use entire trail"})
 	require.NoError(t, err)
-	require.NotNil(t, event)
-	require.Equal(t, agent.ToolUse, event.Type)
-	require.Equal(t, "test-uuid", event.SessionID)
-	require.Equal(t, "apply_patch", event.ToolName)
-	require.Equal(t, []string{"a.go"}, event.NewFiles)
-	require.Equal(t, []string{"b.go"}, event.ModifiedFiles)
-	require.Equal(t, []string{"c.go"}, event.DeletedFiles)
-}
-
-func TestParseHookEvent_PostToolUse_NonApplyPatch_ReturnsNil(t *testing.T) {
-	t.Parallel()
-	ag := &CodexAgent{}
-	input := `{
-		"session_id": "test-uuid",
-		"turn_id": "turn-1",
-		"transcript_path": null,
-		"cwd": "/tmp/repo",
-		"hook_event_name": "PostToolUse",
-		"model": "gpt-5",
-		"permission_mode": "default",
-		"tool_name": "shell",
-		"tool_use_id": "call-shell",
-		"tool_input": {"command": ["echo", "hi"]},
-		"tool_response": "hi\n"
-	}`
-
-	event, err := ag.ParseHookEvent(context.Background(), HookNamePostToolUse, strings.NewReader(input))
-	require.NoError(t, err)
-	require.Nil(t, event)
-}
-
-func TestParseApplyPatchFiles(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name        string
-		patch       string
-		wantAdded   []string
-		wantUpdated []string
-		wantDeleted []string
-	}{
-		{
-			name: "all three operations",
-			patch: "*** Begin Patch\n" +
-				"*** Add File: docs/added.md\n" +
-				"+# added\n" +
-				"*** Update File: src/changed.go\n" +
-				"@@\n" +
-				"-old\n" +
-				"+new\n" +
-				"*** Delete File: tmp/gone.txt\n" +
-				"*** End Patch\n",
-			wantAdded:   []string{"docs/added.md"},
-			wantUpdated: []string{"src/changed.go"},
-			wantDeleted: []string{"tmp/gone.txt"},
-		},
-		{
-			name:        "empty patch",
-			patch:       "",
-			wantAdded:   nil,
-			wantUpdated: nil,
-			wantDeleted: nil,
-		},
-		{
-			name: "only adds",
-			patch: "*** Add File: a.go\n" +
-				"+line1\n" +
-				"*** Add File: b.go\n" +
-				"+line2\n",
-			wantAdded:   []string{"a.go", "b.go"},
-			wantUpdated: nil,
-			wantDeleted: nil,
-		},
-		{
-			name: "no markers",
-			patch: "*** Begin Patch\n" +
-				"@@\n" +
-				"-old\n" +
-				"+new\n" +
-				"*** End Patch\n",
-			wantAdded:   nil,
-			wantUpdated: nil,
-			wantDeleted: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			added, updated, deleted := parseApplyPatchFiles(tt.patch)
-			require.Equal(t, tt.wantAdded, added)
-			require.Equal(t, tt.wantUpdated, updated)
-			require.Equal(t, tt.wantDeleted, deleted)
-		})
-	}
+	require.Contains(t, string(out), `"hookEventName":"UserPromptSubmit"`)
+	require.Contains(t, string(out), `"additionalContext":"use entire trail"`)
+	require.True(t, strings.HasSuffix(string(out), "\n"))
 }

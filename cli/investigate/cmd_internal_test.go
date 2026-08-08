@@ -16,8 +16,8 @@ import (
 )
 
 // TestSaveInvestigateConfig_WritesLocalFile verifies that
-// saveInvestigateConfig persists into .trace/settings.local.json (not the
-// committed .trace/settings.json). Mirrors the review-side behaviour so
+// saveInvestigateConfig persists into .entire/settings.local.json (not the
+// committed .entire/settings.json). Mirrors the review-side behaviour so
 // agent picker output stays out of project settings.
 //
 // NOTE: This test uses t.Chdir, which Go forbids combining with
@@ -35,14 +35,14 @@ func TestSaveInvestigateConfig_WritesLocalFile(t *testing.T) {
 	require.NoError(t, saveInvestigateConfig(context.Background(), cfg))
 
 	// settings.json should NOT contain investigate.
-	base, err := os.ReadFile(filepath.Join(tmp, ".trace/settings.json"))
+	base, err := os.ReadFile(filepath.Join(tmp, ".entire/settings.json"))
 	if err == nil {
 		require.NotContains(t, string(base), `"investigate"`,
 			"investigate must not be written to project settings")
 	}
 
 	// settings.local.json should contain investigate.
-	local, err := os.ReadFile(filepath.Join(tmp, ".trace/settings.local.json"))
+	local, err := os.ReadFile(filepath.Join(tmp, ".entire/settings.local.json"))
 	require.NoError(t, err)
 	require.Contains(t, string(local), `"agents"`)
 	require.Contains(t, string(local), `"claude-code"`)
@@ -61,12 +61,12 @@ func TestResolveDocPaths_PerRunIsolation(t *testing.T) {
 
 	require.Equal(
 		t,
-		filepath.Join(commonDir, "trace-investigations", "aaaaaaaaaaaa", "findings.md"),
+		filepath.Join(commonDir, "entire-investigations", "aaaaaaaaaaaa", "findings.md"),
 		findings1,
 	)
 	require.Equal(
 		t,
-		filepath.Join(commonDir, "trace-investigations", "bbbbbbbbbbbb", "findings.md"),
+		filepath.Join(commonDir, "entire-investigations", "bbbbbbbbbbbb", "findings.md"),
 		findings2,
 	)
 	require.NotEqual(t, findings1, findings2,

@@ -17,7 +17,7 @@ import (
 // Ensure ClaudeCodeAgent implements HookSupport
 var _ agent.HookSupport = (*ClaudeCodeAgent)(nil)
 
-// Claude Code hook names - these become subcommands under `trace hooks claude-code`
+// Claude Code hook names - these become subcommands under `entire hooks claude-code`
 const (
 	HookNameSessionStart     = "session-start"
 	HookNameSessionEnd       = "session-end"
@@ -51,7 +51,7 @@ const (
 const ClaudeSettingsFileName = "settings.json"
 
 // metadataDenyRule blocks Claude from reading Entire session metadata
-const metadataDenyRule = "Read(./.trace/metadata/**)"
+const metadataDenyRule = "Read(./.entire/metadata/**)"
 
 // localDevHookCmdPrefix is the command prefix used for hooks in local-dev mode.
 // It points at scripts/entire-dev, which compiles the CLI on demand and falls
@@ -71,7 +71,7 @@ const localDevSessionEndTimeoutSecs = 60
 // "go run" prefix is retained so hooks installed by older versions are still
 // recognized for removal/upgrade.
 var entireHookPrefixes = []string{
-	"trace ",
+	"entire ",
 	localDevHookCmdPrefix,
 	"go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go ",
 }
@@ -164,13 +164,13 @@ func (c *ClaudeCodeAgent) InstallHooks(ctx context.Context, localDev bool, force
 		postTaskCmd = localDevHookCommand(HookNamePostTask)
 		postTodoCmd = localDevHookCommand(HookNamePostTodo)
 	} else {
-		sessionStartCmd = agent.WrapProductionJSONWarningHookCommand("trace hooks claude-code session-start", agent.WarningFormatMultiLine)
-		sessionEndCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code session-end")
-		stopCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code stop")
-		userPromptSubmitCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code user-prompt-submit")
-		preTaskCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code pre-task")
-		postTaskCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code post-task")
-		postTodoCmd = agent.WrapProductionSilentHookCommand("trace hooks claude-code post-todo")
+		sessionStartCmd = agent.WrapProductionJSONWarningHookCommand("entire hooks claude-code session-start", agent.WarningFormatMultiLine)
+		sessionEndCmd = agent.WrapProductionSilentHookCommand("entire hooks claude-code session-end")
+		stopCmd = agent.WrapProductionSilentHookCommand("entire hooks claude-code stop")
+		userPromptSubmitCmd = agent.WrapProductionSilentHookCommand("entire hooks claude-code user-prompt-submit")
+		preTaskCmd = agent.WrapProductionSilentHookCommand("entire hooks claude-code pre-task")
+		postTaskCmd = agent.WrapProductionSilentHookCommand("entire hooks claude-code post-task")
+		postTodoCmd = agent.WrapProductionSilentHookCommand("entire hooks claude-code post-todo")
 	}
 
 	count := 0

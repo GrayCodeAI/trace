@@ -8,7 +8,9 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/review"
 	reviewtypes "github.com/GrayCodeAI/trace/cli/review/types"
 )
@@ -17,6 +19,18 @@ import (
 var _ reviewtypes.AgentReviewer = (*reviewtypes.ReviewerTemplate)(nil)
 
 const wantAgentName = "claude-code"
+
+// TestReviewer_NameMatchesRegistryKey locks the reviewer's name to the
+// agent registry's stable key. adoptReviewEnv compares ENTIRE_REVIEW_AGENT
+// against string(ag.Name()); drift here silently breaks review-session
+// tagging for this agent.
+func TestReviewer_NameMatchesRegistryKey(t *testing.T) {
+	t.Parallel()
+	if wantAgentName != string(agent.AgentNameClaudeCode) {
+		t.Fatalf("wantAgentName = %q, agent.AgentNameClaudeCode = %q — keep these aligned",
+			wantAgentName, string(agent.AgentNameClaudeCode))
+	}
+}
 
 func TestReviewer_Name(t *testing.T) {
 	t.Parallel()
@@ -81,9 +95,10 @@ func TestReviewer_ArgvShape(t *testing.T) {
 	}
 	cmd := buildReviewCmd(context.Background(), cfg)
 
-	// Expect: claude -p <prompt>
-	if len(cmd.Args) < 3 {
-		t.Fatalf("expected at least 3 args, got %d: %v", len(cmd.Args), cmd.Args)
+	// Expect: claude -p <prompt> --output-format stream-json --verbose
+	wantSuffix := []string{"--output-format", "stream-json", "--verbose"}
+	if len(cmd.Args) != 3+len(wantSuffix) {
+		t.Fatalf("expected %d args, got %d: %v", 3+len(wantSuffix), len(cmd.Args), cmd.Args)
 	}
 	if cmd.Args[0] != "claude" {
 		t.Errorf("Args[0] = %q, want %q", cmd.Args[0], "claude")
@@ -94,6 +109,12 @@ func TestReviewer_ArgvShape(t *testing.T) {
 	// Args[2] is the composed prompt — must be non-empty.
 	if cmd.Args[2] == "" {
 		t.Error("Args[2] (prompt) is empty")
+	}
+	for i, want := range wantSuffix {
+		got := cmd.Args[3+i]
+		if got != want {
+			t.Errorf("Args[%d] = %q, want %q", 3+i, got, want)
+		}
 	}
 	for _, arg := range cmd.Args {
 		if arg == "--continue" || arg == "-c" || arg == "--resume" || arg == "-r" {
@@ -144,19 +165,20 @@ func TestReviewer_NoBinaryRequiredAtConstruction(t *testing.T) {
 
 func TestParseClaudeOutput_ReportsScannerError(t *testing.T) {
 	t.Parallel()
-	// Trigger bufio.Scanner's "token too long" error: produce a "line"
-	// that exceeds the 16MB max buffer without containing a newline.
+	// Trigger bufio.Scanner's "token too long" error via parseClaudeOutputBuf
+	// with a small cap, so we actually exercise the scanner.Err() branch
+	// (not the json.Unmarshal-on-a-huge-blob branch the prod 64MB cap would
+	// route us into). 8KB of contiguous bytes against a 4KB cap fires
+	// ErrTooLong before any newline lets the scanner emit a token.
+	const maxBuf = 4 * 1024
+	const payload = 8 * 1024
 	r, w := io.Pipe()
 	go func() {
 		defer w.Close()
-		// 17MB of contiguous bytes without a newline
-		buf := make([]byte, 1024*1024)
-		for range 17 {
-			_, _ = w.Write(buf) //nolint:errcheck // best-effort write in test goroutine
-		}
+		_, _ = w.Write(make([]byte, payload)) //nolint:errcheck // best-effort write in test goroutine
 	}()
 
-	events := collectEvents(parseClaudeOutput(r))
+	events := collectEvents(parseClaudeOutputBuf(r, maxBuf))
 
 	if len(events) < 2 {
 		t.Fatalf("expected at least Started + Finished, got %d events", len(events))
@@ -169,69 +191,294 @@ func TestParseClaudeOutput_ReportsScannerError(t *testing.T) {
 	if fin.Success {
 		t.Error("Finished.Success must be false on scanner error")
 	}
-	// Also assert at least one RunError event was emitted before Finished.
-	sawRunError := false
+	// Require a RunError from the scanner branch specifically ("read stdout"
+	// prefix), not the unmarshal branch ("claude stream-json"). Without this
+	// the test would pass even if the scanner cap were widened back out and
+	// the huge blob just fell through json.Unmarshal — the exact regression
+	// the parameterized buffer is meant to prevent.
+	sawScannerErr := false
 	for _, ev := range events {
-		if _, ok := ev.(reviewtypes.RunError); ok {
-			sawRunError = true
+		re, ok := ev.(reviewtypes.RunError)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(re.Err.Error(), "read stdout:") {
+			sawScannerErr = true
 			break
 		}
 	}
-	if !sawRunError {
-		t.Error("expected RunError event before Finished{Success: false}")
+	if !sawScannerErr {
+		t.Errorf("expected RunError from scanner branch (read stdout: ...), got events: %v", events)
 	}
 }
 
-func TestReviewer_EventStream(t *testing.T) {
+func TestParseClaudeOutput_DecodesStreamJSON(t *testing.T) {
 	t.Parallel()
-
-	data, err := os.ReadFile("testdata/canned_session.txt")
+	data, err := os.ReadFile("testdata/stream_session.jsonl")
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-
 	events := collectEvents(parseClaudeOutput(strings.NewReader(string(data))))
 
-	if len(events) < 3 {
-		t.Fatalf("expected at least 3 events (Started + at least one AssistantText + Finished), got %d", len(events))
-	}
-
-	// First event must be Started.
 	if _, ok := events[0].(reviewtypes.Started); !ok {
 		t.Errorf("events[0] = %T, want Started", events[0])
 	}
+	last := events[len(events)-1]
+	fin, ok := last.(reviewtypes.Finished)
+	if !ok || !fin.Success {
+		t.Errorf("last event = %v, want Finished{Success:true}", last)
+	}
 
-	// Last event must be Finished{Success: true}.
+	var sawText bool
+	for _, ev := range events {
+		if at, ok := ev.(reviewtypes.AssistantText); ok && strings.Contains(at.Text, "Cats are") {
+			sawText = true
+		}
+	}
+	if !sawText {
+		t.Error("expected AssistantText carrying fixture prose 'Cats are…'")
+	}
+
+	// The parser emits Tokens on every assistant envelope that carries
+	// non-zero usage plus a terminal Tokens on the result envelope. The
+	// fixture's two assistant envelopes both carry usage, so expect >=2
+	// here (the exact count is fixture-defined and not asserted to keep
+	// the fixture editable).
+	var tokensSeen int
+	var tokensOut int
+	for _, ev := range events {
+		if tk, ok := ev.(reviewtypes.Tokens); ok {
+			tokensSeen++
+			tokensOut = tk.Out
+		}
+	}
+	if tokensSeen < 2 {
+		t.Errorf("Tokens count = %d, want >=2 (per-assistant snapshots + result)", tokensSeen)
+	}
+	if tokensOut == 0 {
+		t.Error("final Tokens.Out = 0, want > 0")
+	}
+}
+
+func TestParseClaudeOutput_StreamsEventsBeforeEOF(t *testing.T) {
+	t.Parallel()
+	pr, pw := io.Pipe()
+	events := parseClaudeOutput(pr)
+
+	expect := func(t *testing.T, want string) reviewtypes.Event {
+		t.Helper()
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				t.Fatalf("event channel closed waiting for %s", want)
+			}
+			return ev
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for %s — parser did not stream before EOF", want)
+			return nil
+		}
+	}
+
+	// First emitted event is always Started — before we even write anything.
+	if _, ok := expect(t, "Started").(reviewtypes.Started); !ok {
+		t.Fatal("first event must be Started")
+	}
+
+	// Write a system/init envelope — swallowed, no event read here.
+	if _, err := pw.Write([]byte(`{"type":"system","subtype":"init","session_id":"sid"}` + "\n")); err != nil {
+		t.Fatalf("pipe write: %v", err)
+	}
+
+	// Write an assistant text envelope — expect AssistantText before EOF.
+	if _, err := pw.Write([]byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}` + "\n")); err != nil {
+		t.Fatalf("pipe write: %v", err)
+	}
+	ev := expect(t, "AssistantText")
+	at, ok := ev.(reviewtypes.AssistantText)
+	if !ok {
+		t.Fatalf("event = %T (%+v), want AssistantText", ev, ev)
+	}
+	if at.Text != "hello" {
+		t.Errorf("AssistantText.Text = %q, want %q", at.Text, "hello")
+	}
+
+	// Write an assistant tool_use envelope — expect ToolCall before EOF.
+	// This also covers the unexercised tool_use branch that was flagged in
+	// the PR's fixture-coverage review.
+	if _, err := pw.Write([]byte(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu_1","name":"Read","input":{"file_path":"x"}}]}}` + "\n")); err != nil {
+		t.Fatalf("pipe write: %v", err)
+	}
+	ev = expect(t, "ToolCall")
+	tc, ok := ev.(reviewtypes.ToolCall)
+	if !ok {
+		t.Fatalf("event = %T (%+v), want ToolCall", ev, ev)
+	}
+	if tc.Name != "Read" {
+		t.Errorf("ToolCall.Name = %q, want %q", tc.Name, "Read")
+	}
+	if !strings.Contains(tc.Args, `"file_path":"x"`) {
+		t.Errorf("ToolCall.Args = %q, want to contain file_path:x", tc.Args)
+	}
+
+	// Write the result envelope and close — expect Tokens then Finished.
+	if _, err := pw.Write([]byte(`{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":100,"output_tokens":42,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}` + "\n")); err != nil {
+		t.Fatalf("pipe write: %v", err)
+	}
+	_ = pw.Close()
+
+	ev = expect(t, "Tokens")
+	tk, ok := ev.(reviewtypes.Tokens)
+	if !ok {
+		t.Fatalf("event = %T (%+v), want Tokens", ev, ev)
+	}
+	if tk.Out != 42 || tk.In != 100 {
+		t.Errorf("Tokens = %+v, want {In:100, Out:42}", tk)
+	}
+	ev = expect(t, "Finished")
+	fin, ok := ev.(reviewtypes.Finished)
+	if !ok {
+		t.Fatalf("event = %T (%+v), want Finished", ev, ev)
+	}
+	if !fin.Success {
+		t.Error("Finished.Success = false, want true")
+	}
+}
+
+func TestParseClaudeOutput_NoResultEnvelopeMeansFailed(t *testing.T) {
+	t.Parallel()
+	// A truncated session: assistant message but no `result` envelope.
+	// The parser must surface this as Finished{Success: false} so the
+	// caller distinguishes "agent exited mid-generation" from "agent
+	// completed successfully".
+	input := `{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}` + "\n"
+	events := collectEvents(parseClaudeOutput(strings.NewReader(input)))
+
 	last := events[len(events)-1]
 	fin, ok := last.(reviewtypes.Finished)
 	if !ok {
-		t.Errorf("last event = %T, want Finished", last)
-	} else if !fin.Success {
-		t.Errorf("Finished.Success = false, want true")
+		t.Fatalf("last event = %T, want Finished", last)
 	}
-
-	// All middle events must be AssistantText (no empty lines emitted).
-	for i := 1; i < len(events)-1; i++ {
-		at, ok := events[i].(reviewtypes.AssistantText)
-		if !ok {
-			t.Errorf("events[%d] = %T, want AssistantText", i, events[i])
-			continue
-		}
-		if at.Text == "" {
-			t.Errorf("events[%d].Text is empty (empty lines must be skipped)", i)
-		}
+	if fin.Success {
+		t.Error("Finished.Success = true, want false on missing result envelope")
 	}
+}
 
-	// Verify fixture content appears somewhere in the text events.
-	var combined strings.Builder
+func TestParseClaudeOutput_GarbledLineEmitsRunErrorAndContinues(t *testing.T) {
+	t.Parallel()
+	// A garbled non-JSON line between valid envelopes must not abort the
+	// parser. The bad line surfaces as RunError; the stream continues to
+	// consume subsequent envelopes including a clean result.
+	input := `{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}` + "\n" +
+		"this is not json" + "\n" +
+		`{"type":"result","subtype":"success","is_error":false,"usage":{"output_tokens":1}}` + "\n"
+	events := collectEvents(parseClaudeOutput(strings.NewReader(input)))
+
+	var sawRunError, sawSuccess bool
 	for _, ev := range events {
-		if at, ok := ev.(reviewtypes.AssistantText); ok {
-			combined.WriteString(at.Text)
-			combined.WriteString("\n")
+		if _, ok := ev.(reviewtypes.RunError); ok {
+			sawRunError = true
+		}
+		if fin, ok := ev.(reviewtypes.Finished); ok && fin.Success {
+			sawSuccess = true
 		}
 	}
-	if !strings.Contains(combined.String(), "AgentReviewer") {
-		t.Error("expected fixture content mentioning 'AgentReviewer' to appear in AssistantText events")
+	if !sawRunError {
+		t.Error("expected RunError for garbled line")
+	}
+	if !sawSuccess {
+		t.Error("expected Finished{Success:true} after recovering from garbled line")
+	}
+}
+
+// TestParseClaudeOutput_EmitsCumulativeInputDuringRun captures the live-token
+// contract for Claude. The `Tokens` type is documented as cumulative running
+// totals (each emission replaces the previous), so mid-run emissions must be
+// running sums, not per-call snapshots. Claude's assistant envelopes carry a
+// usage block per API call (repeated verbatim on every content-block envelope
+// of the same message id), where output_tokens is a 1–8 token "initial
+// decision" stub — so the parser accumulates input across unique message ids,
+// emits `Tokens{In: <running sum>, Out: 0}`, and lets the terminal `result`
+// envelope deliver the true {In, Out} aggregate.
+//
+// Fixture is derived from real `claude -p --output-format stream-json
+// --verbose` output captured against claude-haiku-4-5: six assistant
+// envelopes across three API calls (message ids msg_turn1..3, with turn 1
+// repeated on three envelopes), then a final result. The per-call input sums
+// are 56277, 56626, and 56734 — running totals 56277, 112903, 169637 — and
+// the result aggregate is exactly {In: 169637, Out: 2511}, which pins that
+// accumulation converges to the final figure.
+func TestParseClaudeOutput_EmitsCumulativeInputDuringRun(t *testing.T) {
+	t.Parallel()
+	f, err := os.Open("testdata/stream_with_deltas.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	var events []reviewtypes.Event
+	for ev := range parseClaudeOutput(f) {
+		events = append(events, ev)
+	}
+
+	var tokens []reviewtypes.Tokens
+	sawFinished := false
+	for _, e := range events {
+		switch ev := e.(type) {
+		case reviewtypes.Tokens:
+			if sawFinished {
+				t.Errorf("Tokens event arrived AFTER Finished — wrong ordering")
+			}
+			tokens = append(tokens, ev)
+		case reviewtypes.Finished:
+			sawFinished = true
+		}
+	}
+
+	// One emission per unique message id (duplicate envelopes of the same
+	// API call must not re-emit) plus the terminal result emission.
+	want := []reviewtypes.Tokens{
+		{In: 56277, Out: 0},
+		{In: 112903, Out: 0},
+		{In: 169637, Out: 0},
+		{In: 169637, Out: 2511},
+	}
+	if len(tokens) != len(want) {
+		t.Fatalf("Tokens events = %d, want %d (one per unique message id + result): %+v", len(tokens), len(want), tokens)
+	}
+	for i, w := range want {
+		if tokens[i] != w {
+			t.Errorf("tokens[%d] = %+v, want %+v", i, tokens[i], w)
+		}
+	}
+}
+
+// TestParseClaudeOutput_UsagelessResultDoesNotClobberCumulative pins the
+// terminal emission guard: a result envelope with no/zero usage must not
+// emit Tokens{0,0} — under the consumers' overwrite-not-sum semantics that
+// would erase the mid-run cumulative input total.
+func TestParseClaudeOutput_UsagelessResultDoesNotClobberCumulative(t *testing.T) {
+	t.Parallel()
+	input := strings.Join([]string{
+		`{"type":"assistant","message":{"id":"msg_1","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":10,"cache_read_input_tokens":90,"cache_creation_input_tokens":0,"output_tokens":2}}}`,
+		`{"type":"result","subtype":"success","is_error":false}`,
+		"",
+	}, "\n")
+
+	var tokens []reviewtypes.Tokens
+	for ev := range parseClaudeOutput(strings.NewReader(input)) {
+		if tk, ok := ev.(reviewtypes.Tokens); ok {
+			tokens = append(tokens, tk)
+		}
+	}
+	if len(tokens) == 0 {
+		t.Fatal("expected the mid-run cumulative Tokens emission")
+	}
+	last := tokens[len(tokens)-1]
+	if last.In == 0 && last.Out == 0 {
+		t.Fatalf("final tokens = %+v — usage-less result clobbered the cumulative total", last)
+	}
+	if last.In != 100 {
+		t.Errorf("final tokens = %+v, want the cumulative {100, 0} to stand", last)
 	}
 }
 

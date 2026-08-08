@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -39,7 +40,7 @@ func TestReviewCheckpointContext_IncludesSummaryAndPromptFallback(t *testing.T) 
 		prompts:    []string{"summary fallback prompt should not appear"},
 		transcript: `{"event":"raw summary transcript"}` + "\n",
 	})
-	commitReviewContextChange(t, repoRoot, "summary.go", "summary\n", "summary change", "Trace-Checkpoint: "+summaryCheckpointID)
+	commitReviewContextChange(t, repoRoot, "summary.go", "summary\n", "summary change", "Entire-Checkpoint: "+summaryCheckpointID)
 
 	const promptCheckpointID = "b1b2c3d4e5f6"
 	writeReviewContextCheckpoint(t, repoRoot, promptCheckpointID, reviewContextCheckpointOptions{
@@ -48,7 +49,7 @@ func TestReviewCheckpointContext_IncludesSummaryAndPromptFallback(t *testing.T) 
 		prompts:      []string{"Implement prompt fallback when summaries are missing"},
 		transcript:   `{"event":"raw prompt transcript"}` + "\n",
 	})
-	commitReviewContextChange(t, repoRoot, "prompt.go", "prompt\n", "prompt change", "Trace-Checkpoint: "+promptCheckpointID)
+	commitReviewContextChange(t, repoRoot, "prompt.go", "prompt\n", "prompt change", "Entire-Checkpoint: "+promptCheckpointID)
 
 	got := reviewCheckpointContext(context.Background(), repoRoot, "master")
 	for _, want := range []string{
@@ -57,8 +58,8 @@ func TestReviewCheckpointContext_IncludesSummaryAndPromptFallback(t *testing.T) 
 		"summary: add checkpoint context to review prompts; review prompt sees checkpoint summaries; open: cover prompt fallback",
 		promptCheckpointID,
 		"prompt: Implement prompt fallback when summaries are missing",
-		"trace checkpoint explain <id>",
-		"trace checkpoint explain <id> --raw-transcript",
+		"entire checkpoint explain <id>",
+		"entire checkpoint explain <id> --raw-transcript",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("review checkpoint context missing %q:\n%s", want, got)
@@ -99,7 +100,7 @@ func TestReviewCheckpointContext_CapsCheckpointLines(t *testing.T) {
 			fmt.Sprintf("checkpoint-%02d.go", i),
 			fmt.Sprintf("checkpoint %02d\n", i),
 			fmt.Sprintf("checkpoint change %02d", i),
-			"Trace-Checkpoint: "+checkpointID,
+			"Entire-Checkpoint: "+checkpointID,
 		)
 	}
 
@@ -167,14 +168,14 @@ func TestReviewCommandSmoke_IncludesCheckpointContextInPrompt(t *testing.T) {
 		},
 		transcript: `{"event":"test"}` + "\n",
 	})
-	commitReviewContextChange(t, repoRoot, "checkpointed.go", "checkpointed\n", "implement checkpointed change", "Trace-Checkpoint: "+checkpointID)
+	commitReviewContextChange(t, repoRoot, "checkpointed.go", "checkpointed\n", "implement checkpointed change", "Entire-Checkpoint: "+checkpointID)
 
 	cmd := NewRootCmd()
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"review", "--agent", string(agent.AgentNameClaudeCode)})
+	cmd.SetArgs([]string{"review", "general", "--agent", string(agent.AgentNameClaudeCode)})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("entire review failed: %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errOut.String())
@@ -187,7 +188,7 @@ func TestReviewCommandSmoke_IncludesCheckpointContextInPrompt(t *testing.T) {
 	prompt := string(promptBytes)
 	for _, want := range []string{
 		"/review",
-		"Scope: review only the commits unique to this branch vs master.",
+		"Scope: review the commits unique to this branch vs master, plus any uncommitted changes in the working tree. Ignore code outside this scope.",
 		"Checkpoint context from commits in scope:",
 		checkpointID,
 		"summary: smoke checkpoint summary; review smoke receives checkpoint summary",
@@ -237,7 +238,7 @@ func TestReviewCommandSmoke_IncludesInProgressSessionContextInPrompt(t *testing.
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"review", "--agent", string(agent.AgentNameClaudeCode)})
+	cmd.SetArgs([]string{"review", "general", "--agent", string(agent.AgentNameClaudeCode)})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("entire review failed: %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errOut.String())
@@ -257,6 +258,104 @@ func TestReviewCommandSmoke_IncludesInProgressSessionContextInPrompt(t *testing.
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("captured review prompt missing %q:\n%s", want, prompt)
 		}
+	}
+}
+
+// TestReviewCommandSmoke_BaseFlagThreadsThroughToPromptAndBanner verifies
+// that the `--base <ref>` flag survives the full cobra → runReview →
+// runSingleAgentPath → detectScope → ComputeScopeStats → ComposeReviewPrompt
+// chain. Without a command-level test, regressions in the flag wiring (like
+// the silentErr suppression bug caught in smoke) wouldn't be caught by the
+// unit tests that exercise ComputeScopeStats in isolation.
+func TestReviewCommandSmoke_BaseFlagThreadsThroughToPromptAndBanner(t *testing.T) {
+	repoRoot := newReviewContextRepo(t)
+	t.Chdir(repoRoot)
+	paths.ClearWorktreeRootCache()
+	t.Cleanup(paths.ClearWorktreeRootCache)
+
+	// Create feat/parent at the current HEAD (which is feat/review's branch
+	// point). --base feat/parent will then be a valid override.
+	//nolint:noctx // test helper
+	branchCmd := exec.Command("git", "branch", "feat/parent")
+	branchCmd.Dir = repoRoot
+	if out, err := branchCmd.CombinedOutput(); err != nil {
+		t.Fatalf("create feat/parent: %v\n%s", err, out)
+	}
+
+	// Add a commit on feat/review so the scope is non-empty.
+	commitReviewContextChange(t, repoRoot, "feature.go", "feat\n", "add feature", "")
+
+	installReviewContextClaudeHooks(t)
+	writeReviewContextSettings(t, repoRoot)
+
+	stubDir := t.TempDir()
+	promptPath := filepath.Join(t.TempDir(), "prompt.txt")
+	writeReviewContextClaudeStub(t, stubDir)
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("ENTIRE_SMOKE_PROMPT_FILE", promptPath)
+
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"review", "general", "--agent", string(agent.AgentNameClaudeCode), "--base", "feat/parent"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("entire review failed: %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errOut.String())
+	}
+
+	promptBytes, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("read captured prompt: %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errOut.String())
+	}
+	prompt := string(promptBytes)
+	if !strings.Contains(prompt, "vs feat/parent") {
+		t.Errorf("agent prompt must include scope clause referencing the --base override; got:\n%s", prompt)
+	}
+	if !strings.Contains(out.String(), "vs feat/parent") {
+		t.Errorf("scope banner must reflect --base override; got stdout:\n%s", out.String())
+	}
+}
+
+// TestReviewCommandSmoke_BadBaseRefErrorsBeforeAgentSpawn verifies that a
+// non-existent --base ref aborts the run before the agent is invoked, with
+// an error message that names the bad ref so the user can fix it.
+// Regression guard for the silentErr-suppression bug where the validation
+// error existed but was swallowed by main.go's SilentError handling.
+func TestReviewCommandSmoke_BadBaseRefErrorsBeforeAgentSpawn(t *testing.T) {
+	repoRoot := newReviewContextRepo(t)
+	t.Chdir(repoRoot)
+	paths.ClearWorktreeRootCache()
+	t.Cleanup(paths.ClearWorktreeRootCache)
+
+	installReviewContextClaudeHooks(t)
+	writeReviewContextSettings(t, repoRoot)
+
+	stubDir := t.TempDir()
+	promptPath := filepath.Join(t.TempDir(), "prompt.txt")
+	writeReviewContextClaudeStub(t, stubDir)
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("ENTIRE_SMOKE_PROMPT_FILE", promptPath)
+
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"review", "general", "--agent", string(agent.AgentNameClaudeCode), "--base", "no-such-ref"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected non-nil error for invalid --base ref; stdout:\n%s\nstderr:\n%s", out.String(), errOut.String())
+	}
+	if !strings.Contains(err.Error(), "no-such-ref") {
+		t.Errorf("error must name the bad ref so the user knows what to fix; got: %v", err)
+	}
+	// Agent stub must NOT have been invoked.
+	if _, statErr := os.Stat(promptPath); statErr == nil {
+		captured, _ := os.ReadFile(promptPath) //nolint:errcheck // best-effort debug read
+		t.Errorf("agent stub was invoked despite invalid --base; captured prompt:\n%s", string(captured))
 	}
 }
 
@@ -331,11 +430,11 @@ func installReviewContextClaudeHooks(t *testing.T) {
 
 func writeReviewContextSettings(t *testing.T, repoRoot string) {
 	t.Helper()
-	entireDir := filepath.Join(repoRoot, ".trace")
+	entireDir := filepath.Join(repoRoot, ".entire")
 	if err := os.MkdirAll(entireDir, 0o750); err != nil {
-		t.Fatalf("create .trace dir: %v", err)
+		t.Fatalf("create .entire dir: %v", err)
 	}
-	settingsJSON := `{"enabled":true,"review":{"claude-code":{"skills":["/review"]}},"review_default_profile":"general","review_profiles":{"general":{"task":"Test review task.","agents":{"claude-code":{"skills":["/review"]}},"judge":{"agent":"claude-code"}}}}` + "\n"
+	settingsJSON := `{"enabled":true,"review_default_profile":"general","review_profiles":{"general":{"task":"Test review task.","agents":{"claude-code":{"skills":["/review"]}},"judge":{"agent":"claude-code"}}}}` + "\n"
 	if err := os.WriteFile(filepath.Join(entireDir, "settings.json"), []byte(settingsJSON), 0o600); err != nil {
 		t.Fatalf("write review settings: %v", err)
 	}
@@ -493,7 +592,7 @@ func writeReviewContextSessionState(t *testing.T, repoRoot string, state session
 	if state.StartedAt.IsZero() {
 		state.StartedAt = time.Now()
 	}
-	dir := filepath.Join(repoRoot, ".git", session.SessionStateDirName)
+	dir := filepath.Join(repoRoot, ".git", "entire-sessions")
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}

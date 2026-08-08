@@ -77,9 +77,9 @@ func newCheckpointTokensCmd() *cobra.Command {
 		Long: `Show token usage and optimization recommendations for a checkpoint.
 
 The report reads committed checkpoint metadata using the same checkpoint
-resolution path as 'trace checkpoint explain'. Checkpoint IDs may be abbreviated
+resolution path as 'entire checkpoint explain'. Checkpoint IDs may be abbreviated
 as long as the prefix is unambiguous; positional targets may also resolve from a
-commit ref with an Trace-Checkpoint trailer, and missing metadata may be fetched
+commit ref with an Entire-Checkpoint trailer, and missing metadata may be fetched
 from the checkpoint remote.
 
 Use --compare <checkpoint-id> to compare this checkpoint against a previous

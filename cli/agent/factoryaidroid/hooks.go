@@ -16,7 +16,7 @@ import (
 // Ensure FactoryAIDroidAgent implements HookSupport
 var _ agent.HookSupport = (*FactoryAIDroidAgent)(nil)
 
-// Factory AI Droid hook names - these become subcommands under `hawk trace hooks factoryai-droid`
+// Factory AI Droid hook names - these become subcommands under `entire hooks factoryai-droid`
 const (
 	HookNameSessionStart     = "session-start"
 	HookNameSessionEnd       = "session-end"
@@ -33,19 +33,20 @@ const (
 // This is Factory-specific and not shared with other agents.
 const FactorySettingsFileName = "settings.json"
 
-// metadataDenyRule blocks Factory Droid from reading Trace session metadata
-const metadataDenyRule = "Read(./.trace/metadata/**)"
+// metadataDenyRule blocks Factory Droid from reading Entire session metadata
+const metadataDenyRule = "Read(./.entire/metadata/**)"
 
-// traceHookPrefixes are command prefixes that identify Trace hooks
-var traceHookPrefixes = []string{
-	"hawk trace ",
-	`go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace `,
-	"trace ",
-	`go run "$(git rev-parse --show-toplevel)"/cmd/trace/main.go `,
+// entireHookPrefixes are command prefixes that identify Entire hooks. The
+// "go run" prefix is retained so hooks installed by older versions are still
+// recognized.
+var entireHookPrefixes = []string{
+	"entire ",
+	agent.LocalDevHookScript + " ",
+	`go run "$(git rev-parse --show-toplevel)"/cmd/entire/main.go `,
 }
 
 // InstallHooks installs Factory AI Droid hooks in .factory/settings.json.
-// If force is true, removes existing Trace hooks before installing.
+// If force is true, removes existing Entire hooks before installing.
 // Returns the number of hooks installed.
 //
 //nolint:maintidx // Hook installation is intentionally centralized here; splitting it further would add churn for a config-assembly path.
@@ -72,7 +73,6 @@ func (f *FactoryAIDroidAgent) InstallHooks(ctx context.Context, localDev bool, f
 	// rawPermissions preserves unknown permission fields (e.g., "ask")
 	var rawPermissions map[string]json.RawMessage
 
-	// #nosec G304 -- settingsPath is constructed from cwd + fixed path, not external input
 	existingData, readErr := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from cwd + fixed path
 	if readErr == nil {
 		if err := json.Unmarshal(existingData, &rawSettings); err != nil {
@@ -109,20 +109,20 @@ func (f *FactoryAIDroidAgent) InstallHooks(ctx context.Context, localDev bool, f
 	parseHookType(rawHooks, "PostToolUse", &postToolUse)
 	parseHookType(rawHooks, "PreCompact", &preCompact)
 
-	// If force is true, remove all existing Trace hooks first
+	// If force is true, remove all existing Entire hooks first
 	if force {
-		sessionStart = removeTraceHooks(sessionStart)
-		sessionEnd = removeTraceHooks(sessionEnd)
-		stop = removeTraceHooks(stop)
-		userPromptSubmit = removeTraceHooks(userPromptSubmit)
-		preToolUse = removeTraceHooks(preToolUse)
-		postToolUse = removeTraceHooks(postToolUse)
-		preCompact = removeTraceHooks(preCompact)
+		sessionStart = removeEntireHooks(sessionStart)
+		sessionEnd = removeEntireHooks(sessionEnd)
+		stop = removeEntireHooks(stop)
+		userPromptSubmit = removeEntireHooks(userPromptSubmit)
+		preToolUse = removeEntireHooks(preToolUse)
+		postToolUse = removeEntireHooks(postToolUse)
+		preCompact = removeEntireHooks(preCompact)
 	}
 
 	// Define hook commands
 	var sessionStartCmd, sessionEndCmd, stopCmd, userPromptSubmitCmd, preTaskCmd, postTaskCmd, preCompactCmd string
-	localDevPrefix := `go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace hooks factoryai-droid `
+	localDevPrefix := agent.LocalDevHookScript + " hooks factoryai-droid "
 	if localDev {
 		sessionStartCmd = localDevPrefix + "session-start"
 		sessionEndCmd = localDevPrefix + "session-end"
@@ -132,13 +132,13 @@ func (f *FactoryAIDroidAgent) InstallHooks(ctx context.Context, localDev bool, f
 		postTaskCmd = localDevPrefix + "post-tool-use"
 		preCompactCmd = localDevPrefix + "pre-compact"
 	} else {
-		sessionStartCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid session-start")
-		sessionEndCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid session-end")
-		stopCmd = agent.WrapProductionPlainTextWarningHookCommand("hawk trace hooks factoryai-droid stop", agent.WarningFormatSingleLine)
-		userPromptSubmitCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid user-prompt-submit")
-		preTaskCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid pre-tool-use")
-		postTaskCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid post-tool-use")
-		preCompactCmd = agent.WrapProductionSilentHookCommand("hawk trace hooks factoryai-droid pre-compact")
+		sessionStartCmd = agent.WrapProductionSilentHookCommand("entire hooks factoryai-droid session-start")
+		sessionEndCmd = agent.WrapProductionSilentHookCommand("entire hooks factoryai-droid session-end")
+		stopCmd = agent.WrapProductionPlainTextWarningHookCommand("entire hooks factoryai-droid stop", agent.WarningFormatSingleLine)
+		userPromptSubmitCmd = agent.WrapProductionSilentHookCommand("entire hooks factoryai-droid user-prompt-submit")
+		preTaskCmd = agent.WrapProductionSilentHookCommand("entire hooks factoryai-droid pre-tool-use")
+		postTaskCmd = agent.WrapProductionSilentHookCommand("entire hooks factoryai-droid post-tool-use")
+		preCompactCmd = agent.WrapProductionSilentHookCommand("entire hooks factoryai-droid pre-compact")
 	}
 
 	count := 0
@@ -248,7 +248,7 @@ func (f *FactoryAIDroidAgent) InstallHooks(ctx context.Context, localDev bool, f
 func parseHookType(rawHooks map[string]json.RawMessage, hookType string, target *[]FactoryHookMatcher) {
 	if data, ok := rawHooks[hookType]; ok {
 		//nolint:errcheck,gosec // Intentionally ignoring parse errors - leave target as nil/empty
-		json.Unmarshal(data, target) // #nosec G104 -- intentionally ignoring parse errors, leave target as nil/empty
+		json.Unmarshal(data, target)
 	}
 }
 
@@ -266,7 +266,7 @@ func marshalHookType(rawHooks map[string]json.RawMessage, hookType string, match
 	rawHooks[hookType] = data
 }
 
-// UninstallHooks removes Trace hooks from Factory AI Droid settings.
+// UninstallHooks removes Entire hooks from Factory AI Droid settings.
 func (f *FactoryAIDroidAgent) UninstallHooks(ctx context.Context) error {
 	// Use repo root to find .factory directory when run from a subdirectory
 	repoRoot, err := paths.WorktreeRoot(ctx)
@@ -274,7 +274,6 @@ func (f *FactoryAIDroidAgent) UninstallHooks(ctx context.Context) error {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".factory", FactorySettingsFileName)
-	// #nosec G304 -- settingsPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return nil //nolint:nilerr // No settings file means nothing to uninstall
@@ -306,14 +305,14 @@ func (f *FactoryAIDroidAgent) UninstallHooks(ctx context.Context) error {
 	parseHookType(rawHooks, "PostToolUse", &postToolUse)
 	parseHookType(rawHooks, "PreCompact", &preCompact)
 
-	// Remove Trace hooks from all hook types
-	sessionStart = removeTraceHooks(sessionStart)
-	sessionEnd = removeTraceHooks(sessionEnd)
-	stop = removeTraceHooks(stop)
-	userPromptSubmit = removeTraceHooks(userPromptSubmit)
-	preToolUse = removeTraceHooks(preToolUse)
-	postToolUse = removeTraceHooks(postToolUse)
-	preCompact = removeTraceHooks(preCompact)
+	// Remove Entire hooks from all hook types
+	sessionStart = removeEntireHooks(sessionStart)
+	sessionEnd = removeEntireHooks(sessionEnd)
+	stop = removeEntireHooks(stop)
+	userPromptSubmit = removeEntireHooks(userPromptSubmit)
+	preToolUse = removeEntireHooks(preToolUse)
+	postToolUse = removeEntireHooks(postToolUse)
+	preCompact = removeEntireHooks(preCompact)
 
 	// Marshal modified hook types back to rawHooks
 	marshalHookType(rawHooks, "SessionStart", sessionStart)
@@ -389,7 +388,7 @@ func (f *FactoryAIDroidAgent) UninstallHooks(ctx context.Context) error {
 	return nil
 }
 
-// AreHooksInstalled checks if Trace hooks are installed.
+// AreHooksInstalled checks if Entire hooks are installed.
 func (f *FactoryAIDroidAgent) AreHooksInstalled(ctx context.Context) bool {
 	// Use repo root to find .factory directory when run from a subdirectory
 	repoRoot, err := paths.WorktreeRoot(ctx)
@@ -397,7 +396,6 @@ func (f *FactoryAIDroidAgent) AreHooksInstalled(ctx context.Context) bool {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".factory", FactorySettingsFileName)
-	// #nosec G304 -- settingsPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return false
@@ -409,7 +407,7 @@ func (f *FactoryAIDroidAgent) AreHooksInstalled(ctx context.Context) bool {
 	}
 
 	// Check for at least one of our hooks (production, wrapped, or local-dev format)
-	return hasTraceHook(settings.Hooks.Stop)
+	return hasEntireHook(settings.Hooks.Stop)
 }
 
 // Helper functions for hook management
@@ -425,10 +423,10 @@ func hookCommandExists(matchers []FactoryHookMatcher, command string) bool {
 	return false
 }
 
-func hasTraceHook(matchers []FactoryHookMatcher) bool {
+func hasEntireHook(matchers []FactoryHookMatcher) bool {
 	for _, matcher := range matchers {
 		for _, hook := range matcher.Hooks {
-			if isTraceHook(hook.Command) {
+			if isEntireHook(hook.Command) {
 				return true
 			}
 		}
@@ -460,18 +458,18 @@ func addHookToMatcher(matchers []FactoryHookMatcher, matcherName, command string
 	return append(matchers, FactoryHookMatcher{Matcher: matcherName, Hooks: []FactoryHookEntry{entry}})
 }
 
-// isTraceHook checks if a command is an Trace hook
-func isTraceHook(command string) bool {
-	return agent.IsManagedHookCommand(command, traceHookPrefixes)
+// isEntireHook checks if a command is an Entire hook
+func isEntireHook(command string) bool {
+	return agent.IsManagedHookCommand(command, entireHookPrefixes)
 }
 
-// removeTraceHooks removes all Trace hooks from a list of matchers (for simple hooks like Stop)
-func removeTraceHooks(matchers []FactoryHookMatcher) []FactoryHookMatcher {
+// removeEntireHooks removes all Entire hooks from a list of matchers (for simple hooks like Stop)
+func removeEntireHooks(matchers []FactoryHookMatcher) []FactoryHookMatcher {
 	result := make([]FactoryHookMatcher, 0, len(matchers))
 	for _, matcher := range matchers {
 		filteredHooks := make([]FactoryHookEntry, 0, len(matcher.Hooks))
 		for _, hook := range matcher.Hooks {
-			if !isTraceHook(hook.Command) {
+			if !isEntireHook(hook.Command) {
 				filteredHooks = append(filteredHooks, hook)
 			}
 		}

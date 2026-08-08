@@ -78,7 +78,7 @@ func (f *fileStore) load() (map[string]map[string]string, error) {
 	if runtime.GOOS != goosWindows && !f.warnedLoosePerms {
 		if info, statErr := os.Stat(f.path); statErr == nil && info.Mode().Perm()&0o077 != 0 {
 			f.warnedLoosePerms = true
-			fmt.Fprintf(loosePermsWarnW, "Warning: token store %s is accessible by group/others (mode %04o) and holds bearer tokens; run: chmod 0600 %s\n", f.path, info.Mode().Perm(), f.path) //nolint:errcheck // best-effort warning
+			fmt.Fprintf(loosePermsWarnW, "Warning: token store %s is accessible by group/others (mode %04o) and holds bearer tokens; run: chmod 0600 %s\n", f.path, info.Mode().Perm(), f.path)
 		}
 	}
 	data, err := os.ReadFile(f.path)

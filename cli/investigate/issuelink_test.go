@@ -220,7 +220,7 @@ func TestResolveIssueLink_GhExecError(t *testing.T) {
 // embeds a basic-auth credential (https://user:token@github.com/...), neither
 // the wrapped error nor the rendered seed doc body leaks the token. Tokens
 // pasted into command lines via shell history substitution should not reach
-// .trace/logs/, stderr, or the findings doc.
+// .entire/logs/, stderr, or the findings doc.
 func TestResolveIssueLink_RedactsCredentialsInErrors(t *testing.T) {
 	withFakeGh(t, func(_ context.Context, _ ...string) ([]byte, error) {
 		return nil, errors.New("HTTP 401: unauthorized")

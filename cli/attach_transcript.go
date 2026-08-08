@@ -56,7 +56,7 @@ func extractTranscriptMetadata(data []byte) transcriptMetadata {
 	return meta
 }
 
-// extractTranscriptMetadataForAgent extracts transcript metadata with
+// extractTranscriptMetadataForAgent augments the generic attach parser with
 // agent-native prompt and model extraction when available. Native extractors
 // are authoritative because they understand format-specific nesting and
 // conversation branches (Pi, Codex, Droid, etc.); failures remain best-effort

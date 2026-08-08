@@ -38,7 +38,7 @@ func newRunnerSetupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "setup [<runner>]",
 		Short: "Create and tailor this repository's trail runners",
-		Long: `Set up the .trace/runners/*.json evaluators for this repository.
+		Long: `Set up the .entire/runners/*.json evaluators for this repository.
 
 Runners (risk, confidence, drift, security, review, …) score and review a
 branch's changes. The shipped templates are generic; "setup" tailors them to
@@ -241,7 +241,7 @@ func applyTuneWithAgent(ctx context.Context, w, errW io.Writer, runners []tuneRu
 
 	switch {
 	case updated > 0:
-		fmt.Fprintf(w, "\nUpdated %d runner(s). Review with: git diff .trace/runners\n", updated)
+		fmt.Fprintf(w, "\nUpdated %d runner(s). Review with: git diff .entire/runners\n", updated)
 	case len(createdIDs) == 0 && skipped > 0:
 		// Existing runners, model proposed templates, all rejected — a failed run.
 		// (When onboarding just created the set, an un-tailored runner is reported
@@ -257,7 +257,7 @@ func applyTuneWithAgent(ctx context.Context, w, errW io.Writer, runners []tuneRu
 	if untailored := untailoredRunners(createdIDs, tailored); len(untailored) > 0 {
 		fmt.Fprintf(errW, "\n%d runner(s) kept as working defaults (generic, not tailored to this repo): %s\n",
 			len(untailored), strings.Join(untailored, ", "))
-		fmt.Fprintln(errW, "They are functional as-is; re-run `trace runner setup --run` to tailor them.")
+		fmt.Fprintln(errW, "They are functional as-is; re-run `entire runner setup --run` to tailor them.")
 	}
 	return nil
 }

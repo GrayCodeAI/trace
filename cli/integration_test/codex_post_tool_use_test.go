@@ -26,7 +26,7 @@ func TestCodexPostToolUse_PopulatesFilesTouched(t *testing.T) {
 	env := NewRepoWithCommit(t)
 
 	sessionID := "test-codex-post-tool-use"
-	statePath := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
+	statePath := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(statePath), 0o755))
 
 	// Pre-create state with AgentType=Codex. We skip UserPromptSubmit because
@@ -67,7 +67,10 @@ func TestCodexPostToolUse_PopulatesFilesTouched(t *testing.T) {
 
 	got := make([]string, 0, len(rawFiles))
 	for _, v := range rawFiles {
-		s, _ := v.(string)
+		s, ok := v.(string)
+		if !ok {
+			t.Fatalf("files_touched entry should be a string; got %T", v)
+		}
 		got = append(got, s)
 	}
 	assert.ElementsMatch(t,
@@ -85,7 +88,7 @@ func TestCodexPostToolUse_NonMutatingToolIsNoop(t *testing.T) {
 	env := NewRepoWithCommit(t)
 
 	sessionID := "test-codex-post-tool-use-noop"
-	statePath := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
+	statePath := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(statePath), 0o755))
 
 	initialState := map[string]any{

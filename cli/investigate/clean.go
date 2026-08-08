@@ -41,7 +41,7 @@ type CleanDeps struct {
 	Confirm func(ctx context.Context, message string) (bool, error)
 }
 
-// RunClean implements `trace investigate clean`.
+// RunClean implements `entire investigate clean`.
 func RunClean(ctx context.Context, in CleanInput, deps CleanDeps) error {
 	if deps.ManifestStore == nil || deps.RunDir == nil || deps.ManifestPath == nil {
 		return errors.New("clean: deps not wired (manifest store, RunDir, ManifestPath required)")

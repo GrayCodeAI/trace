@@ -64,11 +64,11 @@ type RewindPoint struct {
 	ToolUseID string
 
 	// IsLogsOnly indicates this is a commit with session logs but no shadow branch state.
-	// The logs can be restored from trace/checkpoints/v1, but file state requires git checkout.
+	// The logs can be restored from entire/checkpoints/v1, but file state requires git checkout.
 	IsLogsOnly bool
 
 	// CheckpointID is the stable 12-hex-char identifier for logs-only points.
-	// Used to retrieve logs from trace/checkpoints/v1/<id[:2]>/<id[2:]>/full.jsonl
+	// Used to retrieve logs from entire/checkpoints/v1/<id[:2]>/<id[2:]>/full.jsonl
 	// Empty for shadow branch checkpoints (uncommitted).
 	CheckpointID id.CheckpointID
 

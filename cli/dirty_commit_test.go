@@ -35,7 +35,7 @@ func setupDirtyRepo(t *testing.T, settingsJSON string) string {
 
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "base.txt"), []byte("base"), 0o644))
 
-	traceDir := filepath.Join(tmpDir, ".trace")
+	traceDir := filepath.Join(tmpDir, ".entire")
 	require.NoError(t, os.MkdirAll(traceDir, 0o755))
 	if settingsJSON != "" {
 		require.NoError(t, os.WriteFile(filepath.Join(traceDir, "settings.json"), []byte(settingsJSON), 0o644))

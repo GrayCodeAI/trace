@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 )
 
-const testActivityAgentClaude = "claude"
+const activityTestAgentClaude = "claude"
 
 func TestUniqueCommitAgents_UsesAgentsSlice(t *testing.T) {
 	t.Parallel()
@@ -21,7 +21,7 @@ func TestUniqueCommitAgents_UsesAgentsSlice(t *testing.T) {
 	if len(agents) != 2 {
 		t.Fatalf("got %d agents, want 2", len(agents))
 	}
-	if agents[0] != testActivityAgentClaude || agents[1] != "gemini" {
+	if agents[0] != activityTestAgentClaude || agents[1] != "gemini" {
 		t.Errorf("got %v, want [claude gemini]", agents)
 	}
 }
@@ -34,7 +34,7 @@ func TestUniqueCommitAgents_FallsBackToSingularAgent(t *testing.T) {
 		},
 	}
 	agents := uniqueCommitAgents(c)
-	if len(agents) != 1 || agents[0] != testActivityAgentClaude {
+	if len(agents) != 1 || agents[0] != activityTestAgentClaude {
 		t.Errorf("got %v, want [claude] (should fall back to Agent field)", agents)
 	}
 }
@@ -56,8 +56,8 @@ func TestUniqueCommitAgents_Dedupes(t *testing.T) {
 	t.Parallel()
 	c := userCommit{
 		Checkpoints: []userCommitCheckpoint{
-			{Agent: testActivityAgentClaude, Agents: []string{"Claude Code"}},
-			{Agent: testActivityAgentClaude, Agents: []string{"Claude Code"}},
+			{Agent: activityTestAgentClaude, Agents: []string{"Claude Code"}},
+			{Agent: activityTestAgentClaude, Agents: []string{"Claude Code"}},
 		},
 	}
 	agents := uniqueCommitAgents(c)
@@ -152,7 +152,7 @@ func TestRenderCommitList_SingularPlural(t *testing.T) {
 					CommitMsg:    strPtr("msg"),
 					RepoFullName: "org/repo",
 					FilesChanged: 1,
-					Checkpoints:  []userCommitCheckpoint{{Agent: testActivityAgentClaude}},
+					Checkpoints:  []userCommitCheckpoint{{Agent: activityTestAgentClaude}},
 				},
 			}},
 		}
@@ -228,10 +228,10 @@ func TestRenderContributionChart_MonthAxisWideWidth(t *testing.T) {
 	var buf bytes.Buffer
 	sty := activityStyles{width: 200}
 	hourly := []hourlyPoint{
-		{Date: "2026-04-01", Hour: 12, Value: 3, AgentID: testActivityAgentClaude},
+		{Date: "2026-04-01", Hour: 12, Value: 3, AgentID: activityTestAgentClaude},
 	}
 	repos := []repoContribution{
-		{Repo: "org/repo", Total: 1, Agents: map[string]int{testActivityAgentClaude: 1}},
+		{Repo: "org/repo", Total: 1, Agents: map[string]int{activityTestAgentClaude: 1}},
 	}
 
 	renderContributionChart(&buf, sty, hourly, repos)
@@ -254,7 +254,7 @@ func TestRenderRepoChart_LimitsToFive(t *testing.T) {
 		repos = append(repos, repoContribution{
 			Repo:   strings.Repeat("r", i+1),
 			Total:  8 - i,
-			Agents: map[string]int{testActivityAgentClaude: 8 - i},
+			Agents: map[string]int{activityTestAgentClaude: 8 - i},
 		})
 	}
 
@@ -273,6 +273,31 @@ func TestRenderRepoChart_LimitsToFive(t *testing.T) {
 	}
 	if dataLines != 5 {
 		t.Errorf("should render max 5 repos, got %d data lines", dataLines)
+	}
+}
+
+func TestRenderRepoChart_UnicodeNameSafeTruncation(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	sty := activityStyles{width: 60}
+	// A repo name long enough to force truncation and full of multi-byte
+	// runes, so a byte-based slice would split a rune and emit invalid UTF-8.
+	repos := []repoContribution{
+		{
+			Repo:   strings.Repeat("é", 40),
+			Total:  3,
+			Agents: map[string]int{activityTestAgentClaude: 3},
+		},
+	}
+
+	renderRepoChart(&buf, sty, repos)
+	out := buf.String()
+
+	if !utf8.ValidString(out) {
+		t.Fatal("rendered repo chart contains invalid UTF-8")
+	}
+	if !strings.Contains(out, "…") {
+		t.Error("expected the long repo name to be truncated with an ellipsis")
 	}
 }
 

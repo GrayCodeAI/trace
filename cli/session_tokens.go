@@ -65,6 +65,7 @@ type tokenRecommendationSignals struct {
 	CheckpointCount int
 }
 
+// Recommendation thresholds are coarse diagnostics for clear token hotspots, not a cost model or quality verdict.
 const (
 	recommendationHighCacheReadPercent     = 80
 	recommendationHighAPICalls             = 20
@@ -86,10 +87,15 @@ func newTokensCmd() *cobra.Command {
 		Short: "Show token usage and optimization recommendations for a session",
 		Long: `Show token usage and optimization recommendations for a session.
 
-When no session ID is provided, Trace reports on the most recently active
+When no session ID is provided, Entire reports on the most recently active
 session, preferring the current worktree and falling back to the newest session
-if no state matches this worktree.`,
-		Example: "  trace session tokens\n  trace session tokens --current --agent-brief\n  trace session tokens --json",
+if no state matches this worktree. The report uses token and context data Entire
+already captured for the session.
+
+Use --agent-brief when an agent needs compact guidance for the next step, for
+example: "Use Entire token tracking to check how this session is doing and
+optimize next steps."`,
+		Example: "  entire session tokens\n  entire session tokens --current --agent-brief\n  entire session tokens --json",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonFlag && agentBriefFlag {
@@ -115,9 +121,14 @@ if no state matches this worktree.`,
 
 func runSessionTokens(ctx context.Context, cmd *cobra.Command, sessionID string, current, jsonOutput, agentBrief bool) error {
 	if sessionID == "" {
-		sessionID = strategy.FindMostRecentSession(ctx)
+		if current {
+			sessionID = strategy.FindMostRecentSessionInCurrentWorktree(ctx)
+		} else {
+			sessionID = strategy.FindMostRecentSession(ctx)
+		}
 		if sessionID == "" {
 			fmt.Fprintln(cmd.OutOrStdout(), "No active session found in this worktree.")
+			return nil
 		}
 	}
 
@@ -133,7 +144,7 @@ func runSessionTokens(ctx context.Context, cmd *cobra.Command, sessionID string,
 
 	report := buildSessionTokensReport(state, sessionPhaseLabel(state))
 	if jsonOutput {
-		return writeJSONPretty(cmd.OutOrStdout(), report)
+		return printJSON(cmd.OutOrStdout(), report)
 	}
 	if agentBrief {
 		writeSessionTokensAgentBrief(cmd.OutOrStdout(), report)

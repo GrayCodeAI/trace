@@ -93,7 +93,7 @@ func EnsureSetup(ctx context.Context) error {
 		return err
 	}
 
-	// Ensure the trace/checkpoints/v1 orphan branch exists for permanent session storage
+	// Ensure the entire/checkpoints/v1 orphan branch exists for permanent session storage
 	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
@@ -181,7 +181,7 @@ func SafelyAdvanceLocalRef(ctx context.Context, repo *git.Repository, localRefNa
 			return fmt.Errorf("failed to check shallow history for %s: %w", localRefName, shallowErr)
 		}
 		if shallow {
-			return fmt.Errorf("no merge base for %s, and reachable shallow history prevents proving refs are disconnected; run 'trace doctor' or 'git fetch --unshallow' and try again", localRefName)
+			return fmt.Errorf("no merge base for %s, and reachable shallow history prevents proving refs are disconnected; run 'entire doctor' or 'git fetch --unshallow' and try again", localRefName)
 		}
 		return replayDisconnectedLocalRef(ctx, repo, repoPath, localRefName, localHash, targetHash)
 	}
@@ -332,8 +332,8 @@ func checkpointInfosFromCommitted(committed []checkpoint.CheckpointInfo) []Check
 }
 
 const (
-	entireGitignore    = ".trace/.gitignore"
-	entireDir          = ".trace"
+	entireGitignore    = ".entire/.gitignore"
+	entireDir          = ".entire"
 	gitDir             = ".git"
 	shadowBranchPrefix = "entire/"
 )
@@ -377,7 +377,7 @@ var initRedactionOnce sync.Once
 
 // EnsureRedactionConfigured loads redaction settings and configures the
 // redact package: PII detection (opt-in), inline custom_redactions, and rule
-// packs auto-discovered from .trace/redactors/.
+// packs auto-discovered from .entire/redactors/.
 //
 // Must be called at each process entry point before checkpoint writes.
 func EnsureRedactionConfigured() {
@@ -409,7 +409,7 @@ func EnsureRedactionConfigured() {
 		if s.Redaction != nil {
 			inline = s.Redaction.CustomRedactions
 		}
-		packsRelPath := filepath.Join(paths.TraceDir, redact.RedactorsDirName)
+		packsRelPath := filepath.Join(paths.EntireDir, redact.RedactorsDirName)
 		packsDir, perr := paths.AbsPath(ctx, packsRelPath)
 		if perr != nil {
 			logCtx := logging.WithComponent(ctx, "redaction")
@@ -420,11 +420,11 @@ func EnsureRedactionConfigured() {
 		if lerr != nil {
 			logCtx := logging.WithComponent(ctx, "redaction")
 			logging.Warn(logCtx, "failed to load redactor packs", slog.String("error", lerr.Error()))
-			// Hooks log to .trace/logs/trace.log, where most users never
+			// Hooks log to .entire/logs/entire.log, where most users never
 			// look. Surface a one-line breadcrumb on stderr when we have a
 			// real terminal so the user can find the detail.
 			if interactive.IsTerminalWriter(os.Stderr) {
-				fmt.Fprintf(os.Stderr, "[trace] redactor packs failed to load (%v); see .trace/logs/trace.log or run `trace doctor`.\n", lerr)
+				fmt.Fprintf(os.Stderr, "[entire] redactor packs failed to load (%v); see .entire/logs/entire.log or run `entire doctor`.\n", lerr)
 			}
 		}
 		if len(inline) > 0 || len(packs) > 0 {
@@ -491,8 +491,8 @@ func EnsurePrimaryRef(ctx context.Context, repo *git.Repository) error {
 	// Under the git-refs primary backend, checkpoints are written to
 	// per-checkpoint refs and nothing is ever written to the v1 metadata
 	// branch. Seeding an empty orphan v1 here would leave a vestigial,
-	// never-written branch — the surprise a user hit when `trace enable`
-	// selected git-refs yet still created trace/checkpoints/v1. We still adopt
+	// never-written branch — the surprise a user hit when `entire enable`
+	// selected git-refs yet still created entire/checkpoints/v1. We still adopt
 	// real v1 data that already exists on origin or a checkpoint_remote below
 	// (so legacy checkpoints stay readable); we only suppress the empty-orphan
 	// fallback. Resolution is fail-soft: an unreadable config keeps the legacy
@@ -566,11 +566,11 @@ func EnsurePrimaryRef(ctx context.Context, repo *git.Repository) error {
 				if setErr := setRefHash(repo, refs.Primary, remoteRef.Hash()); setErr != nil {
 					return fmt.Errorf("failed to update metadata ref from remote: %w", setErr)
 				}
-				fmt.Fprintf(os.Stderr, "[trace] Updated local ref '%s' from origin\n", primaryName)
+				fmt.Fprintf(os.Stderr, "[entire] Updated local ref '%s' from origin\n", primaryName)
 			} else {
 				// Local has real data and differs from remote — if disconnected
 				// (no common ancestor), reconciliation happens at pre-push time
-				// or via 'trace doctor'. Read paths warn but do not auto-fix.
+				// or via 'entire doctor'. Read paths warn but do not auto-fix.
 				logging.Debug(
 					ctx, "metadata ref differs from remote, reconciliation deferred to read/write time",
 					"local_hash", localRef.Hash().String()[:7],
@@ -660,7 +660,7 @@ func createOrphanMetadataRef(ctx context.Context, repo *git.Repository, refs che
 // bootstrapPrimaryFromCheckpointRemote tries to populate a missing local primary
 // metadata ref from a configured checkpoint_remote before the caller falls back
 // to creating an empty orphan. When a separate checkpoint_remote already holds
-// the real trace/checkpoints/v1 branch (the common second-device case), a fresh
+// the real entire/checkpoints/v1 branch (the common second-device case), a fresh
 // local orphan would diverge from it — hiding existing checkpoints and causing
 // non-fast-forward rejections on the next fetch.
 //
@@ -670,7 +670,7 @@ func createOrphanMetadataRef(ctx context.Context, repo *git.Repository, refs che
 //
 // It returns true only when the fetch succeeds and the local primary ref now
 // points at the remote branch. Every failure is non-fatal and returns false so
-// the caller creates the empty orphan: `trace enable` must never break on a
+// the caller creates the empty orphan: `entire enable` must never break on a
 // missing checkpoint remote, an unresolvable URL, or a network/auth error.
 func bootstrapPrimaryFromCheckpointRemote(ctx context.Context, repo *git.Repository, primary plumbing.ReferenceName) bool {
 	if !checkpointRemoteBootstrapAllowed(ctx) {
@@ -940,7 +940,7 @@ func ReadAgentTypeFromTree(tree *object.Tree, checkpointPath string) types.Agent
 
 	// Fall back to detecting agent from config markers (shadow branches don't have metadata.json).
 	// Multiple agent config markers may coexist when users configure multiple agents via
-	// `trace configure`. Only return a specific agent type when exactly one agent config
+	// `entire configure`. Only return a specific agent type when exactly one agent config
 	// marker (directory or file) is present; otherwise return Unknown since we can't
 	// determine which agent created the checkpoint.
 	var detected types.AgentType
@@ -1127,7 +1127,7 @@ func GetGitCommonDir(ctx context.Context) (string, error) {
 	return filepath.Clean(commonDir), nil
 }
 
-// EnsureEntireGitignore ensures all required entries are in .trace/.gitignore
+// EnsureEntireGitignore ensures all required entries are in .entire/.gitignore
 // Works correctly from any subdirectory within the repository.
 func EnsureEntireGitignore(ctx context.Context) error {
 	// Get absolute path for the gitignore file
@@ -1142,7 +1142,7 @@ func EnsureEntireGitignore(ctx context.Context) error {
 		content = string(data)
 	}
 
-	// All entries that should be in .trace/.gitignore
+	// All entries that should be in .entire/.gitignore
 	requiredEntries := []string{
 		"tmp/",
 		"settings.local.json",
@@ -1193,12 +1193,7 @@ func checkCanRewindWithWarning(ctx context.Context) (bool, string, error) {
 	}
 	defer repo.Close()
 
-	worktree, err := repo.Worktree()
-	if err != nil {
-		return true, "", nil
-	}
-
-	status, err := worktree.Status()
+	status, err := gitrepo.Status(ctx, repo)
 	if err != nil {
 		return true, "", nil
 	}
@@ -1466,8 +1461,8 @@ func getTaskTranscriptFromTree(ctx context.Context, point RewindPoint) ([]byte, 
 		return nil, fmt.Errorf("failed to get tree: %w", err)
 	}
 
-	// MetadataDir format: .trace/metadata/<session>/tasks/<toolUseID>
-	// Session transcript is at: .trace/metadata/<session>/<TranscriptFileName>
+	// MetadataDir format: .entire/metadata/<session>/tasks/<toolUseID>
+	// Session transcript is at: .entire/metadata/<session>/<TranscriptFileName>
 	sessionDir := filepath.Dir(filepath.Dir(point.MetadataDir))
 
 	// Try current format first, then legacy
@@ -1712,73 +1707,4 @@ func prepareTranscriptIfNeeded(ctx context.Context, ag agent.Agent, transcriptPa
 		// Transcript may not be available yet (e.g., agent not installed).
 		_ = preparer.PrepareTranscript(ctx, transcriptPath) //nolint:errcheck // Best-effort in hook path
 	}
-}
-
-// IsInsideWorktree reports whether the current working directory is inside a
-// git linked worktree. Linked worktrees are marked by a `.git` *file* (which
-// points back at the main repo's worktree metadata); a main repository has a
-// `.git` directory instead. Returns false outside any git repository.
-func IsInsideWorktree(_ context.Context) bool {
-	dir, err := os.Getwd()
-	if err != nil {
-		return false
-	}
-	for {
-		gitPath := filepath.Join(dir, ".git")
-		if info, statErr := os.Stat(gitPath); statErr == nil {
-			return !info.IsDir()
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return false
-		}
-		dir = parent
-	}
-}
-
-// GetMainRepoRoot returns the root of the main repository when the current
-// working directory is inside a git repository. In a linked worktree the
-// main repository root is the directory that owns the repository's .git
-// directory; otherwise it is the current worktree root.
-func GetMainRepoRoot(ctx context.Context) (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	for {
-		gitPath := filepath.Join(dir, ".git")
-		info, statErr := os.Stat(gitPath)
-		if statErr != nil {
-			if os.IsNotExist(statErr) {
-				parent := filepath.Dir(dir)
-				if parent == dir {
-					break
-				}
-				dir = parent
-				continue
-			}
-			return "", statErr
-		}
-		if info.IsDir() {
-			return dir, nil
-		}
-		// Linked worktree: .git is a file containing "gitdir: <path>".
-		gitdirBytes, readErr := os.ReadFile(gitPath)
-		if readErr != nil {
-			return "", readErr
-		}
-		gitdir := strings.TrimSpace(strings.TrimPrefix(string(gitdirBytes), "gitdir:"))
-		// gitdir points at <main>/.git/worktrees/<name>; main root is the
-		// parent of the <main>/.git directory.
-		worktreesDir := filepath.Dir(gitdir) // <main>/.git/worktrees
-		gitDir := filepath.Dir(worktreesDir) // <main>/.git
-		mainRoot := filepath.Dir(gitDir)     // <main>
-		return mainRoot, nil
-	}
-	// Not a repository; fall back to the worktree root error path.
-	root, err := paths.WorktreeRoot(ctx)
-	if err != nil {
-		return "", err
-	}
-	return root, nil
 }

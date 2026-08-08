@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -15,7 +14,7 @@ func TestRunAgentList_ListsAvailableAgents(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	if err := runAgentList(context.Background(), &buf, false); err != nil {
+	if err := runAgentList(context.Background(), &buf); err != nil {
 		t.Fatalf("runAgentList: %v", err)
 	}
 	out := buf.String()
@@ -45,7 +44,7 @@ func TestRunAgentList_MarksInstalledWithCheck(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	if err := runAgentList(context.Background(), &buf, false); err != nil {
+	if err := runAgentList(context.Background(), &buf); err != nil {
 		t.Fatalf("runAgentList: %v", err)
 	}
 	out := buf.String()
@@ -58,47 +57,11 @@ func TestRunAgentList_MarksInstalledWithCheck(t *testing.T) {
 	}
 }
 
-func TestRunAgentList_JSONOutput(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-	if err := runAgentList(context.Background(), &buf, true); err != nil {
-		t.Fatalf("runAgentList --json: %v", err)
-	}
-
-	var entries []struct {
-		Name      string `json:"name"`
-		Installed bool   `json:"installed"`
-	}
-	if err := json.Unmarshal(buf.Bytes(), &entries); err != nil {
-		t.Fatalf("invalid JSON output: %v\n%s", err, buf.String())
-	}
-	if len(entries) == 0 {
-		t.Fatalf("expected at least one agent entry, got none")
-	}
-	registered := agent.StringList()
-	found := false
-	for _, name := range registered {
-		for _, e := range entries {
-			if e.Name == name {
-				found = true
-				break
-			}
-		}
-		if found {
-			break
-		}
-	}
-	if !found {
-		t.Errorf("none of registered agents %v appeared in JSON output", registered)
-	}
-}
-
 func TestAgentGroupBareCommandRunsAgentMenu(t *testing.T) {
 	// t.Chdir cannot coexist with t.Parallel; this test mutates process CWD.
 	dir := t.TempDir()
 	testutil.InitRepo(t, dir)
-	testutil.WriteFile(t, dir, TraceSettingsFile, `{"enabled":true}`)
+	testutil.WriteFile(t, dir, EntireSettingsFile, `{"enabled":true}`)
 	t.Chdir(dir)
 
 	cmd := newAgentGroupCmd()

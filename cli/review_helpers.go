@@ -8,145 +8,21 @@ package cli
 //   review → checkpoint → codex → review
 //   review → claudecode/codex/geminicli → review
 //
-// headHasReviewCheckpoint requires checkpoint access and stays here.
-// newReviewAttachCmd uses runAttachSurfaceReviewErrors (in attach.go)
-// and also stays here.
+// matchingPendingReviewMarker is consumed by `entire attach --review` (in
+// attach.go) to adopt a pending-review marker. HEAD-checkpoint flag
+// resolution lives in head_checkpoint_flags.go.
 
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os/exec"
 
-	git "github.com/go-git/go-git/v6"
-	"github.com/spf13/cobra"
-
-	"github.com/GrayCodeAI/trace/cli/agent"
-	"github.com/GrayCodeAI/trace/cli/agent/external"
-	"github.com/GrayCodeAI/trace/cli/agent/types"
-	"github.com/GrayCodeAI/trace/cli/checkpoint"
-	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	cliReview "github.com/GrayCodeAI/trace/cli/review"
-	"github.com/GrayCodeAI/trace/cli/trailers"
 )
 
-// headHasReviewCheckpoint checks whether HEAD's checkpoint metadata includes
-// a review session. Returns (true, infoString) if HasReview is set.
-// Single lookup: read the Trace-Checkpoint trailer from HEAD, then resolve
-// the CheckpointSummary via ResolveCommittedReaderForCheckpoint so v2-enabled
-// repos also work (v1 alone would miss v2-written summaries).
-func headHasReviewCheckpoint(ctx context.Context) (bool, string) {
-	repoRoot, err := paths.WorktreeRoot(ctx)
-	if err != nil {
-		logging.Debug(ctx, "head review check: locate worktree root", slog.String("error", err.Error()))
-		return false, ""
-	}
-	execCmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "log", "-1", "--format=%B") // #nosec G204 -- repoRoot is the resolved worktree root, not user input
-	output, err := execCmd.Output()
-	if err != nil {
-		logging.Debug(ctx, "head review check: read HEAD commit message", slog.String("error", err.Error()))
-		return false, ""
-	}
-	cpID, ok := trailers.ParseCheckpoint(string(output))
-	if !ok {
-		logging.Debug(ctx, "head review check: no Trace-Checkpoint trailer on HEAD")
-		return false, ""
-	}
-	repo, err := git.PlainOpen(repoRoot)
-	if err != nil {
-		logging.Debug(ctx, "head review check: open repository", slog.String("error", err.Error()))
-		return false, ""
-	}
-	stores, err := checkpoint.Open(ctx, repo, checkpoint.OpenOptions{})
-	if err != nil {
-		logging.Debug(ctx, "head review check: open checkpoint store", slog.String("error", err.Error()))
-		return false, ""
-	}
-	summary, err := checkpoint.ReadCheckpoint(ctx, stores.Persistent, cpID)
-	if err != nil || summary == nil {
-		logging.Debug(ctx, "head review check: resolve checkpoint summary",
-			slog.String("checkpoint_id", cpID.String()),
-			slog.Any("error", err))
-		return false, ""
-	}
-	if !summary.HasReview {
-		logging.Debug(ctx, "head review check: summary HasReview is false", slog.String("checkpoint_id", cpID.String()))
-		return false, ""
-	}
-	return true, fmt.Sprintf("checkpoint %s", cpID)
-}
-
-// newReviewAttachCmd is a thin wrapper around `trace attach --review`. It
-// shares all wiring with runAttach; only the UX surface differs, letting
-// users discover review-attach through `trace review` in help output.
-//
-// Migrated from the old review.go. Kept here (not in review/ subpackage)
-// because it calls runAttachSurfaceReviewErrors which is in the cli package.
-func newReviewAttachCmd() *cobra.Command {
-	var (
-		force      bool
-		agentFlag  string
-		skillsFlag []string
-	)
-	cmd := &cobra.Command{
-		Use:   "attach <session-id>",
-		Short: "Tag an existing agent session as a review",
-		Long: `Tag an existing agent session as an agent_review and link it to
-the current commit's checkpoint. Use this when you ran a review manually
-(without 'trace review') and want the review metadata attached after
-the fact.
-
-The first user prompt in the transcript is recorded as the review
-prompt. Pass --skills to declare which skills were actually run; omit
-to attach a review without a declared skills list.
-
-Equivalent to 'trace attach --review <session-id>' — provided here for
-discoverability alongside the other review subcommands.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return cmd.Help()
-			}
-			if checkDisabledGuard(cmd.Context(), cmd.OutOrStdout()) {
-				return nil
-			}
-			// Discover external agents so --agent <external-name> is
-			// recognized and auto-detection covers them.
-			external.DiscoverAndRegister(cmd.Context())
-
-			marker, useMarker, markerErr := matchingPendingReviewMarker(cmd.Context(), agentFlag, cmd.Flags().Changed("agent"))
-			if markerErr != nil {
-				return markerErr
-			}
-			if useMarker && !cmd.Flags().Changed("agent") && marker.AgentName != "" {
-				agentFlag = marker.AgentName
-			}
-			opts := attachOptions{
-				Force:                force,
-				Review:               true,
-				ReviewSkillsOverride: skillsFlag,
-			}
-			if useMarker {
-				if !cmd.Flags().Changed("skills") {
-					opts.ReviewSkillsOverride = marker.Skills
-				}
-				opts.ReviewPromptOverride = marker.Prompt
-			}
-			err := runAttachSurfaceReviewErrors(cmd, args[0], types.AgentName(agentFlag), opts)
-			if err == nil && useMarker {
-				if clearErr := cliReview.ClearPendingReviewMarker(cmd.Context()); clearErr != nil {
-					logging.Debug(cmd.Context(), "clear pending review marker after attach", slog.String("error", clearErr.Error()))
-				}
-			}
-			return err
-		},
-	}
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation and amend the last commit with the checkpoint trailer")
-	cmd.Flags().StringVarP(&agentFlag, "agent", "a", string(agent.DefaultAgentName), "Agent that created the session")
-	cmd.Flags().StringSliceVar(&skillsFlag, "skills", nil, "Optional: declare which review skills were run in this session")
-	return cmd
-}
-
+// matchingPendingReviewMarker returns the pending-review marker, if one exists
+// and applies to the current worktree and selected agent. ok=false means there
+// is no applicable marker (the attach should proceed without adopting one).
 func matchingPendingReviewMarker(ctx context.Context, selectedAgent string, agentChanged bool) (cliReview.PendingReviewMarker, bool, error) {
 	marker, ok, err := cliReview.ReadPendingReviewMarker(ctx)
 	if err != nil {

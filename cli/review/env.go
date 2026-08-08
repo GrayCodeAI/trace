@@ -1,4 +1,4 @@
-// Package review contains the env-var contract between `trace review` (which
+// Package review contains the env-var contract between `entire review` (which
 // spawns the agent process) and the lifecycle hook (which adopts the session).
 // These names are stable API; renaming any constant is a breaking change.
 //
@@ -13,44 +13,23 @@ package review
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
+	"github.com/GrayCodeAI/trace/cli/provenance"
 	reviewtypes "github.com/GrayCodeAI/trace/cli/review/types"
 )
 
+// Review env vars. Names live in cmd/entire/cli/provenance; review aliases
+// them so existing call sites (review.EnvSession, etc.) keep working.
 const (
-	// EnvSession is the review-session indicator. `trace review` sets this
-	// to "1" on the spawned agent process; the lifecycle hook treats any
-	// other value (including unset) as a normal coding session. Kept as a
-	// sentinel string rather than a bool so future versions can carry
-	// additional metadata in the value without breaking the contract.
-	EnvSession = "TRACE_REVIEW_SESSION"
-
-	// EnvAgent is the name of the agent spawned for the review (e.g.
-	// "claude-code"). The lifecycle hook requires this to match the hook's
-	// agent before tagging the session, preventing stale exported review env
-	// from tagging sessions for a different agent.
-	EnvAgent = "TRACE_REVIEW_AGENT"
-
-	// EnvSkills is a JSON-encoded []string of skill invocations passed to the
-	// agent verbatim (e.g. `["/pr-review-toolkit:review-pr","/test-auditor"]`).
-	// Use EncodeSkills / DecodeSkills to round-trip the value safely.
-	EnvSkills = "TRACE_REVIEW_SKILLS"
-
-	// EnvPrompt is the full prompt text sent to the agent at review start. The
-	// lifecycle hook stores this so the checkpoint records what the agent was
-	// asked to review.
-	EnvPrompt = "TRACE_REVIEW_PROMPT"
-
-	// EnvStartingSHA is the git commit SHA that was HEAD when `trace review`
-	// was invoked. The lifecycle hook requires this to match the session's
-	// initial base_commit before tagging the session, so stale env from an old
-	// HEAD does not mark a later normal session as a review.
-	EnvStartingSHA = "TRACE_REVIEW_STARTING_SHA"
+	EnvSession     = provenance.ReviewSession
+	EnvAgent       = provenance.ReviewAgent
+	EnvSkills      = provenance.ReviewSkills
+	EnvPrompt      = provenance.ReviewPrompt
+	EnvStartingSHA = provenance.ReviewStartingSHA
 )
 
 // EncodeSkills serialises a slice of skill invocation strings to a JSON value
-// suitable for storing in the TRACE_REVIEW_SKILLS environment variable.
+// suitable for storing in the ENTIRE_REVIEW_SKILLS environment variable.
 // An empty or nil slice encodes to the literal string "[]".
 func EncodeSkills(skills []string) (string, error) {
 	if len(skills) == 0 {
@@ -77,7 +56,7 @@ func DecodeSkills(encoded string) ([]string, error) {
 	return skills, nil
 }
 
-// AppendReviewEnv adds the TRACE_REVIEW_* env vars to base, returning
+// AppendReviewEnv adds the ENTIRE_REVIEW_* env vars to base, returning
 // the new slice. Used by per-agent reviewers in their AgentReviewer.Start
 // implementations to propagate the review-session contract to spawned
 // agent processes.
@@ -86,16 +65,18 @@ func DecodeSkills(encoded string) ([]string, error) {
 // cfg carries skills and the starting SHA. prompt is the full composed
 // prompt text (result of ComposeReviewPrompt).
 //
-// Any pre-existing TRACE_REVIEW_* entries in base are stripped before the
-// new values are appended. This handles nested invocations (an `trace
-// review` run spawning another agent that calls `trace review`) and stale
-// inheritance from a parent shell — the most-recent values must win, with
-// no chance of duplicate keys whose precedence is implementation-defined.
+// Any pre-existing ENTIRE_REVIEW_* AND ENTIRE_INVESTIGATE_* entries in
+// base are stripped before the new values are appended. Stripping review
+// entries handles nested invocations and stale inheritance from a parent
+// shell — duplicate keys would otherwise have implementation-defined
+// precedence. Stripping investigate entries prevents an outer
+// `entire investigate` session from mis-tagging a child review session if
+// invoked nested (symmetric to AppendInvestigateEnv's behavior).
 func AppendReviewEnv(base []string, agentName string, cfg reviewtypes.RunConfig, prompt string) []string {
 	skillsJSON, _ := EncodeSkills(cfg.Skills) //nolint:errcheck // EncodeSkills only fails on json.Marshal([]string), which is infallible
 	out := make([]string, 0, len(base)+5)
 	for _, kv := range base {
-		if isReviewEnvEntry(kv) {
+		if provenance.IsEntry(kv) {
 			continue
 		}
 		out = append(out, kv)
@@ -108,32 +89,4 @@ func AppendReviewEnv(base []string, agentName string, cfg reviewtypes.RunConfig,
 		EnvPrompt+"="+prompt,
 		EnvStartingSHA+"="+cfg.StartingSHA,
 	)
-}
-
-func withoutReviewEnv(base []string) []string {
-	out := make([]string, 0, len(base))
-	for _, kv := range base {
-		if isReviewEnvEntry(kv) {
-			continue
-		}
-		out = append(out, kv)
-	}
-	return out
-}
-
-// isReviewEnvEntry reports whether kv is a "KEY=VALUE" entry whose key is
-// one of the TRACE_REVIEW_* contract variables.
-func isReviewEnvEntry(kv string) bool {
-	for _, prefix := range []string{
-		EnvSession + "=",
-		EnvAgent + "=",
-		EnvSkills + "=",
-		EnvPrompt + "=",
-		EnvStartingSHA + "=",
-	} {
-		if strings.HasPrefix(kv, prefix) {
-			return true
-		}
-	}
-	return false
 }

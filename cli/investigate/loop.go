@@ -7,11 +7,11 @@ package investigate
 //
 //  1. Fingerprints the findings file BEFORE the turn.
 //  2. Composes a prompt via ComposeInvestigatePrompt.
-//  3. Spawns the agent via Spawner.BuildCmd with TRACE_INVESTIGATE_* env
+//  3. Spawns the agent via Spawner.BuildCmd with ENTIRE_INVESTIGATE_* env
 //     populated by AppendInvestigateEnv.
 //  4. Discards the agent's stdout/stderr — the lifecycle hooks capture the
 //     full session transcript on the shadow branch and condense it onto
-//     trace/checkpoints/v1 on the next commit.
+//     entire/checkpoints/v1 on the next commit.
 //  5. Waits for the agent to exit. Re-fingerprints the findings doc.
 //  6. Reloads state.json from disk. The agent has written its stance into
 //     state.PendingTurn; the loop validates it, appends a TurnStance, and
@@ -43,6 +43,7 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/agent/spawn"
 	"github.com/GrayCodeAI/trace/cli/logging"
+	"github.com/GrayCodeAI/trace/cli/procutil"
 )
 
 // LoopDeps collects the runtime-injectable hooks RunInvestigateLoop needs.
@@ -52,7 +53,7 @@ type LoopDeps struct {
 	SpawnerFor func(agentName string) spawn.Spawner
 
 	// States persists/loads RunState across turns. In production this is
-	// a *StateStore rooted at <git-common-dir>/trace-investigations.
+	// a *StateStore rooted at <git-common-dir>/entire-investigations.
 	States *StateStore
 
 	// Progress receives turn lifecycle events. Production wires either a
@@ -73,7 +74,7 @@ type LoopInput struct {
 	Quorum       int       // approvals needed; 0 → len(Agents)
 	AlwaysPrompt string    // optional, appended verbatim to every prompt
 	FindingsDoc  string    // absolute path
-	StartingSHA  string    // git HEAD when `trace investigate` was invoked
+	StartingSHA  string    // git HEAD when `entire investigate` was invoked
 	Resume       *RunState // when non-nil, resume from this state
 }
 
@@ -311,10 +312,13 @@ func runOneTurn(ctx context.Context, cfg turnConfig, state *RunState) turnOutcom
 		StartingSHA: in.StartingSHA,
 	})
 	cmd := spawner.BuildCmd(ctx, env, prompt)
+	// Kill the agent's whole process group on cancel so a grandchild holding the
+	// pipe can't make cmd.Run block forever (Ctrl+C hang).
+	procutil.TerminateOnCancel(cmd)
 
 	// Agent stdout/stderr are captured by the lifecycle hooks into the
 	// session transcript (full.jsonl) and condensed onto
-	// trace/checkpoints/v1 on commit. Discard the raw streams here.
+	// entire/checkpoints/v1 on commit. Discard the raw streams here.
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 
@@ -544,7 +548,6 @@ func fileFingerprint(ctx context.Context, path string) string {
 			slog.String("path", path), sErr(err))
 		return ""
 	}
-	// #nosec G304 -- path is the findings doc, internally computed from runID + git common dir
 	f, err := os.Open(path) //nolint:gosec // path is the findings doc the caller already validated
 	if err != nil {
 		// Fall back to size+mtime when content cannot be read; better than

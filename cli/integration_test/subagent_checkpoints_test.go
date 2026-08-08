@@ -51,7 +51,7 @@ func TestSubagentCheckpoints_FullFlow(t *testing.T) {
 	}
 
 	// Verify pre-task file was created
-	preTaskFile := filepath.Join(env.RepoDir, ".trace", "tmp", "pre-task-"+taskToolUseID+".json")
+	preTaskFile := filepath.Join(env.RepoDir, ".entire", "tmp", "pre-task-"+taskToolUseID+".json")
 	if _, err := os.Stat(preTaskFile); os.IsNotExist(err) {
 		t.Error("pre-task file should exist after SimulatePreTask")
 	}
@@ -200,7 +200,7 @@ func TestSubagentCheckpoints_PostTaskNoFileChanges(t *testing.T) {
 	}
 
 	// Verify pre-task file was created
-	preTaskFile := filepath.Join(env.RepoDir, ".trace", "tmp", "pre-task-"+taskToolUseID+".json")
+	preTaskFile := filepath.Join(env.RepoDir, ".entire", "tmp", "pre-task-"+taskToolUseID+".json")
 	if _, err := os.Stat(preTaskFile); os.IsNotExist(err) {
 		t.Fatal("pre-task file should exist after SimulatePreTask")
 	}
@@ -286,7 +286,7 @@ func TestSubagentCheckpoints_NoPreTaskFile(t *testing.T) {
 func verifyCheckpointStorage(t *testing.T, env *TestEnv, sessionID, taskToolUseID string) {
 	t.Helper()
 
-	// Manual-commit stores checkpoints in git tree on shadow branch (trace/<head-hash>)
+	// Manual-commit stores checkpoints in git tree on shadow branch (entire/<head-hash>)
 	// We need to verify that checkpoint data exists in the shadow branch tree
 	verifyShadowCheckpointStorage(t, env, sessionID, taskToolUseID)
 }
@@ -321,8 +321,8 @@ func verifyShadowCheckpointStorage(t *testing.T, env *TestEnv, sessionID, taskTo
 	}
 
 	// Look for task metadata in the tree
-	// Path format: .trace/metadata/<session-id>/tasks/<task-id>/
-	taskMetadataPrefix := ".trace/metadata/" + sessionID + "/tasks/" + taskToolUseID + "/"
+	// Path format: .entire/metadata/<session-id>/tasks/<task-id>/
+	taskMetadataPrefix := ".entire/metadata/" + sessionID + "/tasks/" + taskToolUseID + "/"
 	checkpointsPrefix := taskMetadataPrefix + "checkpoints/"
 
 	foundCheckpoint := false

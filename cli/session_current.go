@@ -11,6 +11,7 @@ import (
 
 func newSessionCurrentCmd() *cobra.Command {
 	var jsonFlag bool
+	var transcriptFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "current",
@@ -22,9 +23,15 @@ preferring sessions from the current worktree and falling back to the most
 recent session if no state matches this worktree. Equivalent to running
 'sessions info' on the session ID returned by FindMostRecentSession.
 
+Output modes:
+  Default       Human-readable summary.
+  --json        Metadata-only JSON envelope (no transcript bytes).
+  --transcript  Stream the live raw agent transcript bytes to stdout.
+
 Examples:
-  trace session current
-  trace session current --json`,
+  entire session current
+  entire session current --json
+  entire session current --transcript > session.jsonl`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if _, err := paths.WorktreeRoot(ctx); err != nil {
@@ -34,14 +41,26 @@ Examples:
 
 			sessionID := strategy.FindMostRecentSession(ctx)
 			if sessionID == "" {
+				// Machine-readable modes must not emit prose on stdout with a
+				// zero exit — downstream parsers treat stdout as JSON (or raw
+				// transcript bytes) and would choke on the hint text. Report
+				// on stderr and exit non-zero so callers can detect the
+				// no-session case. The human default keeps the stdout hint.
+				if jsonFlag || transcriptFlag {
+					cmd.SilenceUsage = true
+					fmt.Fprintln(cmd.ErrOrStderr(), "No active session found in this worktree.")
+					return NewSilentError(errors.New("no active session found in this worktree"))
+				}
 				fmt.Fprintln(cmd.OutOrStdout(), "No active session found in this worktree.")
 				return nil
 			}
 
-			return runSessionInfo(ctx, cmd, sessionID, jsonFlag)
+			return runSessionInfo(ctx, cmd, sessionID, sessionOutputModeFromFlags(jsonFlag, transcriptFlag))
 		},
 	}
 
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+	cmd.Flags().BoolVar(&transcriptFlag, "transcript", false, "Stream raw agent transcript bytes to stdout")
+	cmd.MarkFlagsMutuallyExclusive("json", "transcript")
 	return cmd
 }

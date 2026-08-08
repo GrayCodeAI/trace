@@ -196,7 +196,7 @@ func TestCursorAgent_ResolveSessionFile_PrefersNested(t *testing.T) {
 
 func TestCursorAgent_GetSessionDir_EnvOverride(t *testing.T) {
 	ag := &CursorAgent{}
-	t.Setenv("TRACE_TEST_CURSOR_PROJECT_DIR", "/test/override")
+	t.Setenv("ENTIRE_TEST_CURSOR_PROJECT_DIR", "/test/override")
 
 	dir, err := ag.GetSessionDir("/some/repo")
 	if err != nil {
@@ -209,7 +209,7 @@ func TestCursorAgent_GetSessionDir_EnvOverride(t *testing.T) {
 
 func TestCursorAgent_GetSessionDir_DefaultPath(t *testing.T) {
 	ag := &CursorAgent{}
-	t.Setenv("TRACE_TEST_CURSOR_PROJECT_DIR", "")
+	t.Setenv("ENTIRE_TEST_CURSOR_PROJECT_DIR", "")
 
 	dir, err := ag.GetSessionDir("/some/repo")
 	if err != nil {

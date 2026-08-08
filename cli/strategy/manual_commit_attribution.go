@@ -569,5 +569,5 @@ func isAgentOrMetadataFile(filePath string, filesTouched []string, allAgentFiles
 			return true
 		}
 	}
-	return strings.HasPrefix(filePath, ".trace/") || strings.HasPrefix(filePath, paths.EntireMetadataDir+"/")
+	return strings.HasPrefix(filePath, ".entire/") || strings.HasPrefix(filePath, paths.EntireMetadataDir+"/")
 }

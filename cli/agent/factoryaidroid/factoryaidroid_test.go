@@ -334,7 +334,7 @@ func TestReadWriteSession_RoundTrip(t *testing.T) {
 func TestGetSessionDir_EnvOverride(t *testing.T) {
 	ag := &FactoryAIDroidAgent{}
 	override := "/tmp/test-droid-sessions"
-	t.Setenv("TRACE_TEST_DROID_PROJECT_DIR", override)
+	t.Setenv("ENTIRE_TEST_DROID_PROJECT_DIR", override)
 
 	dir, err := ag.GetSessionDir("/any/repo/path")
 	if err != nil {

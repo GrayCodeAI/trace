@@ -16,14 +16,14 @@ import (
 	"github.com/GrayCodeAI/trace/cli/agent"
 )
 
-// testBinaryDir creates a temp directory with a mock trace-agent-test binary.
+// testBinaryDir creates a temp directory with a mock entire-agent-test binary.
 // The binary is a shell script implementing the protocol.
 func testBinaryDir(t *testing.T, script string) string {
 	t.Helper()
 
 	dir := t.TempDir()
 
-	name := "trace-agent-test"
+	name := "entire-agent-test"
 	if runtime.GOOS == osWindows {
 		name += ".bat"
 	}
@@ -257,7 +257,7 @@ echo '{"protocol_version": 99, "name": "bad"}'
 func TestNew_BinaryNotFound(t *testing.T) {
 	t.Parallel()
 
-	_, err := New(context.Background(), "/nonexistent/trace-agent-nope")
+	_, err := New(context.Background(), "/nonexistent/entire-agent-nope")
 	if err == nil {
 		t.Fatal("expected error for missing binary")
 	}
@@ -859,25 +859,27 @@ func TestStripExeExt(t *testing.T) {
 		in   string
 		want string
 	}{
-		{name: "exe lowercase", in: "trace-agent-test.exe", want: "trace-agent-test"},
-		{name: "bat lowercase", in: "trace-agent-test.bat", want: "trace-agent-test"},
-		{name: "cmd lowercase", in: "trace-agent-test.cmd", want: "trace-agent-test"},
-		{name: "exe uppercase", in: "trace-agent-test.EXE", want: "trace-agent-test"},
-		{name: "bat mixed case", in: "trace-agent-test.Bat", want: "trace-agent-test"},
-		{name: "cmd mixed case", in: "trace-agent-test.CmD", want: "trace-agent-test"},
-		{name: "no extension", in: "trace-agent-test", want: "trace-agent-test"},
-		{name: "unrelated extension", in: "trace-agent-test.sh", want: "trace-agent-test.sh"},
-		{name: "dot only", in: "trace-agent-test.", want: "trace-agent-test."},
+		{name: "exe lowercase", in: "entire-agent-test.exe", want: "entire-agent-test"},
+		{name: "bat lowercase", in: "entire-agent-test.bat", want: "entire-agent-test"},
+		{name: "cmd lowercase", in: "entire-agent-test.cmd", want: "entire-agent-test"},
+		{name: "com lowercase", in: "entire-agent-test.com", want: "entire-agent-test"},
+		{name: "exe uppercase", in: "entire-agent-test.EXE", want: "entire-agent-test"},
+		{name: "bat mixed case", in: "entire-agent-test.Bat", want: "entire-agent-test"},
+		{name: "cmd mixed case", in: "entire-agent-test.CmD", want: "entire-agent-test"},
+		{name: "com uppercase", in: "entire-agent-test.COM", want: "entire-agent-test"},
+		{name: "no extension", in: "entire-agent-test", want: "entire-agent-test"},
+		{name: "unrelated extension", in: "entire-agent-test.sh", want: "entire-agent-test.sh"},
+		{name: "dot only", in: "entire-agent-test.", want: "entire-agent-test."},
 		{name: "empty string", in: "", want: ""},
-		{name: "exe in middle", in: "trace-agent-exe-test", want: "trace-agent-exe-test"},
-		{name: "double extension", in: "trace-agent-test.tar.exe", want: "trace-agent-test.tar"},
+		{name: "exe in middle", in: "entire-agent-exe-test", want: "entire-agent-exe-test"},
+		{name: "double extension", in: "entire-agent-test.tar.exe", want: "entire-agent-test.tar"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := stripExeExt(tt.in); got != tt.want {
-				t.Errorf("stripExeExt(%q) = %q, want %q", tt.in, got, tt.want)
+			if got := StripExeExt(tt.in); got != tt.want {
+				t.Errorf("StripExeExt(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}

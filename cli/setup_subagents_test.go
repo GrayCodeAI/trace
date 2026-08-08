@@ -68,7 +68,7 @@ func TestScaffoldSearchSubagent_CreatesManagedFiles(t *testing.T) {
 			if !strings.Contains(content, traceManagedSearchSubagentMarker) {
 				t.Fatal("scaffolded file should contain Trace-managed marker")
 			}
-			assertStrictJSONSearchInstructions(t, content)
+			assertStrictJSONSearchInstructionsSubagents(t, content)
 			if !strings.Contains(content, tc.wantSnippet) {
 				t.Fatalf("scaffolded file missing expected snippet %q", tc.wantSnippet)
 			}
@@ -126,7 +126,7 @@ func TestScaffoldSearchSubagent_UpdatesManagedFile(t *testing.T) {
 	if !strings.Contains(string(data), "tools: Bash") {
 		t.Fatal("updated managed file should contain the current template")
 	}
-	assertStrictJSONSearchInstructions(t, string(data))
+	assertStrictJSONSearchInstructionsSubagents(t, string(data))
 }
 
 func TestScaffoldSearchSubagent_PreservesUserOwnedFile(t *testing.T) {
@@ -164,7 +164,7 @@ func TestScaffoldSearchSubagent_PreservesUserOwnedFile(t *testing.T) {
 	}
 }
 
-func assertStrictJSONSearchInstructions(t *testing.T, content string) {
+func assertStrictJSONSearchInstructionsSubagents(t *testing.T, content string) {
 	t.Helper()
 
 	if !strings.Contains(content, "trace search --json") {

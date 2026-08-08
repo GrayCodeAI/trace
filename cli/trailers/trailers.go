@@ -1,4 +1,4 @@
-// Package trailers provides parsing and formatting for Trace commit message trailers.
+// Package trailers provides parsing and formatting for Entire commit message trailers.
 // Trailers are key-value metadata appended to git commit messages following the
 // git trailer convention (key: value format after a blank line).
 package trailers
@@ -14,134 +14,63 @@ import (
 // Trailer key constants used in commit messages.
 const (
 	// MetadataTrailerKey points to the metadata directory within a commit tree.
-	MetadataTrailerKey = "Trace-Metadata"
+	MetadataTrailerKey = "Entire-Metadata"
 
 	// MetadataTaskTrailerKey points to the task metadata directory for subagent checkpoints.
-	MetadataTaskTrailerKey = "Trace-Metadata-Task"
+	MetadataTaskTrailerKey = "Entire-Metadata-Task"
 
 	// StrategyTrailerKey indicates which strategy created the commit.
-	StrategyTrailerKey = "Trace-Strategy"
+	StrategyTrailerKey = "Entire-Strategy"
 
 	// BaseCommitTrailerKey links shadow commits to their base code commit.
 	BaseCommitTrailerKey = "Base-Commit"
 
 	// SessionTrailerKey identifies which session created a commit.
-	SessionTrailerKey = "Trace-Session"
+	SessionTrailerKey = "Entire-Session"
 
 	// CondensationTrailerKey identifies the condensation ID for a commit (legacy).
-	CondensationTrailerKey = "Trace-Condensation"
+	CondensationTrailerKey = "Entire-Condensation"
 
 	// SourceRefTrailerKey links code commits to their metadata on a shadow/metadata branch.
-	// Format: "<branch>@<commit-hash>" e.g. "trace/metadata@abc123def456"
-	SourceRefTrailerKey = "Trace-Source-Ref"
+	// Format: "<branch>@<commit-hash>" e.g. "entire/metadata@abc123def456"
+	SourceRefTrailerKey = "Entire-Source-Ref"
 
-	// CheckpointTrailerKey links commits to their checkpoint metadata on trace/checkpoints/v1.
-	// Format: 12 hex characters e.g. "a3b2c4d5e6f7"
+	// CheckpointTrailerKey links commits to their checkpoint metadata on entire/checkpoints/v1.
+	// Format: a checkpoint ID — either a legacy 12-hex ID (e.g. "a3b2c4d5e6f7")
+	// or a 26-char ULID (see checkpoint/id.CheckpointPattern).
 	// This trailer survives git amend and rebase operations.
-	CheckpointTrailerKey = "Trace-Checkpoint"
+	CheckpointTrailerKey = "Entire-Checkpoint"
 
 	// EphemeralBranchTrailerKey identifies the shadow branch that a checkpoint originated from.
-	// Used in manual-commit strategy checkpoint commits on trace/checkpoints/v1 branch.
-	// Format: full branch name e.g. "trace/2b4c177"
+	// Used in manual-commit strategy checkpoint commits on entire/checkpoints/v1 branch.
+	// Format: full branch name e.g. "entire/2b4c177"
 	EphemeralBranchTrailerKey = "Ephemeral-branch"
 
 	// AgentTrailerKey identifies the agent that created a checkpoint.
 	// Format: human-readable agent name e.g. "Claude Code", "Cursor"
-	AgentTrailerKey = "Trace-Agent"
+	AgentTrailerKey = "Entire-Agent"
+
+	// OPFAppliedTrailerKey marks an entire/checkpoints/v1 commit whose blobs
+	// have been redacted by the OpenAI Privacy Filter (the opt-in 9th,
+	// network-backed layer, applied on top of the 8 regex layers).
+	// Format: literal "true"; the trailer is omitted entirely when OPF was
+	// not applied. The pre-push rewrite path treats commits lacking this
+	// trailer as candidates to OPF-redact before they reach the remote.
+	OPFAppliedTrailerKey = "Entire-OPF-Applied"
+
+	// OPFAppliedTrailerValue is the only value that means "OPF ran." Any
+	// other value (or trailer absence) is treated as "not applied" so a
+	// future "false" / "skipped" value never accidentally enables OPF.
+	OPFAppliedTrailerValue = "true"
 )
-
-// OPFAppliedTrailerKey marks a trace/checkpoints/v1 commit whose blobs
-// have been redacted by the OpenAI Privacy Filter (the opt-in 9th,
-// network-backed layer, applied on top of the 8 regex layers).
-// Format: literal "true"; the trailer is omitted entirely when OPF was
-// not applied. The pre-push rewrite path treats commits lacking this
-// trailer as candidates to OPF-redact before they reach the remote.
-const OPFAppliedTrailerKey = "Trace-OPF-Applied"
-
-// OPFAppliedTrailerValue is the only value that means "OPF ran." Any
-// other value (or trailer absence) is treated as "not applied" so a
-// future "false" / "skipped" value never accidentally enables OPF.
-// Pin the value to literal "true" — rather than just trailer presence —
-// to prevent a future "Trace-OPF-Applied: false" or "skipped" from
-// accidentally meaning "yes, applied."
-const OPFAppliedTrailerValue = "true"
-
-// HasOPFApplied reports whether the commit message carries the
-// Trace-OPF-Applied trailer with value "true".
-func HasOPFApplied(commitMessage string) bool {
-	for _, line := range finalTrailerBlock(commitMessage) {
-		line = strings.TrimSpace(line)
-		key, value, ok := strings.Cut(line, ":")
-		if !ok || key != OPFAppliedTrailerKey {
-			continue
-		}
-		if strings.TrimSpace(value) == OPFAppliedTrailerValue {
-			return true
-		}
-	}
-	return false
-}
-
-// finalTrailerBlock returns the contiguous block of trailer lines at the
-// end of a commit message, or nil when the message has no trailer block.
-func finalTrailerBlock(message string) []string {
-	trimmed := strings.TrimRight(message, "\n")
-	if trimmed == "" {
-		return nil
-	}
-	lines := strings.Split(trimmed, "\n")
-	i := len(lines) - 1
-	for i >= 0 && strings.TrimSpace(lines[i]) == "" {
-		i--
-	}
-	end := i + 1
-	for i >= 0 && IsTrailerLine(strings.TrimSpace(lines[i])) {
-		i--
-	}
-	start := i + 1
-	if start == end {
-		return nil
-	}
-	if i >= 0 && strings.TrimSpace(lines[i]) != "" {
-		return nil
-	}
-	return lines[start:end]
-}
-
-// AppendOPFAppliedTrailer appends `Trace-OPF-Applied: true` in
-// trailer-aware format. Idempotent: if the message already carries
-// the trailer with value "true", the original message is returned
-// unchanged so re-parenting an already-applied commit doesn't
-// duplicate the trailer.
-func AppendOPFAppliedTrailer(message string) string {
-	if HasOPFApplied(message) {
-		return message
-	}
-	trailer := fmt.Sprintf("%s: %s", OPFAppliedTrailerKey, OPFAppliedTrailerValue)
-	return appendTrailerLine(message, trailer)
-}
 
 // Pre-compiled regexes for trailer parsing.
 var (
-	// Trailer parsing regexes.
-	strategyTrailerRegex     = regexp.MustCompile(StrategyTrailerKey + `:\s*(.+)`)
 	metadataTrailerRegex     = regexp.MustCompile(MetadataTrailerKey + `:\s*(.+)`)
 	taskMetadataTrailerRegex = regexp.MustCompile(MetadataTaskTrailerKey + `:\s*(.+)`)
-	baseCommitTrailerRegex   = regexp.MustCompile(BaseCommitTrailerKey + `:\s*([a-f0-9]{40})`)
-	condensationTrailerRegex = regexp.MustCompile(CondensationTrailerKey + `:\s*(.+)`)
 	sessionTrailerRegex      = regexp.MustCompile(SessionTrailerKey + `:\s*(.+)`)
-	checkpointTrailerRegex   = regexp.MustCompile(CheckpointTrailerKey + `:\s*(` + checkpointID.Pattern + `)(?:\s|$)`)
+	checkpointTrailerRegex   = regexp.MustCompile(CheckpointTrailerKey + `:\s*(` + checkpointID.CheckpointPattern + `)(?:\s|$)`)
 )
-
-// ParseStrategy extracts strategy from commit message.
-// Returns the strategy name and true if found, empty string and false otherwise.
-func ParseStrategy(commitMessage string) (string, bool) {
-	matches := strategyTrailerRegex.FindStringSubmatch(commitMessage)
-	if len(matches) > 1 {
-		return strings.TrimSpace(matches[1]), true
-	}
-	return "", false
-}
 
 // ParseMetadata extracts metadata dir from commit message.
 // Returns the metadata directory and true if found, empty string and false otherwise.
@@ -163,30 +92,9 @@ func ParseTaskMetadata(commitMessage string) (string, bool) {
 	return "", false
 }
 
-// ParseBaseCommit extracts the base commit SHA from a commit message.
-// Returns the full SHA and true if found, empty string and false otherwise.
-func ParseBaseCommit(commitMessage string) (string, bool) {
-	matches := baseCommitTrailerRegex.FindStringSubmatch(commitMessage)
-	if len(matches) > 1 {
-		return matches[1], true
-	}
-	return "", false
-}
-
-// ParseCondensation extracts the condensation ID from a commit message.
-// Returns the condensation ID and true if found, empty string and false otherwise.
-func ParseCondensation(commitMessage string) (string, bool) {
-	matches := condensationTrailerRegex.FindStringSubmatch(commitMessage)
-	if len(matches) > 1 {
-		return strings.TrimSpace(matches[1]), true
-	}
-	return "", false
-}
-
 // ParseSession extracts the session ID from a commit message.
 // Returns the session ID and true if found, empty string and false otherwise.
-// Note: If multiple Trace-Session trailers exist, this returns only the first one.
-// Use ParseAllSessions to get all session IDs.
+// Note: If multiple Entire-Session trailers exist, this returns only the first one.
 func ParseSession(commitMessage string) (string, bool) {
 	matches := sessionTrailerRegex.FindStringSubmatch(commitMessage)
 	if len(matches) > 1 {
@@ -212,7 +120,7 @@ func ParseCheckpoint(commitMessage string) (checkpointID.CheckpointID, bool) {
 // ParseAllCheckpoints extracts all checkpoint IDs from a commit message.
 // Returns a slice of CheckpointIDs (may be empty if none found).
 // Duplicate IDs are deduplicated while preserving order.
-// This is useful for squash merge commits that contain multiple Trace-Checkpoint trailers.
+// This is useful for squash merge commits that contain multiple Entire-Checkpoint trailers.
 func ParseAllCheckpoints(commitMessage string) []checkpointID.CheckpointID {
 	matches := checkpointTrailerRegex.FindAllStringSubmatch(commitMessage, -1)
 	if len(matches) == 0 {
@@ -235,45 +143,6 @@ func ParseAllCheckpoints(commitMessage string) []checkpointID.CheckpointID {
 	return ids
 }
 
-// ParseAllSessions extracts all session IDs from a commit message.
-// Returns a slice of session IDs (may be empty if none found).
-// Duplicate session IDs are deduplicated while preserving order.
-// This is useful for commits that may have multiple Trace-Session trailers.
-func ParseAllSessions(commitMessage string) []string {
-	matches := sessionTrailerRegex.FindAllStringSubmatch(commitMessage, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-
-	seen := make(map[string]bool)
-	sessionIDs := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if len(match) > 1 {
-			sessionID := strings.TrimSpace(match[1])
-			if !seen[sessionID] {
-				seen[sessionID] = true
-				sessionIDs = append(sessionIDs, sessionID)
-			}
-		}
-	}
-	return sessionIDs
-}
-
-// FormatStrategy creates a commit message with just the strategy trailer.
-func FormatStrategy(message, strategy string) string {
-	return fmt.Sprintf("%s\n\n%s: %s\n", message, StrategyTrailerKey, strategy)
-}
-
-// FormatTaskMetadata creates a commit message with task metadata trailer.
-func FormatTaskMetadata(message, taskMetadataDir string) string {
-	return fmt.Sprintf("%s\n\n%s: %s\n", message, MetadataTaskTrailerKey, taskMetadataDir)
-}
-
-// FormatTaskMetadataWithStrategy creates a commit message with task metadata and strategy trailers.
-func FormatTaskMetadataWithStrategy(message, taskMetadataDir, strategy string) string {
-	return fmt.Sprintf("%s\n\n%s: %s\n%s: %s\n", message, MetadataTaskTrailerKey, taskMetadataDir, StrategyTrailerKey, strategy)
-}
-
 // FormatSourceRef creates a formatted source ref string for the trailer.
 // Format: "<branch>@<commit-hash-prefix>" (hash truncated to ShortIDLength chars)
 func FormatSourceRef(branch, commitHash string) string {
@@ -284,18 +153,8 @@ func FormatSourceRef(branch, commitHash string) string {
 	return fmt.Sprintf("%s@%s", branch, shortHash)
 }
 
-// FormatMetadata creates a commit message with metadata trailer.
-func FormatMetadata(message, metadataDir string) string {
-	return fmt.Sprintf("%s\n\n%s: %s\n", message, MetadataTrailerKey, metadataDir)
-}
-
-// FormatMetadataWithStrategy creates a commit message with metadata and strategy trailers.
-func FormatMetadataWithStrategy(message, metadataDir, strategy string) string {
-	return fmt.Sprintf("%s\n\n%s: %s\n%s: %s\n", message, MetadataTrailerKey, metadataDir, StrategyTrailerKey, strategy)
-}
-
 // FormatShadowCommit creates a commit message for manual-commit strategy checkpoints.
-// Includes Trace-Metadata, Trace-Session, and Trace-Strategy trailers.
+// Includes Entire-Metadata, Entire-Session, and Entire-Strategy trailers.
 func FormatShadowCommit(message, metadataDir, sessionID string) string {
 	var sb strings.Builder
 	sb.WriteString(message)
@@ -307,7 +166,7 @@ func FormatShadowCommit(message, metadataDir, sessionID string) string {
 }
 
 // FormatShadowTaskCommit creates a commit message for manual-commit task checkpoints.
-// Includes Trace-Metadata-Task, Trace-Session, and Trace-Strategy trailers.
+// Includes Entire-Metadata-Task, Entire-Session, and Entire-Strategy trailers.
 func FormatShadowTaskCommit(message, taskMetadataDir, sessionID string) string {
 	var sb strings.Builder
 	sb.WriteString(message)
@@ -319,7 +178,7 @@ func FormatShadowTaskCommit(message, taskMetadataDir, sessionID string) string {
 }
 
 // FormatCheckpoint creates a commit message with a checkpoint trailer.
-// This links user commits to their checkpoint metadata on trace/checkpoints/v1 branch.
+// This links user commits to their checkpoint metadata on entire/checkpoints/v1 branch.
 func FormatCheckpoint(message string, cpID checkpointID.CheckpointID) string {
 	return fmt.Sprintf("%s\n\n%s: %s\n", message, CheckpointTrailerKey, cpID.String())
 }
@@ -332,19 +191,11 @@ func IsTrailerLine(line string) bool {
 	return trailerLineRe.MatchString(line)
 }
 
-// AppendCheckpointTrailer appends Trace-Checkpoint in trailer-aware format.
-// If the message already ends with a trailer paragraph, append directly to it;
-// otherwise add a blank line before starting a new trailer block.
-func AppendCheckpointTrailer(message, checkpointID string) string {
-	return appendTrailerLine(message, fmt.Sprintf("%s: %s", CheckpointTrailerKey, checkpointID))
-}
-
-// appendTrailerLine appends a single "Key: value" trailer line to the message
-// in trailer-aware fashion: if the message already ends with a trailer
-// paragraph, the line is appended directly to it; otherwise a blank line is
-// inserted before starting a new trailer block. The trailer is placed above
-// any trailing git comment ("#") lines.
-func appendTrailerLine(message, trailer string) string {
+// appendTrailerLine appends a single pre-formatted trailer line (e.g. "Key: value")
+// to message in trailer-block-aware format. If the message already ends with a
+// trailer paragraph the line is joined directly to it; otherwise a blank line is
+// inserted first to start a new trailer block.
+func appendTrailerLine(message, trailerLine string) string {
 	trimmed := strings.TrimRight(message, "\n")
 
 	lines := strings.Split(trimmed, "\n")
@@ -375,45 +226,73 @@ func appendTrailerLine(message, trailer string) string {
 	}
 
 	if hasTrailerBlock {
-		return trimmed + "\n" + trailer + "\n"
+		return trimmed + "\n" + trailerLine + "\n"
 	}
-	return trimmed + "\n\n" + trailer + "\n"
+	return trimmed + "\n\n" + trailerLine + "\n"
 }
 
-// CoAuthoredByTrailerKey identifies a co-author on a commit, following the
-// widely-supported GitHub/GitLab convention. Value format: "Name <email>".
-const CoAuthoredByTrailerKey = "Co-authored-by"
+// AppendCheckpointTrailer appends Entire-Checkpoint in trailer-aware format.
+// If the message already ends with a trailer paragraph, append directly to it;
+// otherwise add a blank line before starting a new trailer block.
+func AppendCheckpointTrailer(message, checkpointID string) string {
+	trailer := fmt.Sprintf("%s: %s", CheckpointTrailerKey, checkpointID)
+	return appendTrailerLine(message, trailer)
+}
 
-// coAuthoredByRegex matches a Co-authored-by trailer line, capturing the
-// "Name <email>" identity. Case-insensitive on the key to match git's own
-// case-insensitive trailer handling.
-var coAuthoredByRegex = regexp.MustCompile(`(?i)^Co-authored-by:\s*(.+)$`)
-
-// HasCoAuthoredBy reports whether the message already contains a
-// Co-authored-by trailer for the given "Name <email>" identity. The key match
-// is case-insensitive; the identity match is exact. This makes
-// AppendCoAuthoredBy idempotent for a given identity.
-func HasCoAuthoredBy(message, identity string) bool {
-	identity = strings.TrimSpace(identity)
-	if identity == "" {
-		return false
-	}
-	for _, line := range strings.Split(message, "\n") {
-		m := coAuthoredByRegex.FindStringSubmatch(strings.TrimSpace(line))
-		if len(m) > 1 && strings.TrimSpace(m[1]) == identity {
+// HasOPFApplied reports whether the commit message carries an
+// `Entire-OPF-Applied: true` trailer. Any other value (or absence) is
+// treated as "OPF not applied" so the pre-push rewrite considers the
+// commit a candidate for OPF redaction. Pinning the value to literal
+// "true" — rather than just trailer presence — prevents a future
+// "Entire-OPF-Applied: false" or "skipped" from accidentally meaning
+// "yes, applied."
+func HasOPFApplied(commitMessage string) bool {
+	for _, line := range finalTrailerBlock(commitMessage) {
+		line = strings.TrimSpace(line)
+		key, value, ok := strings.Cut(line, ":")
+		if !ok || key != OPFAppliedTrailerKey {
+			continue
+		}
+		if strings.TrimSpace(value) == OPFAppliedTrailerValue {
 			return true
 		}
 	}
 	return false
 }
 
-// AppendCoAuthoredBy appends a "Co-authored-by: <identity>" trailer in
-// trailer-aware format. The call is idempotent for a given identity, and an
-// empty identity returns the message unchanged.
-func AppendCoAuthoredBy(message, identity string) string {
-	identity = strings.TrimSpace(identity)
-	if identity == "" || HasCoAuthoredBy(message, identity) {
+func finalTrailerBlock(message string) []string {
+	trimmed := strings.TrimRight(message, "\n")
+	if trimmed == "" {
+		return nil
+	}
+	lines := strings.Split(trimmed, "\n")
+	i := len(lines) - 1
+	for i >= 0 && strings.TrimSpace(lines[i]) == "" {
+		i--
+	}
+	end := i + 1
+	for i >= 0 && IsTrailerLine(strings.TrimSpace(lines[i])) {
+		i--
+	}
+	start := i + 1
+	if start == end {
+		return nil
+	}
+	if i >= 0 && strings.TrimSpace(lines[i]) != "" {
+		return nil
+	}
+	return lines[start:end]
+}
+
+// AppendOPFAppliedTrailer appends `Entire-OPF-Applied: true` in
+// trailer-aware format. Idempotent: if the message already carries
+// the trailer with value "true", the original message is returned
+// unchanged so re-parenting an already-applied commit doesn't
+// duplicate the trailer.
+func AppendOPFAppliedTrailer(message string) string {
+	if HasOPFApplied(message) {
 		return message
 	}
-	return appendTrailerLine(message, fmt.Sprintf("%s: %s", CoAuthoredByTrailerKey, identity))
+	trailer := fmt.Sprintf("%s: %s", OPFAppliedTrailerKey, OPFAppliedTrailerValue)
+	return appendTrailerLine(message, trailer)
 }

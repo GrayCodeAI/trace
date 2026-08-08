@@ -12,7 +12,7 @@ import (
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 
-	"github.com/GrayCodeAI/trace/internal/flock"
+	"github.com/GrayCodeAI/trace/cli/internal/flock"
 )
 
 // Push-discovery queue file names, kept in the git common dir so every worktree
@@ -108,6 +108,21 @@ func (q *PushQueue) Drain() ([]plumbing.ReferenceName, error) {
 		}
 	}
 	return refs, nil
+}
+
+// Peek returns the de-duplicated refs currently queued, in first-seen order,
+// without mutating the queue file. Read-only counterpart to Drain (which
+// compacts redundant lines in place) — for counters/status displays that must
+// observe the queue without owning a push. A missing queue file yields no refs.
+func (q *PushQueue) Peek() ([]plumbing.ReferenceName, error) {
+	release, err := flock.Acquire(q.lockPath())
+	if err != nil {
+		return nil, fmt.Errorf("lock push queue: %w", err)
+	}
+	defer release()
+
+	refs, _, err := q.readLocked()
+	return refs, err
 }
 
 // Remove deletes the given refs from the queue, preserving any entries appended

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/GrayCodeAI/trace/cli/paths"
+	"github.com/GrayCodeAI/trace/cli/testutil"
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
@@ -29,9 +30,10 @@ const (
 // to be incorrectly attributed to the agent later.
 func TestPromptAttribution_UsesWorktreeNotStagingArea(t *testing.T) {
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
+		t.Fatalf("failed to open repo: %v", err)
 	}
 
 	worktree, err := repo.Worktree()
@@ -60,7 +62,7 @@ func TestPromptAttribution_UsesWorktreeNotStagingArea(t *testing.T) {
 	sessionID := "2026-01-23-staging-test"
 
 	// Create metadata directory
-	metadataDir := ".trace/metadata/" + sessionID
+	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
 	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
 		t.Fatalf("failed to create metadata dir: %v", err)
@@ -183,9 +185,10 @@ func TestPromptAttribution_UsesWorktreeNotStagingArea(t *testing.T) {
 // still read from the worktree (not the staging area).
 func TestPromptAttribution_UnstagedChanges(t *testing.T) {
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
+		t.Fatalf("failed to open repo: %v", err)
 	}
 
 	worktree, err := repo.Worktree()
@@ -214,7 +217,7 @@ func TestPromptAttribution_UnstagedChanges(t *testing.T) {
 	sessionID := "2026-01-23-unstaged-test"
 
 	// Create metadata directory
-	metadataDir := ".trace/metadata/" + sessionID
+	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
 	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
 		t.Fatalf("failed to create metadata dir: %v", err)
@@ -283,9 +286,10 @@ func TestPromptAttribution_UnstagedChanges(t *testing.T) {
 // stored (even when zero) to maintain a complete history.
 func TestPromptAttribution_AlwaysStored(t *testing.T) {
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
+		t.Fatalf("failed to open repo: %v", err)
 	}
 
 	worktree, err := repo.Worktree()
@@ -314,7 +318,7 @@ func TestPromptAttribution_AlwaysStored(t *testing.T) {
 	sessionID := "2026-01-23-always-stored-test"
 
 	// Create metadata directory
-	metadataDir := ".trace/metadata/" + sessionID
+	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
 	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
 		t.Fatalf("failed to create metadata dir: %v", err)
@@ -429,9 +433,10 @@ func TestPromptAttribution_AlwaysStored(t *testing.T) {
 // return on missing shadow branch prevented attribution of pre-prompt edits.
 func TestPromptAttribution_CapturesPrePromptEdits(t *testing.T) {
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
+		t.Fatalf("failed to open repo: %v", err)
 	}
 
 	worktree, err := repo.Worktree()
@@ -468,7 +473,7 @@ func TestPromptAttribution_CapturesPrePromptEdits(t *testing.T) {
 	sessionID := "2026-01-24-preprompt-test"
 
 	// Create metadata directory
-	metadataDir := ".trace/metadata/" + sessionID
+	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
 	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
 		t.Fatalf("failed to create metadata dir: %v", err)

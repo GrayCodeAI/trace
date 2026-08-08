@@ -1,4 +1,4 @@
-// Pre-push OPF rewrite for trace/checkpoints/v1.
+// Pre-push OPF rewrite for entire/checkpoints/v1.
 //
 // This is the ONLY production code path that runs the OPF-augmented
 // redaction entry points. Post-commit condensation stays on the
@@ -36,7 +36,7 @@ import (
 // shadows the paths package (collectTreeBlobs).
 const assetsDirName = paths.AssetsDirName
 
-// V1DivergedError: local trace/checkpoints/v1 has commits that aren't
+// V1DivergedError: local entire/checkpoints/v1 has commits that aren't
 // ancestors of the remote tip (force-push or another machine pushed).
 // Rewriting under divergence would silently rebase rejected work, so
 // we refuse.
@@ -45,9 +45,9 @@ type V1DivergedError struct {
 }
 
 func (e *V1DivergedError) Error() string {
-	return fmt.Sprintf("trace/checkpoints/v1 has diverged from remote (local=%s remote=%s merge_base=%s); "+
-		"fetch the remote and either reset trace/checkpoints/v1 to <remote>/trace/checkpoints/v1 "+
-		"or run `trace doctor --recover-v1` before pushing",
+	return fmt.Sprintf("entire/checkpoints/v1 has diverged from remote (local=%s remote=%s merge_base=%s); "+
+		"fetch the remote and either reset entire/checkpoints/v1 to <remote>/entire/checkpoints/v1 "+
+		"or run `entire doctor --recover-v1` before pushing",
 		e.Local.String()[:7], e.Remote.String()[:7], e.MergeBase.String()[:7])
 }
 
@@ -59,7 +59,7 @@ type BootstrapTooLargeError struct {
 }
 
 func (e *BootstrapTooLargeError) Error() string {
-	return fmt.Sprintf("OPF bootstrap would rewrite %d trace/checkpoints/v1 commits "+
+	return fmt.Sprintf("OPF bootstrap would rewrite %d entire/checkpoints/v1 commits "+
 		"(limit %d). Set ENTIRE_OPF_BOOTSTRAP_LIMIT=<N> or =unlimited to override, "+
 		"or push without OPF (ENTIRE_OPF=no git push) to bring the remote into sync first",
 		e.Count, e.Limit)
@@ -73,7 +73,7 @@ type V1RefMovedError struct {
 }
 
 func (e *V1RefMovedError) Error() string {
-	return fmt.Sprintf("trace/checkpoints/v1 moved during OPF rewrite "+
+	return fmt.Sprintf("entire/checkpoints/v1 moved during OPF rewrite "+
 		"(expected %s, found %s); another local worktree advanced the ref "+
 		"mid-rewrite — re-run `git push` (no fetch needed; the move was local)",
 		e.Expected.String()[:7], e.Actual.String()[:7])
@@ -206,7 +206,7 @@ func (e *OPFRawBytesTooLargeError) Error() string {
 // pathological RAM blowups (a 5 GiB pasted dump aborts before loading).
 const rawByteCapMultiplier = 100
 
-// RewriteUnpushedV1WithOPF re-redacts unpushed trace/checkpoints/v1
+// RewriteUnpushedV1WithOPF re-redacts unpushed entire/checkpoints/v1
 // commits with OPF, builds new commits carrying Entire-OPF-Applied:
 // true, and CAS-updates the local ref. Idempotent: already-applied
 // commits are re-parented without re-running OPF.
@@ -369,7 +369,7 @@ func readV1Tip(repo *git.Repository, refName plumbing.ReferenceName) (plumbing.H
 const opfRewriteFetchTmpRef = FetchTmpRefPrefix + "opf-rewrite-v1"
 
 // resolveRemoteV1Tip returns the hash of the remote's
-// trace/checkpoints/v1 tip.
+// entire/checkpoints/v1 tip.
 //
 // Fetches the v1 ref from target into a temporary local ref so the
 // rewrite compares against the current remote tip rather than a stale

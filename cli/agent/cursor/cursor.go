@@ -97,7 +97,7 @@ func (c *CursorAgent) ProtectedDirs() []string { return []string{".cursor"} }
 
 // GetSessionDir returns the directory where Cursor stores session transcripts.
 func (c *CursorAgent) GetSessionDir(repoPath string) (string, error) {
-	if override := os.Getenv("TRACE_TEST_CURSOR_PROJECT_DIR"); override != "" {
+	if override := os.Getenv("ENTIRE_TEST_CURSOR_PROJECT_DIR"); override != "" {
 		return override, nil
 	}
 

@@ -13,6 +13,20 @@ import (
 	"time"
 )
 
+func newTestCloudClient(t *testing.T, baseURL, token string) *CloudClient {
+	t.Helper()
+	transport := &http.Transport{DisableKeepAlives: true}
+	t.Cleanup(transport.CloseIdleConnections)
+	return NewCloudClient(CloudConfig{
+		BaseURL: baseURL,
+		Token:   token,
+		HTTP: &http.Client{
+			Transport: transport,
+			Timeout:   defaultCloudHTTPTimeout,
+		},
+	})
+}
+
 func TestCloudClient_CreateDispatch_Happy(t *testing.T) {
 	t.Parallel()
 
@@ -47,11 +61,11 @@ func TestCloudClient_CreateDispatch_Happy(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["GrayCodeAI/cli"],"repos":[],"totals":{"checkpoints":0,"used_checkpoint_count":0,"branches":0,"files_touched":0},"warnings":{"access_denied_count":0,"pending_count":0,"failed_count":0,"unknown_count":0,"uncategorized_count":0},"generated_markdown":"hi"}`)) //nolint:errcheck // test fixture response
+		_, _ = w.Write([]byte(`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["entireio/cli"],"repos":[],"totals":{"checkpoints":0,"used_checkpoint_count":0,"branches":0,"files_touched":0},"warnings":{"access_denied_count":0,"pending_count":0,"failed_count":0,"unknown_count":0,"uncategorized_count":0},"generated_markdown":"hi"}`)) //nolint:errcheck // test fixture response
 	}))
 	defer srv.Close()
 
-	client := NewCloudClient(CloudConfig{BaseURL: srv.URL, Token: "t"})
+	client := newTestCloudClient(t, srv.URL, "t")
 	got, err := client.CreateDispatch(ctx, CreateDispatchRequest{
 		Repos:    []string{testRepoFullName},
 		Since:    "2026-04-09T00:00:00Z",
@@ -84,13 +98,13 @@ func TestCloudClient_CreateDispatch_OmitsBranchesAndOrgsFromPayload(t *testing.T
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["GrayCodeAI/cli"],"repos":[],"generated_markdown":"hi"}`)) //nolint:errcheck // test fixture response
+		_, _ = w.Write([]byte(`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["entireio/cli"],"repos":[],"generated_markdown":"hi"}`)) //nolint:errcheck // test fixture response
 	}))
 	defer srv.Close()
 
-	client := NewCloudClient(CloudConfig{BaseURL: srv.URL, Token: "t"})
+	client := newTestCloudClient(t, srv.URL, "t")
 	_, err := client.CreateDispatch(ctx, CreateDispatchRequest{
-		Repos:    []string{"GrayCodeAI/cli"},
+		Repos:    []string{"entireio/cli"},
 		Since:    "2026-04-09T00:00:00Z",
 		Until:    "2026-04-16T00:00:00Z",
 		Generate: true,
@@ -109,9 +123,9 @@ func TestCloudClient_CreateDispatch_Unauthorized(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewCloudClient(CloudConfig{BaseURL: srv.URL, Token: ""})
+	client := newTestCloudClient(t, srv.URL, "")
 	_, err := client.CreateDispatch(ctx, CreateDispatchRequest{Repos: []string{"x/y"}})
-	if err == nil || !strings.Contains(err.Error(), "trace login") {
+	if err == nil || !strings.Contains(err.Error(), "entire login") {
 		t.Fatalf("expected auth error, got %v", err)
 	}
 }
@@ -157,7 +171,7 @@ func TestCloudClient_CreateDispatch_EscapesErrorBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewCloudClient(CloudConfig{BaseURL: srv.URL, Token: "t"})
+	client := newTestCloudClient(t, srv.URL, "t")
 	_, err := client.CreateDispatch(ctx, CreateDispatchRequest{Repos: []string{"x/y"}})
 	if err == nil {
 		t.Fatal("expected error")
@@ -180,13 +194,13 @@ func TestCloudClient_CreateDispatch_IgnoresUnknownResponseFields(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["GrayCodeAI/cli"],"repos":[],"generated_markdown":"hi","unexpected":true}`)) //nolint:errcheck // test fixture response
+		_, _ = w.Write([]byte(`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["entireio/cli"],"repos":[],"generated_markdown":"hi","unexpected":true}`)) //nolint:errcheck // test fixture response
 	}))
 	defer srv.Close()
 
-	client := NewCloudClient(CloudConfig{BaseURL: srv.URL, Token: "t"})
+	client := newTestCloudClient(t, srv.URL, "t")
 	got, err := client.CreateDispatch(ctx, CreateDispatchRequest{
-		Repos:    []string{"GrayCodeAI/cli"},
+		Repos:    []string{"entireio/cli"},
 		Since:    "2026-04-09T00:00:00Z",
 		Until:    "2026-04-16T00:00:00Z",
 		Generate: true,
@@ -211,14 +225,14 @@ func TestCloudClient_CreateDispatch_AcceptsBranchesResponseField(t *testing.T) {
 					StatusCode: http.StatusCreated,
 					Header:     http.Header{"Content-Type": []string{"application/json"}},
 					Body: io.NopCloser(strings.NewReader(
-						`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["GrayCodeAI/cli"],"branches":["main","release"],"repos":[],"generated_markdown":"hi","totals":{"checkpoints":0,"used_checkpoint_count":0,"branches":2,"files_touched":0},"warnings":{"access_denied_count":0,"pending_count":0,"failed_count":0,"unknown_count":0,"uncategorized_count":0}}`,
+						`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["entireio/cli"],"branches":["main","release"],"repos":[],"generated_markdown":"hi","totals":{"checkpoints":0,"used_checkpoint_count":0,"branches":2,"files_touched":0},"warnings":{"access_denied_count":0,"pending_count":0,"failed_count":0,"unknown_count":0,"uncategorized_count":0}}`,
 					)),
 				}, nil
 			}),
 		},
 	})
 	got, err := client.CreateDispatch(context.Background(), CreateDispatchRequest{
-		Repos:    []string{"GrayCodeAI/cli"},
+		Repos:    []string{"entireio/cli"},
 		Since:    "2026-04-09T00:00:00Z",
 		Until:    "2026-04-16T00:00:00Z",
 		Generate: true,
@@ -246,14 +260,14 @@ func TestCloudClient_CreateDispatch_AcceptsAllBranchesSentinelInResponseField(t 
 					StatusCode: http.StatusCreated,
 					Header:     http.Header{"Content-Type": []string{"application/json"}},
 					Body: io.NopCloser(strings.NewReader(
-						`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["GrayCodeAI/cli"],"branches":"all","repos":[],"generated_markdown":"hi","totals":{"checkpoints":0,"used_checkpoint_count":0,"branches":2,"files_touched":0},"warnings":{"access_denied_count":0,"pending_count":0,"failed_count":0,"unknown_count":0,"uncategorized_count":0}}`,
+						`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["entireio/cli"],"branches":"all","repos":[],"generated_markdown":"hi","totals":{"checkpoints":0,"used_checkpoint_count":0,"branches":2,"files_touched":0},"warnings":{"access_denied_count":0,"pending_count":0,"failed_count":0,"unknown_count":0,"uncategorized_count":0}}`,
 					)),
 				}, nil
 			}),
 		},
 	})
 	got, err := client.CreateDispatch(context.Background(), CreateDispatchRequest{
-		Repos:    []string{"GrayCodeAI/cli"},
+		Repos:    []string{"entireio/cli"},
 		Since:    "2026-04-09T00:00:00Z",
 		Until:    "2026-04-16T00:00:00Z",
 		Generate: true,
@@ -281,14 +295,14 @@ func TestCloudClient_CreateDispatch_AcceptsVoiceResponseField(t *testing.T) {
 					StatusCode: http.StatusCreated,
 					Header:     http.Header{"Content-Type": []string{"application/json"}},
 					Body: io.NopCloser(strings.NewReader(
-						`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["GrayCodeAI/cli"],"branches":["main"],"voice":"calm and direct","repos":[],"generated_markdown":"hi","totals":{"checkpoints":0,"used_checkpoint_count":0,"branches":1,"files_touched":0},"warnings":{"access_denied_count":0,"pending_count":0,"failed_count":0,"unknown_count":0,"uncategorized_count":0}}`,
+						`{"window":{"normalized_since":"2026-04-09T00:00:00Z","normalized_until":"2026-04-16T00:00:00Z"},"covered_repos":["entireio/cli"],"branches":["main"],"voice":"calm and direct","repos":[],"generated_markdown":"hi","totals":{"checkpoints":0,"used_checkpoint_count":0,"branches":1,"files_touched":0},"warnings":{"access_denied_count":0,"pending_count":0,"failed_count":0,"unknown_count":0,"uncategorized_count":0}}`,
 					)),
 				}, nil
 			}),
 		},
 	})
 	got, err := client.CreateDispatch(context.Background(), CreateDispatchRequest{
-		Repos:    []string{"GrayCodeAI/cli"},
+		Repos:    []string{"entireio/cli"},
 		Since:    "2026-04-09T00:00:00Z",
 		Until:    "2026-04-16T00:00:00Z",
 		Generate: true,

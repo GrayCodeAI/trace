@@ -100,7 +100,11 @@ func OPFEnabled() bool {
 
 // OPFBreakerTripped reports whether the per-process OPF circuit breaker
 // has been tripped — i.e. an OPF invocation failed at some point during
-// this process's lifetime.
+// this process's lifetime. The pre-push rewrite uses this to detect
+// when OPF silently fell back to regex-only mid-rewrite and abort before
+// CAS-ing the new ref; otherwise the rewritten commits would carry the
+// Entire-OPF-Applied: true trailer despite containing only regex-only
+// content, and the next push would skip them.
 func OPFBreakerTripped() bool {
 	return opfBreakerTripped.Load()
 }
@@ -145,7 +149,8 @@ var opfLabelMap = map[string]string{
 
 // IsKnownOPFCategory reports whether name is one of the OPF native labels
 // the CLI knows how to tag and render. Exported so the settings layer can
-// reject typos at parse time.
+// reject typos at parse time — silent zero-detection of a privacy category
+// would leave users thinking they're protected when they're not.
 func IsKnownOPFCategory(name string) bool {
 	_, ok := opfLabelMap[name]
 	return ok
@@ -176,10 +181,25 @@ func enabledCategories(cfg *OPFConfig) []string {
 	return out
 }
 
+// opfStderr is where progress and failure UX is written. OPF only runs
+// in the pre-push rewrite path (strategy/manual_commit_opf_rewrite.go),
+// whose hook is installed without a `2>/dev/null` redirect, so plain
+// stderr reaches the user's terminal during `git push`. Post-commit
+// condensation never invokes OPF (it calls the regex-layer functions
+// directly via RedactBlobBytes(..., usePrivacyFilter=false)), so the
+// historical `/dev/tty` routing that survived the post-commit hook's
+// stderr redirect is no longer needed. Tests override this directly.
 var opfStderr io.Writer = os.Stderr
 
 // detectOPF runs OPF on a single text and returns tagged regions for any
-// spans whose category is enabled in cfg.
+// spans whose category is enabled in cfg. Returns nil when OPF is disabled,
+// unconfigured, the breaker is tripped, the input is too short to be prose,
+// the input has no enabled categories, or the runtime returns an error.
+//
+// The has-space gate eliminates structural strings (paths, IDs, snake_case
+// keys) that would otherwise pay the OPF cold-start with zero benefit.
+// Single-token PII shapes (e.g. an isolated email) are caught by the regex
+// layers.
 func detectOPF(ctx context.Context, cfg *OPFConfig, s string) []taggedRegion {
 	if cfg == nil || !cfg.Enabled || cfg.runtime == nil || s == "" {
 		return nil
@@ -195,7 +215,7 @@ func detectOPF(ctx context.Context, cfg *OPFConfig, s string) []taggedRegion {
 		return nil
 	}
 
-	_, _ = fmt.Fprintln(opfStderr, "→ OpenAI Privacy Filter: scanning transcript…")
+	fmt.Fprintln(opfStderr, "→ OpenAI Privacy Filter: scanning transcript…")
 	start := time.Now()
 	batched, err := cfg.runtime.RedactBatch(ctx, []string{s}, cats)
 	if err != nil {
@@ -207,11 +227,14 @@ func detectOPF(ctx context.Context, cfg *OPFConfig, s string) []taggedRegion {
 		return nil
 	}
 	spans := batched[0]
-	_, _ = fmt.Fprintf(opfStderr, "✓ OpenAI Privacy Filter: done (%.1fs)\n", time.Since(start).Seconds())
+	fmt.Fprintf(opfStderr, "✓ OpenAI Privacy Filter: done (%.1fs)\n", time.Since(start).Seconds())
 
 	return opfSpanRegions(s, spans, cfg)
 }
 
+// opfSpanRegions converts OPF spans detected in v into tagged regions,
+// dropping spans whose category is disabled in cfg or whose bounds don't
+// fit v.
 func opfSpanRegions(v string, spans []Span, cfg *OPFConfig) []taggedRegion {
 	out := make([]taggedRegion, 0, len(spans))
 	for _, sp := range spans {
@@ -229,6 +252,10 @@ func opfSpanRegions(v string, spans []Span, cfg *OPFConfig) []taggedRegion {
 	return out
 }
 
+// handleOPFFailure trips the circuit breaker and emits one user-facing
+// warning. CompareAndSwap ensures only the FIRST failure produces output;
+// subsequent detectOPF calls short-circuit before reaching here, so the
+// swap is mostly a guard against concurrent first-call races.
 func handleOPFFailure(ctx context.Context, cfg *OPFConfig, err error) {
 	if !opfBreakerTripped.CompareAndSwap(false, true) {
 		return
@@ -239,24 +266,37 @@ func handleOPFFailure(ctx context.Context, cfg *OPFConfig, err error) {
 		slog.String("command", cfg.Command),
 		slog.String("error", err.Error()),
 	)
-	_, _ = fmt.Fprintf(opfStderr, "× OpenAI Privacy Filter unavailable (%s); falling back to regex layers for the rest of this commit. Install with 'pip install opf'.\n", cfg.Command)
+	fmt.Fprintf(opfStderr, "× OpenAI Privacy Filter unavailable (%s); falling back to regex layers for the rest of this commit. Install with 'pip install opf'.\n", cfg.Command)
 }
 
+// Span is a redaction region returned by an opfRuntime, with BYTE-offset
+// boundaries against the input text. OPF itself reports character (rune)
+// offsets via its JSON output; the shell-out adapter translates those to
+// byte offsets before returning Spans so callers can slice []byte input
+// directly without re-walking runes.
 type Span struct {
 	Start int
 	End   int
 	Label string // OPF native label, e.g. "private_person"
 }
 
+// opfRuntime is the abstraction over the OpenAI Privacy Filter binary or
+// (future) daemon. Implementations must be safe for concurrent use.
 type opfRuntime interface {
 	Redact(ctx context.Context, text string, categories []string) ([]Span, error)
 	RedactBatch(ctx context.Context, inputs []string, categories []string) ([][]Span, error)
 }
 
+// shellOut runs the user-installed `opf` binary per call. Cold-start every
+// invocation is intentional for v1 — daemon mode is a planned follow-up
+// that implements the same opfRuntime interface so callers don't change.
 type shellOut struct {
 	command        string
 	timeoutSeconds int
-	commandRunner  func(ctx context.Context, name string, args ...string) *exec.Cmd
+
+	// commandRunner builds the *exec.Cmd run for each Redact call. Tests
+	// override this with a closure returning a Cmd wrapping a shell snippet.
+	commandRunner func(ctx context.Context, name string, args ...string) *exec.Cmd
 }
 
 func newShellOut(command string, timeoutSeconds int) *shellOut {
@@ -268,11 +308,25 @@ func newShellOut(command string, timeoutSeconds int) *shellOut {
 }
 
 const (
-	opfBatchSeparator        = "\x1e"
+	// opfBatchSeparator joins inputs into a single opf invocation. opf treats
+	// '\n' as a per-input delimiter and runs a fresh inference pass per line,
+	// which is no faster than per-call shell-out. Joining with a non-newline
+	// separator instead causes opf to treat the concatenation as ONE input and
+	// do ONE inference pass, amortizing the model load across all inputs.
+	//
+	// ASCII RECORD SEPARATOR (U+001E) satisfies both requirements:
+	//  1. Doesn't appear in real text (so no collision with content)
+	//  2. Looks like whitespace to opf's tokenizer (so it doesn't confuse
+	//     span boundaries)
+	opfBatchSeparator = "\x1e"
+
+	// Keep a pathological transcript or process from making the CLI allocate
+	// unbounded buffers while preparing or reading an OPF shell-out.
 	opfMaxBatchInputBytes    = 16 * 1024 * 1024
 	opfMaxProcessOutputBytes = 1 * 1024 * 1024
 )
 
+// Redact runs OPF on a single text input.
 func (s *shellOut) Redact(ctx context.Context, text string, categories []string) ([]Span, error) {
 	if len(categories) == 0 {
 		return nil, nil
@@ -287,6 +341,16 @@ func (s *shellOut) Redact(ctx context.Context, text string, categories []string)
 	return batch[0], nil
 }
 
+// RedactBatch sends multiple inputs to opf as a single shell-out, joined
+// with opfBatchSeparator. Internal newlines and separator collisions in inputs
+// are flattened to spaces (1-byte → 1-byte, offsets stay valid). opf emits one
+// JSON object covering the whole concatenated text; spans are partitioned back
+// per input via partitionIndex. Spans crossing a separator boundary are dropped.
+//
+// Errors deliberately do NOT include stdout or stderr content — OPF can
+// echo input fragments to either stream when misconfigured, and the error
+// is later logged + printed to TTY by handleOPFFailure. Byte counts are
+// sufficient for diagnostics.
 func (s *shellOut) RedactBatch(ctx context.Context, inputs []string, categories []string) ([][]Span, error) {
 	if len(inputs) == 0 || len(categories) == 0 {
 		return nil, nil
@@ -323,6 +387,11 @@ func (s *shellOut) RedactBatch(ctx context.Context, inputs []string, categories 
 	stderr := newLimitedOutputBuffer(opfMaxProcessOutputBytes)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	// WaitDelay forces cmd.Wait() to return promptly after context
+	// cancellation/timeout even when the killed process leaves descendants
+	// holding the stdout/stderr pipes (e.g. `sh -c "sleep 5"` — killing sh
+	// doesn't reap sleep). Without this, timeout tests on Linux CI block
+	// for the full sleep duration.
 	cmd.WaitDelay = 500 * time.Millisecond
 
 	if err := cmd.Run(); err != nil {
@@ -447,6 +516,10 @@ func sanitizeOPFBatchInput(in string) string {
 	return replacer.Replace(in)
 }
 
+// charToByteOffset converts a 0-based rune offset into a byte offset within
+// s. Returns -1 for negative offsets or offsets past the rune count.
+// charOff == 0 returns 0; charOff == utf8.RuneCountInString(s) returns
+// len(s) (the exclusive end position used as a slice bound).
 func charToByteOffset(s string, charOff int) int {
 	if charOff < 0 {
 		return -1
@@ -462,6 +535,11 @@ func charToByteOffset(s string, charOff int) int {
 	return byteOff
 }
 
+// partitionIndex returns the input index that contains [spanStart, spanEnd)
+// within the concatenated batch, or -1 if the region crosses a separator
+// boundary or is outside any input. starts[i] is the byte offset where
+// inputs[i] begins; each input ends at starts[i+1] - len(sep), or at the
+// end of the batched string for the last input.
 func partitionIndex(starts []int, spanStart, spanEnd int, sep string) int {
 	if spanStart < 0 || spanEnd <= spanStart {
 		return -1
@@ -472,6 +550,9 @@ func partitionIndex(starts []int, spanStart, spanEnd int, sep string) int {
 		if i+1 < len(starts) {
 			end = starts[i+1] - len(sep)
 		} else {
+			// Last input — no upper bound tracked. Accept any span that
+			// starts >= base; the caller's bounds-check on the returned
+			// span's byte offsets covers the runaway case.
 			end = 1 << 31
 		}
 		if spanStart >= base && spanEnd <= end {
