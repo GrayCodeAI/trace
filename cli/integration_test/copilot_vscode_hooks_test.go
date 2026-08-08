@@ -21,7 +21,7 @@ func TestCopilotVSCodeHooks_UserPromptSubmitted(t *testing.T) {
 	runner := NewHookRunner(env.RepoDir, env.ClaudeProjectDir, t)
 
 	sessionID := "b0ff98c0-8e01-4b73-bf92-9649b139931b"
-	transcriptPath := filepath.Join(env.RepoDir, ".trace", "tmp", "copilot-events.jsonl")
+	transcriptPath := filepath.Join(env.RepoDir, ".entire", "tmp", "copilot-events.jsonl")
 
 	output := runner.runAgentHookWithOutput(
 		"copilot-cli",
@@ -66,7 +66,7 @@ func TestCopilotVSCodeHooks_AgentStopCreatesCheckpoint(t *testing.T) {
 	runner := NewHookRunner(env.RepoDir, env.ClaudeProjectDir, t)
 
 	sessionID := "b0ff98c0-8e01-4b73-bf92-9649b139931c"
-	transcriptPath := filepath.Join(env.RepoDir, ".trace", "tmp", sessionID, "events.jsonl")
+	transcriptPath := filepath.Join(env.RepoDir, ".entire", "tmp", sessionID, "events.jsonl")
 
 	startOutput := runner.runAgentHookWithOutput(
 		"copilot-cli",
@@ -127,7 +127,7 @@ func TestCopilotVSCodeHooks_GeneratedHookCommands(t *testing.T) {
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	env.InitTrace()
+	env.InitEntire()
 	writeNonLocalDevSettings(t, env)
 	runner := NewHookRunner(env.RepoDir, env.ClaudeProjectDir, t)
 
@@ -141,7 +141,7 @@ func TestCopilotVSCodeHooks_GeneratedHookCommands(t *testing.T) {
 	agentStopCommand := resolveHookCommand(t, findHookCommand(t, hooksFile.Hooks.AgentStop, "agent-stop"))
 
 	sessionID := "b0ff98c0-8e01-4b73-bf92-9649b139931d"
-	transcriptPath := filepath.Join(env.RepoDir, ".trace", "tmp", sessionID, "events.jsonl")
+	transcriptPath := filepath.Join(env.RepoDir, ".entire", "tmp", sessionID, "events.jsonl")
 
 	startOutput := runner.runShellHookCommandWithOutput(
 		userPromptCommand,
@@ -279,16 +279,16 @@ func resolveHookCommand(t *testing.T, command string) string {
 func TestResolveHookCommand_RewritesWrappedProductionCommand(t *testing.T) {
 	t.Parallel()
 
-	command := `sh -c 'if ! command -v trace >/dev/null 2>&1; then exit 0; fi; exec trace hooks copilot-cli user-prompt-submitted'`
-	got := resolveHookCommandWithBinary(command, "/tmp/trace-test-binary")
+	command := `sh -c 'if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks copilot-cli user-prompt-submitted'`
+	got := resolveHookCommandWithBinary(command, "/tmp/entire-test-binary")
 
-	if strings.Contains(got, "command -v trace") {
-		t.Fatalf("resolveHookCommand() should not depend on PATH lookup for trace, got %q", got)
+	if strings.Contains(got, "command -v entire") {
+		t.Fatalf("resolveHookCommand() should not depend on PATH lookup for entire, got %q", got)
 	}
-	if strings.Contains(got, "exec trace hooks") {
+	if strings.Contains(got, "exec entire hooks") {
 		t.Fatalf("resolveHookCommand() should rewrite wrapped exec target, got %q", got)
 	}
-	if !strings.Contains(got, `exec "/tmp/trace-test-binary" hooks copilot-cli user-prompt-submitted`) {
+	if !strings.Contains(got, `exec "/tmp/entire-test-binary" hooks copilot-cli user-prompt-submitted`) {
 		t.Fatalf("resolveHookCommand() did not rewrite wrapped command correctly, got %q", got)
 	}
 }
@@ -296,18 +296,18 @@ func TestResolveHookCommand_RewritesWrappedProductionCommand(t *testing.T) {
 func resolveHookCommandWithBinary(command, binaryPath string) string {
 	testBinary := fmt.Sprintf("%q", binaryPath)
 
-	if strings.HasPrefix(command, "trace ") {
-		return testBinary + strings.TrimPrefix(command, "trace")
+	if strings.HasPrefix(command, "entire ") {
+		return testBinary + strings.TrimPrefix(command, "entire")
 	}
 
-	if strings.Contains(command, "command -v trace") && strings.Contains(command, "exec trace ") {
+	if strings.Contains(command, "command -v entire") && strings.Contains(command, "exec entire ") {
 		resolved := strings.Replace(
 			command,
-			"command -v trace >/dev/null 2>&1",
+			"command -v entire >/dev/null 2>&1",
 			"test -x "+testBinary,
 			1,
 		)
-		resolved = strings.Replace(resolved, "exec trace ", "exec "+testBinary+" ", 1)
+		resolved = strings.Replace(resolved, "exec entire ", "exec "+testBinary+" ", 1)
 		return resolved
 	}
 
@@ -317,7 +317,7 @@ func resolveHookCommandWithBinary(command, binaryPath string) string {
 func writeNonLocalDevSettings(t *testing.T, env *TestEnv) {
 	t.Helper()
 
-	settingsPath := filepath.Join(env.RepoDir, ".trace", "settings.json")
+	settingsPath := filepath.Join(env.RepoDir, ".entire", "settings.json")
 	if err := os.WriteFile(settingsPath, []byte("{\n  \"enabled\": true\n}\n"), 0o644); err != nil {
 		t.Fatalf("failed to write non-local-dev settings: %v", err)
 	}

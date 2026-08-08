@@ -54,7 +54,7 @@ func TestAgentPackages_NoForbiddenImports(t *testing.T) {
 		repoPrefix + "telemetry",  // telemetry
 		repoPrefix + "validation", // validation utilities
 		repoPrefix + "settings",   // settings (read-only access)
-		repoPrefix + "review",     // review types (used by skilldiscovery)
+		repoPrefix + "review",     // review env contract + AgentReviewer types (used by per-agent reviewer.go files)
 	}
 
 	agentDir := findAgentDir(t)
@@ -109,7 +109,7 @@ func TestAgentPackages_NoForbiddenImports(t *testing.T) {
 	}
 }
 
-// findAgentDir returns the absolute path to cli/agent/.
+// findAgentDir returns the absolute path to cmd/entire/cli/agent/.
 // Go test runner sets cwd to the package directory, so os.Getwd() gives us
 // the agent dir directly.
 func findAgentDir(t *testing.T) string {
@@ -130,8 +130,8 @@ func discoverAgentPackages(t *testing.T, agentDir string) []string {
 		"types":          true, // contract types, not an agent implementation
 		"testutil":       true, // shared test utilities
 		"external":       true, // external agent adapter, not a self-registering agent
-		"skilldiscovery": true, // review skill discovery utility, not an agent
-		"spawn":          true, // Spawner interface, not an agent implementation
+		"skilldiscovery": true, // shared capability helper (registries, match), not an agent
+		"spawn":          true, // shared Spawner interface for review/investigate, not an agent
 	}
 
 	entries, err := os.ReadDir(agentDir)
@@ -163,7 +163,7 @@ func extractImports(t *testing.T, dir string) []string {
 	t.Helper()
 
 	fset := token.NewFileSet()
-	//lint:ignore SA1019 // ParseDir is deprecated in favor of go/packages, but we intentionally
+	//nolint:staticcheck // ParseDir is deprecated in favor of go/packages, but we intentionally
 	// scan all files regardless of build tags to catch forbidden imports in test files too.
 	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ImportsOnly)
 	if err != nil {
@@ -220,7 +220,7 @@ func hasInitWithRegister(t *testing.T, dir string) bool {
 	t.Helper()
 
 	fset := token.NewFileSet()
-	//lint:ignore SA1019 // See extractImports for rationale.
+	//nolint:staticcheck // See extractImports for rationale.
 	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
 	}, 0)

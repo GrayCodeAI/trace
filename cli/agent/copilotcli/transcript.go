@@ -169,67 +169,48 @@ func extractPromptsFromEvents(events []copilotEvent) []string {
 	return prompts
 }
 
-// extractSummaryFromEvents returns the content of the last assistant.message event.
-func extractSummaryFromEvents(events []copilotEvent) string {
+// lastEventField scans events newest-first for entries of eventType,
+// returning the first non-empty value extract produces (skipping entries
+// whose data doesn't unmarshal).
+func lastEventField[T any](events []copilotEvent, eventType string, extract func(T) string) string {
 	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].Type != eventTypeAssistantMsg {
+		if events[i].Type != eventType {
 			continue
 		}
 
-		var data assistantMessageData
+		var data T
 		if err := json.Unmarshal(events[i].Data, &data); err != nil {
 			continue
 		}
 
-		if data.Content != "" {
-			return data.Content
+		if v := extract(data); v != "" {
+			return v
 		}
 	}
 
 	return ""
+}
+
+// extractSummaryFromEvents returns the content of the last assistant.message event.
+func extractSummaryFromEvents(events []copilotEvent) string {
+	return lastEventField(events, eventTypeAssistantMsg,
+		func(d assistantMessageData) string { return d.Content })
 }
 
 // extractModelFromEvents returns the model from transcript events.
 // First checks session.model_change events, then falls back to the model field
 // in tool.execution_complete events (Copilot CLI includes model per tool call).
 func extractModelFromEvents(events []copilotEvent) string {
-	// Primary: session.model_change (explicit model declaration)
-	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].Type != eventTypeModelChange {
-			continue
-		}
-
-		var data modelChangeData
-		if err := json.Unmarshal(events[i].Data, &data); err != nil {
-			continue
-		}
-
-		if data.NewModel != "" {
-			return data.NewModel
-		}
+	if model := lastEventField(events, eventTypeModelChange,
+		func(d modelChangeData) string { return d.NewModel }); model != "" {
+		return model
 	}
-
-	// Fallback: tool.execution_complete events include a model field
-	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].Type != eventTypeToolExecDone {
-			continue
-		}
-
-		var data toolExecCompleteData
-		if err := json.Unmarshal(events[i].Data, &data); err != nil {
-			continue
-		}
-
-		if data.Model != "" {
-			return data.Model
-		}
-	}
-
-	return ""
+	return lastEventField(events, eventTypeToolExecDone,
+		func(d toolExecCompleteData) string { return d.Model })
 }
 
 // sessionShutdownData is the data payload for session.shutdown events.
-// Contains aggregate model metrics for the trace session.
+// Contains aggregate model metrics for the entire session.
 // modelMetrics is a JSON object keyed by model name (e.g. "claude-sonnet-4.6"),
 // not an array — using map[string] here matches the real Copilot CLI wire format.
 type sessionShutdownData struct {
@@ -341,7 +322,6 @@ func ExtractModelFromTranscript(ctx context.Context, transcriptPath string) stri
 		return ""
 	}
 
-	// #nosec G304 -- transcriptPath derived from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(transcriptPath) //nolint:gosec // Path derived from agent hook input
 	if err != nil {
 		logging.Debug(ctx, "copilot-cli: failed to read transcript for model extraction",
@@ -375,7 +355,6 @@ func (c *CopilotCLIAgent) GetTranscriptPosition(path string) (int, error) {
 		return 0, nil
 	}
 
-	// #nosec G304 -- path comes from Copilot CLI transcript location, not remote/untrusted input
 	file, err := os.Open(path) //nolint:gosec // Path comes from Copilot CLI transcript location
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -417,7 +396,6 @@ func (c *CopilotCLIAgent) ExtractModifiedFilesFromOffset(path string, startOffse
 		return nil, 0, nil
 	}
 
-	// #nosec G304 -- path comes from Copilot CLI transcript location, not remote/untrusted input
 	file, openErr := os.Open(path) //nolint:gosec // Path comes from Copilot CLI transcript location
 	if openErr != nil {
 		return nil, 0, fmt.Errorf("failed to open transcript file: %w", openErr)
@@ -455,7 +433,6 @@ func (c *CopilotCLIAgent) ExtractModifiedFilesFromOffset(path string, startOffse
 
 // ExtractPrompts extracts user prompts from the transcript starting at the given offset.
 func (c *CopilotCLIAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]string, error) {
-	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read transcript: %w", err)
@@ -470,7 +447,6 @@ func (c *CopilotCLIAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]s
 
 // ExtractSummary extracts the last assistant message as a session summary.
 func (c *CopilotCLIAgent) ExtractSummary(sessionRef string) (string, error) {
-	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return "", fmt.Errorf("failed to read transcript: %w", err)

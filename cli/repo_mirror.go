@@ -125,7 +125,7 @@ type repoDirPlacement struct {
 // placements nested, so a repo mirrored across cells still lists once), or one
 // per onboardable candidate. Fields are exported with JSON tags so --json
 // emits this grouped, filtered, sorted view directly (the raw wire model stays
-// reachable via `trace api --to core /repos`). Status is the placements'
+// reachable via `entire api --to core /repos`). Status is the placements'
 // shared status when they agree, "mixed" when they don't, or the candidate's
 // availability. Placements/Access are omitted from JSON when empty so a
 // candidate row and a mirror row are distinguishable.
@@ -447,9 +447,9 @@ func validateClusterHost(host string) error {
 	return nil
 }
 
-// newRepoMirrorCmd is the `trace repo mirror` subtree: manage EntireDB
+// newRepoMirrorCmd is the `entire repo mirror` subtree: manage EntireDB
 // GitHub-mirror placements on a cluster. Mirrors the standalone entiredb
-// CLI's `trace repo mirror` surface for the server-side half (create /
+// CLI's `entire repo mirror` surface for the server-side half (create /
 // list / get / remove), plus the local-clone rewrite (`use`) — the one verb
 // here that touches no control-plane state beyond a placement lookup and
 // instead edits the current clone's git config (see repo_mirror_use.go).
@@ -962,7 +962,7 @@ func newRepoMirrorListCmd() *cobra.Command {
 			"(one row per repo, with the clusters it is mirrored on and the clone " +
 			"status) and GitHub repos you could onboard (access, availability). " +
 			"Sparse cells show '-'. Per-cluster detail and clone URLs: " +
-			"`trace repo mirror get <owner/repo>`.\n\n" +
+			"`entire repo mirror get <owner/repo>`.\n\n" +
 			"The first " + strconv.Itoa(coreListFetchBudget) + " entries are fetched by default, with a note on stderr " +
 			"when more exist. Filters and --sort apply to those fetched rows — add " +
 			"--all to work over the complete list, or --limit N for just the first N.\n\n" +
@@ -1107,7 +1107,7 @@ func runRepoMirrorGetByName(cmd *cobra.Command, ref string) error {
 			// The filter only matches onboarded repos on today's control
 			// plane, so a not-yet-mirrored GitHub repo lands here too —
 			// point at the list mode that shows those.
-			return fmt.Errorf("no repo matching %q visible from your login (GitHub repos you could onboard: `trace repo mirror list --available`)", ref)
+			return fmt.Errorf("no repo matching %q visible from your login (GitHub repos you could onboard: `entire repo mirror list --available`)", ref)
 		}
 		clusters, err := c.ListClusters(ctx)
 		if err != nil {
@@ -1125,7 +1125,7 @@ func runRepoMirrorGetByName(cmd *cobra.Command, ref string) error {
 // mirrorRepoDetailRow shapes one directory entry for the record view, reusing the
 // list's row builder so both views agree on placement/candidate semantics.
 // buildRepoDir drops a repo with no GitHub-mirror placements (a native
-// `trace repo create` repo); the detail view was asked about that repo by
+// `entire repo create` repo); the detail view was asked about that repo by
 // name, so it falls back to a bare identity row instead of vanishing.
 // Placements are ordered by cluster slug for a deterministic table.
 func mirrorRepoDetailRow(e coreapi.RepoIndexEntry, hostBySlug map[string]string) repoDirRow {
@@ -1281,7 +1281,7 @@ func parseMirrorCloneURL(raw string) (clusterHost, provider, owner, repo string,
 }
 
 func noMirrorErr(ref string) error {
-	return fmt.Errorf("no mirror matching %q (run `trace repo mirror list` to see clone URLs, or pass a ULID)", ref)
+	return fmt.Errorf("no mirror matching %q (run `entire repo mirror list` to see clone URLs, or pass a ULID)", ref)
 }
 
 // badMirrorRefErr wraps a clone-URL parse failure with the accepted <mirror>
@@ -1335,7 +1335,7 @@ func removeMirror(ctx context.Context, w io.Writer, c *coreapi.Client, owner, re
 			// Deliberately not %w-wrapped: renderCoreError would extract the
 			// server's problem detail and replace this targeted message. The
 			// detail is appended as plain text instead, so nothing is lost.
-			msg := fmt.Sprintf("no mirror of github.com/%s/%s on %s — it may be on a different cluster (run `trace repo mirror list` to see placements)", owner, repo, clusterHost)
+			msg := fmt.Sprintf("no mirror of github.com/%s/%s on %s — it may be on a different cluster (run `entire repo mirror list` to see placements)", owner, repo, clusterHost)
 			if detail := coreapi.APIError(err); detail != "" {
 				msg += " (server: " + detail + ")"
 			}

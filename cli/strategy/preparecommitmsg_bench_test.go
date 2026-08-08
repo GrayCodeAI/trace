@@ -54,7 +54,7 @@ func benchPrepareCommitMsg(fileCount, sessionCount int) func(*testing.B) {
 
 // BenchmarkGetStagedFiles measures the isolated cost of getStagedFiles at different
 // repo sizes. This is the primary bottleneck: go-git's worktree.Status() scans the
-// trace working tree.
+// entire working tree.
 func BenchmarkGetStagedFiles(b *testing.B) {
 	for _, fileCount := range []int{10, 100, 500} {
 		b.Run(fmt.Sprintf("Files_%d", fileCount), func(b *testing.B) {

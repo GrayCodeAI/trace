@@ -37,7 +37,7 @@ func TestCarryForward_EndedSession_NotCondensedOnUnrelatedCommit(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/multi-session-carry-forward")
-	env.InitTrace()
+	env.InitEntire()
 
 	// ========================================
 	// Phase 1: Session 1 creates files, partial commit, ends with carry-forward

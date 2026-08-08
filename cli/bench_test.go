@@ -18,7 +18,7 @@ and then go to http://localhost:8089/ui/flamegraph
 
 */
 
-// BenchmarkStatusCommand benchmarks the `trace status` command end-to-end.
+// BenchmarkStatusCommand benchmarks the `entire status` command end-to-end.
 // This is the top-level entry point for understanding status command latency.
 //
 // Key I/O operations measured:
@@ -51,14 +51,14 @@ func BenchmarkStatusCommand_NoCache(b *testing.B) {
 	b.Run("Detailed/5Sessions", benchStatus(5, true, false))
 }
 
-// benchStatus returns a benchmark function for the `trace status` command.
+// benchStatus returns a benchmark function for the `entire status` command.
 // When useGitCommonDirCache is false, it clears the git common dir cache each
 // iteration to simulate the old uncached behavior.
 func benchStatus(sessionCount int, detailed, useGitCommonDirCache bool) func(*testing.B) {
 	return func(b *testing.B) {
 		repo := benchutil.NewBenchRepo(b, benchutil.RepoOpts{})
 
-		// Create active session state files in .git/trace-sessions/
+		// Create active session state files in .git/entire-sessions/
 		for range sessionCount {
 			repo.CreateSessionState(b, benchutil.SessionOpts{})
 		}

@@ -93,7 +93,7 @@ func handlePush(ctx context.Context, t Transport, adv *refAdvCache, firstLine st
 	respCh := make(chan io.ReadCloser, 1)
 	feedErr := make(chan error, 1)
 	go func() {
-		defer spIn.Close() //nolint:errcheck // best-effort close
+		defer spIn.Close()
 		if _, err := spIn.Write(preamble.Bytes()); err != nil {
 			feedErr <- fmt.Errorf("writing refspecs to send-pack: %w", err)
 			return
@@ -113,7 +113,7 @@ func handlePush(ctx context.Context, t Transport, adv *refAdvCache, firstLine st
 		// Read would fail with "use of closed network connection" and
 		// the helper would exit non-zero on a push that actually
 		// succeeded. Own the close here so it runs strictly after Copy.
-		defer resp.Close() //nolint:errcheck // best-effort close
+		defer resp.Close()
 		if _, err := io.Copy(spIn, resp); err != nil {
 			feedErr <- fmt.Errorf("piping receive-pack response to send-pack: %w", err)
 			return

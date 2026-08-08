@@ -1,4 +1,4 @@
-// Package logging provides structured logging for the Trace CLI using slog.
+// Package logging provides structured logging for the Entire CLI using slog.
 //
 // Usage:
 //
@@ -9,10 +9,10 @@
 //	defer logging.Close()
 //
 //	// Add context values
-//	ctx = logging.WithSession(ctx, sessionID)
-//	ctx = logging.WithToolCall(ctx, toolCallID)
+//	ctx = logging.WithComponent(ctx, "hooks")
+//	ctx = logging.WithAgent(ctx, agentName)
 //
-//	// Log with context - session/tool IDs extracted automatically
+//	// Log with context - component/agent extracted automatically
 //	logging.Info(ctx, "hook invoked",
 //	    slog.String("hook", hookName),
 //	    slog.String("branch", branch),
@@ -29,17 +29,16 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/validation"
 )
 
 // LogLevelEnvVar is the environment variable that controls log level.
-const LogLevelEnvVar = "TRACE_LOG_LEVEL"
+const LogLevelEnvVar = "ENTIRE_LOG_LEVEL"
 
 // LogsDir is the directory where log files are stored (relative to repo root).
-const LogsDir = ".trace/logs"
+const LogsDir = ".entire/logs"
 
 var (
 	// logger is the package-level logger instance
@@ -64,7 +63,7 @@ var (
 
 // SetLogLevelGetter sets a callback function to get the log level from settings.
 // This allows the logging package to read settings without a circular dependency.
-// The callback is only used if TRACE_LOG_LEVEL env var is not set.
+// The callback is only used if ENTIRE_LOG_LEVEL env var is not set.
 func SetLogLevelGetter(getter func() string) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -72,11 +71,11 @@ func SetLogLevelGetter(getter func() string) {
 }
 
 // Init initializes the logger for a session, writing JSON logs to
-// .trace/logs/trace.log.
+// .entire/logs/entire.log.
 //
 // If sessionID is non-empty, it is stored as an slog attribute on every log line for filtering.
 // If the log file cannot be created, falls back to stderr.
-// Log level is controlled by TRACE_LOG_LEVEL environment variable.
+// Log level is controlled by ENTIRE_LOG_LEVEL environment variable.
 func Init(ctx context.Context, sessionID string) error {
 	// Validate session ID if provided (used only for the slog attribute, not the filename)
 	if sessionID != "" {
@@ -107,7 +106,7 @@ func Init(ctx context.Context, sessionID string) error {
 
 	// Warn if invalid level was provided
 	if levelStr != "" && !isValidLogLevel(levelStr) {
-		fmt.Fprintf(os.Stderr, "[trace] Warning: invalid log level %q, defaulting to INFO\n", levelStr)
+		fmt.Fprintf(os.Stderr, "[entire] Warning: invalid log level %q, defaulting to INFO\n", levelStr)
 	}
 
 	// Determine log file path
@@ -124,8 +123,7 @@ func Init(ctx context.Context, sessionID string) error {
 		return nil
 	}
 
-	logFilePath := filepath.Join(logsPath, "trace.log")
-	// #nosec G304 -- logFilePath is a fixed filename under the repo's .trace/logs dir, not user-controlled
+	logFilePath := filepath.Join(logsPath, "entire.log")
 	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // fixed filename, not user-controlled
 	if err != nil {
 		// Fall back to stderr
@@ -231,29 +229,6 @@ func Error(ctx context.Context, msg string, attrs ...any) {
 	log(ctx, slog.LevelError, msg, attrs...)
 }
 
-// LogDuration logs a message with duration_ms calculated from the start time.
-// The level parameter specifies the log level (use slog.LevelDebug, slog.LevelInfo, etc).
-// Designed for use with defer:
-//
-//	defer logging.LogDuration(ctx, slog.LevelInfo, "operation completed", time.Now())
-//
-// Or with additional attrs:
-//
-//	defer logging.LogDuration(ctx, slog.LevelDebug, "hook executed", start,
-//	    slog.String("hook", hookName),
-//	    slog.Bool("success", true),
-//	)
-func LogDuration(ctx context.Context, level slog.Level, msg string, start time.Time, attrs ...any) {
-	durationMs := time.Since(start).Milliseconds()
-
-	// Prepend duration_ms to attrs
-	allAttrs := make([]any, 0, len(attrs)+1)
-	allAttrs = append(allAttrs, slog.Int64("duration_ms", durationMs))
-	allAttrs = append(allAttrs, attrs...)
-
-	log(ctx, level, msg, allAttrs...)
-}
-
 // log is the internal logging function that extracts context values and logs.
 //
 // The read lock is held across l.Log so Init/Close cannot close logBufWriter
@@ -276,8 +251,8 @@ func log(ctx context.Context, level slog.Level, msg string, attrs ...any) {
 		allAttrs = append(allAttrs, slog.String("session_id", globalSessionID))
 	}
 
-	// Extract context values, skipping session_id if already added from Init()
-	contextAttrs := attrsFromContext(ctx, globalSessionID)
+	// Extract context values
+	contextAttrs := attrsFromContext(ctx)
 	for _, a := range contextAttrs {
 		allAttrs = append(allAttrs, a)
 	}
@@ -285,38 +260,19 @@ func log(ctx context.Context, level slog.Level, msg string, attrs ...any) {
 	// Add caller-provided attributes
 	allAttrs = append(allAttrs, attrs...)
 
-	// Pass context.TODO() to slog as we've already extracted context values as attributes.
-	// slog handlers are expected to handle empty context gracefully.
-	l.Log(context.TODO(), level, msg, allAttrs...)
+	// Pass nil context to slog as we've already extracted context values as attributes.
+	// slog handlers are expected to handle nil context gracefully.
+	l.Log(nil, level, msg, allAttrs...) //nolint:staticcheck // nil context is intentional - we extract values as attributes
 }
 
 // attrsFromContext extracts logging attributes from a context.
-// If globalSessionID is non-empty, skips adding session_id from context to avoid duplicates.
-func attrsFromContext(ctx context.Context, globalSessionID string) []slog.Attr {
+func attrsFromContext(ctx context.Context) []slog.Attr {
 	if ctx == nil {
 		return nil
 	}
 
 	var attrs []slog.Attr
 
-	// Only add session_id from context if not already set globally
-	if globalSessionID == "" {
-		if v := ctx.Value(sessionIDKey); v != nil {
-			if s, ok := v.(string); ok && s != "" {
-				attrs = append(attrs, slog.String("session_id", s))
-			}
-		}
-	}
-	if v := ctx.Value(parentSessionIDKey); v != nil {
-		if s, ok := v.(string); ok && s != "" {
-			attrs = append(attrs, slog.String("parent_session_id", s))
-		}
-	}
-	if v := ctx.Value(toolCallIDKey); v != nil {
-		if s, ok := v.(string); ok && s != "" {
-			attrs = append(attrs, slog.String("tool_call_id", s))
-		}
-	}
 	if v := ctx.Value(componentKey); v != nil {
 		if s, ok := v.(string); ok && s != "" {
 			attrs = append(attrs, slog.String("component", s))

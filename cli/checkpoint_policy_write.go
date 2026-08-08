@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	errUnsupportedCheckpointPolicy = errors.New("checkpoint policy cannot be satisfied by this Trace CLI")
+	errUnsupportedCheckpointPolicy = errors.New("checkpoint policy cannot be satisfied by this Entire CLI")
 	errUnreadableCheckpointPolicy  = errors.New("checkpoint policy could not be read")
 )
 

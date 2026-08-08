@@ -3,19 +3,16 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/GrayCodeAI/trace/cli/api"
 	"github.com/GrayCodeAI/trace/cli/recap"
-	"github.com/GrayCodeAI/trace/cli/testutil"
 )
 
 const recapTestAgentCodex = "codex"
@@ -69,7 +66,7 @@ func TestRecapFlags_Mode(t *testing.T) {
 func TestRecapCmd_RegistersStaticFlags(t *testing.T) {
 	t.Parallel()
 	cmd := newRecapCmd()
-	for _, name := range []string{"day", "week", "month", "90", "agent", "view", "color", "static", "insecure-http-auth", "json"} {
+	for _, name := range []string{"day", "week", "month", "90", "agent", "view", "color", "static", "insecure-http-auth"} {
 		if flag := cmd.Flag(name); flag == nil {
 			t.Errorf("flag --%s not registered", name)
 		}
@@ -146,27 +143,6 @@ func TestRecapFlags_ColorEnabled(t *testing.T) {
 	}
 }
 
-func TestKeyringReadError_PreservesCauseAndMatchesAs(t *testing.T) {
-	t.Parallel()
-
-	cause := errors.New("keychain locked")
-	err := error(&keyringReadError{Cause: cause})
-
-	if !errors.Is(err, cause) {
-		t.Fatalf("errors.Is should match wrapped cause; got false for %v", err)
-	}
-	var keyringErr *keyringReadError
-	if !errors.As(err, &keyringErr) {
-		t.Fatalf("errors.As should extract *keyringReadError; got false for %v", err)
-	}
-	if !errors.Is(keyringErr.Cause, cause) {
-		t.Fatalf("Cause = %v, want %v", keyringErr.Cause, cause)
-	}
-	if !strings.Contains(err.Error(), "keychain locked") {
-		t.Fatalf("Error() should include cause text; got %q", err.Error())
-	}
-}
-
 func TestRunRecap_PrerequisiteErrorsUseErrorWriter(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
@@ -198,7 +174,7 @@ func TestHandleRecapFetchError_UnauthorizedPromptsLogin(t *testing.T) {
 	if !errors.As(err, &silent) {
 		t.Fatalf("error = %T %v, want SilentError", err, err)
 	}
-	if !strings.Contains(out.String(), "Run `trace login` to re-authenticate.") {
+	if !strings.Contains(out.String(), "Run `entire login` to re-authenticate.") {
 		t.Fatalf("output missing re-authentication prompt: %q", out.String())
 	}
 }
@@ -233,12 +209,12 @@ func TestHandleRecapFetchError_PrintsMappedMessage(t *testing.T) {
 				StatusCode: http.StatusInternalServerError,
 				Message:    "Failed to build recap",
 			},
-			want: "trace.io could not build the recap",
+			want: "entire.io could not build the recap",
 		},
 		{
 			name: "network",
-			err:  &net.DNSError{Name: "trace.io", Err: "no such host"},
-			want: "Could not reach trace.io",
+			err:  &net.DNSError{Name: "entire.io", Err: "no such host"},
+			want: "Could not reach entire.io",
 		},
 	}
 
@@ -274,7 +250,7 @@ func TestRecapLoadErrorMessage_HTTPStatuses(t *testing.T) {
 			},
 			want: []string{
 				"Entire sent an invalid recap time range.",
-				"update Trace CLI",
+				"update Entire CLI",
 				"HTTP 400",
 				"since must be on or before until",
 			},
@@ -286,9 +262,9 @@ func TestRecapLoadErrorMessage_HTTPStatuses(t *testing.T) {
 				Message:    "User not found",
 			},
 			want: []string{
-				"trace.io could not find your account",
-				"trace logout",
-				"trace login",
+				"entire.io could not find your account",
+				"entire logout",
+				"entire login",
 				"HTTP 404",
 				"User not found",
 			},
@@ -300,7 +276,7 @@ func TestRecapLoadErrorMessage_HTTPStatuses(t *testing.T) {
 				Message:    "Failed to build recap",
 			},
 			want: []string{
-				"trace.io could not build the recap",
+				"entire.io could not build the recap",
 				"retry",
 				"HTTP 500",
 				"Failed to build recap",
@@ -324,12 +300,12 @@ func TestRecapLoadErrorMessage_HTTPStatuses(t *testing.T) {
 func TestRecapLoadErrorMessage_NetworkError(t *testing.T) {
 	t.Parallel()
 
-	dnsErr := &net.DNSError{Name: "trace.io", Err: "no such host"}
+	dnsErr := &net.DNSError{Name: "entire.io", Err: "no such host"}
 	got := recapLoadErrorMessage(fmt.Errorf("me/recap get: %w", dnsErr))
 	for _, want := range []string{
-		"Could not reach trace.io",
+		"Could not reach entire.io",
 		"Check your internet connection",
-		"TRACE_API_BASE_URL",
+		"ENTIRE_API_BASE_URL",
 		"no such host",
 	} {
 		if !strings.Contains(got, want) {
@@ -349,7 +325,7 @@ func TestRecapLoadErrorMessage_DNSNotFound(t *testing.T) {
 	for _, want := range []string{
 		"Could not resolve API host",
 		"no-token-here.example.com",
-		"TRACE_API_BASE_URL",
+		"ENTIRE_API_BASE_URL",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("message missing %q:\n%s", want, got)
@@ -362,11 +338,11 @@ func TestRecapLoadErrorMessage_ContextCancellation(t *testing.T) {
 
 	canceled := fmt.Errorf("me/recap get: %w", &url.Error{
 		Op:  "Get",
-		URL: "https://trace.io/api/v1/me/recap",
+		URL: "https://entire.io/api/v1/me/recap",
 		Err: context.Canceled,
 	})
 	got := recapLoadErrorMessage(canceled)
-	if strings.Contains(got, "Could not reach trace.io") {
+	if strings.Contains(got, "Could not reach entire.io") {
 		t.Fatalf("cancellation should not be reported as a network failure:\n%s", got)
 	}
 	if !strings.Contains(got, "Recap request was canceled") {
@@ -379,55 +355,14 @@ func TestRecapLoadErrorMessage_ContextDeadlineExceeded(t *testing.T) {
 
 	deadline := fmt.Errorf("me/recap get: %w", &url.Error{
 		Op:  "Get",
-		URL: "https://trace.io/api/v1/me/recap",
+		URL: "https://entire.io/api/v1/me/recap",
 		Err: context.DeadlineExceeded,
 	})
 	got := recapLoadErrorMessage(deadline)
-	if strings.Contains(got, "Could not reach trace.io") {
+	if strings.Contains(got, "Could not reach entire.io") {
 		t.Fatalf("timeout should not be reported as a generic network failure:\n%s", got)
 	}
 	if !strings.Contains(got, "Recap request timed out") {
 		t.Fatalf("message missing timeout explanation:\n%s", got)
-	}
-}
-
-func TestRunRecap_JSONOutput(t *testing.T) { //nolint:paralleltest // t.Chdir is incompatible with t.Parallel()
-	dir := t.TempDir()
-	testutil.InitRepo(t, dir)
-	t.Chdir(dir)
-
-	// nolint:paralleltest // t.Chdir is incompatible with t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"timeframe": "day",
-			"since": "2026-05-08T00:00:00Z",
-			"until": "2026-05-09T00:00:00Z",
-			"agents": {},
-			"summary": {"me": {"sessions": 1, "checkpoints": 2, "tokens": 3}, "repoCount": 1, "activeDays": 1, "analysis": {"complete": 1, "pending": 0, "failed": 0}},
-			"daily": [],
-			"updated_at": "2026-05-08T12:00:00Z"
-		}`))
-	}))
-	defer server.Close()
-	t.Setenv(api.BaseURLEnvVar, server.URL)
-	t.Setenv("TRACE_TOKEN", "test-token")
-
-	var out bytes.Buffer
-	var errOut bytes.Buffer
-	err := runRecap(context.Background(), &out, &errOut, &recapFlags{json: true, insecureHTTP: true})
-	if err != nil {
-		t.Fatalf("runRecap --json: %v\nstderr: %s", err, errOut.String())
-	}
-
-	var resp recap.MeRecapResponse
-	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
-		t.Fatalf("invalid JSON output: %v\n%s", err, out.String())
-	}
-	if resp.Timeframe != "day" {
-		t.Errorf("timeframe = %q, want day", resp.Timeframe)
-	}
-	if resp.Summary.Me.Sessions != 1 {
-		t.Errorf("summary.me.sessions = %d, want 1", resp.Summary.Me.Sessions)
 	}
 }

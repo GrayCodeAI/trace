@@ -172,10 +172,10 @@ func TestShadow_CommitBeforeStop(t *testing.T) {
 	t.Logf("Session phase after stop: %s (StepCount: %d)", state.Phase, state.StepCount)
 
 	// Immediate condensation should have fired during PostCommit (ACTIVE + GitCommit).
-	// Verify metadata was persisted to trace/checkpoints/v1.
+	// Verify metadata was persisted to entire/checkpoints/v1.
 
 	if !env.BranchExists(paths.MetadataBranchName) {
-		t.Fatal("trace/checkpoints/v1 branch should exist after TurnEnd condensation")
+		t.Fatal("entire/checkpoints/v1 branch should exist after TurnEnd condensation")
 	}
 	latestCheckpointID := env.TryGetLatestCheckpointID()
 	if latestCheckpointID != "" {
@@ -193,7 +193,7 @@ func TestShadow_CommitBeforeStop(t *testing.T) {
 // TestShadow_AmendPreservesTrailer tests that `git commit --amend` preserves
 // the checkpoint trailer from the original commit.
 //
-// When a user amends a commit that has an Trace-Checkpoint trailer, the
+// When a user amends a commit that has an Entire-Checkpoint trailer, the
 // prepare-commit-msg hook (called with source="commit") should preserve the
 // existing trailer. No duplicate condensation should occur.
 //
@@ -236,7 +236,7 @@ func TestShadow_AmendPreservesTrailer(t *testing.T) {
 
 	// Verify condensation happened
 	if !env.BranchExists(paths.MetadataBranchName) {
-		t.Fatal("trace/checkpoints/v1 branch should exist after condensation")
+		t.Fatal("entire/checkpoints/v1 branch should exist after condensation")
 	}
 
 	// Record the sessions branch state for later comparison
@@ -452,7 +452,7 @@ func TestShadow_PostRewriteRebaseRemapsSessionState(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	env.GitCheckoutNewBranch("feature/post-rewrite-rebase")
-	env.InitTrace()
+	env.InitEntire()
 
 	sess := env.NewSession()
 	if err := env.SimulateUserPromptSubmit(sess.ID); err != nil {
@@ -487,7 +487,7 @@ func TestShadow_PostRewriteRebaseRemapsSessionState(t *testing.T) {
 	env.GitCommit("Upstream change")
 	env.gitCheckout("feature/post-rewrite-rebase")
 
-	cmd := exec.Command("git", "rebase", "master")
+	cmd := exec.CommandContext(t.Context(), "git", "rebase", "master")
 	cmd.Dir = env.RepoDir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git rebase failed: %v\nOutput: %s", err, output)

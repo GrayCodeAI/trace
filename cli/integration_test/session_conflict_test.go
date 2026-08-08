@@ -29,7 +29,7 @@ func TestSessionIDConflict_OrphanedBranchIsReset(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	env.GitCheckoutNewBranch("feature/test")
-	env.InitTrace()
+	env.InitEntire()
 
 	baseHead := env.GetHeadHash()
 	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
@@ -54,7 +54,7 @@ func TestSessionIDConflict_OrphanedBranchIsReset(t *testing.T) {
 
 	// Clear the session state file but keep the shadow branch
 	// This simulates an orphaned shadow branch scenario
-	sessionStateDir := filepath.Join(env.RepoDir, ".git", "trace-sessions")
+	sessionStateDir := filepath.Join(env.RepoDir, ".git", "entire-sessions")
 	entries, err := os.ReadDir(sessionStateDir)
 	if err != nil {
 		t.Fatalf("Failed to read session state dir: %v", err)
@@ -83,7 +83,10 @@ func TestSessionIDConflict_OrphanedBranchIsReset(t *testing.T) {
 	}
 
 	// Verify shadow branch now has session2's checkpoint
-	state2, _ := env.GetSessionState(session2.ID)
+	state2, err := env.GetSessionState(session2.ID)
+	if err != nil {
+		t.Fatalf("GetSessionState (session2) failed: %v", err)
+	}
 	if state2 == nil || state2.StepCount == 0 {
 		t.Error("Session 2 should have checkpoints after orphaned branch was reset")
 	} else {
@@ -105,7 +108,7 @@ func TestSessionIDConflict_NoConflictWithSameSession(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	env.GitCheckoutNewBranch("feature/test")
-	env.InitTrace()
+	env.InitEntire()
 
 	// Create a session and checkpoint
 	session := env.NewSession()
@@ -141,7 +144,7 @@ func TestSessionIDConflict_NoShadowBranch(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	env.GitCheckoutNewBranch("feature/test")
-	env.InitTrace()
+	env.InitEntire()
 
 	baseHead := env.GetHeadHash()
 	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
@@ -173,7 +176,7 @@ func TestSessionIDConflict_ManuallyCreatedOrphanedBranch(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	env.GitCheckoutNewBranch("feature/test")
-	env.InitTrace()
+	env.InitEntire()
 
 	baseHead := env.GetHeadHash()
 	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
@@ -202,7 +205,10 @@ func TestSessionIDConflict_ManuallyCreatedOrphanedBranch(t *testing.T) {
 	}
 
 	// Verify session has checkpoints
-	state, _ := env.GetSessionState(session.ID)
+	state, err := env.GetSessionState(session.ID)
+	if err != nil {
+		t.Fatalf("GetSessionState failed: %v", err)
+	}
 	if state == nil || state.StepCount == 0 {
 		t.Error("Session should have checkpoints after orphaned branch was reset")
 	} else {
@@ -231,10 +237,10 @@ func createOrphanedShadowBranch(t *testing.T, repoDir, branchName, sessionID str
 		t.Fatalf("Failed to get HEAD commit: %v", err)
 	}
 
-	// Create commit message with Trace-Session trailer
+	// Create commit message with Entire-Session trailer
 	commitMsg := "Orphaned checkpoint\n\n" +
-		"Trace-Session: " + sessionID + "\n" +
-		"Trace-Strategy: manual-commit\n"
+		"Entire-Session: " + sessionID + "\n" +
+		"Entire-Strategy: manual-commit\n"
 
 	// Create the commit
 	commit := &object.Commit{
@@ -271,7 +277,7 @@ func createOrphanedShadowBranch(t *testing.T, repoDir, branchName, sessionID str
 }
 
 // TestSessionIDConflict_ShadowBranchWithoutTrailer tests that a shadow branch without
-// an Trace-Session trailer does not cause a conflict (backwards compatibility).
+// an Entire-Session trailer does not cause a conflict (backwards compatibility).
 func TestSessionIDConflict_ShadowBranchWithoutTrailer(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
@@ -284,12 +290,12 @@ func TestSessionIDConflict_ShadowBranchWithoutTrailer(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	env.GitCheckoutNewBranch("feature/test")
-	env.InitTrace()
+	env.InitEntire()
 
 	baseHead := env.GetHeadHash()
 	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
 
-	// Create a shadow branch without Trace-Session trailer (simulating old format)
+	// Create a shadow branch without Entire-Session trailer (simulating old format)
 	createShadowBranchWithoutTrailer(t, env.RepoDir, shadowBranch)
 
 	// Verify shadow branch exists
@@ -319,7 +325,7 @@ func TestSessionStart_InformationalMessage(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	env.GitCheckoutNewBranch("feature/test")
-	env.InitTrace()
+	env.InitEntire()
 
 	// Create first session and save a checkpoint (so StepCount > 0)
 	session1 := env.NewSession()
@@ -373,8 +379,8 @@ func TestSessionStart_InformationalMessage(t *testing.T) {
 	t.Logf("Session start message:\n%s", msg)
 
 	// Verify base informational message is present
-	if !strings.Contains(msg, "Trace CLI") {
-		t.Errorf("Message should contain 'Trace CLI', got:\n%s", msg)
+	if !strings.Contains(msg, "Entire CLI") {
+		t.Errorf("Message should contain 'Entire CLI', got:\n%s", msg)
 	}
 	if !strings.Contains(msg, "link this conversation to your next commit") {
 		t.Errorf("Message should contain 'link this conversation to your next commit', got:\n%s", msg)
@@ -416,7 +422,7 @@ func TestSessionStart_InformationalMessageNoConcurrentSessions(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	env.GitCheckoutNewBranch("feature/test")
-	env.InitTrace()
+	env.InitEntire()
 
 	// Start a single session (no other sessions)
 	session1 := env.NewSession()
@@ -448,8 +454,8 @@ func TestSessionStart_InformationalMessageNoConcurrentSessions(t *testing.T) {
 	t.Logf("Session start message:\n%s", msg)
 
 	// Verify base informational message is present
-	if !strings.Contains(msg, "Trace CLI") {
-		t.Errorf("Message should contain 'Trace CLI', got:\n%s", msg)
+	if !strings.Contains(msg, "Entire CLI") {
+		t.Errorf("Message should contain 'Entire CLI', got:\n%s", msg)
 	}
 	if !strings.Contains(msg, "link this conversation to your next commit") {
 		t.Errorf("Message should contain 'link this conversation to your next commit', got:\n%s", msg)
@@ -461,7 +467,7 @@ func TestSessionStart_InformationalMessageNoConcurrentSessions(t *testing.T) {
 	}
 }
 
-// createShadowBranchWithoutTrailer creates a shadow branch without an Trace-Session trailer.
+// createShadowBranchWithoutTrailer creates a shadow branch without an Entire-Session trailer.
 func createShadowBranchWithoutTrailer(t *testing.T, repoDir, branchName string) {
 	t.Helper()
 
@@ -480,7 +486,7 @@ func createShadowBranchWithoutTrailer(t *testing.T, repoDir, branchName string) 
 		t.Fatalf("Failed to get HEAD commit: %v", err)
 	}
 
-	// Create commit without Trace-Session trailer
+	// Create commit without Entire-Session trailer
 	commit := &object.Commit{
 		Author: object.Signature{
 			Name:  "Test User",

@@ -60,7 +60,6 @@ func (a *OpenCodeAgent) DetectPresence(ctx context.Context) (bool, error) {
 // ReadTranscript reads the transcript for a session.
 // The sessionRef is expected to be a path to the export JSON file.
 func (a *OpenCodeAgent) ReadTranscript(sessionRef string) ([]byte, error) {
-	// #nosec G304 -- sessionRef comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path from agent hook
 	if err != nil {
 		return nil, fmt.Errorf("failed to read opencode transcript: %w", err)
@@ -166,19 +165,19 @@ func (a *OpenCodeAgent) GetSessionID(input *agent.HookInput) string {
 	return input.SessionID
 }
 
-// GetSessionDir returns the directory where Trace stores OpenCode session transcripts.
+// GetSessionDir returns the directory where Entire stores OpenCode session transcripts.
 // Transcripts are ephemeral handoff files between the TS plugin and the Go hook handler.
 // Once checkpointed, the data lives on git refs and the file is disposable.
-// Stored in os.TempDir()/trace-opencode/<sanitized-path>/ to avoid squatting on
+// Stored in os.TempDir()/entire-opencode/<sanitized-path>/ to avoid squatting on
 // OpenCode's own directories (~/.opencode/ is project-level, not home-level).
 func (a *OpenCodeAgent) GetSessionDir(repoPath string) (string, error) {
 	// Check for test environment override
-	if override := os.Getenv("TRACE_TEST_OPENCODE_PROJECT_DIR"); override != "" {
+	if override := os.Getenv("ENTIRE_TEST_OPENCODE_PROJECT_DIR"); override != "" {
 		return override, nil
 	}
 
 	projectDir := SanitizePathForOpenCode(repoPath)
-	return filepath.Join(os.TempDir(), "trace-opencode", projectDir), nil
+	return filepath.Join(os.TempDir(), "entire-opencode", projectDir), nil
 }
 
 func (a *OpenCodeAgent) ResolveSessionFile(sessionDir, agentSessionID string) string {
@@ -248,7 +247,7 @@ func (a *OpenCodeAgent) importSessionIntoOpenCode(ctx context.Context, sessionID
 	}
 
 	// Write export JSON to a temp file for opencode import
-	tmpFile, err := os.CreateTemp("", "trace-opencode-export-*.json")
+	tmpFile, err := os.CreateTemp("", "entire-opencode-export-*.json")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}

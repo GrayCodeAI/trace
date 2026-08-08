@@ -34,21 +34,21 @@ type Hook struct {
 }
 
 // TestSetupClaudeHooks_AddsAllRequiredHooks is a smoke test verifying that
-// `trace enable --agent claude-code` adds all required hooks to the correct file.
+// `entire enable --agent claude-code` adds all required hooks to the correct file.
 // Detailed hook manipulation logic is tested in unit tests (setup_test.go).
 func TestSetupClaudeHooks_AddsAllRequiredHooks(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace() // Sets up .trace/settings.json
+	env.InitEntire() // Sets up .entire/settings.json
 
 	// Create initial commit (required for setup)
 	env.WriteFile("README.md", "# Test")
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 
-	// Run trace enable --agent claude-code (non-interactive)
-	output, err := env.RunCLIWithError("enable", "--agent", "claude-code")
+	// Run entire enable --agent claude-code (non-interactive)
+	output, err := env.RunCLIWithError("enable", "--agent", agentClaudeCode)
 	if err != nil {
 		t.Fatalf("enable claude-hooks command failed: %v\nOutput: %s", err, output)
 	}
@@ -66,27 +66,14 @@ func TestSetupClaudeHooks_AddsAllRequiredHooks(t *testing.T) {
 	if len(settings.Hooks.UserPromptSubmit) == 0 {
 		t.Error("UserPromptSubmit hook should exist")
 	}
-	if !hasHookWithMatcher(settings.Hooks.PreToolUse, "Task") {
-		t.Error("PreToolUse[Task] hook should exist")
+	if !hasHookWithMatcher(settings.Hooks.PreToolUse, "Agent") {
+		t.Error("PreToolUse[Agent] hook should exist")
 	}
-	if !hasHookWithMatcher(settings.Hooks.PostToolUse, "Task") {
-		t.Error("PostToolUse[Task] hook should exist")
+	if !hasHookWithMatcher(settings.Hooks.PostToolUse, "Agent") {
+		t.Error("PostToolUse[Agent] hook should exist")
 	}
-	if !hasHookWithMatcher(settings.Hooks.PostToolUse, "TodoWrite") {
-		t.Error("PostToolUse[TodoWrite] hook should exist")
-	}
-
-	searchAgentPath := filepath.Join(env.RepoDir, ".claude", "agents", "trace-search.md")
-	data, err := os.ReadFile(searchAgentPath)
-	if err != nil {
-		t.Fatalf("failed to read generated Claude search subagent: %v", err)
-	}
-	content := string(data)
-	if !strings.Contains(content, "TRACE-MANAGED SEARCH SUBAGENT") {
-		t.Error("Claude search subagent should be marked as Trace-managed")
-	}
-	if !strings.Contains(content, "trace search --json") {
-		t.Error("Claude search subagent should instruct use of `trace search --json`")
+	if !hasHookWithMatcher(settings.Hooks.PostToolUse, "TaskCreate|TaskUpdate") {
+		t.Error("PostToolUse[TaskCreate|TaskUpdate] hook should exist")
 	}
 }
 
@@ -97,7 +84,7 @@ func TestSetupClaudeHooks_PreservesExistingSettings(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace()
+	env.InitEntire()
 
 	env.WriteFile("README.md", "# Test")
 	env.GitAdd("README.md")
@@ -130,7 +117,7 @@ func TestSetupClaudeHooks_PreservesExistingSettings(t *testing.T) {
 	}
 
 	// Run enable claude-hooks
-	output, err := env.RunCLIWithError("enable", "--agent", "claude-code")
+	output, err := env.RunCLIWithError("enable", "--agent", agentClaudeCode)
 	if err != nil {
 		t.Fatalf("enable claude-hooks failed: %v\nOutput: %s", err, output)
 	}
@@ -146,7 +133,7 @@ func TestSetupClaudeHooks_PreservesExistingSettings(t *testing.T) {
 		t.Fatalf("failed to parse settings.json: %v", err)
 	}
 
-	if rawSettings["customSetting"] != "should-be-preserved" {
+	if rawSettings["customSetting"] != preservedSetting {
 		t.Error("customSetting should be preserved after enable claude-hooks")
 	}
 
@@ -158,36 +145,36 @@ func TestSetupClaudeHooks_PreservesExistingSettings(t *testing.T) {
 		t.Error("existing CustomTool hook should be preserved")
 	}
 
-	// User's Task hook should be preserved alongside our hook
+	// User's own Task hook should be preserved (enable never removes non-Entire hooks)
 	taskHooks := getAllHookCommands(settings.Hooks.PreToolUse, "Task")
 	if !containsCommand(taskHooks, "echo user-task-hook") {
 		t.Errorf("user's Task hook should be preserved, got: %v", taskHooks)
 	}
 
-	// Our hooks should also be added
-	if !hasHookWithMatcher(settings.Hooks.PostToolUse, "Task") {
-		t.Error("PostToolUse[Task] hook should be added")
+	// Our hooks should be added under the current subagent matcher
+	if !hasHookWithMatcher(settings.Hooks.PostToolUse, "Agent") {
+		t.Error("PostToolUse[Agent] hook should be added")
 	}
 }
 
-func TestSetupClaudeHooks_AgentAddForce_RewritesExistingTraceHooks(t *testing.T) {
+func TestSetupClaudeHooks_AgentAddForce_RewritesExistingEntireHooks(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace()
+	env.InitEntire()
 
 	env.WriteFile("README.md", "# Test")
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 
-	output, err := env.RunCLIWithError("agent", "add", "claude-code")
+	output, err := env.RunCLIWithError("agent", "add", agentClaudeCode)
 	if err != nil {
 		t.Fatalf("agent add claude-code command failed: %v\nOutput: %s", err, output)
 	}
 
 	writeStaleClaudeStopHook(t, env)
 
-	output, err = env.RunCLIWithError("agent", "add", "claude-code", "--force")
+	output, err = env.RunCLIWithError("agent", "add", agentClaudeCode, "--force")
 	if err != nil {
 		t.Fatalf("agent add --force claude-code command failed: %v\nOutput: %s", err, output)
 	}
@@ -195,24 +182,24 @@ func TestSetupClaudeHooks_AgentAddForce_RewritesExistingTraceHooks(t *testing.T)
 	assertClaudeStopHookRewritten(t, env)
 }
 
-func TestSetupClaudeHooks_EnableForceWithAgent_RewritesExistingTraceHooks(t *testing.T) {
+func TestSetupClaudeHooks_EnableForceWithAgent_RewritesExistingEntireHooks(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace()
+	env.InitEntire()
 
 	env.WriteFile("README.md", "# Test")
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 
-	output, err := env.RunCLIWithError("enable", "--agent", "claude-code")
+	output, err := env.RunCLIWithError("enable", "--agent", agentClaudeCode)
 	if err != nil {
 		t.Fatalf("enable claude-hooks command failed: %v\nOutput: %s", err, output)
 	}
 
 	writeStaleClaudeStopHook(t, env)
 
-	output, err = env.RunCLIWithError("enable", "--agent", "claude-code", "--force")
+	output, err = env.RunCLIWithError("enable", "--agent", agentClaudeCode, "--force")
 	if err != nil {
 		t.Fatalf("enable --agent claude-code --force failed: %v\nOutput: %s", err, output)
 	}
@@ -230,7 +217,7 @@ func writeStaleClaudeStopHook(t *testing.T, env *TestEnv) {
     "Stop": [
       {
         "matcher": "",
-        "hooks": [{"type": "command", "command": "trace hooks claude-code stop --stale"}]
+        "hooks": [{"type": "command", "command": "entire hooks claude-code stop --stale"}]
       }
     ]
   }
@@ -251,7 +238,7 @@ func assertClaudeStopHookRewritten(t *testing.T, env *TestEnv) {
 	if strings.Contains(content, "stop --stale") {
 		t.Fatalf("expected stale Claude hook to be removed, got: %s", content)
 	}
-	if !strings.Contains(content, "trace hooks claude-code stop") {
+	if !strings.Contains(content, "entire hooks claude-code stop") {
 		t.Fatalf("expected canonical Claude stop hook to be restored, got: %s", content)
 	}
 }

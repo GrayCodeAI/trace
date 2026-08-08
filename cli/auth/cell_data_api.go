@@ -204,11 +204,11 @@ type cellSubject struct {
 }
 
 // resolveCellSubject picks the jurisdiction-exchange subject for
-// JurisdictionToken (the `trace auth token --jurisdiction` scripting helper):
+// JurisdictionToken (the `entire auth token --jurisdiction` scripting helper):
 // ENTIRE_TOKEN when set (exclusive, fail-closed), otherwise the ACTIVE stored
 // login context.
 //
-// It deliberately uses the active context — the same login `trace auth token`
+// It deliberately uses the active context — the same login `entire auth token`
 // (no flag) prints a bearer for — rather than resolveStoredCellSubject's
 // data-host discovery. `--jurisdiction` mints a token for the caller's SELECTED
 // environment, so with (say) a partial.to context active it must mint a
@@ -237,7 +237,7 @@ func resolveActiveContextCellSubject(ctx context.Context, insecureHTTP bool) (ce
 		return cellSubject{}, err
 	}
 	if !ok {
-		return cellSubject{}, fmt.Errorf("not logged in (run 'trace login' first): %w", ErrNotLoggedIn)
+		return cellSubject{}, fmt.Errorf("not logged in (run 'entire login' first): %w", ErrNotLoggedIn)
 	}
 
 	loginJWT, err := refreshCellLoginJWT(ctx, c)
@@ -311,7 +311,7 @@ func refreshCellLoginJWT(ctx context.Context, c *contexts.Context) (string, erro
 	loginJWT, err := loginProvider(ctx)
 	if err != nil {
 		if errors.Is(err, ErrNotLoggedIn) {
-			return "", fmt.Errorf("not logged in (run 'trace login' first): %w", err)
+			return "", fmt.Errorf("not logged in (run 'entire login' first): %w", err)
 		}
 		// The provider already prefixes "refresh login token:"; return as-is to
 		// avoid a doubled prefix.
@@ -405,7 +405,7 @@ func resolveTargetCellBaseURL(ctx context.Context, target *CellTarget, dataOrigi
 	// The configured origin is kept verbatim when it isn't a BFF/apex fronting
 	// multiple cells — i.e. it's already a direct cell or a loopback dev host —
 	// EXCEPT when a jurisdiction is explicitly pinned (target.Jurisdiction, e.g.
-	// `trace api --jurisdiction eu`) against a non-loopback origin. A pinned
+	// `entire api --jurisdiction eu`) against a non-loopback origin. A pinned
 	// jurisdiction may name a DIFFERENT cell than the configured direct-cell
 	// origin, so dialing that origin verbatim would send an identity token minted
 	// for the pinned jurisdiction to the wrong cell; resolve the pinned

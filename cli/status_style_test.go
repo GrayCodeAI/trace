@@ -89,8 +89,8 @@ func TestSuccessBullet_NoColor(t *testing.T) {
 func TestFailureBullet_NoColor(t *testing.T) {
 	t.Parallel()
 	s := newStatusStyles(io.Discard)
-	got := s.failureBullet("No associated Trace checkpoint")
-	want := "✗ No associated Trace checkpoint\n"
+	got := s.failureBullet("No associated Entire checkpoint")
+	want := "✗ No associated Entire checkpoint\n"
 	if got != want {
 		t.Errorf("failureBullet no-color\n got: %q\nwant: %q", got, want)
 	}

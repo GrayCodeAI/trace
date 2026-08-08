@@ -107,13 +107,13 @@ func TestIsValidRunID(t *testing.T) {
 
 func TestConstants(t *testing.T) {
 	// Verify constant values are stable API
-	if ReviewSession != "TRACE_REVIEW_SESSION" {
-		t.Errorf("ReviewSession = %q, want TRACE_REVIEW_SESSION", ReviewSession)
+	if ReviewSession != "ENTIRE_REVIEW_SESSION" {
+		t.Errorf("ReviewSession = %q, want ENTIRE_REVIEW_SESSION", ReviewSession)
 	}
-	if InvestigateSession != "TRACE_INVESTIGATE_SESSION" {
-		t.Errorf("InvestigateSession = %q, want TRACE_INVESTIGATE_SESSION", InvestigateSession)
+	if InvestigateSession != "ENTIRE_INVESTIGATE_SESSION" {
+		t.Errorf("InvestigateSession = %q, want ENTIRE_INVESTIGATE_SESSION", InvestigateSession)
 	}
-	if InvestigateRunID != "TRACE_INVESTIGATE_RUN_ID" {
-		t.Errorf("InvestigateRunID = %q, want TRACE_INVESTIGATE_RUN_ID", InvestigateRunID)
+	if InvestigateRunID != "ENTIRE_INVESTIGATE_RUN_ID" {
+		t.Errorf("InvestigateRunID = %q, want ENTIRE_INVESTIGATE_RUN_ID", InvestigateRunID)
 	}
 }

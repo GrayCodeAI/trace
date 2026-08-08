@@ -388,7 +388,7 @@ func canAutoInstall() bool {
 
 // downloadsURL is the public page users visit when we can't offer an
 // auto-installable command on their platform.
-const downloadsURL = "https://github.com/entireio/cli/releases"
+const downloadsURL = "https://github.com/GrayCodeAI/trace/releases"
 
 // updateCommand returns the appropriate update instruction based on how the binary was installed.
 func updateCommand(currentVersion string) string {

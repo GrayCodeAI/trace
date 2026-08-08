@@ -127,63 +127,6 @@ func ExtractLastCompletedTodo(todosJSON []byte) string {
 	return lastCompleted
 }
 
-// ExtractInProgressTodo extracts the in-progress todo item from the TodoWrite
-// tool_input.todos array. Precedence:
-//  1. first item with status "in_progress" (the work currently being done)
-//  2. first pending item (next work - fallback)
-//  3. last completed item (final work just finished)
-//  4. first item with unknown status (edge case)
-//  5. empty string (no items)
-//
-// Returns empty string if no suitable item is found or JSON is invalid.
-func ExtractInProgressTodo(todosJSON []byte) string {
-	if len(todosJSON) == 0 {
-		return ""
-	}
-
-	var todos []todoItem
-	if err := json.Unmarshal(todosJSON, &todos); err != nil {
-		return ""
-	}
-
-	if len(todos) == 0 {
-		return ""
-	}
-
-	// Look for in_progress item first (case-sensitive match)
-	for _, todo := range todos {
-		if todo.Status == "in_progress" {
-			return todo.Content
-		}
-	}
-
-	// Fall back to first pending item
-	for _, todo := range todos {
-		if todo.Status == "pending" {
-			return todo.Content
-		}
-	}
-
-	// Fall back to last completed item (represents the work that was just finished)
-	var lastCompleted string
-	for _, todo := range todos {
-		if todo.Status == "completed" {
-			lastCompleted = todo.Content
-		}
-	}
-	if lastCompleted != "" {
-		return lastCompleted
-	}
-
-	// If no in_progress, pending, or completed items, but there are items with
-	// unrecognized status, return first item's content as a fallback (handles edge cases).
-	if todos[0].Content != "" {
-		return todos[0].Content
-	}
-
-	return ""
-}
-
 // CountTodos returns the number of todo items in the JSON array.
 // Returns 0 if the JSON is invalid or empty.
 func CountTodos(todosJSON []byte) int {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/testutil"
 	"github.com/go-git/go-git/v6"
 )
@@ -124,10 +125,28 @@ func TestFetchURL_EdgeCases(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name:         "unsupported origin protocol without token routes to provider ssh",
+			name:         "unsupported origin protocol without token routes to provider checkpoint url (ssh default)",
 			addOrigin:    true,
 			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
 			wantURL:      "git@github.com:acme/checkpoints.git",
+		},
+		{
+			name:         "entire:// origin without token derives mirror checkpoint url on same cluster",
+			originURL:    "entire://app.entire.io/gh/acme/app",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:      "entire://app.entire.io/gh/acme/checkpoints",
+		},
+		{
+			name:         "entire:// origin with forge not matching provider routes to provider checkpoint url (ssh default)",
+			originURL:    "entire://app.entire.io/et/acme/app",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:      "git@github.com:acme/checkpoints.git",
+		},
+		{
+			name:         "non-derivable origin with unknown provider falls back to origin",
+			originURL:    "entire://app.entire.io/gh/acme/app",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"bitbucket","repo":"acme/checkpoints"}}}`,
+			wantURL:      "",
 		},
 		{
 			name:         "unsupported origin protocol with token returns https checkpoint url",
@@ -201,17 +220,20 @@ func TestFetchURL_EdgeCases(t *testing.T) {
 	}
 }
 
+//nolint:maintidx // table-driven: the score tracks the size of the case table (data), not branching logic; splitting the table would scatter closely related URL-resolution cases
 func TestPushURL(t *testing.T) {
 	tests := []struct {
-		name         string
-		originURL    string
-		pushRemote   string
-		pushURL      string
-		settingsJSON string
-		token        string
-		wantURL      string
-		wantEnabled  bool
-		wantErr      bool
+		name              string
+		originURL         string
+		originPushURL     string
+		pushRemote        string
+		pushURL           string
+		settingsJSON      string
+		settingsLocalJSON string
+		token             string
+		wantURL           string
+		wantEnabled       bool
+		wantErr           bool
 	}{
 		{
 			name:         "no checkpoint remote falls back to origin https url and reports disabled",
@@ -299,6 +321,55 @@ func TestPushURL(t *testing.T) {
 			wantEnabled:  false,
 		},
 		{
+			name:         "entire:// origin derives mirror checkpoint url on same cluster",
+			originURL:    "entire://app.entire.io/gh/acme/app",
+			pushRemote:   "origin",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:      "entire://app.entire.io/gh/acme/checkpoints",
+			wantEnabled:  true,
+		},
+		{
+			name:         "entire:// origin with forge not matching provider routes to provider checkpoint url (ssh default)",
+			originURL:    "entire://app.entire.io/et/acme/app",
+			pushRemote:   "origin",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:      "git@github.com:acme/checkpoints.git",
+			wantEnabled:  true,
+		},
+		{
+			name:         "entire:// origin with different owner disables checkpoint push url",
+			originURL:    "entire://app.entire.io/gh/fork/app",
+			pushRemote:   "origin",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:      "entire://app.entire.io/gh/fork/app",
+			wantEnabled:  false,
+		},
+		{
+			name:         "file:// origin routes to provider checkpoint url (ssh default)",
+			originURL:    "file:///acme/app",
+			pushRemote:   "origin",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:      "git@github.com:acme/checkpoints.git",
+			wantEnabled:  true,
+		},
+		{
+			name:         "non-derivable origin with unknown provider falls back to origin",
+			originURL:    "entire://app.entire.io/gh/acme/app",
+			pushRemote:   "origin",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"bitbucket","repo":"acme/checkpoints"}}}`,
+			wantURL:      "entire://app.entire.io/gh/acme/app",
+			wantEnabled:  false,
+		},
+		{
+			name:         "token with entire:// origin routes to provider host not origin host",
+			originURL:    "entire://app.entire.io/gh/acme/app",
+			pushRemote:   "origin",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			token:        "push-token",
+			wantURL:      "https://github.com/acme/checkpoints.git",
+			wantEnabled:  true,
+		},
+		{
 			name:         "missing push remote falls back to origin when checkpoint remote configured",
 			originURL:    "https://github.com/acme/app.git",
 			pushRemote:   "upstream",
@@ -314,6 +385,64 @@ func TestPushURL(t *testing.T) {
 			wantURL:      "https://github.com/acme/app.git",
 			wantEnabled:  false,
 		},
+		{
+			// Ownership follows origin, so pushing to a differently-owned remote
+			// (a backup, a colleague's fork) no longer disables our own
+			// checkpoint_remote — which previously sent the checkpoints to that
+			// remote instead of the configured checkpoint repo.
+			name:         "differently owned push remote still uses our checkpoint remote when origin owner matches",
+			originURL:    "https://github.com/acme/app.git",
+			pushRemote:   "backup",
+			pushURL:      "https://github.com/otherorg/backup.git",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:      "https://github.com/acme/checkpoints.git",
+			wantEnabled:  true,
+		},
+		{
+			// The escape hatch for a checkpoint repo owned by a different account
+			// or org than origin: settings.local.json is gitignored and per-clone,
+			// so a setting there cannot have been inherited by forking.
+			name:              "checkpoint remote from settings.local.json is honored despite mismatched origin owner",
+			originURL:         "https://github.com/fork/app.git",
+			pushRemote:        "origin",
+			settingsJSON:      `{"enabled":true}`,
+			settingsLocalJSON: `{"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:           "https://github.com/acme/checkpoints.git",
+			wantEnabled:       true,
+		},
+		{
+			// Regression: ownership is decided by origin, but a repo can have no
+			// remote named origin at all. The push remote is then the only identity
+			// it has, and a matching owner must keep the configured checkpoint
+			// remote rather than silently falling back.
+			name:         "no origin remote falls back to the push remote owner and keeps the checkpoint remote",
+			pushRemote:   "upstream",
+			pushURL:      "https://github.com/acme/app.git",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:      "https://github.com/acme/checkpoints.git",
+			wantEnabled:  true,
+		},
+		{
+			// The same topology with a mismatched owner still reads as inherited.
+			name:         "no origin remote with a differently owned push remote stays disabled",
+			pushRemote:   "upstream",
+			pushURL:      "https://github.com/fork/app.git",
+			settingsJSON: `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:      "https://github.com/fork/app.git",
+			wantEnabled:  false,
+		},
+		{
+			// Transport comes from where the push actually goes: a remote with a
+			// pushurl pushes there, not to its (fetch) url. Reading the plain url
+			// would derive https here.
+			name:          "checkpoint url derives transport from the push url, not the fetch url",
+			originURL:     "https://github.com/acme/app.git",
+			originPushURL: "git@github.com:acme/app.git",
+			pushRemote:    "origin",
+			settingsJSON:  `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"acme/checkpoints"}}}`,
+			wantURL:       "git@github.com:acme/checkpoints.git",
+			wantEnabled:   true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -323,10 +452,16 @@ func TestPushURL(t *testing.T) {
 			if tt.originURL != "" {
 				runGit(t, repoDir, "remote", "add", "origin", tt.originURL)
 			}
+			if tt.originPushURL != "" {
+				runGit(t, repoDir, "remote", "set-url", "--push", "origin", tt.originPushURL)
+			}
 			if tt.pushURL != "" {
 				runGit(t, repoDir, "remote", "add", tt.pushRemote, tt.pushURL)
 			}
 			writeSettings(t, repoDir, tt.settingsJSON)
+			if tt.settingsLocalJSON != "" {
+				writeLocalSettings(t, repoDir, tt.settingsLocalJSON)
+			}
 			t.Chdir(repoDir)
 			if tt.token != "" {
 				t.Setenv(CheckpointTokenEnvVar, tt.token)
@@ -339,6 +474,77 @@ func TestPushURL(t *testing.T) {
 				}
 				return
 			}
+			if err != nil {
+				t.Fatalf("PushURL() error = %v", err)
+			}
+			if gotEnabled != tt.wantEnabled {
+				t.Fatalf("PushURL() enabled = %v, want %v", gotEnabled, tt.wantEnabled)
+			}
+			if gotURL != tt.wantURL {
+				t.Fatalf("PushURL() URL = %q, want %q", gotURL, tt.wantURL)
+			}
+		})
+	}
+}
+
+// TestPushURL_EntireOriginDerivesMirrorURL reproduces the real-world setup:
+// origin migrated to an entire:// URL (forge-prefixed /gh/owner/repo) with a
+// github checkpoint_remote. Checkpoints must follow origin through the
+// push-through mirror on the same cluster — even when leftover direct github
+// remotes (e.g. URL-named promisor entries from filtered fetches) exist. The
+// exception is a checkpoint token, which is an HTTPS credential for the
+// provider host and therefore forces direct provider HTTPS.
+func TestPushURL_EntireOriginDerivesMirrorURL(t *testing.T) {
+	const entireOrigin = "entire://aws-ap-southeast-2.entire.io/gh/entireio/cli"
+	const mirrorCheckpointURL = "entire://aws-ap-southeast-2.entire.io/gh/entireio/cli-checkpoints"
+	tests := []struct {
+		name        string
+		githubURL   string
+		token       string
+		wantURL     string
+		wantEnabled bool
+	}{
+		{
+			name:        "existing ssh github remote does not divert checkpoints off the mirror",
+			githubURL:   "git@github.com:entireio/cli.git",
+			wantURL:     mirrorCheckpointURL,
+			wantEnabled: true,
+		},
+		{
+			name:        "existing https github remote does not divert checkpoints off the mirror",
+			githubURL:   "https://github.com/GrayCodeAI/trace.git",
+			wantURL:     mirrorCheckpointURL,
+			wantEnabled: true,
+		},
+		{
+			name:        "entire origin alone derives mirror checkpoint url",
+			wantURL:     mirrorCheckpointURL,
+			wantEnabled: true,
+		},
+		{
+			name:        "token forces https on the provider host",
+			githubURL:   "git@github.com:entireio/cli.git",
+			token:       "ci-token",
+			wantURL:     "https://github.com/entireio/cli-checkpoints.git",
+			wantEnabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoDir := t.TempDir()
+			testutil.InitRepo(t, repoDir)
+			runGit(t, repoDir, "remote", "add", "origin", entireOrigin)
+			if tt.githubURL != "" {
+				runGit(t, repoDir, "remote", "add", "github", tt.githubURL)
+			}
+			writeSettings(t, repoDir, `{"enabled":true,"strategy_options":{"checkpoint_remote":{"provider":"github","repo":"entireio/cli-checkpoints"}}}`)
+			t.Chdir(repoDir)
+			if tt.token != "" {
+				t.Setenv(CheckpointTokenEnvVar, tt.token)
+			}
+
+			gotURL, gotEnabled, err := PushURL(context.Background(), "origin")
 			if err != nil {
 				t.Fatalf("PushURL() error = %v", err)
 			}
@@ -378,12 +584,26 @@ func TestConfigured_MalformedSettingsTreatedAsNotConfigured(t *testing.T) {
 
 func writeSettings(t *testing.T, repoDir, content string) {
 	t.Helper()
-	traceDir := filepath.Join(repoDir, ".trace")
-	if err := os.MkdirAll(traceDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll(%s) error = %v", traceDir, err)
+	entireDir := filepath.Join(repoDir, ".entire")
+	if err := os.MkdirAll(entireDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) error = %v", entireDir, err)
 	}
-	if err := os.WriteFile(filepath.Join(traceDir, "settings.json"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(entireDir, "settings.json"), []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile(settings.json) error = %v", err)
+	}
+}
+
+// writeLocalSettings writes .entire/settings.local.json — the gitignored
+// per-developer override, which is what marks a checkpoint_remote as this
+// developer's own rather than inherited from an upstream project.
+func writeLocalSettings(t *testing.T, repoDir, content string) {
+	t.Helper()
+	entireDir := filepath.Join(repoDir, ".entire")
+	if err := os.MkdirAll(entireDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) error = %v", entireDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(entireDir, "settings.local.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(settings.local.json) error = %v", err)
 	}
 }
 
@@ -415,4 +635,117 @@ func initBareRepo(t *testing.T, repoDir string) {
 
 func fileURL(path string) string {
 	return "file://" + filepath.ToSlash(path)
+}
+
+// TestDeriveCheckpointURLFromInfo covers the push-remote to checkpoint-remote
+// URL mapping (previously exercised cross-package via the removed
+// DeriveCheckpointURL wrapper).
+func TestDeriveCheckpointURLFromInfo(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		pushRemoteURL  string
+		checkpointRepo string
+		want           string
+		wantParseErr   bool
+		wantDeriveErr  bool
+	}{
+		{
+			name:           "SSH push remote",
+			pushRemoteURL:  "git@github.com:org/main-repo.git",
+			checkpointRepo: "org/checkpoints",
+			want:           "git@github.com:org/checkpoints.git",
+		},
+		{
+			name:           "HTTPS push remote",
+			pushRemoteURL:  "https://github.com/org/main-repo.git",
+			checkpointRepo: "org/checkpoints",
+			want:           "https://github.com/org/checkpoints.git",
+		},
+		{
+			name:           "SSH protocol push remote",
+			pushRemoteURL:  "ssh://git@github.com/org/main-repo.git",
+			checkpointRepo: "org/checkpoints",
+			want:           "git@github.com:org/checkpoints.git",
+		},
+		{
+			name:           "different host",
+			pushRemoteURL:  "git@github.example.com:org/main-repo.git",
+			checkpointRepo: "org/checkpoints",
+			want:           "git@github.example.com:org/checkpoints.git",
+		},
+		{
+			name:           "HTTPS with non-standard port",
+			pushRemoteURL:  "https://git.example.com:8443/org/main-repo.git",
+			checkpointRepo: "org/checkpoints",
+			want:           "https://git.example.com:8443/org/checkpoints.git",
+		},
+		{
+			name:           "SSH protocol with non-standard port",
+			pushRemoteURL:  "ssh://git@git.example.com:2222/org/main-repo.git",
+			checkpointRepo: "org/checkpoints",
+			want:           "ssh://git@git.example.com:2222/org/checkpoints.git",
+		},
+		{
+			name:           "entire push remote keeps cluster and forge",
+			pushRemoteURL:  "entire://aws-ap-southeast-2.entire.io/gh/org/main-repo",
+			checkpointRepo: "org/checkpoints",
+			want:           "entire://aws-ap-southeast-2.entire.io/gh/org/checkpoints",
+		},
+		{
+			name:           "entire push remote with non-standard port",
+			pushRemoteURL:  "entire://cluster.example.com:8443/gh/org/main-repo",
+			checkpointRepo: "org/checkpoints",
+			want:           "entire://cluster.example.com:8443/gh/org/checkpoints",
+		},
+		{
+			name:           "entire push remote with forge not matching provider",
+			pushRemoteURL:  "entire://aws-ap-southeast-2.entire.io/et/org/main-repo",
+			checkpointRepo: "org/checkpoints",
+			wantDeriveErr:  true,
+		},
+		{
+			name:          "invalid push remote",
+			pushRemoteURL: "not-a-url",
+			wantParseErr:  true,
+		},
+		{
+			name:           "unsupported protocol",
+			pushRemoteURL:  "file:///tmp/repo.git",
+			checkpointRepo: "org/checkpoints",
+			wantDeriveErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			info, err := ParseURL(tt.pushRemoteURL)
+			if tt.wantParseErr {
+				if err == nil {
+					t.Fatalf("ParseURL(%q) = nil error, want parse error", tt.pushRemoteURL)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseURL(%q) error = %v", tt.pushRemoteURL, err)
+			}
+
+			config := &settings.CheckpointRemoteConfig{Provider: "github", Repo: tt.checkpointRepo}
+			got, err := deriveCheckpointURLFromInfo(info, config)
+			if tt.wantDeriveErr {
+				if err == nil {
+					t.Fatalf("deriveCheckpointURLFromInfo(%q) = %q, nil error; want error", tt.pushRemoteURL, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("deriveCheckpointURLFromInfo(%q) error = %v", tt.pushRemoteURL, err)
+			}
+			if got != tt.want {
+				t.Errorf("deriveCheckpointURLFromInfo(%q) = %q, want %q", tt.pushRemoteURL, got, tt.want)
+			}
+		})
+	}
 }

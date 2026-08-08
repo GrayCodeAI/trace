@@ -16,19 +16,19 @@ import (
 type FactorySettings = factoryaidroid.FactorySettings
 
 // TestSetupFactoryAIHooks_AddsAllRequiredHooks is a smoke test verifying that
-// `trace enable --agent factoryai-droid` adds all required hooks to the correct file.
+// `entire enable --agent factoryai-droid` adds all required hooks to the correct file.
 func TestSetupFactoryAIHooks_AddsAllRequiredHooks(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace() // Sets up .trace/settings.json
+	env.InitEntire() // Sets up .entire/settings.json
 
 	// Create initial commit (required for setup)
 	env.WriteFile("README.md", "# Test")
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 
-	// Run trace enable --agent factoryai-droid (non-interactive)
+	// Run entire enable --agent factoryai-droid (non-interactive)
 	output, err := env.RunCLIWithError("enable", "--agent", "factoryai-droid")
 	if err != nil {
 		t.Fatalf("enable factoryai-droid command failed: %v\nOutput: %s", err, output)
@@ -67,8 +67,8 @@ func TestSetupFactoryAIHooks_AddsAllRequiredHooks(t *testing.T) {
 		t.Fatalf("failed to read settings.json: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "Read(./.trace/metadata/**)") {
-		t.Error("settings.json should contain permissions.deny rule for .trace/metadata/**")
+	if !strings.Contains(content, "Read(./.entire/metadata/**)") {
+		t.Error("settings.json should contain permissions.deny rule for .entire/metadata/**")
 	}
 }
 
@@ -78,7 +78,7 @@ func TestSetupFactoryAIHooks_PreservesExistingSettings(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace()
+	env.InitEntire()
 
 	env.WriteFile("README.md", "# Test")
 	env.GitAdd("README.md")
@@ -123,7 +123,7 @@ func TestSetupFactoryAIHooks_PreservesExistingSettings(t *testing.T) {
 		t.Fatalf("failed to parse settings.json: %v", err)
 	}
 
-	if rawSettings["customSetting"] != "should-be-preserved" {
+	if rawSettings["customSetting"] != preservedSetting {
 		t.Error("customSetting should be preserved after enable factoryai-droid")
 	}
 

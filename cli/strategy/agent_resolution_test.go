@@ -8,7 +8,7 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/agent"
 
-	// Register agents so agent.ForTranscriptPath can resolve them.
+	// Register agents so AgentForTranscriptPath can resolve them.
 	_ "github.com/GrayCodeAI/trace/cli/agent/claudecode"
 	_ "github.com/GrayCodeAI/trace/cli/agent/cursor"
 
@@ -21,7 +21,7 @@ import (
 func withCursorSessionDir(t *testing.T) string {
 	t.Helper()
 	sessionDir := filepath.Join(t.TempDir(), "agent-transcripts")
-	t.Setenv("TRACE_TEST_CURSOR_PROJECT_DIR", sessionDir)
+	t.Setenv("ENTIRE_TEST_CURSOR_PROJECT_DIR", sessionDir)
 	return filepath.Join(sessionDir, "abc-123.jsonl")
 }
 
@@ -29,7 +29,7 @@ func withCursorSessionDir(t *testing.T) string {
 func withClaudeSessionDir(t *testing.T) string {
 	t.Helper()
 	sessionDir := filepath.Join(t.TempDir(), "claude-projects")
-	t.Setenv("TRACE_TEST_CLAUDE_PROJECT_DIR", sessionDir)
+	t.Setenv("ENTIRE_TEST_CLAUDE_PROJECT_DIR", sessionDir)
 	return filepath.Join(sessionDir, "abc-123.jsonl")
 }
 

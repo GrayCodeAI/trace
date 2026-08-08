@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,12 +234,26 @@ func TestState_IsStale(t *testing.T) {
 		}
 		assert.False(t, state.IsStale())
 	})
+
+	t.Run("imported_is_never_stale", func(t *testing.T) {
+		t.Parallel()
+		// Imported sessions carry historical timestamps (always old) but must
+		// never be auto-purged, or they'd vanish from `session list` on read.
+		old := time.Now().Add(-30 * 24 * time.Hour)
+		imported := &State{Kind: KindImported, StartedAt: old, LastInteractionTime: &old}
+		assert.False(t, imported.IsStale(), "imported session should never be stale")
+
+		// Control: a non-imported session of the same age IS stale (guards
+		// against an over-broad exemption).
+		normal := &State{StartedAt: old, LastInteractionTime: &old}
+		assert.True(t, normal.IsStale())
+	})
 }
 
 func TestStateStore_Load_DeletesStaleSession(t *testing.T) {
 	t.Parallel()
 
-	stateDir := filepath.Join(t.TempDir(), "trace-sessions")
+	stateDir := filepath.Join(t.TempDir(), "entire-sessions")
 	require.NoError(t, os.MkdirAll(stateDir, 0o750))
 	store := NewStateStoreWithDir(stateDir)
 	ctx := context.Background()
@@ -284,7 +299,7 @@ func TestStateStore_Load_DeletesStaleSession(t *testing.T) {
 func TestStateStore_Load_DeletesStaleSession_NilLastInteraction(t *testing.T) {
 	t.Parallel()
 
-	stateDir := filepath.Join(t.TempDir(), "trace-sessions")
+	stateDir := filepath.Join(t.TempDir(), "entire-sessions")
 	require.NoError(t, os.MkdirAll(stateDir, 0o750))
 	store := NewStateStoreWithDir(stateDir)
 	ctx := context.Background()
@@ -314,7 +329,7 @@ func TestStateStore_Load_DeletesStaleSession_NilLastInteraction(t *testing.T) {
 func TestStateStore_Clear_RemovesAllSessionFiles(t *testing.T) {
 	t.Parallel()
 
-	stateDir := filepath.Join(t.TempDir(), "trace-sessions")
+	stateDir := filepath.Join(t.TempDir(), "entire-sessions")
 	require.NoError(t, os.MkdirAll(stateDir, 0o750))
 	store := NewStateStoreWithDir(stateDir)
 	ctx := context.Background()
@@ -341,7 +356,7 @@ func TestStateStore_Clear_RemovesAllSessionFiles(t *testing.T) {
 func TestStateStore_Clear_RemovesOrphanedHintFile(t *testing.T) {
 	t.Parallel()
 
-	stateDir := filepath.Join(t.TempDir(), "trace-sessions")
+	stateDir := filepath.Join(t.TempDir(), "entire-sessions")
 	require.NoError(t, os.MkdirAll(stateDir, 0o750))
 	store := NewStateStoreWithDir(stateDir)
 	ctx := context.Background()
@@ -361,7 +376,7 @@ func TestStateStore_Clear_RemovesOrphanedHintFile(t *testing.T) {
 func TestStateStore_List_DeletesStaleSession(t *testing.T) {
 	t.Parallel()
 
-	stateDir := filepath.Join(t.TempDir(), "trace-sessions")
+	stateDir := filepath.Join(t.TempDir(), "entire-sessions")
 	require.NoError(t, os.MkdirAll(stateDir, 0o750))
 	store := NewStateStoreWithDir(stateDir)
 	ctx := context.Background()
@@ -403,7 +418,7 @@ func TestStateStore_Load_TraversalResistant(t *testing.T) {
 	t.Parallel()
 
 	// Create the state directory and a "secret" file outside it
-	stateDir := filepath.Join(t.TempDir(), "trace-sessions")
+	stateDir := filepath.Join(t.TempDir(), "entire-sessions")
 	require.NoError(t, os.MkdirAll(stateDir, 0o750))
 
 	outsideDir := filepath.Dir(stateDir)
@@ -420,7 +435,7 @@ func TestStateStore_Load_TraversalResistant(t *testing.T) {
 func TestStateStore_Save_UsesOsRoot(t *testing.T) {
 	t.Parallel()
 
-	stateDir := filepath.Join(t.TempDir(), "trace-sessions")
+	stateDir := filepath.Join(t.TempDir(), "entire-sessions")
 	store := NewStateStoreWithDir(stateDir)
 	ctx := context.Background()
 
@@ -442,7 +457,7 @@ func TestStateStore_Load_NonexistentDir(t *testing.T) {
 	t.Parallel()
 
 	// When the state directory doesn't exist, Load should return (nil, nil)
-	store := NewStateStoreWithDir(filepath.Join(t.TempDir(), "nonexistent", "trace-sessions"))
+	store := NewStateStoreWithDir(filepath.Join(t.TempDir(), "nonexistent", "entire-sessions"))
 	state, err := store.Load(context.Background(), "some-session")
 	require.NoError(t, err)
 	assert.Nil(t, state)
@@ -501,7 +516,7 @@ func TestStateStore_SaveLoadClear_SymlinkedDir(t *testing.T) {
 func TestStateStore_List_EmptyDir(t *testing.T) {
 	t.Parallel()
 
-	stateDir := filepath.Join(t.TempDir(), "trace-sessions")
+	stateDir := filepath.Join(t.TempDir(), "entire-sessions")
 	require.NoError(t, os.MkdirAll(stateDir, 0o750))
 	store := NewStateStoreWithDir(stateDir)
 
@@ -619,4 +634,120 @@ func TestGetGitCommonDir_ErrorOutsideRepo(t *testing.T) {
 
 	_, err := getGitCommonDir(context.Background())
 	assert.Error(t, err)
+}
+
+func TestState_KindRoundTrip(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	s := State{
+		SessionID:    "2026-04-20-uuid",
+		BaseCommit:   "abc",
+		StartedAt:    now,
+		Kind:         KindAgentReview,
+		ReviewSkills: []string{"/review-pr"},
+	}
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got State
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != KindAgentReview {
+		t.Errorf("Kind = %q", got.Kind)
+	}
+	if len(got.ReviewSkills) != 1 || got.ReviewSkills[0] != "/review-pr" {
+		t.Errorf("ReviewSkills = %v", got.ReviewSkills)
+	}
+}
+
+// TestKind_IsInvestigate pins the umbrella-flag classifier for investigate
+// kinds. Mirrors the pattern used for IsReview: a session's Kind is asked
+// "do you count as an investigation?" without callers needing to know the
+// specific Kind variant.
+func TestKind_IsInvestigate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		k    Kind
+		want bool
+	}{
+		{"investigate", KindAgentInvestigate, true},
+		{"review_is_not_investigate", KindAgentReview, false},
+		{"empty", Kind(""), false},
+		{"unknown", Kind("something_else"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.k.IsInvestigate(); got != tc.want {
+				t.Errorf("Kind(%q).IsInvestigate() = %v, want %v", tc.k, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestState_InvestigateRoundTrip pins the JSON wire format for the
+// investigate fields on State so a future tag rename or migration can't
+// silently drop persisted fields.
+func TestState_InvestigateRoundTrip(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	s := State{
+		SessionID:        "2026-04-20-uuid",
+		BaseCommit:       "abc",
+		StartedAt:        now,
+		Kind:             KindAgentInvestigate,
+		InvestigateRunID: "abcdef012345",
+		InvestigateTopic: "Why is checkout flaky?",
+	}
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Inspect raw JSON to pin the on-disk keys.
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := raw["kind"].(string); !ok || got != "agent_investigate" {
+		t.Errorf("kind = %v, want agent_investigate", raw["kind"])
+	}
+	if got, ok := raw["investigate_run_id"].(string); !ok || got != "abcdef012345" {
+		t.Errorf("investigate_run_id = %v", raw["investigate_run_id"])
+	}
+	if got, ok := raw["investigate_topic"].(string); !ok || got != "Why is checkout flaky?" {
+		t.Errorf("investigate_topic = %v", raw["investigate_topic"])
+	}
+
+	// Round-trip back into a State and verify field values survive.
+	var got State
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != KindAgentInvestigate {
+		t.Errorf("Kind = %q", got.Kind)
+	}
+	if got.InvestigateRunID != "abcdef012345" {
+		t.Errorf("InvestigateRunID = %q", got.InvestigateRunID)
+	}
+	if got.InvestigateTopic != "Why is checkout flaky?" {
+		t.Errorf("InvestigateTopic = %q", got.InvestigateTopic)
+	}
+
+	// Zero-value: omitempty must keep the keys out of marshalled output for a
+	// non-investigate session.
+	zero := State{SessionID: "x", BaseCommit: "y", StartedAt: now}
+	zb, err := json.Marshal(zero)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zs := string(zb)
+	for _, key := range []string{"investigate_run_id", "investigate_topic"} {
+		if strings.Contains(zs, `"`+key+`"`) {
+			t.Errorf("expected zero-value State to omit %q, got %s", key, zs)
+		}
+	}
 }

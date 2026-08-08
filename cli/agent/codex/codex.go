@@ -76,7 +76,7 @@ func resolveCodexHome() (string, error) {
 // GetSessionDir returns the directory where Codex stores session transcripts.
 // Codex stores transcripts under CODEX_HOME/sessions/YYYY/MM/DD/.
 func (c *CodexAgent) GetSessionDir(_ string) (string, error) {
-	if override := os.Getenv("TRACE_TEST_CODEX_SESSION_DIR"); override != "" {
+	if override := os.Getenv("ENTIRE_TEST_CODEX_SESSION_DIR"); override != "" {
 		return override, nil
 	}
 	codexHome, err := resolveCodexHome()
@@ -175,7 +175,7 @@ func (c *CodexAgent) WriteSession(_ context.Context, session *agent.AgentSession
 		return errors.New("session has no native data to write")
 	}
 
-	dataToWrite := sanitizeRestoredTranscript(session.NativeData)
+	dataToWrite := SanitizePortableTranscript(session.NativeData)
 	if err := os.WriteFile(session.SessionRef, dataToWrite, 0o600); err != nil {
 		return fmt.Errorf("failed to write transcript: %w", err)
 	}
@@ -190,7 +190,6 @@ func (c *CodexAgent) FormatResumeCommand(sessionID string) string {
 
 // ReadTranscript reads the raw JSONL transcript bytes for a session.
 func (c *CodexAgent) ReadTranscript(sessionRef string) ([]byte, error) {
-	// #nosec G304 -- path comes from agent hook input (trusted lifecycle payload), not remote/untrusted input
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path comes from agent hook input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read transcript: %w", err)
@@ -224,6 +223,23 @@ func restoredRolloutPath(codexHome, agentSessionID string, startTime time.Time) 
 	return filepath.Join(datePath, filename)
 }
 
+// LaunchCmd builds an exec.Cmd for `codex "<initialPrompt>"`. Stdio is wired
+// to the caller's TTY so the agent runs foreground and the user interacts
+// normally. The call site is expected to Run() and wait. Hooks inherit the
+// parent environment.
+func (c *CodexAgent) LaunchCmd(ctx context.Context, initialPrompt string) (*exec.Cmd, error) {
+	bin, err := exec.LookPath("codex")
+	if err != nil {
+		return nil, fmt.Errorf("codex binary not on PATH: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, bin, initialPrompt)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+	return cmd, nil
+}
+
 func findRolloutBySessionID(codexHome, agentSessionID string) string {
 	if codexHome == "" || validation.ValidateAgentSessionID(agentSessionID) != nil {
 		return ""
@@ -246,21 +262,4 @@ func findRolloutBySessionID(codexHome, agentSessionID string) string {
 	}
 
 	return ""
-}
-
-// LaunchCmd builds an exec.Cmd for `codex "<initialPrompt>"`. Stdio is wired
-// to the caller's TTY so the agent runs foreground and the user interacts
-// normally. The call site is expected to Run() and wait. Hooks inherit the
-// parent environment.
-func (c *CodexAgent) LaunchCmd(ctx context.Context, initialPrompt string) (*exec.Cmd, error) {
-	bin, err := exec.LookPath("codex")
-	if err != nil {
-		return nil, fmt.Errorf("codex binary not on PATH: %w", err)
-	}
-	cmd := exec.CommandContext(ctx, bin, initialPrompt) // #nosec G204 -- bin is resolved via exec.LookPath("codex"); initialPrompt is passed as a single argument, not shell-interpreted
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = os.Environ()
-	return cmd, nil
 }

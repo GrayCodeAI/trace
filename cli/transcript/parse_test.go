@@ -348,7 +348,7 @@ func TestParseFromFileAtLine_LineExceedsScannerBufferWithOffset(t *testing.T) {
 	}
 }
 
-func TestParseFromFileAtLine_TraceFile(t *testing.T) {
+func TestParseFromFileAtLine_EntireFile(t *testing.T) {
 	t.Parallel()
 
 	content := `{"type":"user","uuid":"user-1","message":{"content":"Hello"}}

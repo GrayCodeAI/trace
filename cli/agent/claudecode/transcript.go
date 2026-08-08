@@ -9,6 +9,7 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/transcript"
+	"github.com/GrayCodeAI/trace/cli/validation"
 )
 
 // TranscriptLine is an alias to the shared transcript.Line type.
@@ -40,7 +41,7 @@ func ExtractModifiedFiles(lines []TranscriptLine) []string {
 	var files []string
 
 	for _, line := range lines {
-		if line.Type != "assistant" {
+		if line.Type != envelopeTypeAssistant {
 			continue
 		}
 
@@ -147,7 +148,7 @@ func CalculateTokenUsage(transcript []TranscriptLine) *agent.TokenUsage {
 	usageByMessageID := make(map[string]messageUsage)
 
 	for _, line := range transcript {
-		if line.Type != "assistant" {
+		if line.Type != envelopeTypeAssistant {
 			continue
 		}
 
@@ -254,8 +255,11 @@ func ExtractSpawnedAgentIDs(transcript []TranscriptLine) map[string]string {
 				}
 			}
 
-			// Look for agentId in the text
-			if agentID := extractAgentIDFromText(textContent); agentID != "" {
+			// Look for agentId in the text. Drop any ID that isn't path-safe:
+			// callers build agent-<id>.jsonl from it and read that file, so this
+			// is the choke point that keeps the path inside subagentsDir,
+			// independent of extractAgentIDFromText's character handling.
+			if agentID := extractAgentIDFromText(textContent); agentID != "" && validation.ValidateAgentID(agentID) == nil {
 				agentIDs[agentID] = block.ToolUseID
 			}
 		}
@@ -290,6 +294,92 @@ func extractAgentIDFromText(text string) string {
 // CalculateTotalTokenUsage calculates token usage for a turn, including subagents.
 // It parses the main transcript bytes from startLine, extracts spawned agent IDs,
 // and calculates their token usage from transcript files in subagentsDir.
+func (c *ClaudeCodeAgent) ExtractSkillEvents(transcriptData []byte, startLine int) ([]agent.SkillEvent, error) {
+	if len(transcriptData) == 0 {
+		return nil, nil
+	}
+
+	sliced := transcript.SliceFromLine(transcriptData, startLine)
+	parsed, err := transcript.ParseFromBytes(sliced)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse transcript: %w", err)
+	}
+
+	var events []agent.SkillEvent
+	for i, line := range parsed {
+		if line.Type != envelopeTypeAssistant {
+			continue
+		}
+
+		var msg assistantMessage
+		if err := json.Unmarshal(line.Message, &msg); err != nil {
+			continue
+		}
+
+		for _, block := range msg.Content {
+			if block.Type != transcript.ContentTypeToolUse || block.Name != "Skill" {
+				continue
+			}
+			var input toolInput
+			if err := json.Unmarshal(block.Input, &input); err != nil {
+				continue
+			}
+			skillName := strings.TrimSpace(input.Skill)
+			if skillName == "" {
+				continue
+			}
+
+			native := map[string]string{"tool_name": "Skill"}
+			if block.ID != "" {
+				native["tool_use_id"] = block.ID
+			}
+			events = append(events, agent.SkillEvent{
+				ID:        claudeSkillEventID(block.ID, startLine+i),
+				EventType: agent.SkillEventTypeToolInvocation,
+				Skill: agent.SkillEventSkill{
+					Name: skillName,
+				},
+				Source: agent.SkillEventSource{
+					Agent:      string(agent.AgentNameClaudeCode),
+					Signal:     agent.SkillSignalClaudeSkillToolUse,
+					Confidence: agent.SkillConfidenceExplicit,
+				},
+				TranscriptAnchor: &agent.SkillEventTranscriptAnchor{
+					Unit:      "line",
+					Start:     startLine + i,
+					End:       startLine + i + 1,
+					EntryIDs:  nonEmptyStrings(line.UUID),
+					ToolUseID: block.ID,
+				},
+				Native: native,
+				Collapse: agent.SkillEventCollapse{
+					Target:           agent.SkillCollapseTargetToolPair,
+					Label:            "Skill: " + skillName,
+					DefaultCollapsed: true,
+				},
+			})
+		}
+	}
+	return events, nil
+}
+
+func claudeSkillEventID(toolUseID string, line int) string {
+	if toolUseID != "" {
+		return "claude-skill-" + toolUseID
+	}
+	return fmt.Sprintf("claude-skill-line-%d", line)
+}
+
+func nonEmptyStrings(values ...string) []string {
+	var out []string
+	for _, value := range values {
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
 func (c *ClaudeCodeAgent) CalculateTotalTokenUsage(transcriptData []byte, startLine int, subagentsDir string) (*agent.TokenUsage, error) {
 	if len(transcriptData) == 0 {
 		return &agent.TokenUsage{}, nil
@@ -305,11 +395,37 @@ func (c *ClaudeCodeAgent) CalculateTotalTokenUsage(transcriptData []byte, startL
 	// Calculate token usage from parsed transcript
 	mainUsage := CalculateTokenUsage(parsed)
 
-	// Extract spawned agent IDs from the same parsed transcript
-	agentIDs := ExtractSpawnedAgentIDs(parsed)
+	if subagentsDir == "" {
+		return mainUsage, nil
+	}
 
-	// Calculate subagent token usage (skip when subagentsDir is empty to avoid reading from cwd)
-	if len(agentIDs) > 0 && subagentsDir != "" {
+	// Extract spawned agent IDs from the FULL transcript (startLine=0), not the
+	// sliced portion. A subagent spawned before this checkpoint's startLine can
+	// keep writing to its transcript in later turns; scanning only the slice
+	// would miss it and undercount subagent token usage (#329).
+	//
+	// PERF (considered, retained deliberately): this re-parses the full
+	// transcript in addition to the sliced parse above — two JSONL parses per
+	// call, growing with session length. A single-pass version was rejected as
+	// not worth the risk: ParseFromBytes silently drops malformed lines, so a
+	// parsed-entry index does not correspond to a raw line number and naively
+	// slicing the full parse at startLine would misattribute main-agent usage;
+	// doing it safely would mean threading raw-line numbers through the shared
+	// transcript parser used by every agent. A cheap line scan for the Task
+	// marker instead of a full parse would duplicate ExtractSpawnedAgentIDs'
+	// nested tool_result decoding. The common no-subagent case already avoids
+	// this cost entirely via the subagentsDir == "" short-circuit above.
+	fullParsed, err := transcript.ParseFromBytes(transcriptData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse full transcript: %w", err)
+	}
+	agentIDs := ExtractSpawnedAgentIDs(fullParsed)
+
+	// Calculate subagent token usage. This re-reads each subagent transcript from
+	// line 0 on every call, so mainUsage.SubagentTokens is a cumulative-since-
+	// session-start snapshot — see the CalculateTotalTokenUsage interface contract
+	// in cmd/entire/cli/agent for how callers must accumulate it.
+	if len(agentIDs) > 0 {
 		subagentUsage := &agent.TokenUsage{}
 		for agentID := range agentIDs {
 			agentPath := filepath.Join(subagentsDir, fmt.Sprintf("agent-%s.jsonl", agentID))
@@ -359,11 +475,23 @@ func (c *ClaudeCodeAgent) ExtractAllModifiedFiles(transcriptData []byte, startLi
 		}
 	}
 
-	// Find spawned subagents and collect their modified files (skip when subagentsDir is empty to avoid reading from cwd)
-	agentIDs := ExtractSpawnedAgentIDs(parsed)
 	if subagentsDir == "" {
 		return files, nil
 	}
+
+	// Find spawned subagents from the FULL transcript (startLine=0): a subagent
+	// spawned before this checkpoint's startLine may keep modifying files in
+	// later turns, and scanning only the slice would miss it (#329). Main-agent
+	// file extraction above stays scoped to the slice.
+	//
+	// PERF: the second full-transcript parse is retained deliberately for the
+	// same reasons documented on CalculateTotalTokenUsage above; the common
+	// no-subagent case is short-circuited by the subagentsDir == "" guard.
+	fullParsed, err := transcript.ParseFromBytes(transcriptData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse full transcript: %w", err)
+	}
+	agentIDs := ExtractSpawnedAgentIDs(fullParsed)
 	for agentID := range agentIDs {
 		agentPath := filepath.Join(subagentsDir, fmt.Sprintf("agent-%s.jsonl", agentID))
 		agentLines, agentErr := transcript.ParseFromFileAtLine(agentPath, 0)

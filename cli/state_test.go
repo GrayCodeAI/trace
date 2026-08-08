@@ -18,9 +18,9 @@ import (
 // prePromptStateFile returns the absolute path to the pre-prompt state file for a session.
 // Test-only helper; production code constructs the filename inline.
 func prePromptStateFile(ctx context.Context, sessionID string) string {
-	tmpDirAbs, err := paths.AbsPath(ctx, paths.TraceTmpDir)
+	tmpDirAbs, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
-		tmpDirAbs = paths.TraceTmpDir
+		tmpDirAbs = paths.EntireTmpDir
 	}
 	return filepath.Join(tmpDirAbs, fmt.Sprintf("pre-prompt-%s.json", sessionID))
 }
@@ -28,9 +28,9 @@ func prePromptStateFile(ctx context.Context, sessionID string) string {
 // preTaskStateFile returns the absolute path to the pre-task state file for a tool use.
 // Test-only helper; production code constructs the filename inline.
 func preTaskStateFile(ctx context.Context, toolUseID string) string {
-	tmpDirAbs, err := paths.AbsPath(ctx, paths.TraceTmpDir)
+	tmpDirAbs, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
-		tmpDirAbs = paths.TraceTmpDir
+		tmpDirAbs = paths.EntireTmpDir
 	}
 	return filepath.Join(tmpDirAbs, fmt.Sprintf("pre-task-%s.json", toolUseID))
 }
@@ -39,7 +39,7 @@ func TestPreTaskStateFile(t *testing.T) {
 	toolUseID := "toolu_abc123"
 	// preTaskStateFile returns an absolute path within the repo
 	// Verify it ends with the expected relative path suffix
-	expectedSuffix := filepath.Join(paths.TraceTmpDir, "pre-task-toolu_abc123.json")
+	expectedSuffix := filepath.Join(paths.EntireTmpDir, "pre-task-toolu_abc123.json")
 	got := preTaskStateFile(context.Background(), toolUseID)
 	if !filepath.IsAbs(got) {
 		// If we're not in a git repo, it falls back to relative paths
@@ -73,7 +73,7 @@ func TestPrePromptState_BackwardCompat_LastTranscriptLineCount(t *testing.T) {
 		t.Fatalf("Failed to create HEAD: %v", err)
 	}
 	paths.ClearWorktreeRootCache()
-	if err := os.MkdirAll(paths.TraceTmpDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.EntireTmpDir, 0o755); err != nil {
 		t.Fatalf("Failed to create tmp dir: %v", err)
 	}
 
@@ -254,19 +254,19 @@ func TestFilterAndNormalizePaths_SiblingDirectories(t *testing.T) {
 			name: "infrastructure paths are filtered",
 			files: []string{
 				"/repo/src/file.ts",
-				"/repo/.trace/metadata/session.json",
+				"/repo/.entire/metadata/session.json",
 			},
 			basePath: "/repo",
 			want: []string{
 				"src/file.ts",
-				// .trace path should be filtered
+				// .entire path should be filtered
 			},
 		},
 		{
 			name: "agent-owned opencode paths are filtered",
 			files: []string{
 				"/repo/src/file.ts",
-				"/repo/.opencode/plugins/trace.ts",
+				"/repo/.opencode/plugins/entire.ts",
 				"/repo/opencode.json",
 			},
 			basePath: "/repo",
@@ -309,8 +309,8 @@ func TestFindActivePreTaskFile(t *testing.T) {
 	// Clear the repo root cache to pick up the new repo
 	paths.ClearWorktreeRootCache()
 
-	// Create .trace/tmp directory
-	if err := os.MkdirAll(paths.TraceTmpDir, 0o755); err != nil {
+	// Create .entire/tmp directory
+	if err := os.MkdirAll(paths.EntireTmpDir, 0o755); err != nil {
 		t.Fatalf("Failed to create tmp dir: %v", err)
 	}
 
@@ -324,7 +324,7 @@ func TestFindActivePreTaskFile(t *testing.T) {
 	}
 
 	// Create a pre-task file
-	preTaskFile := filepath.Join(paths.TraceTmpDir, "pre-task-toolu_abc123.json")
+	preTaskFile := filepath.Join(paths.EntireTmpDir, "pre-task-toolu_abc123.json")
 	if err := os.WriteFile(preTaskFile, []byte(`{"tool_use_id": "toolu_abc123"}`), 0o644); err != nil {
 		t.Fatalf("Failed to create pre-task file: %v", err)
 	}
@@ -358,8 +358,8 @@ func setupTestRepoWithTranscript(t *testing.T, transcriptContent string, transcr
 	// Clear the repo root cache to pick up the new repo
 	paths.ClearWorktreeRootCache()
 
-	// Create .trace/tmp directory
-	if err := os.MkdirAll(paths.TraceTmpDir, 0o755); err != nil {
+	// Create .entire/tmp directory
+	if err := os.MkdirAll(paths.EntireTmpDir, 0o755); err != nil {
 		t.Fatalf("Failed to create tmp dir: %v", err)
 	}
 
@@ -485,9 +485,10 @@ func TestDetectFileChanges_DeletedFilesWithNilPreState(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	// Initialize git repo with go-git
-	repo, err := git.PlainInit(tmpDir, false)
+	testutil.InitRepo(t, tmpDir)
+	repo, err := git.PlainOpen(tmpDir)
 	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
+		t.Fatalf("failed to open repo: %v", err)
 	}
 
 	// Create and commit a tracked file
@@ -547,9 +548,10 @@ func TestDetectFileChanges_NewAndDeletedFiles(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	// Initialize git repo with go-git
-	repo, err := git.PlainInit(tmpDir, false)
+	testutil.InitRepo(t, tmpDir)
+	repo, err := git.PlainOpen(tmpDir)
 	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
+		t.Fatalf("failed to open repo: %v", err)
 	}
 
 	// Create and commit tracked files
@@ -628,9 +630,10 @@ func TestDetectFileChanges_NoChanges(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	// Initialize git repo with go-git
-	repo, err := git.PlainInit(tmpDir, false)
+	testutil.InitRepo(t, tmpDir)
+	repo, err := git.PlainOpen(tmpDir)
 	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
+		t.Fatalf("failed to open repo: %v", err)
 	}
 
 	// Create and commit a tracked file
@@ -684,9 +687,10 @@ func TestDetectFileChanges_NilPreviouslyUntracked_ReturnsModified(t *testing.T) 
 	t.Chdir(tmpDir)
 
 	// Initialize git repo with go-git
-	repo, err := git.PlainInit(tmpDir, false)
+	testutil.InitRepo(t, tmpDir)
+	repo, err := git.PlainOpen(tmpDir)
 	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
+		t.Fatalf("failed to open repo: %v", err)
 	}
 
 	// Create and commit a tracked file
@@ -789,7 +793,7 @@ func TestDetectFileChanges_IgnoresOpenCodeAgentFiles(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tmpDir, ".opencode", "plugins"), 0o755); err != nil {
 		t.Fatalf("failed to create .opencode/plugins: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, ".opencode", "plugins", "trace.ts"), []byte("// plugin"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, ".opencode", "plugins", "entire.ts"), []byte("// plugin"), 0o644); err != nil {
 		t.Fatalf("failed to write opencode plugin: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "opencode.json"), []byte("{}\n"), 0o644); err != nil {
@@ -881,9 +885,10 @@ func TestFilterToUncommittedFiles_ReallyModified(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 
-	repo, err := git.PlainInit(tmpDir, false)
+	testutil.InitRepo(t, tmpDir)
+	repo, err := git.PlainOpen(tmpDir)
 	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
+		t.Fatalf("failed to open repo: %v", err)
 	}
 
 	filePath := filepath.Join(tmpDir, "file.txt")

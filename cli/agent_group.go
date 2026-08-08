@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newAgentGroupCmd builds `trace agent`. Replaces trace configure`.
+// newAgentGroupCmd builds `entire agent`. Replaces `entire configure`.
 func newAgentGroupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agent",
@@ -27,10 +26,10 @@ Commands:
   remove   Uninstall hooks for an agent
 
 Examples:
-  trace agent
-  trace agent list
-  trace agent add claude-code
-  trace agent remove claude-code`,
+  entire agent
+  entire agent list
+  entire agent add claude-code
+  entire agent remove claude-code`,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if _, err := paths.WorktreeRoot(cmd.Context()); err != nil {
 				return errors.New("not a git repository")
@@ -57,19 +56,16 @@ func runAgentMenu(ctx context.Context, w io.Writer) error {
 }
 
 func newAgentListCmd() *cobra.Command {
-	var jsonOut bool
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "list",
 		Short: "List installed and available agents",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runAgentList(cmd.Context(), cmd.OutOrStdout(), jsonOut)
+			return runAgentList(cmd.Context(), cmd.OutOrStdout())
 		},
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "output agent list as JSON")
-	return cmd
 }
 
-func runAgentList(ctx context.Context, w io.Writer, jsonOut bool) error {
+func runAgentList(ctx context.Context, w io.Writer) error {
 	installed := GetAgentsWithHooksInstalled(ctx)
 	installedSet := make(map[types.AgentName]struct{}, len(installed))
 	for _, name := range installed {
@@ -77,21 +73,6 @@ func runAgentList(ctx context.Context, w io.Writer, jsonOut bool) error {
 	}
 
 	all := agent.StringList()
-
-	if jsonOut {
-		type agentEntry struct {
-			Name      string `json:"name"`
-			Installed bool   `json:"installed"`
-		}
-		entries := make([]agentEntry, 0, len(all))
-		for _, name := range all {
-			_, ok := installedSet[types.AgentName(name)]
-			entries = append(entries, agentEntry{Name: name, Installed: ok})
-		}
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(entries)
-	}
 
 	fmt.Fprintln(w, "Agents:")
 	for _, name := range all {
@@ -102,7 +83,7 @@ func runAgentList(ctx context.Context, w io.Writer, jsonOut bool) error {
 		fmt.Fprintf(w, "  %s%s\n", marker, name)
 	}
 	if len(installed) == 0 {
-		fmt.Fprintln(w, "\nNo agents installed. Use 'trace agent add <name>' to install hooks.")
+		fmt.Fprintln(w, "\nNo agents installed. Use 'entire agent add <name>' to install hooks.")
 	}
 	return nil
 }
@@ -110,6 +91,8 @@ func runAgentList(ctx context.Context, w io.Writer, jsonOut bool) error {
 func newAgentAddCmd() *cobra.Command {
 	var localDev bool
 	var forceHooks bool
+	var searchSkill bool
+	var agentHelpSkill bool
 
 	cmd := &cobra.Command{
 		Use:   "add <agent-name>",
@@ -117,8 +100,8 @@ func newAgentAddCmd() *cobra.Command {
 		Long: `Install hooks for the specified agent in this repository.
 
 Examples:
-  trace agent add claude-code
-  trace agent add gemini-cli`,
+  entire agent add claude-code
+  entire agent add gemini`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -128,9 +111,11 @@ Examples:
 				return NewSilentError(errors.New("wrong agent name"))
 			}
 			opts := EnableOptions{
-				LocalDev:   localDev,
-				ForceHooks: forceHooks,
-				Telemetry:  true,
+				LocalDev:       localDev,
+				ForceHooks:     forceHooks,
+				SearchSkill:    searchSkill,
+				AgentHelpSkill: agentHelpSkill,
+				Telemetry:      true,
 			}
 			return setupAgentHooksNonInteractive(cmd.Context(), cmd.OutOrStdout(), ag, opts)
 		},
@@ -138,6 +123,8 @@ Examples:
 
 	cmd.Flags().BoolVar(&localDev, "local-dev", false, "Install hooks in local-dev mode")
 	cmd.Flags().BoolVar(&forceHooks, "force", false, "Reinstall hooks even if already present")
+	cmd.Flags().BoolVar(&searchSkill, flagSearchSkill, false, "Install the optional Entire search skill")
+	cmd.Flags().BoolVar(&agentHelpSkill, flagAgentHelpSkill, false, "Install the stable Entire agent-help skill (points agents at `entire agent-help`)")
 	return cmd
 }
 
@@ -148,7 +135,7 @@ func newAgentRemoveCmd() *cobra.Command {
 		Long: `Uninstall hooks for the specified agent in this repository.
 
 Examples:
-  trace agent remove claude-code`,
+  entire agent remove claude-code`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRemoveAgent(cmd.Context(), cmd.OutOrStdout(), args[0])

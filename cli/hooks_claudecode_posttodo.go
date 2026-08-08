@@ -88,7 +88,7 @@ func handleClaudeCodePostTodoFromReader(ctx context.Context, reader io.Reader) e
 	// Get the active strategy
 	start := GetStrategy(ctx)
 
-	// Get the session ID from the transcript path or input, then transform to Trace session ID
+	// Get the session ID from the transcript path or input, then transform to Entire session ID
 	sessionID := input.SessionID
 	if sessionID == "" {
 		sessionID = paths.ExtractSessionIDFromTranscriptPath(input.TranscriptPath)

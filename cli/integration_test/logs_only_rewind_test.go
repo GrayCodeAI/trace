@@ -27,7 +27,7 @@ func TestLogsOnlyRewind_AppearsInRewindList(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/logs-only-test")
-	env.InitTrace()
+	env.InitEntire()
 
 	t.Log("Phase 1: Create session and checkpoint")
 
@@ -62,7 +62,7 @@ func TestLogsOnlyRewind_AppearsInRewindList(t *testing.T) {
 
 	env.GitCommitWithShadowHooks("Add main.go", "main.go")
 
-	// Get commit hash and condensation ID (now from trace/checkpoints/v1 branch, not commit trailer)
+	// Get commit hash and condensation ID (now from entire/checkpoints/v1 branch, not commit trailer)
 	commitHash := env.GetHeadHash()
 	condensationID := env.GetLatestCondensationID()
 	t.Logf("Condensation ID: %s", condensationID)
@@ -115,7 +115,7 @@ func TestLogsOnlyRewind_RestoresTranscript(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/logs-restore-test")
-	env.InitTrace()
+	env.InitEntire()
 
 	t.Log("Phase 1: Create session and commit")
 
@@ -222,7 +222,7 @@ func TestLogsOnlyRewind_DoesNotModifyWorkingDirectory(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/no-modify-test")
-	env.InitTrace()
+	env.InitEntire()
 
 	t.Log("Phase 1: Create session 1 and commit")
 
@@ -231,7 +231,7 @@ func TestLogsOnlyRewind_DoesNotModifyWorkingDirectory(t *testing.T) {
 		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
 	}
 
-	v1Content := "version 1"
+	v1Content := contentV1
 	env.WriteFile("file.txt", v1Content)
 	session1.CreateTranscript("Create file with version 1", []FileChange{{Path: "file.txt", Content: v1Content}})
 
@@ -255,7 +255,7 @@ func TestLogsOnlyRewind_DoesNotModifyWorkingDirectory(t *testing.T) {
 		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
 	}
 
-	v2Content := "version 2"
+	v2Content := contentV2
 	env.WriteFile("file.txt", v2Content)
 	session2.CreateTranscript("Update file to version 2", []FileChange{{Path: "file.txt", Content: v2Content}})
 
@@ -325,7 +325,7 @@ func TestLogsOnlyRewind_DeduplicationWithCheckpoints(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/dedup-test")
-	env.InitTrace()
+	env.InitEntire()
 
 	t.Log("Phase 1: Create checkpoint (but don't commit yet)")
 
@@ -405,7 +405,7 @@ func TestLogsOnlyRewind_MultipleCommits(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/multi-commit-test")
-	env.InitTrace()
+	env.InitEntire()
 
 	var commitHashes []string
 
@@ -457,9 +457,9 @@ func TestLogsOnlyRewind_MultipleCommits(t *testing.T) {
 }
 
 // TestLogsOnlyRewind_SquashMergeMultipleCheckpoints verifies that when a squash
-// merge commit contains multiple Trace-Checkpoint trailers, the rewind list
+// merge commit contains multiple Entire-Checkpoint trailers, the rewind list
 // shows a single logs-only point for the latest checkpoint (by creation time),
-// consistent with how `trace resume` handles squash merges.
+// consistent with how `entire resume` handles squash merges.
 func TestLogsOnlyRewind_SquashMergeMultipleCheckpoints(t *testing.T) {
 	t.Parallel()
 	env := NewFeatureBranchEnv(t)
@@ -607,7 +607,7 @@ func TestLogsOnlyRewind_Reset(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/reset-test")
-	env.InitTrace()
+	env.InitEntire()
 
 	t.Log("Phase 1: Create session 1 and commit")
 
@@ -712,7 +712,7 @@ func TestLogsOnlyRewind_ResetRestoresTranscript(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/reset-transcript-test")
-	env.InitTrace()
+	env.InitEntire()
 
 	t.Log("Phase 1: Create session and commit")
 

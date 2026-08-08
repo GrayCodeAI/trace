@@ -33,7 +33,7 @@ The `agent` binary supports hooks via `.cursor/hooks.json` and stores JSONL tran
 
 ### Hook Names and When They Fire
 
-| Native Hook Name | When It Fires | Trace EventType | Fires in `-p` mode? |
+| Native Hook Name | When It Fires | Entire EventType | Fires in `-p` mode? |
 |-----------------|---------------|-----------------|---------------------|
 | `sessionStart` | New conversation created | `SessionStart` | Yes |
 | `beforeSubmitPrompt` | After user presses send, before backend request | `TurnStart` | **No** |
@@ -177,7 +177,7 @@ Note: IDE also sends `composer_mode: "agent"` — CLI omits this field.
 ```
 
 - Note: Transcript does NOT contain tool_use blocks — file detection relies on git status
-- Override for testing: set `TRACE_TEST_CURSOR_PROJECT_DIR` env var to override the transcript directory
+- Override for testing: set `ENTIRE_TEST_CURSOR_PROJECT_DIR` env var to override the transcript directory
 
 ## Config Preservation
 
@@ -200,12 +200,12 @@ Note: IDE also sends `composer_mode: "agent"` — CLI omits this field.
   - `--continue`: Resume most recent session
 - Relevant env vars:
   - `CURSOR_API_KEY`: API key for authentication
-  - `TRACE_TEST_CURSOR_PROJECT_DIR`: Override transcript directory (for testing)
-  - `TRACE_TEST_TTY=0`: Disable TTY detection in Trace hooks
+  - `ENTIRE_TEST_CURSOR_PROJECT_DIR`: Override transcript directory (for testing)
+  - `ENTIRE_TEST_TTY=0`: Disable TTY detection in Entire hooks
 
 ## Gaps & Limitations
 
-1. **`beforeSubmitPrompt` and `stop` don't fire in `-p` mode**: This is the main limitation. In headless mode, Trace won't get TurnStart/TurnEnd events. Checkpoints can only be created via sessionStart/sessionEnd flow. E2E tests using `RunPrompt` won't trigger the normal TurnStart→TurnEnd checkpoint flow.
+1. **`beforeSubmitPrompt` and `stop` don't fire in `-p` mode**: This is the main limitation. In headless mode, Entire won't get TurnStart/TurnEnd events. Checkpoints can only be created via sessionStart/sessionEnd flow. E2E tests using `RunPrompt` won't trigger the normal TurnStart→TurnEnd checkpoint flow.
 2. **`transcript_path` is always `null` in CLI mode**: Handled by existing `resolveTranscriptRef()` which computes the path dynamically.
 3. **No `composer_mode` field in CLI**: IDE sends `"agent"`, CLI omits it. Not impactful.
 4. **Transcript lacks tool_use blocks**: Modified file detection relies on git status (already handled).
@@ -227,4 +227,4 @@ Hooks NOT captured in headless mode:
 - `preCompact` — requires long context (not triggered by short prompt)
 - `subagentStart/Stop` — requires subagent usage
 
-See `.trace/tmp/probe-cursor-cli-*/captures/` for raw JSON captures.
+See `.entire/tmp/probe-cursor-cli-*/captures/` for raw JSON captures.

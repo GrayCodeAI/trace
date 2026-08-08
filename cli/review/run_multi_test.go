@@ -3,6 +3,7 @@ package review
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -78,9 +79,12 @@ func TestRunMulti_OneSucceedsOneFails(t *testing.T) {
 	if len(summary.AgentRuns) != 2 {
 		t.Fatalf("expected 2 AgentRuns, got %d", len(summary.AgentRuns))
 	}
-	// Both agents delivered events to the sink.
-	if len(rec.agentEvents) != 4 {
-		t.Errorf("expected 4 AgentEvent calls (2 per agent), got %d", len(rec.agentEvents))
+	// Both agents delivered events to the sink. ok-agent emits 2 events
+	// (Started, Finished); fail-agent emits 2 events (Started, Finished)
+	// plus a synthetic RunError emitted after Wait returns the non-nil
+	// process error.
+	if len(rec.agentEvents) != 5 {
+		t.Errorf("expected 5 AgentEvent calls (ok: 2, fail: 2 + RunError), got %d", len(rec.agentEvents))
 	}
 	// Verify per-agent statuses.
 	statusFor := func(name string) reviewtypes.AgentStatus {
@@ -140,6 +144,104 @@ func TestRunMulti_StartErrorForOneAgent(t *testing.T) {
 				t.Errorf("bad-start-agent: Err = %v, want startErr", r.Err)
 			}
 		}
+	}
+}
+
+func TestRunMulti_StartErrorsAndEventBurstStillDrain(t *testing.T) {
+	t.Parallel()
+	events := make([]reviewtypes.Event, 0, 400)
+	for range 399 {
+		events = append(events, reviewtypes.AssistantText{Text: "event"})
+	}
+	events = append(events, reviewtypes.Finished{Success: true})
+	reviewers := []reviewtypes.AgentReviewer{&stubReviewer{name: "noisy", events: events}}
+	for i := range 40 {
+		reviewers = append(reviewers, &stubReviewer{name: fmt.Sprintf("bad-%02d", i), startErr: errors.New("start failed")})
+	}
+	type result struct {
+		summary reviewtypes.RunSummary
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		summary, err := RunMulti(context.Background(), reviewers, reviewtypes.RunConfig{}, nil)
+		done <- result{summary: summary, err: err}
+	}()
+
+	select {
+	case res := <-done:
+		if res.err == nil {
+			t.Fatal("RunMulti error = nil, want one of the start errors")
+		}
+		summary := res.summary
+		if len(summary.AgentRuns) != len(reviewers) {
+			t.Fatalf("AgentRuns = %d, want %d", len(summary.AgentRuns), len(reviewers))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunMulti deadlocked with start-failure terminals plus event burst")
+	}
+}
+
+func TestRunMulti_AllStartErrorsOverSeventeenStillFinish(t *testing.T) {
+	t.Parallel()
+	const reviewerCount = 32
+	reviewers := make([]reviewtypes.AgentReviewer, 0, reviewerCount)
+	for i := range reviewerCount {
+		reviewers = append(reviewers, &stubReviewer{name: fmt.Sprintf("bad-%02d", i), startErr: fmt.Errorf("start failed %d", i)})
+	}
+	type result struct {
+		summary reviewtypes.RunSummary
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		summary, err := RunMulti(context.Background(), reviewers, reviewtypes.RunConfig{}, nil)
+		done <- result{summary: summary, err: err}
+	}()
+
+	select {
+	case res := <-done:
+		if res.err == nil {
+			t.Fatal("RunMulti error = nil, want a start error")
+		}
+		if len(res.summary.AgentRuns) != reviewerCount {
+			t.Fatalf("AgentRuns = %d, want %d", len(res.summary.AgentRuns), reviewerCount)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunMulti deadlocked with more than 17 all-start-failure terminals")
+	}
+}
+
+func TestRunMulti_AllStartErrorsStillFinish(t *testing.T) {
+	t.Parallel()
+	firstErr := errors.New("first start failed")
+	secondErr := errors.New("second start failed")
+	rec := &stubSinkRecorder{}
+
+	summary, err := RunMulti(context.Background(), []reviewtypes.AgentReviewer{
+		&stubReviewer{name: "first", startErr: firstErr},
+		&stubReviewer{name: "second", startErr: secondErr},
+	}, reviewtypes.RunConfig{}, []reviewtypes.Sink{rec})
+
+	if !errors.Is(err, firstErr) {
+		t.Fatalf("RunMulti error = %v, want first start error", err)
+	}
+	if len(summary.AgentRuns) != 2 {
+		t.Fatalf("AgentRuns = %d, want 2", len(summary.AgentRuns))
+	}
+	for _, run := range summary.AgentRuns {
+		if run.Status != reviewtypes.AgentStatusFailed {
+			t.Fatalf("%s status = %v, want Failed", run.Name, run.Status)
+		}
+		if run.Duration < 0 {
+			t.Fatalf("%s duration = %v, want non-negative", run.Name, run.Duration)
+		}
+	}
+	if !errors.Is(summary.AgentRuns[0].Err, firstErr) || !errors.Is(summary.AgentRuns[1].Err, secondErr) {
+		t.Fatalf("AgentRun errors = %v / %v, want start errors", summary.AgentRuns[0].Err, summary.AgentRuns[1].Err)
+	}
+	if len(rec.finishedCalls) != 1 {
+		t.Fatalf("RunFinished calls = %d, want 1", len(rec.finishedCalls))
 	}
 }
 
@@ -376,5 +478,334 @@ func TestRunMulti_TokenTracking(t *testing.T) {
 	}
 	if run.Tokens.Out != 15 {
 		t.Errorf("Tokens.Out: got %d, want 15", run.Tokens.Out)
+	}
+}
+
+func TestRunMulti_EnrichesSummaryBeforeRunFinished(t *testing.T) {
+	t.Parallel()
+	ra := &stubReviewer{
+		name:   "agent-a",
+		events: []reviewtypes.Event{reviewtypes.Started{}, reviewtypes.Finished{Success: true}},
+	}
+	rec := &stubSinkRecorder{}
+	cfg := reviewtypes.RunConfig{
+		EnrichSummary: func(_ context.Context, summary reviewtypes.RunSummary) reviewtypes.RunSummary {
+			summary.AgentRuns[0].Tokens = reviewtypes.Tokens{In: 42, Out: 7}
+			return summary
+		},
+	}
+
+	summary, err := RunMulti(context.Background(), []reviewtypes.AgentReviewer{ra}, cfg, []reviewtypes.Sink{rec})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := summary.AgentRuns[0].Tokens; got.In != 42 || got.Out != 7 {
+		t.Fatalf("summary tokens = {%d %d}, want {42 7}", got.In, got.Out)
+	}
+	if len(rec.finishedCalls) != 1 {
+		t.Fatalf("finished calls = %d, want 1", len(rec.finishedCalls))
+	}
+	if got := rec.finishedCalls[0].AgentRuns[0].Tokens; got.In != 42 || got.Out != 7 {
+		t.Fatalf("sink summary tokens = {%d %d}, want {42 7}", got.In, got.Out)
+	}
+}
+
+func TestRunMulti_EmitsSyntheticRunErrorWhenAgentWaitErrIsNonNil(t *testing.T) {
+	t.Parallel()
+	failingWait := errors.New("exit status 1: stderr: invalid_api_key")
+	failer := &stubReviewer{
+		name: "claude-code",
+		events: []reviewtypes.Event{
+			reviewtypes.Started{},
+			reviewtypes.Finished{Success: true},
+		},
+		waitErr: failingWait,
+	}
+	succeeder := &stubReviewer{
+		name: "codex",
+		events: []reviewtypes.Event{
+			reviewtypes.Started{},
+			reviewtypes.AssistantText{Text: "looks good"},
+			reviewtypes.Finished{Success: true},
+		},
+	}
+	rec := &stubSinkRecorder{}
+
+	_, err := RunMulti(context.Background(), []reviewtypes.AgentReviewer{failer, succeeder}, reviewtypes.RunConfig{}, []reviewtypes.Sink{rec})
+	if err == nil {
+		t.Fatal("expected non-nil firstErr from failing agent")
+	}
+
+	var found bool
+	for _, evt := range rec.agentEvents {
+		if evt.agent != "claude-code" {
+			continue
+		}
+		if re, ok := evt.ev.(reviewtypes.RunError); ok && re.Err != nil && re.Err.Error() == failingWait.Error() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected synthetic RunError for failing agent in live sink stream, got events: %+v", rec.agentEvents)
+	}
+}
+
+func TestRunMulti_DoesNotEmitSyntheticRunErrorOnCancellation(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reviewer := &stubReviewer{
+		name: "claude-code",
+		events: []reviewtypes.Event{
+			reviewtypes.Started{},
+			reviewtypes.Finished{Success: true},
+		},
+		waitErr: context.Canceled,
+	}
+	rec := &stubSinkRecorder{}
+
+	summary, err := RunMulti(ctx, []reviewtypes.AgentReviewer{reviewer}, reviewtypes.RunConfig{}, []reviewtypes.Sink{rec})
+	if err != nil {
+		t.Fatalf("cancelled RunMulti should not return firstErr, got %v", err)
+	}
+	if got := summary.AgentRuns[0].Status; got != reviewtypes.AgentStatusCancelled {
+		t.Fatalf("summary status = %v, want Cancelled", got)
+	}
+	for _, evt := range rec.agentEvents {
+		if _, ok := evt.ev.(reviewtypes.RunError); ok {
+			t.Errorf("cancelled run should not produce synthetic RunError, got: %+v", evt.ev)
+		}
+	}
+}
+
+func TestRunMulti_EmitsEnrichedTokensWhenAgentFinishes(t *testing.T) {
+	t.Parallel()
+	eventsA := make(chan reviewtypes.Event, 2)
+	eventsA <- reviewtypes.Started{}
+	eventsA <- reviewtypes.Finished{Success: true}
+	close(eventsA)
+	eventsB := make(chan reviewtypes.Event, 1)
+	eventsB <- reviewtypes.Started{}
+
+	ra := &funcReviewer{name: "agent-a", process: &chanProcess{events: eventsA}}
+	rb := &funcReviewer{name: "agent-b", process: &chanProcess{events: eventsB}}
+	sink := &liveTokenSink{
+		tokens:   make(chan reviewtypes.Tokens, 1),
+		finished: make(chan struct{}, 1),
+	}
+	cfg := reviewtypes.RunConfig{
+		EnrichAgentRun: func(_ context.Context, run reviewtypes.AgentRun) reviewtypes.AgentRun {
+			if run.Name == "agent-a" {
+				run.Tokens = reviewtypes.Tokens{In: 42, Out: 7}
+			}
+			return run
+		},
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := RunMulti(context.Background(), []reviewtypes.AgentReviewer{ra, rb}, cfg, []reviewtypes.Sink{sink})
+		done <- err
+	}()
+
+	select {
+	case got := <-sink.tokens:
+		if got.In != 42 || got.Out != 7 {
+			t.Fatalf("tokens = {%d %d}, want {42 7}", got.In, got.Out)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for agent-a token event before agent-b finished")
+	}
+	select {
+	case <-sink.finished:
+		t.Fatal("RunFinished fired before agent-b finished")
+	default:
+	}
+
+	close(eventsB)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("RunMulti: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for RunMulti")
+	}
+}
+
+// TestRunMulti_PreservesParserTokensWhenEnrichmentReturnsZero locks in the
+// dispatch-loop overwrite contract: when the parser emits Tokens during the
+// run and EnrichAgentRun later returns zero (e.g. no matching session state
+// found), the parser's tokens must be preserved in the final summary because
+// emitEnrichedAgentTokens short-circuits before sending the synthetic event.
+// Without that early-return, a zero overwrite would clobber the parser value.
+func TestRunMulti_PreservesParserTokensWhenEnrichmentReturnsZero(t *testing.T) {
+	t.Parallel()
+	events := []reviewtypes.Event{
+		reviewtypes.Started{},
+		reviewtypes.Tokens{In: 1000, Out: 500},
+		reviewtypes.Finished{Success: true},
+	}
+	reviewer := &stubReviewer{name: "agent-a", events: events}
+	cfg := reviewtypes.RunConfig{
+		EnrichAgentRun: func(_ context.Context, run reviewtypes.AgentRun) reviewtypes.AgentRun {
+			// Enricher couldn't find session state; returns zero tokens.
+			// The orchestrator must NOT propagate this back into the summary.
+			run.Tokens = reviewtypes.Tokens{}
+			return run
+		},
+	}
+
+	summary, err := RunMulti(context.Background(), []reviewtypes.AgentReviewer{reviewer}, cfg, nil)
+	if err != nil {
+		t.Fatalf("RunMulti: %v", err)
+	}
+	if len(summary.AgentRuns) != 1 {
+		t.Fatalf("expected 1 AgentRun, got %d", len(summary.AgentRuns))
+	}
+	got := summary.AgentRuns[0].Tokens
+	if got.In != 1000 || got.Out != 500 {
+		t.Fatalf("parser-emitted Tokens lost: got {%d %d}, want {1000 500}", got.In, got.Out)
+	}
+}
+
+type chanProcess struct {
+	events  chan reviewtypes.Event
+	waitErr error
+}
+
+func (p *chanProcess) Events() <-chan reviewtypes.Event { return p.events }
+func (p *chanProcess) Wait() error                      { return p.waitErr }
+
+type liveTokenSink struct {
+	tokens   chan reviewtypes.Tokens
+	finished chan struct{}
+}
+
+func (s *liveTokenSink) AgentEvent(agent string, ev reviewtypes.Event) {
+	if agent != "agent-a" {
+		return
+	}
+	tokens, ok := ev.(reviewtypes.Tokens)
+	if !ok {
+		return
+	}
+	s.tokens <- tokens
+}
+
+func (s *liveTokenSink) RunFinished(reviewtypes.RunSummary) {
+	s.finished <- struct{}{}
+}
+
+// TestRunMulti_FallsBackToConfigModel verifies that when a reviewer carries no
+// model metadata (does not implement reviewerRunMetadata), RunMulti falls back
+// to the run config's model — mirroring Run — so session-to-manifest matching
+// still sees the model that was actually requested.
+func TestRunMulti_FallsBackToConfigModel(t *testing.T) {
+	t.Parallel()
+	ra := &stubReviewer{name: "agent-a", events: []reviewtypes.Event{
+		reviewtypes.Started{},
+		reviewtypes.AssistantText{Text: "a"},
+		reviewtypes.Finished{Success: true},
+	}}
+	rec := &stubSinkRecorder{}
+	cfg := reviewtypes.RunConfig{Model: "claude-sonnet-4-5"}
+
+	summary, err := RunMulti(context.Background(), []reviewtypes.AgentReviewer{ra}, cfg, []reviewtypes.Sink{rec})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(summary.AgentRuns) != 1 {
+		t.Fatalf("expected 1 AgentRun, got %d", len(summary.AgentRuns))
+	}
+	if got := summary.AgentRuns[0].Model; got != "claude-sonnet-4-5" {
+		t.Errorf("AgentRun.Model = %q, want fallback to cfg.Model %q", got, "claude-sonnet-4-5")
+	}
+}
+
+type startErrorContextReviewer struct {
+	name     string
+	startErr error
+	ctx      context.Context
+	started  chan struct{}
+}
+
+func (r *startErrorContextReviewer) Name() string { return r.name }
+
+func (r *startErrorContextReviewer) Start(ctx context.Context, _ reviewtypes.RunConfig) (reviewtypes.Process, error) {
+	r.ctx = ctx
+	close(r.started)
+	return nil, r.startErr
+}
+
+type blockingWaitReviewer struct {
+	name    string
+	release <-chan struct{}
+}
+
+func (r blockingWaitReviewer) Name() string { return r.name }
+
+func (r blockingWaitReviewer) Start(context.Context, reviewtypes.RunConfig) (reviewtypes.Process, error) {
+	return blockingWaitProcess{release: r.release}, nil
+}
+
+type blockingWaitProcess struct {
+	release <-chan struct{}
+}
+
+func (p blockingWaitProcess) Events() <-chan reviewtypes.Event {
+	ch := make(chan reviewtypes.Event)
+	close(ch)
+	return ch
+}
+
+func (p blockingWaitProcess) Wait() error {
+	<-p.release
+	return nil
+}
+
+func TestRunMulti_StartErrorCancelsAgentContextImmediately(t *testing.T) {
+	t.Parallel()
+	startErr := errors.New("start failed")
+	bad := &startErrorContextReviewer{
+		name:     "bad-start-agent",
+		startErr: startErr,
+		started:  make(chan struct{}),
+	}
+	releaseGood := make(chan struct{})
+	good := blockingWaitReviewer{name: "still-running-agent", release: releaseGood}
+	done := make(chan error, 1)
+	go func() {
+		_, err := RunMulti(context.Background(), []reviewtypes.AgentReviewer{bad, good}, reviewtypes.RunConfig{
+			ReviewerTimeout: time.Hour,
+		}, nil)
+		done <- err
+	}()
+
+	select {
+	case <-bad.started:
+	case <-time.After(time.Second):
+		t.Fatal("bad reviewer did not start")
+	}
+	if bad.ctx == nil {
+		t.Fatal("bad reviewer did not capture context")
+	}
+	select {
+	case <-bad.ctx.Done():
+		// Correct: no process was returned, so the per-agent context is cleaned up
+		// immediately even though another agent is still running.
+	case <-time.After(time.Second):
+		t.Fatal("start-error agent context was not cancelled while sibling continued running")
+	}
+
+	close(releaseGood)
+	select {
+	case err := <-done:
+		if !errors.Is(err, startErr) {
+			t.Fatalf("RunMulti error = %v, want startErr", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("RunMulti did not finish after releasing sibling")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/transcript"
 )
 
@@ -31,6 +32,37 @@ func TestParseTranscript(t *testing.T) {
 
 	if lines[1].Type != transcript.TypeAssistant || lines[1].UUID != "a1" {
 		t.Errorf("Second line = %+v, want type=assistant, uuid=a1", lines[1])
+	}
+}
+
+func TestExtractSkillEvents_SkillToolUse(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{"type":"assistant","uuid":"a1","message":{"content":[{"type":"tool_use","id":"toolu_123","name":"Skill","input":{"skill":"trigger-analysis"}}]}}
+`)
+
+	events, err := (&ClaudeCodeAgent{}).ExtractSkillEvents(data, 0)
+	if err != nil {
+		t.Fatalf("ExtractSkillEvents() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("ExtractSkillEvents() got %d events, want 1", len(events))
+	}
+	ev := events[0]
+	if ev.EventType != agent.SkillEventTypeToolInvocation {
+		t.Errorf("EventType = %q", ev.EventType)
+	}
+	if ev.Skill.Name != "trigger-analysis" {
+		t.Errorf("Skill.Name = %q", ev.Skill.Name)
+	}
+	if ev.Source.Signal != agent.SkillSignalClaudeSkillToolUse || ev.Source.Confidence != agent.SkillConfidenceExplicit {
+		t.Errorf("Source = %+v", ev.Source)
+	}
+	if ev.TranscriptAnchor == nil || ev.TranscriptAnchor.ToolUseID != "toolu_123" {
+		t.Errorf("TranscriptAnchor = %+v", ev.TranscriptAnchor)
+	}
+	if ev.Collapse.Target != agent.SkillCollapseTargetToolPair || !ev.Collapse.DefaultCollapsed {
+		t.Errorf("Collapse = %+v", ev.Collapse)
 	}
 }
 
@@ -197,6 +229,8 @@ func TestFindCheckpointUUID(t *testing.T) {
 // Token calculation tests - Claude Code specific token format
 
 func TestCalculateTokenUsage_BasicMessages(t *testing.T) {
+	t.Parallel()
+
 	transcript := []TranscriptLine{
 		{
 			Type: "assistant",
@@ -246,6 +280,8 @@ func TestCalculateTokenUsage_BasicMessages(t *testing.T) {
 }
 
 func TestCalculateTokenUsage_StreamingDeduplication(t *testing.T) {
+	t.Parallel()
+
 	// Simulate streaming: multiple rows with same message ID, increasing output_tokens
 	transcript := []TranscriptLine{
 		{
@@ -305,6 +341,8 @@ func TestCalculateTokenUsage_StreamingDeduplication(t *testing.T) {
 }
 
 func TestCalculateTokenUsage_IgnoresUserMessages(t *testing.T) {
+	t.Parallel()
+
 	transcript := []TranscriptLine{
 		{
 			Type:    "user",
@@ -334,6 +372,8 @@ func TestCalculateTokenUsage_IgnoresUserMessages(t *testing.T) {
 }
 
 func TestCalculateTokenUsage_EmptyTranscript(t *testing.T) {
+	t.Parallel()
+
 	usage := CalculateTokenUsage(nil)
 
 	if usage.APICallCount != 0 {
@@ -345,6 +385,8 @@ func TestCalculateTokenUsage_EmptyTranscript(t *testing.T) {
 }
 
 func TestExtractSpawnedAgentIDs_FromToolResult(t *testing.T) {
+	t.Parallel()
+
 	transcript := []TranscriptLine{
 		{
 			Type: "user",
@@ -377,6 +419,8 @@ func TestExtractSpawnedAgentIDs_FromToolResult(t *testing.T) {
 }
 
 func TestExtractSpawnedAgentIDs_MultipleAgents(t *testing.T) {
+	t.Parallel()
+
 	transcript := []TranscriptLine{
 		{
 			Type: "user",
@@ -424,6 +468,8 @@ func TestExtractSpawnedAgentIDs_MultipleAgents(t *testing.T) {
 }
 
 func TestExtractSpawnedAgentIDs_NoAgentID(t *testing.T) {
+	t.Parallel()
+
 	transcript := []TranscriptLine{
 		{
 			Type: "user",
@@ -450,6 +496,8 @@ func TestExtractSpawnedAgentIDs_NoAgentID(t *testing.T) {
 }
 
 func TestExtractAgentIDFromText(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		text     string
@@ -484,6 +532,8 @@ func TestExtractAgentIDFromText(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := extractAgentIDFromText(tt.text)
 			if got != tt.expected {
 				t.Errorf("extractAgentIDFromText(%q) = %q, want %q", tt.text, got, tt.expected)
@@ -775,7 +825,7 @@ func TestExtractAllModifiedFiles_NoSubagents(t *testing.T) {
 
 	// Main transcript as bytes: Write to a file, no Task calls
 	transcriptData := buildJSONL(
-		makeWriteToolLine(t, "a1", "/repo/example.go"),
+		makeWriteToolLine(t, "a1", "/repo/solo.go"),
 	)
 
 	files, err := c.ExtractAllModifiedFiles(transcriptData, 0, tmpDir+"/nonexistent")
@@ -786,8 +836,8 @@ func TestExtractAllModifiedFiles_NoSubagents(t *testing.T) {
 	if len(files) != 1 {
 		t.Errorf("expected 1 file, got %d: %v", len(files), files)
 	}
-	if len(files) > 0 && files[0] != "/repo/example.go" {
-		t.Errorf("expected /repo/example.go, got %q", files[0])
+	if len(files) > 0 && files[0] != "/repo/solo.go" {
+		t.Errorf("expected /repo/solo.go, got %q", files[0])
 	}
 }
 
@@ -838,5 +888,82 @@ func TestExtractAllModifiedFiles_SubagentOnlyChanges(t *testing.T) {
 	}
 	for f := range wantFiles {
 		t.Errorf("missing expected file %q", f)
+	}
+}
+
+// Regression for #329: a subagent spawned BEFORE the checkpoint's startLine
+// must still be discovered, because it can keep modifying files in later turns.
+// The Task spawn/result live in lines before startLine; only the full transcript
+// scan finds them.
+func TestExtractAllModifiedFiles_FindsSubagentSpawnedBeforeStartLine(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	subagentsDir := tmpDir + "/tasks/toolu_task1"
+	c := &ClaudeCodeAgent{}
+	if err := os.MkdirAll(subagentsDir, 0o755); err != nil {
+		t.Fatalf("failed to create subagents dir: %v", err)
+	}
+
+	transcriptData := buildJSONL(
+		makeTaskToolUseLine(t, "a1", "toolu_taskA"),        // line 0 (before startLine)
+		makeTaskResultLine(t, "uA", "toolu_taskA", "subA"), // line 1 (before startLine)
+		makeWriteToolLine(t, "a2", "/repo/main.go"),        // line 2 (>= startLine)
+	)
+	writeJSONLFile(
+		t, subagentsDir+"/agent-subA.jsonl",
+		makeWriteToolLine(t, "sa1", "/repo/helper.go"),
+	)
+
+	files, err := c.ExtractAllModifiedFiles(transcriptData, 2, subagentsDir)
+	if err != nil {
+		t.Fatalf("ExtractAllModifiedFiles() error: %v", err)
+	}
+
+	got := make(map[string]bool, len(files))
+	for _, f := range files {
+		got[f] = true
+	}
+	if !got["/repo/main.go"] {
+		t.Errorf("missing main-agent file /repo/main.go: %v", files)
+	}
+	if !got["/repo/helper.go"] {
+		t.Errorf("subagent spawned before startLine was not discovered; missing /repo/helper.go: %v", files)
+	}
+}
+
+// Regression for #329: subagent token usage must be counted even when the
+// subagent was spawned before the checkpoint's startLine.
+func TestCalculateTotalTokenUsage_CountsSubagentSpawnedBeforeStartLine(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	subagentsDir := tmpDir + "/tasks/toolu_task1"
+	c := &ClaudeCodeAgent{}
+	if err := os.MkdirAll(subagentsDir, 0o755); err != nil {
+		t.Fatalf("failed to create subagents dir: %v", err)
+	}
+
+	// Subagent spawned in lines 0-1 (before startLine=2); main usage on line 2.
+	transcriptData := buildJSONL(
+		makeTaskToolUseLine(t, "a1", "toolu_taskB"),
+		makeTaskResultLine(t, "uB", "toolu_taskB", "subB"),
+		`{"type":"assistant","uuid":"a2","message":{"id":"m2","usage":{"input_tokens":300,"output_tokens":150}}}`,
+	)
+	writeJSONLFile(
+		t, subagentsDir+"/agent-subB.jsonl",
+		`{"type":"assistant","uuid":"sa1","message":{"id":"sm1","usage":{"input_tokens":50,"output_tokens":25}}}`,
+	)
+
+	usage, err := c.CalculateTotalTokenUsage(transcriptData, 2, subagentsDir)
+	if err != nil {
+		t.Fatalf("CalculateTotalTokenUsage() error: %v", err)
+	}
+	if usage.SubagentTokens == nil {
+		t.Fatal("subagent spawned before startLine was not counted (SubagentTokens is nil)")
+	}
+	if usage.SubagentTokens.InputTokens != 50 || usage.SubagentTokens.OutputTokens != 25 {
+		t.Errorf("subagent tokens = input %d output %d, want input 50 output 25",
+			usage.SubagentTokens.InputTokens, usage.SubagentTokens.OutputTokens)
 	}
 }

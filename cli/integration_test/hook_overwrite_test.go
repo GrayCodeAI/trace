@@ -24,7 +24,7 @@ import (
 //
 // The key insight: GitCommitWithShadowHooks invokes the binary directly (simulating
 // working hooks), while GitAdd+GitCommit uses go-git without hooks (simulating
-// overwritten hooks where `trace` is never called).
+// overwritten hooks where `entire` is never called).
 func TestHookOverwrite_MidTurnWipe_NextPromptRecovers(t *testing.T) {
 	t.Parallel()
 
@@ -39,12 +39,12 @@ func TestHookOverwrite_MidTurnWipe_NextPromptRecovers(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	env.WriteFile("fileA.go", "package main\n\nfunc A() {}\n")
-	env.WriteFile("fileB.go", "package main\n\nfunc B() {}\n")
+	env.WriteFile("fileA.go", pkgFuncA)
+	env.WriteFile("fileB.go", pkgFuncB)
 
 	sess.CreateTranscript("Create files A and B", []FileChange{
-		{Path: "fileA.go", Content: "package main\n\nfunc A() {}\n"},
-		{Path: "fileB.go", Content: "package main\n\nfunc B() {}\n"},
+		{Path: "fileA.go", Content: pkgFuncA},
+		{Path: "fileB.go", Content: pkgFuncB},
 	})
 
 	// First commit — hooks are intact, binary is invoked → trailer added
@@ -69,13 +69,13 @@ func TestHookOverwrite_MidTurnWipe_NextPromptRecovers(t *testing.T) {
 	// Second commit — hooks are gone, use plain go-git commit (no binary invoked).
 	// This simulates the real-world situation after husky/lefthook has overwritten
 	// our hooks: a commit is made where git would run a third-party hook that does
-	// not call `trace`, so from Trace's perspective no hooks run and no trailer
+	// not call `entire`, so from Entire's perspective no hooks run and no trailer
 	// is added.
 	env.GitAdd("fileB.go")
 	env.GitCommit("Add file B")
 	cpID2 := env.GetCheckpointIDFromCommitMessage(env.GetHeadHash())
 	assert.Empty(t, cpID2,
-		"second commit should NOT have trailer (hooks were overwritten, trace never called)")
+		"second commit should NOT have trailer (hooks were overwritten, entire never called)")
 
 	// End prompt 1
 	err = env.SimulateStop(sess.ID, sess.TranscriptPath)
@@ -100,9 +100,9 @@ func TestHookOverwrite_MidTurnWipe_NextPromptRecovers(t *testing.T) {
 
 	// Verify overwritten hooks were backed up (chaining preserved)
 	for _, hookName := range strategy.ManagedGitHookNames() {
-		backupPath := filepath.Join(hooksDir, hookName+".pre-trace")
+		backupPath := filepath.Join(hooksDir, hookName+".pre-entire")
 		_, err := os.Stat(backupPath)
-		assert.NoError(t, err, "backup %s.pre-trace should exist after reinstall", hookName)
+		require.NoError(t, err, "backup %s.pre-entire should exist after reinstall", hookName)
 	}
 
 	// Third commit — hooks restored, agent commits (no TTY) → trailer added via fast path

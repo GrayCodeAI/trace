@@ -245,7 +245,12 @@ func Run(ctx context.Context, repo *git.Repository, imp Importer, opts Options) 
 				continue
 			}
 			if !redacted {
-				r, rerr := redact.JSONLBytes(full)
+				// Sanitize before redacting, like every other path that stores a
+				// transcript. Import reads raw third-party rollouts, so for Codex
+				// sessions this is where the encrypted payloads would otherwise be
+				// handed to the redaction layers — which then scan megabytes of
+				// base64 ciphertext only for the store to discard it.
+				r, rerr := redact.JSONLBytes(cp.SanitizeTranscriptForAgentType(imp.AgentType(), full))
 				if rerr != nil {
 					return res, fmt.Errorf("redact %s transcript: %w", sf.SessionID, rerr)
 				}
@@ -265,7 +270,7 @@ func Run(ctx context.Context, repo *git.Repository, imp Importer, opts Options) 
 			opts.Progress.turnWritten(sessionIndex, turnIndex, len(turns))
 		}
 
-		// Track A: surface this session in `trace session list`. Best-effort —
+		// Track A: surface this session in `entire session list`. Best-effort —
 		// the read-only checkpoints above are the primary artifact, so a
 		// state-write failure must not abort the import.
 		if !opts.DryRun {
@@ -279,7 +284,7 @@ func Run(ctx context.Context, repo *git.Repository, imp Importer, opts Options) 
 }
 
 // writeSessionState upserts a local session.State so an imported session shows
-// up in `trace session list`. It is Kind-gated (KindImported), never sets
+// up in `entire session list`. It is Kind-gated (KindImported), never sets
 // BaseCommit (imports are commit-less and must not be pinned to HEAD), and uses
 // the transcript's own timestamps — the forward-compat contract that keeps a
 // later commit-SHA link purely additive. It never clobbers a live or

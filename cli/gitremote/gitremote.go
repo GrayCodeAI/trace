@@ -16,7 +16,7 @@ import (
 const (
 	ProtocolSSH   = "ssh"
 	ProtocolHTTPS = "https"
-	// ProtocolEntire is the scheme of Trace's git remote helper (trace://).
+	// ProtocolEntire is the scheme of Entire's git remote helper (entire://).
 	// These URLs carry a forge/namespace prefix before owner/repo.
 	ProtocolEntire = "entire"
 )
@@ -27,7 +27,7 @@ const (
 // combined "host[:port]" form should use HostPort.
 //
 // Forge is the short identifier of the upstream forge ("gh", "et", ...) used
-// by the trails API. It is populated from the path prefix on entire://
+// by the Entire trails API. It is populated from the path prefix on entire://
 // URLs (entire://host/<forge>/owner/repo) and from a hostname lookup on
 // direct git URLs (github.com → "gh"). It is empty for direct git URLs to
 // unrecognized hosts, and for entire:// URLs without a forge segment.
@@ -49,7 +49,7 @@ var hostToForge = map[string]string{
 
 // forgeToHost is the reverse of hostToForge: it maps a forge identifier back to
 // its canonical public host. Used to recover the real forge host from an
-// entire:// remote, whose Host is the cluster rather than the forge.
+// entire:// remote, whose Host is the Entire cluster rather than the forge.
 var forgeToHost = func() map[string]string {
 	m := make(map[string]string, len(hostToForge))
 	for host, forge := range hostToForge {
@@ -70,7 +70,7 @@ func IsSupportedForge(forge string) bool {
 // CanonicalHost returns the canonical public host of the upstream forge.
 //
 // For direct git URLs this is just Host. For entire:// remotes — whose Host is
-// the cluster (e.g. aws-us-east-2.entire.io) rather than the forge — it
+// the Entire cluster (e.g. aws-us-east-2.entire.io) rather than the forge — it
 // maps the forge prefix back to the forge's host (gh → github.com). Falls back
 // to Host when the forge is unknown (e.g. a self-hosted GitHub Enterprise),
 // preserving the only host we know for it.
@@ -105,6 +105,34 @@ func GetRemoteURLInDir(ctx context.Context, dir, remoteName string) (string, err
 		return "", fmt.Errorf("remote %q not found", remoteName)
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// GetPushURLs returns every URL a push to remoteName delivers to, in the order
+// git will use them.
+//
+// A remote's push destinations are remote.<name>.pushurl when any is set and its
+// remote.<name>.url otherwise (git's push_url_of_remote), and BOTH may repeat —
+// git pushes to all of them, in config order. So this, not GetRemoteURL,
+// describes where a push actually goes; GetRemoteURL reports the FETCH URL,
+// which can name a different repository entirely.
+//
+// Returns at least one entry on success.
+func GetPushURLs(ctx context.Context, remoteName string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "git", "remote", "get-url", "--push", "--all", remoteName)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("remote %q not found", remoteName)
+	}
+	var urls []string
+	for _, line := range strings.Split(string(output), "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			urls = append(urls, trimmed)
+		}
+	}
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("remote %q has no push URL", remoteName)
+	}
+	return urls, nil
 }
 
 // ParseURL parses a git remote URL (SSH SCP-style or HTTPS) into its components.
@@ -182,20 +210,28 @@ func RedactURL(rawURL string) string {
 	return u.Scheme + "://" + u.Host + u.Path
 }
 
-// ExtractOwnerFromRemoteURL extracts the owner component from a git remote URL.
-// Returns an empty string if the URL cannot be parsed.
-func ExtractOwnerFromRemoteURL(rawURL string) string {
-	info, err := ParseURL(rawURL)
-	if err != nil {
-		return ""
+// RedactURLOrPath renders a remote for display with any credentials removed,
+// accepting values that are not URLs at all.
+//
+// RedactURL cannot be applied blanket-fashion: it round-trips through url.Parse
+// and rebuilds "scheme://host/path", so a bare filesystem path like
+// /srv/repo.git comes back as ":///srv/repo.git" and a bare word like "origin"
+// as "://origin". Those inputs carry no credentials, so they pass through
+// unchanged. Use this wherever the value may be a remote name, a local path, or
+// a URL — i.e. anywhere a push/fetch target is shown to a user.
+func RedactURLOrPath(remote string) string {
+	if strings.Contains(remote, "://") || strings.Contains(remote, "@") {
+		return RedactURL(remote)
 	}
-	return info.Owner
+	return remote
 }
 
-// ResolveRemoteRepo returns the host, owner, and repo name for the given git remote.
-// It parses the remote URL (SSH or HTTPS) and extracts the components.
-// For example, git@github.com:org/my-repo.git returns ("github.com", "org", "my-repo").
-func ResolveRemoteRepo(ctx context.Context, remoteName string) (host, owner, repo string, err error) {
+// ResolveRemoteRepo returns the forge identifier, owner, and repo name for the
+// given git remote. The forge is the short id used by the trails API ("gh",
+// "et", ...); it is derived from the hostname for direct git URLs or from the
+// path prefix on entire:// URLs. It is empty for unrecognized hosts.
+// For example, git@github.com:org/my-repo.git returns ("gh", "org", "my-repo").
+func ResolveRemoteRepo(ctx context.Context, remoteName string) (forge, owner, repo string, err error) {
 	rawURL, err := GetRemoteURL(ctx, remoteName)
 	if err != nil {
 		return "", "", "", fmt.Errorf("get remote URL for %q: %w", remoteName, err)
@@ -204,7 +240,7 @@ func ResolveRemoteRepo(ctx context.Context, remoteName string) (host, owner, rep
 	if err != nil {
 		return "", "", "", fmt.Errorf("parse remote URL: %w", err)
 	}
-	return info.Host, info.Owner, info.Repo, nil
+	return info.Forge, info.Owner, info.Repo, nil
 }
 
 func splitOwnerRepo(path string) (string, string, error) {

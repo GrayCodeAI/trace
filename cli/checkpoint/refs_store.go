@@ -95,7 +95,7 @@ type remoteListDiscoveryKey struct{}
 // WithRemoteListDiscovery marks ctx to allow gitRefsStore.List to enumerate
 // checkpoint refs on the configured checkpoint remote (see RemoteRefListFunc)
 // and surface not-yet-local checkpoints. Set it only on explicit, user-facing
-// enumeration flows (e.g. `trace checkpoint list` / the branch `explain`
+// enumeration flows (e.g. `entire checkpoint list` / the branch `explain`
 // view), never on the per-turn commit hook: routine local listings must stay
 // network-free. Without this marker List is local-only regardless of whether a
 // remote lister is configured.

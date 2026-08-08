@@ -3,8 +3,8 @@
 // The npm package the embedded extension imports a type from is
 // `@earendil-works/pi-coding-agent`.
 //
-// This is an in-tree port of the previously-external trace-agent-pi plugin
-// (github.com/GrayCodeAI/external-agents/agents/trace-agent-pi). The behaviour
+// This is an in-tree port of the previously-external entire-agent-pi plugin
+// (github.com/entireio/external-agents/agents/entire-agent-pi). The behaviour
 // matches the external version — most notably the active-branch resolution
 // for Pi's tree-shaped sessions — but the integration is plumbed directly
 // through the in-tree Agent / HookSupport / TokenCalculator / TranscriptAnalyzer
@@ -26,14 +26,14 @@ import (
 )
 
 // piHomeEnvVar overrides the default Pi home directory (~/.pi/agent).
-// Pi itself reads this variable, so honoring it keeps Trace and Pi in
+// Pi itself reads this variable, so honoring it keeps Entire and Pi in
 // agreement when a developer points Pi at a non-default home.
 const piHomeEnvVar = "PI_CODING_AGENT_DIR"
 
 // piSessionDirEnvVar lets tests redirect Pi's session lookup without
-// touching the real ~/.pi/agent. Mirrors TRACE_TEST_<AGENT>_SESSION_DIR
+// touching the real ~/.pi/agent. Mirrors ENTIRE_TEST_<AGENT>_SESSION_DIR
 // used by Codex.
-const piSessionDirEnvVar = "TRACE_TEST_PI_SESSION_DIR"
+const piSessionDirEnvVar = "ENTIRE_TEST_PI_SESSION_DIR"
 
 //nolint:gochecknoinits // Agent self-registration is the intended pattern
 func init() {
@@ -84,7 +84,7 @@ func (a *PiAgent) ReadTranscript(sessionRef string) ([]byte, error) {
 	if sessionRef == "" {
 		return nil, errors.New("empty session ref")
 	}
-	// #nosec G304 -- SessionRef from validated lifecycle hook input
+	//nolint:gosec // SessionRef from validated lifecycle hook input
 	data, err := os.ReadFile(sessionRef)
 	if err != nil {
 		return nil, fmt.Errorf("read pi transcript %s: %w", sessionRef, err)
@@ -120,19 +120,19 @@ func (a *PiAgent) GetSessionID(input *agent.HookInput) string {
 // transcripts for repoPath: <piHome>/sessions/<encoded-repo-path>/.
 //
 // Pointing this at the native store (rather than the per-repo
-// .trace/tmp/pi/ cache populated by the agent_end hook) is what lets
-// `trace session attach <id>` resolve cold sessions — sessions that
+// .entire/tmp/pi/ cache populated by the agent_end hook) is what lets
+// `entire session attach <id>` resolve cold sessions — sessions that
 // were never hooked, or whose hook capture failed. attach falls through
 // to GetSessionDir + ResolveSessionFile when no SessionRef is recorded
 // in metadata, and the live Pi store is the only place that always has
 // the transcript on disk.
 //
 // Resolution order:
-//  1. TRACE_TEST_PI_SESSION_DIR (test override; no encoding applied)
+//  1. ENTIRE_TEST_PI_SESSION_DIR (test override; no encoding applied)
 //  2. PI_CODING_AGENT_DIR (Pi's own override; encoding still applies)
 //  3. ~/.pi/agent (default)
 //
-// The .trace/tmp/pi/ cache stays as a hook-internal detail —
+// The .entire/tmp/pi/ cache stays as a hook-internal detail —
 // captureTranscript writes there and the TurnEnd event records that
 // path as SessionRef in checkpoint metadata, so subsequent operations
 // on hooked sessions go through the recorded SessionRef and never call

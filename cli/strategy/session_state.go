@@ -16,12 +16,12 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/agent/types"
+	"github.com/GrayCodeAI/trace/cli/internal/flock"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/osroot"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
 	"github.com/GrayCodeAI/trace/cli/validation"
-	"github.com/GrayCodeAI/trace/internal/flock"
 )
 
 // sessionLockDeadlineKey carries an optional wall-clock deadline bounding how

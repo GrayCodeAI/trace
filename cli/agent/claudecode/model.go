@@ -73,5 +73,3 @@ func (c *ClaudeCodeAgent) ExtractModel(transcriptData []byte) (string, error) {
 	}
 	return initModel, nil
 }
-
-const envelopeTypeAssistant = "assistant"

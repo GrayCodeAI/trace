@@ -32,7 +32,7 @@ func newDoctorBundleCmd() *cobra.Command {
 for attaching to bug reports.
 
 The archive includes:
-  - logs/                       (operational logs from .trace/logs/)
+  - logs/                       (operational logs from .entire/logs/)
   - settings/settings.json and settings/settings.local.json (if present)
   - git-status.txt, git-log.txt, git-remote.txt
   - version.txt with CLI version, Go version, OS/Arch
@@ -56,7 +56,7 @@ that path is printed to stdout. Use --out to choose a specific path.`,
 
 			outPath := outFlag
 			if outPath == "" {
-				outPath = filepath.Join(os.TempDir(), fmt.Sprintf("trace-bundle-%s.zip", time.Now().UTC().Format("20060102-150405")))
+				outPath = filepath.Join(os.TempDir(), fmt.Sprintf("entire-bundle-%s.zip", time.Now().UTC().Format("20060102-150405")))
 			}
 
 			if err := writeDoctorBundle(ctx, repoRoot, outPath, rawFlag); err != nil {
@@ -79,7 +79,6 @@ that path is printed to stdout. Use --out to choose a specific path.`,
 }
 
 func writeDoctorBundle(ctx context.Context, repoRoot, outPath string, raw bool) error {
-	// #nosec G304 -- outPath is user-provided via --out flag, a standard trusted CLI argument
 	out, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // user-provided output path is intentional
 	if err != nil {
 		return fmt.Errorf("create bundle: %w", err)
@@ -109,7 +108,7 @@ func writeDoctorBundle(ctx context.Context, repoRoot, outPath string, raw bool) 
 	}
 
 	for _, name := range []string{"settings.json", "settings.local.json"} {
-		src := filepath.Join(repoRoot, ".trace", name)
+		src := filepath.Join(repoRoot, ".entire", name)
 		if err := addFileToZip(zw, src, path.Join("settings", name), raw); err != nil {
 			return err
 		}
@@ -122,6 +121,10 @@ func writeDoctorBundle(ctx context.Context, repoRoot, outPath string, raw bool) 
 		return err
 	}
 	if err := addCommandOutput(ctx, zw, "git-remote.txt", repoRoot, raw, "git", "remote", "-v"); err != nil {
+		return err
+	}
+
+	if err := addStringToZip(zw, "entire-refs.txt", entireRefsReport(ctx, repoRoot), raw); err != nil {
 		return err
 	}
 
@@ -142,9 +145,28 @@ func writeDoctorBundle(ctx context.Context, repoRoot, outPath string, raw bool) 
 	return nil
 }
 
+// entireRefsReport captures entire-related git refs.
+// Best-effort: failures are recorded in the report, not returned.
+func entireRefsReport(ctx context.Context, repoRoot string) string {
+	var sb strings.Builder
+
+	// Broad globs on purpose: refs/heads/entire catches shadow/trails branches,
+	// and refs/entire captures custom or legacy Entire refs.
+	cmd := exec.CommandContext(ctx, "git", "for-each-ref", "--format=%(refname) %(objectname)",
+		"refs/heads/entire", "refs/entire", "refs/remotes/origin/entire")
+	cmd.Dir = repoRoot
+	out, err := cmd.CombinedOutput()
+	sb.Write(out)
+	if err != nil {
+		fmt.Fprintf(&sb, "[error: %v]\n", err)
+	}
+
+	return sb.String()
+}
+
 func versionInfoString() string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Trace CLI %s (%s)\n", versioninfo.Version, versioninfo.Commit)
+	fmt.Fprintf(&sb, "Entire CLI %s (%s)\n", versioninfo.Version, versioninfo.Commit)
 	fmt.Fprintf(&sb, "Go: %s\n", runtime.Version())
 	fmt.Fprintf(&sb, "OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	return sb.String()
@@ -192,7 +214,6 @@ func zipEntryName(parts ...string) string {
 }
 
 func addFileToZip(zw *zip.Writer, src, archivePath string, raw bool) error {
-	// #nosec G304 -- src comes from repo-internal walk (settings files, logs dir), not external input
 	f, err := os.Open(src) //nolint:gosec // path comes from repo-internal walk
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

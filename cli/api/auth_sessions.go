@@ -9,7 +9,7 @@ import (
 
 // AuthSession is a single active login session — an OAuth refresh-token family —
 // returned by entire-core's session endpoint. One is created per
-// `trace login`, across all of a user's devices. Plaintext token values are
+// `entire login`, across all of a user's devices. Plaintext token values are
 // never returned by the server, only metadata. (The list envelope's wire key
 // is "tokens"; the rows are sessions.)
 type AuthSession struct {
@@ -33,10 +33,10 @@ type AuthSessionsResponse struct {
 var errAuthSessionsPathUnset = errors.New("api: auth sessions path is unset (call (*Client).WithAuthSessionsPath before list/revoke)")
 
 func (c *Client) authSessionsBasePath() (string, error) {
-	if c.authSessionsPathFunc() == "" {
+	if c.authSessionsPath == "" {
 		return "", errAuthSessionsPathUnset
 	}
-	return c.authSessionsPathFunc(), nil
+	return c.authSessionsPath, nil
 }
 
 // ListAuthSessions returns the authenticated user's active login sessions.

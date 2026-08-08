@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/GrayCodeAI/trace/cli/agent"
+	"github.com/GrayCodeAI/trace/cli/gitrepo"
 	"github.com/GrayCodeAI/trace/cli/jsonutil"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/osroot"
@@ -111,7 +112,7 @@ func CapturePrePromptState(ctx context.Context, ag agent.Agent, sessionID, sessi
 		return fmt.Errorf("failed to create tmp directory: %w", err)
 	}
 
-	// Get list of untracked files (excluding .trace directory itself)
+	// Get list of untracked files (excluding .entire directory itself)
 	untrackedFiles, err := getUntrackedFilesForState(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get untracked files: %w", err)
@@ -202,7 +203,12 @@ func CleanupPrePromptState(ctx context.Context, sessionID string) error {
 	if err := validation.ValidateSessionID(sessionID); err != nil {
 		return fmt.Errorf("invalid session ID for pre-prompt state cleanup: %w", err)
 	}
+	return cleanupTmpStateFile(ctx, fmt.Sprintf("pre-prompt-%s.json", sessionID))
+}
 
+// cleanupTmpStateFile removes one state file from .entire/tmp, treating a
+// missing directory as already clean.
+func cleanupTmpStateFile(ctx context.Context, fileName string) error {
 	tmpDirAbs := resolveTmpDir(ctx)
 
 	root, err := os.OpenRoot(tmpDirAbs)
@@ -214,7 +220,6 @@ func CleanupPrePromptState(ctx context.Context, sessionID string) error {
 	}
 	defer root.Close()
 
-	fileName := fmt.Sprintf("pre-prompt-%s.json", sessionID)
 	return osroot.Remove(root, fileName) //nolint:wrapcheck // best-effort cleanup, caller adds context via wrapping function name
 }
 
@@ -226,7 +231,7 @@ type FileChanges struct {
 }
 
 // shouldIgnoreSessionTrackingPath returns true for repo files that belong to
-// Trace or the agent integration itself rather than user work.
+// Entire or the agent integration itself rather than user work.
 func shouldIgnoreSessionTrackingPath(relPath string) bool {
 	cleanPath := filepath.Clean(filepath.FromSlash(relPath))
 	if paths.IsInfrastructurePath(cleanPath) {
@@ -234,15 +239,14 @@ func shouldIgnoreSessionTrackingPath(relPath string) bool {
 	}
 
 	for _, file := range agent.AllProtectedFiles() {
-		cleanFile := filepath.Clean(filepath.FromSlash(file))
-		if cleanPath == cleanFile {
+		if paths.Equal(cleanPath, file) {
 			return true
 		}
 	}
 
 	for _, dir := range agent.AllProtectedDirs() {
 		cleanDir := filepath.Clean(filepath.FromSlash(dir))
-		if paths.IsSubpath(cleanDir, cleanPath) {
+		if paths.IsProtectedSubpath(cleanDir, cleanPath) {
 			return true
 		}
 	}
@@ -258,19 +262,15 @@ func shouldIgnoreSessionTrackingPath(relPath string) bool {
 //
 // Modified includes both worktree and staging modified/added files.
 // Deleted includes both staged and unstaged deletions.
-// All results exclude .trace/ directory.
+// All results exclude .entire/ directory.
 func DetectFileChanges(ctx context.Context, previouslyUntracked []string) (*FileChanges, error) {
 	repo, err := openRepository(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
+	defer repo.Close()
 
-	worktree, err := repo.Worktree()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get worktree: %w", err)
-	}
-
-	status, err := worktree.Status()
+	status, err := gitrepo.Status(ctx, repo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get status: %w", err)
 	}
@@ -324,6 +324,7 @@ func filterToUncommittedFiles(ctx context.Context, files []string, repoRoot stri
 	if err != nil {
 		return files // fail open
 	}
+	defer repo.Close()
 
 	head, err := repo.Head()
 	if err != nil {
@@ -356,8 +357,7 @@ func filterToUncommittedFiles(ctx context.Context, files []string, repoRoot stri
 
 		// File is in HEAD — compare content with working tree
 		absPath := filepath.Join(repoRoot, relPath)
-		// #nosec G304 -- path joined from repo root and a git index entry, not external input
-		workingContent, err := os.ReadFile(absPath)
+		workingContent, err := os.ReadFile(absPath) //nolint:gosec // path from controlled source
 		if err != nil {
 			// Can't read working tree file (deleted?) — keep it
 			result = append(result, relPath)
@@ -415,30 +415,26 @@ func mergeUnique(base, extra []string) []string {
 	return base
 }
 
-// resolveTmpDir returns the absolute path to the .trace/tmp directory,
+// resolveTmpDir returns the absolute path to the .entire/tmp directory,
 // falling back to a relative path if the repo root can't be determined.
 func resolveTmpDir(ctx context.Context) string {
-	abs, err := paths.AbsPath(ctx, paths.TraceTmpDir)
+	abs, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
-		return paths.TraceTmpDir
+		return paths.EntireTmpDir
 	}
 	return abs
 }
 
 // getUntrackedFilesForState returns a list of untracked files using go-git
-// Excludes .trace directory
+// Excludes .entire directory
 func getUntrackedFilesForState(ctx context.Context) ([]string, error) {
 	repo, err := openRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer repo.Close()
 
-	worktree, err := repo.Worktree()
-	if err != nil {
-		return nil, err //nolint:wrapcheck // already present in codebase
-	}
-
-	status, err := worktree.Status()
+	status, err := gitrepo.Status(ctx, repo)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // already present in codebase
 	}
@@ -494,7 +490,7 @@ func CapturePreTaskState(ctx context.Context, toolUseID string) error {
 		return fmt.Errorf("failed to create tmp directory: %w", err)
 	}
 
-	// Get list of untracked files (excluding .trace directory itself)
+	// Get list of untracked files (excluding .entire directory itself)
 	untrackedFiles, err := getUntrackedFilesForState(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get untracked files: %w", err)
@@ -568,26 +564,13 @@ func CleanupPreTaskState(ctx context.Context, toolUseID string) error {
 	if err := validation.ValidateToolUseID(toolUseID); err != nil {
 		return fmt.Errorf("invalid tool use ID for pre-task state cleanup: %w", err)
 	}
-
-	tmpDirAbs := resolveTmpDir(ctx)
-
-	root, err := os.OpenRoot(tmpDirAbs)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // Directory doesn't exist, nothing to clean up
-		}
-		return fmt.Errorf("failed to open tmp directory root: %w", err)
-	}
-	defer root.Close()
-
-	fileName := fmt.Sprintf("pre-task-%s.json", toolUseID)
-	return osroot.Remove(root, fileName) //nolint:wrapcheck // best-effort cleanup, caller adds context via wrapping function name
+	return cleanupTmpStateFile(ctx, fmt.Sprintf("pre-task-%s.json", toolUseID))
 }
 
 // preTaskFilePrefix is the prefix for pre-task state files
 const preTaskFilePrefix = "pre-task-"
 
-// FindActivePreTaskFile finds an active pre-task file in .trace/tmp/ and returns
+// FindActivePreTaskFile finds an active pre-task file in .entire/tmp/ and returns
 // the parent Task's tool_use_id. Returns ("", false) if no pre-task file exists.
 // When multiple pre-task files exist (nested subagents), returns the most recently
 // modified one.
@@ -636,6 +619,13 @@ func FindActivePreTaskFile(ctx context.Context) (taskToolUseID string, found boo
 // It counts existing checkpoint files in the task metadata checkpoints directory.
 // Returns 1 if no checkpoints exist yet.
 func GetNextCheckpointSequence(sessionID, taskToolUseID string) int {
+	// sessionID/taskToolUseID arrive from agent hook input and are used as path
+	// components below. Reject unsafe values so a crafted "../.." cannot redirect
+	// the os.ReadDir to an arbitrary directory; an invalid ID just starts at 1.
+	if validation.ValidateSessionID(sessionID) != nil || validation.ValidateToolUseID(taskToolUseID) != nil {
+		return 1
+	}
+
 	// Use the session ID directly as the metadata directory name
 	sessionMetadataDir := paths.SessionMetadataDirFromSessionID(sessionID)
 	taskMetadataDir := strategy.TaskMetadataDir(sessionMetadataDir, taskToolUseID)

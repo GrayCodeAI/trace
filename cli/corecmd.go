@@ -22,7 +22,7 @@ import (
 
 // addControlPlaneFlags registers the persistent flags shared by every
 // control-plane command group. Persistent so they're inherited by nested
-// subcommands (e.g. `trace repo mirror list`):
+// subcommands (e.g. `entire repo mirror list`):
 //   - --insecure-http-auth: permit the token exchange over plain http://
 //     (local/dev deployments where the core isn't behind TLS). Hidden, as
 //     elsewhere in the CLI. Applies to every subcommand because they all build

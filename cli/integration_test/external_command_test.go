@@ -18,16 +18,16 @@ import (
 	"github.com/GrayCodeAI/trace/cli/testutil"
 )
 
-// Integration tests for external-command resolution in cmd/trace/main.go.
+// Integration tests for external-command resolution in cmd/entire/main.go.
 // They build and exec the real binary so the pre-Cobra routing (exit-code
 // propagation, stdio passthrough, signal handling) is exercised end-to-end
-// — unit tests in cli/plugin_test.go can't.
+// — unit tests in cmd/entire/cli/plugin_test.go can't.
 
 // writePluginScript writes a shell script that records argv and exits
 // with exitCode. Skips the calling test on Windows.
-func writePluginScript(t *testing.T, dir, binaryName, argFile string, exitCode int) string {
+func writePluginScript(t *testing.T, dir, binaryName, argFile string, exitCode int) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("plugin shell-script harness only runs on Unix")
 	}
 	path := filepath.Join(dir, binaryName)
@@ -38,10 +38,9 @@ func writePluginScript(t *testing.T, dir, binaryName, argFile string, exitCode i
 			"exit %d\n",
 		argFile, exitCode,
 	)
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil { //nolint:gosec // test fixture
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write plugin %s: %v", path, err)
 	}
-	return path
 }
 
 // pathWith returns os.Environ with dir prepended to PATH. Returning a
@@ -61,7 +60,7 @@ func TestExternalCommand_HappyPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	argFile := filepath.Join(dir, "argv.txt")
-	writePluginScript(t, dir, "trace-pgr", argFile, 0)
+	writePluginScript(t, dir, "entire-pgr", argFile, 0)
 
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "pgr", "hello", "--flag", "value")
 	cmd.Env = pathWith(dir)
@@ -70,7 +69,7 @@ func TestExternalCommand_HappyPath(t *testing.T) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("trace pgr failed: %v\nstderr: %s", err, stderr.String())
+		t.Fatalf("entire pgr failed: %v\nstderr: %s", err, stderr.String())
 	}
 	if got := strings.TrimSpace(stdout.String()); got != "plugin stdout" {
 		t.Errorf("stdout = %q, want %q", got, "plugin stdout")
@@ -90,7 +89,7 @@ func TestExternalCommand_HappyPath(t *testing.T) {
 func TestExternalCommand_ExitCodePropagation(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writePluginScript(t, dir, "trace-failing", filepath.Join(dir, "argv.txt"), 42)
+	writePluginScript(t, dir, "entire-failing", filepath.Join(dir, "argv.txt"), 42)
 
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "failing")
 	cmd.Env = pathWith(dir)
@@ -115,7 +114,7 @@ func TestExternalCommand_BuiltinWins(t *testing.T) {
 	dir := t.TempDir()
 	// If the shadowing plugin ran, the parent's exit code would be 99
 	// (writePluginScript bakes that in via the requested code).
-	writePluginScript(t, dir, "trace-version", filepath.Join(dir, "argv.txt"), 99)
+	writePluginScript(t, dir, "entire-version", filepath.Join(dir, "argv.txt"), 99)
 
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "version")
 	cmd.Env = pathWith(dir)
@@ -124,12 +123,12 @@ func TestExternalCommand_BuiltinWins(t *testing.T) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("trace version failed: %v\nstderr: %s", err, stderr.String())
+		t.Fatalf("entire version failed: %v\nstderr: %s", err, stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(dir, "argv.txt")); err == nil {
-		t.Errorf("trace-version plugin was invoked but built-in must take precedence\nstdout: %s", stdout.String())
+		t.Errorf("entire-version plugin was invoked but built-in must take precedence\nstdout: %s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "Trace CLI") {
+	if !strings.Contains(stdout.String(), "Entire CLI") {
 		t.Errorf("expected built-in version output, got: %s", stdout.String())
 	}
 }
@@ -162,14 +161,14 @@ func TestExternalCommand_FlagAfterPluginNameNotEatenByCobra(t *testing.T) {
 	// child verbatim — Cobra's --help/--version handlers must not see them.
 	dir := t.TempDir()
 	argFile := filepath.Join(dir, "argv.txt")
-	writePluginScript(t, dir, "trace-passthrough", argFile, 0)
+	writePluginScript(t, dir, "entire-passthrough", argFile, 0)
 
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "passthrough", "--help", "--version", "subcmd")
 	cmd.Env = pathWith(dir)
 	cmd.Stdout = &bytes.Buffer{}
 	cmd.Stderr = &bytes.Buffer{}
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("trace passthrough failed: %v", err)
+		t.Fatalf("entire passthrough failed: %v", err)
 	}
 
 	argsBytes, err := os.ReadFile(argFile)
@@ -184,13 +183,13 @@ func TestExternalCommand_FlagAfterPluginNameNotEatenByCobra(t *testing.T) {
 
 func TestExternalCommand_StdinPassthrough(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("plugin shell-script harness only runs on Unix")
 	}
 	dir := t.TempDir()
 	outFile := filepath.Join(dir, "stdin.txt")
 	body := fmt.Sprintf("#!/bin/sh\ncat > %q\nexit 0\n", outFile)
-	if err := os.WriteFile(filepath.Join(dir, "trace-stdincat"), []byte(body), 0o755); err != nil { //nolint:gosec // test fixture
+	if err := os.WriteFile(filepath.Join(dir, "entire-stdincat"), []byte(body), 0o755); err != nil {
 		t.Fatalf("write plugin: %v", err)
 	}
 
@@ -200,7 +199,7 @@ func TestExternalCommand_StdinPassthrough(t *testing.T) {
 	cmd.Stdout = &bytes.Buffer{}
 	cmd.Stderr = &bytes.Buffer{}
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("trace stdincat failed: %v", err)
+		t.Fatalf("entire stdincat failed: %v", err)
 	}
 
 	got, err := os.ReadFile(outFile)
@@ -214,11 +213,11 @@ func TestExternalCommand_StdinPassthrough(t *testing.T) {
 
 func TestExternalCommand_EnvVarsForwarded(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("plugin shell-script harness only runs on Unix")
 	}
 	// Spawn the parent CLI from inside a real git repo so it can resolve
-	// the repo root and forward TRACE_REPO_ROOT. testutil.InitRepo
+	// the repo root and forward ENTIRE_REPO_ROOT. testutil.InitRepo
 	// configures user.name/email and disables GPG signing.
 	repoDir := t.TempDir()
 	resolvedRepo, err := filepath.EvalSymlinks(repoDir)
@@ -231,25 +230,25 @@ func TestExternalCommand_EnvVarsForwarded(t *testing.T) {
 	envFile := filepath.Join(pluginDir, "env.txt")
 	body := fmt.Sprintf(
 		"#!/bin/sh\n{\n"+
-			"  echo \"TRACE_CLI_VERSION=$TRACE_CLI_VERSION\"\n"+
-			"  echo \"TRACE_REPO_ROOT=$TRACE_REPO_ROOT\"\n"+
-			"  echo \"TRACE_PLUGIN_DATA_DIR=$TRACE_PLUGIN_DATA_DIR\"\n"+
+			"  echo \"ENTIRE_CLI_VERSION=$ENTIRE_CLI_VERSION\"\n"+
+			"  echo \"ENTIRE_REPO_ROOT=$ENTIRE_REPO_ROOT\"\n"+
+			"  echo \"ENTIRE_PLUGIN_DATA_DIR=$ENTIRE_PLUGIN_DATA_DIR\"\n"+
 			"} > %q\nexit 0\n",
 		envFile,
 	)
-	if err := os.WriteFile(filepath.Join(pluginDir, "trace-envcheck"), []byte(body), 0o755); err != nil { //nolint:gosec // test fixture
+	if err := os.WriteFile(filepath.Join(pluginDir, "entire-envcheck"), []byte(body), 0o755); err != nil {
 		t.Fatalf("write plugin: %v", err)
 	}
 
 	// Pin the plugin parent dir so we can assert the per-plugin data path.
 	pluginRoot := t.TempDir()
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "envcheck")
-	cmd.Env = append(pathWith(pluginDir), "TRACE_PLUGIN_DIR="+pluginRoot)
+	cmd.Env = append(pathWith(pluginDir), "ENTIRE_PLUGIN_DIR="+pluginRoot)
 	cmd.Dir = resolvedRepo
 	cmd.Stdout = &bytes.Buffer{}
 	cmd.Stderr = &bytes.Buffer{}
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("trace envcheck failed: %v", err)
+		t.Fatalf("entire envcheck failed: %v", err)
 	}
 
 	got, err := os.ReadFile(envFile)
@@ -259,19 +258,19 @@ func TestExternalCommand_EnvVarsForwarded(t *testing.T) {
 	envVars := parseEnvLines(t, string(got))
 
 	// Value depends on build-time linker flags; just check it's non-empty.
-	if v := envVars["TRACE_CLI_VERSION"]; v == "" {
-		t.Errorf("TRACE_CLI_VERSION was empty")
+	if v := envVars["ENTIRE_CLI_VERSION"]; v == "" {
+		t.Errorf("ENTIRE_CLI_VERSION was empty")
 	}
-	if got, want := envVars["TRACE_REPO_ROOT"], resolvedRepo; got != want {
-		t.Errorf("TRACE_REPO_ROOT = %q, want %q", got, want)
+	if got, want := envVars["ENTIRE_REPO_ROOT"], resolvedRepo; got != want {
+		t.Errorf("ENTIRE_REPO_ROOT = %q, want %q", got, want)
 	}
 	wantData := filepath.Join(pluginRoot, "data", "envcheck")
-	if got := envVars["TRACE_PLUGIN_DATA_DIR"]; got != wantData {
-		t.Errorf("TRACE_PLUGIN_DATA_DIR = %q, want %q", got, wantData)
+	if got := envVars["ENTIRE_PLUGIN_DATA_DIR"]; got != wantData {
+		t.Errorf("ENTIRE_PLUGIN_DATA_DIR = %q, want %q", got, wantData)
 	}
 }
 
-// writeEnvDumpPlugin creates an trace-envfilter plugin in its own dir
+// writeEnvDumpPlugin creates an entire-envfilter plugin in its own dir
 // that dumps the full child environment to env.txt. Each caller gets a
 // fresh dir so parallel subtests don't trample each other's output.
 func writeEnvDumpPlugin(t *testing.T) (pluginDir, envFile string) {
@@ -279,7 +278,7 @@ func writeEnvDumpPlugin(t *testing.T) (pluginDir, envFile string) {
 	pluginDir = t.TempDir()
 	envFile = filepath.Join(pluginDir, "env.txt")
 	body := fmt.Sprintf("#!/bin/sh\nenv > %q\nexit 0\n", envFile)
-	if err := os.WriteFile(filepath.Join(pluginDir, "trace-envfilter"), []byte(body), 0o755); err != nil { //nolint:gosec // test fixture
+	if err := os.WriteFile(filepath.Join(pluginDir, "entire-envfilter"), []byte(body), 0o755); err != nil {
 		t.Fatalf("write plugin: %v", err)
 	}
 	return pluginDir, envFile
@@ -290,7 +289,7 @@ func writeEnvDumpPlugin(t *testing.T) (pluginDir, envFile string) {
 // the plugin, while allowlisted OS-plumbing variables do.
 func TestExternalCommand_EnvFiltered_CredentialsDropped(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("plugin shell-script harness only runs on Unix")
 	}
 	pluginDir, envFile := writeEnvDumpPlugin(t)
@@ -305,7 +304,7 @@ func TestExternalCommand_EnvFiltered_CredentialsDropped(t *testing.T) {
 	cmd.Stdout = &bytes.Buffer{}
 	cmd.Stderr = &bytes.Buffer{}
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("trace envfilter failed: %v", err)
+		t.Fatalf("entire envfilter failed: %v", err)
 	}
 	got, err := os.ReadFile(envFile)
 	if err != nil {
@@ -324,11 +323,11 @@ func TestExternalCommand_EnvFiltered_CredentialsDropped(t *testing.T) {
 }
 
 // TestExternalCommand_EnvFiltered_OverrideWildcard asserts that
-// TRACE_PLUGIN_ENV opens names back up via wildcard, but does not
+// ENTIRE_PLUGIN_ENV opens names back up via wildcard, but does not
 // disable filtering for everything else.
 func TestExternalCommand_EnvFiltered_OverrideWildcard(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("plugin shell-script harness only runs on Unix")
 	}
 	pluginDir, envFile := writeEnvDumpPlugin(t)
@@ -336,7 +335,7 @@ func TestExternalCommand_EnvFiltered_OverrideWildcard(t *testing.T) {
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "envfilter")
 	cmd.Env = append(
 		pathWith(pluginDir),
-		"TRACE_PLUGIN_ENV=AWS_*",
+		"ENTIRE_PLUGIN_ENV=AWS_*",
 		"AWS_PROFILE=dev",
 		"AWS_REGION=us-east-1",
 		"GITHUB_TOKEN=still-must-not-leak",
@@ -344,7 +343,7 @@ func TestExternalCommand_EnvFiltered_OverrideWildcard(t *testing.T) {
 	cmd.Stdout = &bytes.Buffer{}
 	cmd.Stderr = &bytes.Buffer{}
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("trace envfilter failed: %v", err)
+		t.Fatalf("entire envfilter failed: %v", err)
 	}
 	got, err := os.ReadFile(envFile)
 	if err != nil {
@@ -380,14 +379,14 @@ func parseEnvLines(t *testing.T, contents string) map[string]string {
 
 func TestExternalCommand_NonExecutableReportsLaunchError(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("executable bit semantics tested on Unix only")
 	}
 	dir := t.TempDir()
 	// Mode 0o644 — file exists on PATH but cannot be exec'd. The dispatcher
 	// must report a launch failure rather than silently falling through to
 	// Cobra's generic unknown-command path.
-	if err := os.WriteFile(filepath.Join(dir, "trace-noexec"), []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil { //nolint:gosec // test fixture
+	if err := os.WriteFile(filepath.Join(dir, "entire-noexec"), []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
 		t.Fatalf("write plugin: %v", err)
 	}
 
@@ -401,17 +400,17 @@ func TestExternalCommand_NonExecutableReportsLaunchError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected non-zero exit for non-executable plugin")
 	}
-	if !strings.Contains(stderr.String(), "Failed to run plugin trace-noexec") {
+	if !strings.Contains(stderr.String(), "Failed to run plugin entire-noexec") {
 		t.Errorf("expected launch-failure message in stderr, got: %s", stderr.String())
 	}
 }
 
 func TestExternalCommand_AgentProtocolBinarySkipped(t *testing.T) {
 	t.Parallel()
-	// `trace-agent-*` is reserved for the protocol — never dispatched as
+	// `entire-agent-*` is reserved for the protocol — never dispatched as
 	// a passthrough plugin even when present on PATH.
 	dir := t.TempDir()
-	writePluginScript(t, dir, "trace-agent-foo", filepath.Join(dir, "argv.txt"), 0)
+	writePluginScript(t, dir, "entire-agent-foo", filepath.Join(dir, "argv.txt"), 0)
 
 	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "agent-foo")
 	cmd.Env = pathWith(dir)
@@ -419,10 +418,10 @@ func TestExternalCommand_AgentProtocolBinarySkipped(t *testing.T) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err == nil {
-		t.Fatal("expected failure — trace-agent-* must not be dispatched as a plugin")
+		t.Fatal("expected failure — entire-agent-* must not be dispatched as a plugin")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "argv.txt")); err == nil {
-		t.Error("trace-agent-foo was invoked but must have been skipped")
+		t.Error("entire-agent-foo was invoked but must have been skipped")
 	}
 	// Should fall through to Cobra's unknown-command path, not be eaten silently.
 	if !strings.Contains(stderr.String(), "unknown command") &&

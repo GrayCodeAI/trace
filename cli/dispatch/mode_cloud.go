@@ -38,7 +38,7 @@ func runServer(ctx context.Context, opts Options) (*Dispatch, error) {
 	// Resource as a strict origin URL.
 	token, err := lookupResourceToken(ctx, api.OriginOnly(baseURL))
 	if errors.Is(err, auth.ErrNotLoggedIn) {
-		return nil, errors.New("dispatch requires login — run `trace login`")
+		return nil, errors.New("dispatch requires login — run `entire login`")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("reading credentials: %w", err)

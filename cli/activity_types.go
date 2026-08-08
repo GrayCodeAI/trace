@@ -1,6 +1,6 @@
 package cli
 
-// API response types for the /api/v1/me/* endpoints used by `trace activity`.
+// API response types for the /api/v1/me/* endpoints used by `entire activity`.
 
 // activityAgentCounts maps the 11 canonical agent IDs to counts.
 // The API always populates every key (zero for absent agents).

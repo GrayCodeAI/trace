@@ -32,9 +32,9 @@ func TestPluginEnv(t *testing.T) {
 			wantMiss: []string{"EDITOR", "VISUAL", "PAGER", "GIT_ASKPASS"},
 		},
 		{
-			name:     "TRACE namespace passes",
-			parent:   []string{"TRACE_FOO=1", "TRACE_AUTH_TOKEN=secret", "PATH=/bin"},
-			wantHave: []string{"TRACE_FOO", "TRACE_AUTH_TOKEN", "PATH"},
+			name:     "ENTIRE namespace passes",
+			parent:   []string{"ENTIRE_FOO=1", "ENTIRE_AUTH_TOKEN=secret", "PATH=/bin"},
+			wantHave: []string{"ENTIRE_FOO", "ENTIRE_AUTH_TOKEN", "PATH"},
 		},
 		{
 			name:     "LC_ prefix passes",
@@ -59,24 +59,24 @@ func TestPluginEnv(t *testing.T) {
 		{
 			name:     "extras are always added",
 			parent:   []string{"PATH=/bin"},
-			extra:    []string{"TRACE_CLI_VERSION=1.0", "TRACE_REPO_ROOT=/r"},
-			wantHave: []string{"TRACE_CLI_VERSION", "TRACE_REPO_ROOT", "PATH"},
+			extra:    []string{"ENTIRE_CLI_VERSION=1.0", "ENTIRE_REPO_ROOT=/r"},
+			wantHave: []string{"ENTIRE_CLI_VERSION", "ENTIRE_REPO_ROOT", "PATH"},
 		},
 		{
 			name:     "override admits an exact name",
-			parent:   []string{"TRACE_PLUGIN_ENV=AWS_PROFILE", "AWS_PROFILE=dev", "AWS_REGION=us-east-1", "PATH=/bin"},
+			parent:   []string{"ENTIRE_PLUGIN_ENV=AWS_PROFILE", "AWS_PROFILE=dev", "AWS_REGION=us-east-1", "PATH=/bin"},
 			wantHave: []string{"AWS_PROFILE", "PATH"},
 			wantMiss: []string{"AWS_REGION"},
 		},
 		{
 			name:     "override admits a wildcard prefix",
-			parent:   []string{"TRACE_PLUGIN_ENV=AWS_*", "AWS_PROFILE=dev", "AWS_REGION=us-east-1", "GITHUB_TOKEN=x"},
+			parent:   []string{"ENTIRE_PLUGIN_ENV=AWS_*", "AWS_PROFILE=dev", "AWS_REGION=us-east-1", "GITHUB_TOKEN=x"},
 			wantHave: []string{"AWS_PROFILE", "AWS_REGION"},
 			wantMiss: []string{"GITHUB_TOKEN"},
 		},
 		{
 			name:     "override accepts mixed list with whitespace",
-			parent:   []string{"TRACE_PLUGIN_ENV= AWS_* , GH_TOKEN ", "AWS_PROFILE=dev", "GH_TOKEN=t", "GITHUB_TOKEN=x"},
+			parent:   []string{"ENTIRE_PLUGIN_ENV= AWS_* , GH_TOKEN ", "AWS_PROFILE=dev", "GH_TOKEN=t", "GITHUB_TOKEN=x"},
 			wantHave: []string{"AWS_PROFILE", "GH_TOKEN"},
 			wantMiss: []string{"GITHUB_TOKEN"},
 		},
@@ -107,34 +107,34 @@ func TestPluginEnv(t *testing.T) {
 
 // TestPluginEnv_ExtrasOverrideParent documents the cmd/exec contract: when
 // the env slice contains duplicate keys the last value wins. We rely on
-// this so caller-injected TRACE_CLI_VERSION / TRACE_REPO_ROOT always
+// this so caller-injected ENTIRE_CLI_VERSION / ENTIRE_REPO_ROOT always
 // reflect the parent CLI's state, not a stale shell value.
 func TestPluginEnv_ExtrasOverrideParent(t *testing.T) {
 	t.Parallel()
 	got := pluginEnv(
-		[]string{"TRACE_CLI_VERSION=stale", "PATH=/bin"},
-		"TRACE_CLI_VERSION=fresh",
+		[]string{"ENTIRE_CLI_VERSION=stale", "PATH=/bin"},
+		"ENTIRE_CLI_VERSION=fresh",
 	)
 	// Last occurrence in the slice should be the override.
 	var last string
 	for _, kv := range got {
-		if k, v, ok := splitKV(kv); ok && k == "TRACE_CLI_VERSION" {
+		if k, v, ok := splitKV(kv); ok && k == "ENTIRE_CLI_VERSION" {
 			last = v
 		}
 	}
 	if last != "fresh" {
-		t.Errorf("TRACE_CLI_VERSION (last) = %q, want %q (full env: %v)", last, "fresh", got)
+		t.Errorf("ENTIRE_CLI_VERSION (last) = %q, want %q (full env: %v)", last, "fresh", got)
 	}
 }
 
 // TestPluginEnv_OverrideVarItselfPasses confirms the override declaration
-// is forwarded to the child (matches the TRACE_ prefix). Useful so
+// is forwarded to the child (matches the ENTIRE_ prefix). Useful so
 // plugins can introspect what was opened up.
 func TestPluginEnv_OverrideVarItselfPasses(t *testing.T) {
 	t.Parallel()
-	got := pluginEnv([]string{"TRACE_PLUGIN_ENV=AWS_*", "PATH=/bin"})
-	if !slices.Contains(envNames(got), "TRACE_PLUGIN_ENV") {
-		t.Errorf("TRACE_PLUGIN_ENV should pass through to plugins; got %v", envNames(got))
+	got := pluginEnv([]string{"ENTIRE_PLUGIN_ENV=AWS_*", "PATH=/bin"})
+	if !slices.Contains(envNames(got), "ENTIRE_PLUGIN_ENV") {
+		t.Errorf("ENTIRE_PLUGIN_ENV should pass through to plugins; got %v", envNames(got))
 	}
 }
 

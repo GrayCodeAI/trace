@@ -13,7 +13,7 @@ import (
 // testPluginName is the bare plugin name used across managed-store tests.
 const testPluginName = "pgr"
 
-// withPluginDir points $TRACE_PLUGIN_DIR at a fresh temp dir so the managed
+// withPluginDir points $ENTIRE_PLUGIN_DIR at a fresh temp dir so the managed
 // helpers operate in isolation. Mutates process state, so the calling test
 // must not be t.Parallel.
 func withPluginDir(t *testing.T) string {
@@ -35,7 +35,7 @@ func TestPluginParentDir_HonorsOverride(t *testing.T) { //nolint:paralleltest //
 }
 
 func TestPluginParentDir_RejectsRelativeOverride(t *testing.T) { //nolint:paralleltest // mutates env
-	// A relative TRACE_PLUGIN_DIR would resolve against startup CWD —
+	// A relative ENTIRE_PLUGIN_DIR would resolve against startup CWD —
 	// typically inside the user's repo. Reject rather than silently
 	// fall through to the platform default.
 	t.Setenv(pluginEnvPluginDir, "plugins-relative")
@@ -52,7 +52,7 @@ func TestPluginParentDir_WindowsIgnoresXDG(t *testing.T) { //nolint:paralleltest
 	if runtime.GOOS != windowsGOOS {
 		t.Skip("Windows-only behavior")
 	}
-	// TRACE_PLUGIN_DIR not set; XDG_DATA_HOME set. Result must NOT be
+	// ENTIRE_PLUGIN_DIR not set; XDG_DATA_HOME set. Result must NOT be
 	// rooted at the XDG path — Windows users expect Windows conventions.
 	xdg := t.TempDir()
 	t.Setenv(pluginEnvPluginDir, "")
@@ -78,7 +78,7 @@ func TestPluginParentDir_UnixHonorsXDG(t *testing.T) { //nolint:paralleltest // 
 	if err != nil {
 		t.Fatalf("pluginParentDir: %v", err)
 	}
-	want := filepath.Join(xdg, "trace", "plugins")
+	want := filepath.Join(xdg, "entire", "plugins")
 	if got != want {
 		t.Errorf("pluginParentDir = %q, want %q", got, want)
 	}
@@ -133,7 +133,7 @@ func TestInstallPluginFromPath_SymlinksAndLists(t *testing.T) { //nolint:paralle
 		t.Skip("symlink path is Unix-only here")
 	}
 	withPluginDir(t)
-	src := filepath.Join(t.TempDir(), "trace-pgr")
+	src := filepath.Join(t.TempDir(), "entire-pgr")
 	if err := os.WriteFile(src, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestInstallPluginFromPath_RejectsNonExecutable(t *testing.T) { //nolint:par
 		t.Skip("Unix permissions checks")
 	}
 	withPluginDir(t)
-	src := filepath.Join(t.TempDir(), "trace-noexec")
+	src := filepath.Join(t.TempDir(), "entire-noexec")
 	if err := os.WriteFile(src, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
@@ -210,10 +210,10 @@ func TestBareNameFromBinaryName(t *testing.T) {
 	t.Parallel()
 	// Cases that hold on every platform.
 	common := map[string]string{
-		"trace-pgr": "pgr",
-		"trace-":    "",
-		"foo":       "",
-		"":          "",
+		"entire-pgr": "pgr",
+		"entire-":    "",
+		"foo":        "",
+		"":           "",
 	}
 	for in, want := range common {
 		if got := bareNameFromBinaryName(in); got != want {
@@ -224,9 +224,9 @@ func TestBareNameFromBinaryName(t *testing.T) {
 	// managed entry actually resolves at runtime via exec.LookPath.
 	if runtime.GOOS == windowsGOOS {
 		for in, want := range map[string]string{
-			"trace-pgr.exe": "pgr",
-			"trace-foo.bat": "foo",
-			"trace-foo.cmd": "foo",
+			"entire-pgr.exe": "pgr",
+			"entire-foo.bat": "foo",
+			"entire-foo.cmd": "foo",
 		} {
 			if got := bareNameFromBinaryName(in); got != want {
 				t.Errorf("[windows] bareNameFromBinaryName(%q) = %q; want %q", in, got, want)
@@ -237,10 +237,10 @@ func TestBareNameFromBinaryName(t *testing.T) {
 		// it would yield a managed entry that LookPath would never match.
 		// We accept that bareNameFromBinaryName may return a non-empty
 		// string here (the dispatcher uses exact-match LookPath); the
-		// guarantee we test is that "trace-pgr.exe" doesn't collapse to
+		// guarantee we test is that "entire-pgr.exe" doesn't collapse to
 		// "pgr" on Unix.
-		if got := bareNameFromBinaryName("trace-pgr.exe"); got == "pgr" {
-			t.Errorf("[unix] bareNameFromBinaryName(trace-pgr.exe) collapsed to %q; should not strip .exe on Unix", got)
+		if got := bareNameFromBinaryName("entire-pgr.exe"); got == "pgr" {
+			t.Errorf("[unix] bareNameFromBinaryName(entire-pgr.exe) collapsed to %q; should not strip .exe on Unix", got)
 		}
 	}
 }
@@ -275,7 +275,7 @@ func TestInstallPluginFromPath_RejectsAgentReservedName(t *testing.T) { //nolint
 		t.Skip("Unix-only test")
 	}
 	withPluginDir(t)
-	src := filepath.Join(t.TempDir(), "trace-agent-foo")
+	src := filepath.Join(t.TempDir(), "entire-agent-foo")
 	if err := os.WriteFile(src, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestInstallPluginFromPath_RejectsSelfInstall(t *testing.T) { //nolint:paral
 	// install it from that same path. Without the self-install guard,
 	// --force would Remove() this file before symlinking to a missing
 	// target, deleting the working install.
-	src := filepath.Join(binDir, "trace-foo")
+	src := filepath.Join(binDir, "entire-foo")
 	if err := os.WriteFile(src, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestMaterializeManagedEntry_HappyPath(t *testing.T) {
 
 func TestRemoveInstalledPlugin_RemovesAllVariants(t *testing.T) { //nolint:paralleltest // mutates env
 	// Simulate a corrupted state with two variants for the same bare name
-	// (the situation `trace plugin install` now prevents but legacy state
+	// (the situation `entire plugin install` now prevents but legacy state
 	// or hand-edits could produce). RemoveInstalledPlugin must clean up
 	// every match, not just the first one FindInstalledPlugin returns.
 	if runtime.GOOS == windowsGOOS {
@@ -367,14 +367,14 @@ func TestRemoveInstalledPlugin_RemovesAllVariants(t *testing.T) { //nolint:paral
 	// exists. The Windows-specific multi-variant path is covered by the
 	// implementation reading installedVariantsByBareName.
 	body := []byte("#!/bin/sh\nexit 0\n")
-	if err := os.WriteFile(filepath.Join(binDir, "trace-foo"), body, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(binDir, "entire-foo"), body, 0o755); err != nil {
 		t.Fatalf("write entry: %v", err)
 	}
 	if err := RemoveInstalledPlugin("foo"); err != nil {
 		t.Fatalf("RemoveInstalledPlugin: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(binDir, "trace-foo")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("trace-foo still present after remove: %v", err)
+	if _, err := os.Stat(filepath.Join(binDir, "entire-foo")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("entire-foo still present after remove: %v", err)
 	}
 }
 
@@ -390,15 +390,15 @@ func TestInstallPluginFromPath_TmpDoesNotClobberDottedPlugin(t *testing.T) { //n
 	// Pre-populate a plugin literally named "foo.tmp" — entirely valid:
 	// the dispatcher's name validator allows dots. The naive `dest+".tmp"`
 	// scheme would have clobbered this on the install below.
-	dotted := filepath.Join(binDir, "trace-foo.tmp")
+	dotted := filepath.Join(binDir, "entire-foo.tmp")
 	dottedBody := []byte("#!/bin/sh\necho dotted\n")
 	if err := os.WriteFile(dotted, dottedBody, 0o755); err != nil {
 		t.Fatalf("write dotted: %v", err)
 	}
 
-	// Now install trace-foo. Its temp path must not collide with
-	// trace-foo.tmp.
-	src := filepath.Join(t.TempDir(), "trace-foo")
+	// Now install entire-foo. Its temp path must not collide with
+	// entire-foo.tmp.
+	src := filepath.Join(t.TempDir(), "entire-foo")
 	if err := os.WriteFile(src, []byte("#!/bin/sh\necho foo\n"), 0o755); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
@@ -419,8 +419,8 @@ func TestInstallPluginFromPath_TmpDoesNotClobberDottedPlugin(t *testing.T) { //n
 func TestInstallPluginFromPath_RequiresForceForSameBareName(t *testing.T) { //nolint:paralleltest // mutates env
 	// A second install of a different source file that resolves to the
 	// same bare name as a prior install must require --force. The
-	// cross-extension flavor of this conflict (trace-foo.exe vs
-	// trace-foo.bat sharing bare name "foo") is Windows-only and
+	// cross-extension flavor of this conflict (entire-foo.exe vs
+	// entire-foo.bat sharing bare name "foo") is Windows-only and
 	// exercised by installedVariantsByBareName at the implementation
 	// level — the same-bare-name guard tested here is the user-visible
 	// surface on every platform.
@@ -433,8 +433,8 @@ func TestInstallPluginFromPath_RequiresForceForSameBareName(t *testing.T) { //no
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	// Install trace-foo first.
-	srcA := filepath.Join(t.TempDir(), "trace-foo")
+	// Install entire-foo first.
+	srcA := filepath.Join(t.TempDir(), "entire-foo")
 	if err := os.WriteFile(srcA, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write src A: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestInstallPluginFromPath_RequiresForceForSameBareName(t *testing.T) { //no
 	// A second install of the exact same source path is a self-install
 	// (path-equal) — that's tested elsewhere. Here we test that a
 	// different-source same-bare-name install requires --force.
-	srcB := filepath.Join(t.TempDir(), "trace-foo")
+	srcB := filepath.Join(t.TempDir(), "entire-foo")
 	if err := os.WriteFile(srcB, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatalf("write src B: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestMakeInstallTmpPath_Unique(t *testing.T) {
 		t.Errorf("two calls returned the same path: %q", a)
 	}
 	// Tmp prefix must not match the listing filter (which keys off
-	// "trace-"); the dot-prefix achieves that.
+	// "entire-"); the dot-prefix achieves that.
 	if !strings.HasPrefix(filepath.Base(a), ".install-") {
 		t.Errorf("tmp path %q does not start with .install-", a)
 	}
@@ -506,7 +506,7 @@ func TestInstallPluginFromPath_AtomicForceReplace(t *testing.T) { //nolint:paral
 	}
 	withPluginDir(t)
 	srcDir := t.TempDir()
-	src := filepath.Join(srcDir, "trace-foo")
+	src := filepath.Join(srcDir, "entire-foo")
 	if err := os.WriteFile(src, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestInstallPluginFromPath_AtomicForceReplace(t *testing.T) { //nolint:paral
 	if err != nil {
 		t.Fatalf("PluginBinDir: %v", err)
 	}
-	dest := filepath.Join(binDir, "trace-foo")
+	dest := filepath.Join(binDir, "entire-foo")
 	if _, err := os.Lstat(dest); err != nil {
 		t.Fatalf("first install missing: %v", err)
 	}

@@ -4,7 +4,7 @@
 // AgentReviewer using two caller-supplied functions: BuildCmd (per-agent
 // argv/env construction) and Parser (per-agent stdout-to-Event stream).
 //
-// All three currently-supported agents (claude-code, codex, gemini-cli)
+// Current adapter-backed review agents (claude-code, codex, gemini, pi)
 // share the Start/Process/Wait/Events scaffolding. Only the build-cmd
 // step and the stdout parser genuinely differ. The template owns the
 // shared lifecycle (spawn → pipe stdout → run parser → forward events
@@ -18,6 +18,8 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+
+	"github.com/GrayCodeAI/trace/cli/procutil"
 )
 
 const maxProcessStderrBytes = 64 * 1024
@@ -30,7 +32,7 @@ type ReviewerTemplate struct {
 	AgentName string
 
 	// BuildCmd constructs the *exec.Cmd to spawn the agent process,
-	// including argv, stdin (if any), and TRACE_REVIEW_* env vars.
+	// including argv, stdin (if any), and ENTIRE_REVIEW_* env vars.
 	// The command MUST NOT have started yet; the template will call Start.
 	BuildCmd func(ctx context.Context, cfg RunConfig) *exec.Cmd
 
@@ -55,7 +57,7 @@ func (t *ReviewerTemplate) Name() string { return t.AgentName }
 // with a typed error is friendlier than a downstream nil deref — and it
 // keeps Start from panicking inside a multi-agent fan-out (CU8) where one
 // misconfigured template would otherwise kill the whole run.
-func (t *ReviewerTemplate) Start(ctx context.Context, cfg RunConfig) (Process, error) { //nolint:ireturn // required by AgentReviewer interface
+func (t *ReviewerTemplate) Start(ctx context.Context, cfg RunConfig) (Process, error) {
 	if t.AgentName == "" {
 		return nil, fmt.Errorf("ReviewerTemplate.Start: %w (empty AgentName)", ErrTemplateMisconfigured)
 	}
@@ -69,6 +71,10 @@ func (t *ReviewerTemplate) Start(ctx context.Context, cfg RunConfig) (Process, e
 	if cmd == nil {
 		return nil, fmt.Errorf("ReviewerTemplate.Start: %w (BuildCmd returned nil for agent %q)", ErrTemplateMisconfigured, t.AgentName)
 	}
+	// Without this, a cancelled review hangs: the agent's grandchildren keep the
+	// stdout pipe open after the agent is killed, so reading Events to EOF blocks
+	// forever (Ctrl+C never completes).
+	procutil.TerminateOnCancel(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("%s: stdout pipe: %w", t.AgentName, err)

@@ -1,8 +1,8 @@
 // Package spawn provides the Spawner interface used by both `entire review`
-// and `trace investigate` to start an agent process non-interactively.
+// and `entire investigate` to start an agent process non-interactively.
 //
 // The interface is intentionally env-contract-agnostic: callers compose
-// their own TRACE_REVIEW_* or TRACE_INVESTIGATE_* env via
+// their own ENTIRE_REVIEW_* or ENTIRE_INVESTIGATE_* env via
 // review.AppendReviewEnv or investigate.AppendInvestigateEnv before calling
 // BuildCmd. Spawners only own the agent-specific argv shape and stdin
 // wiring; they do not append review/investigate env.
@@ -22,7 +22,7 @@ type Spawner interface {
 
 	// BuildCmd constructs the *exec.Cmd to spawn the agent.
 	//   - env: the full process environment to set on cmd.Env (the caller has
-	//     already appended TRACE_REVIEW_* or TRACE_INVESTIGATE_* values
+	//     already appended ENTIRE_REVIEW_* or ENTIRE_INVESTIGATE_* values
 	//     and stripped any stale entries before calling).
 	//   - prompt: the composed prompt string. The spawner decides whether
 	//     this goes via argv or stdin per the agent's CLI shape.

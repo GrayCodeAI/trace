@@ -19,13 +19,13 @@ func newTraceCmd() *cobra.Command {
 		Long: `Show timing information for recent hook invocations.
 
 Traces are emitted at DEBUG log level. To enable them, either:
-  - Set TRACE_LOG_LEVEL=DEBUG in your shell profile
-  - Add "log_level": "DEBUG" to .trace/settings.json
+  - Set ENTIRE_LOG_LEVEL=DEBUG in your shell profile
+  - Add "log_level": "DEBUG" to .entire/settings.json
 
 Examples:
-  trace trace                     Show the most recent hook trace
-  trace trace --last 5            Show the last 5 hook traces
-  trace trace --hook post-commit  Show only post-commit hook traces`,
+  entire doctor trace                     Show the most recent hook trace
+  entire doctor trace --last 5            Show the last 5 hook traces
+  entire doctor trace --hook post-commit  Show only post-commit hook traces`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if last < 1 {
 				return fmt.Errorf("--last must be at least 1, got %d", last)
@@ -38,7 +38,7 @@ Examples:
 				return NewSilentError(fmt.Errorf("not a git repository: %w", err))
 			}
 
-			logFile := filepath.Join(repoRoot, logging.LogsDir, "trace.log")
+			logFile := filepath.Join(repoRoot, logging.LogsDir, "entire.log")
 
 			entries, err := collectTraceEntries(logFile, last, hookFilter)
 			if err != nil {

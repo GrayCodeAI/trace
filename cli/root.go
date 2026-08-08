@@ -5,7 +5,7 @@ import (
 	"runtime"
 
 	"github.com/GrayCodeAI/trace/cli/experimental"
-	cliInvestigate "github.com/GrayCodeAI/trace/cli/investigate"
+	"github.com/GrayCodeAI/trace/cli/investigate"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	cliReview "github.com/GrayCodeAI/trace/cli/review"
 	"github.com/GrayCodeAI/trace/cli/settings"
@@ -18,10 +18,10 @@ import (
 const gettingStarted = `
 
 Getting Started:
-  To get started with Trace CLI, run 'trace enable' to enable
-  session tracking in your repository, then 'trace agent add <name>'
+  To get started with Entire CLI, run 'entire enable' to enable
+  session tracking in your repository, then 'entire agent add <name>'
   to install hooks for a specific agent. For more information, visit:
-  https://docs.trace.io/introduction
+  https://docs.entire.io/overview
 
 `
 
@@ -32,11 +32,28 @@ Environment Variables:
                 TUI elements, which works better with screen readers.
 `
 
+// Help groups for the root command. AddGroup order is display order.
+// Visible commands without a GroupID render under "Additional Commands"
+// (version, labs, agent-help, help) — that placement is intentional.
+const (
+	groupSetup        = "setup"
+	groupSessions     = "sessions"
+	groupAccount      = "account"
+	groupControlPlane = "controlplane"
+)
+
+// inGroup assigns a help group to a command at registration time so all
+// grouping stays visible in NewRootCmd rather than spread across constructors.
+func inGroup(c *cobra.Command, groupID string) *cobra.Command {
+	c.GroupID = groupID
+	return c
+}
+
 func NewRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "trace",
-		Short:   "Trace CLI",
-		Long:    "The command-line interface for Trace" + gettingStarted + accessibilityHelp,
+		Use:     "entire",
+		Short:   "Entire CLI",
+		Long:    "The command-line interface for Entire" + gettingStarted + accessibilityHelp,
 		Version: versioninfo.Version,
 		// Let main.go handle error printing to avoid duplication
 		SilenceErrors: true,
@@ -44,14 +61,6 @@ func NewRootCmd() *cobra.Command {
 		// Hide completion command from help but keep it functional
 		CompletionOptions: cobra.CompletionOptions{
 			HiddenDefaultCmd: true,
-		},
-		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
-			// Apply the --no-dirty-commits override before any lifecycle hook
-			// runs. The flag defaults to false (dirty commits follow config);
-			// when set, it disables the pre-session WIP auto-commit globally.
-			if noDirty, err := cmd.Flags().GetBool("no-dirty-commits"); err == nil {
-				SetDirtyCommitsDisabled(noDirty)
-			}
 		},
 		PersistentPostRun: func(cmd *cobra.Command, _ []string) {
 			// Skip for hidden commands (walk parent chain — Cobra doesn't propagate Hidden)
@@ -63,7 +72,7 @@ func NewRootCmd() *cobra.Command {
 
 			// Load settings once for telemetry and version check
 			var telemetryEnabled *bool
-			settings, err := LoadTraceSettings(cmd.Context())
+			settings, err := LoadEntireSettings(cmd.Context())
 			if err == nil {
 				telemetryEnabled = settings.Telemetry
 			}
@@ -76,13 +85,16 @@ func NewRootCmd() *cobra.Command {
 				telemetry.TrackCommandDetached(cmd, agentStr, settings.Enabled, versioninfo.Version)
 			}
 
-			// Version check and notification (async to avoid adding latency)
-			// Runs AFTER command completes to avoid interfering with interactive modes
-			go versioncheck.CheckAndNotify(cmd.Context(), cmd.OutOrStdout(), versioninfo.Version)
+			// Version check and notification (synchronous with 2s timeout)
+			// Runs AFTER command completes to avoid interfering with interactive modes.
+			// Stderr, never stdout: this hook also fires after --json commands whose
+			// stdout is piped into jq or captured by scripts — a notice on stdout
+			// corrupts that output while staying invisible in the caller's logs.
+			versioncheck.CheckAndNotify(cmd.Context(), cmd.ErrOrStderr(), versioninfo.Version)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			// If we're in a git repo but Trace isn't set up yet, start the setup flow
+			// If we're in a git repo but Entire isn't set up yet, start the setup flow
 			if _, err := paths.WorktreeRoot(ctx); err == nil && !settings.IsSetUpAny(ctx) {
 				return runSetupFlow(ctx, cmd.OutOrStdout(), EnableOptions{})
 			}
@@ -90,73 +102,81 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 
-	// --no-dirty-commits disables the pre-session auto-commit of uncommitted
-	// changes for this invocation, overriding the dirty_commits config flag.
-	cmd.PersistentFlags().Bool("no-dirty-commits", false,
-		"do not auto-commit uncommitted changes before an agent session starts")
+	// Help groups; AddGroup order is display order in `entire --help`.
+	cmd.AddGroup(
+		&cobra.Group{ID: groupSetup, Title: "Entire Setup:"},
+		&cobra.Group{ID: groupSessions, Title: "Sessions & Checkpoints:"},
+		&cobra.Group{ID: groupAccount, Title: "Account:"},
+		&cobra.Group{ID: groupControlPlane, Title: "Control Plane:"},
+	)
 
 	// Noun groups (canonical homes for subcommands).
-	cmd.AddCommand(newSessionsCmd())        // 'session' (with 'sessions' as Cobra alias)
-	cmd.AddCommand(newCheckpointGroupCmd()) // 'checkpoint' / 'cp' / 'checkpoints'
-	cmd.AddCommand(newGraphCmd())           // 'graph' (portable execution-graph export)
-	cmd.AddCommand(newAgentGroupCmd())      // 'agent'
-	cmd.AddCommand(newAuthCmd())            // 'auth'
-	cmd.AddCommand(newDoctorCmd())          // 'doctor' (group: trace/logs/bundle)
-	cmd.AddCommand(newTokensGroupCmd())     // 'tokens'
-
-	// Control-plane command groups (orgs, projects, repos, grants, API).
-	cmd.AddCommand(newOrgCmd())          // 'org' — control-plane org management
-	cmd.AddCommand(newProjectCmd())      // 'project' — control-plane project management
-	cmd.AddCommand(newRepoCmd())         // 'repo' — control-plane repo lifecycle
-	cmd.AddCommand(newGrantCmd())        // 'grant' — control-plane access grants
-	cmd.AddCommand(newAPICmd())          // 'api' — authenticated passthrough to core/cell APIs
-	cmd.AddCommand(newAgentHelpCmd(cmd)) // 'agent-help' — machine-readable usage for agents
-	cmd.AddCommand(newMCPCmd(cmd))       // 'mcp' — MCP stdio server for MCP-host agents
-
-	// Experimental commands (hidden behind `trace labs` gate).
-	experimental.Register(cmd, newImportCmd())  // 'import' — import pre-existing agent history
-	experimental.Register(cmd, newRunnerCmd())  // 'runner' — reusable session runners
-	experimental.Register(cmd, newExpertsCmd()) // 'experts' — agent/workflow provenance
+	cmd.AddCommand(inGroup(newSessionsCmd(), groupSessions))        // 'session' (with 'sessions' as Cobra alias)
+	cmd.AddCommand(inGroup(newCheckpointGroupCmd(), groupSessions)) // 'checkpoint' / 'cp' / 'checkpoints'
+	experimental.Register(cmd, newTokensGroupCmd())                 // 'tokens' (experimental)
+	cmd.AddCommand(inGroup(newAgentGroupCmd(), groupSetup))         // 'agent'
+	cmd.AddCommand(inGroup(newAuthCmd(), groupAccount))             // 'auth'
+	cmd.AddCommand(inGroup(newDoctorCmd(), groupSetup))             // 'doctor' (group: trace/logs/bundle)
+	cmd.AddCommand(newLabsCmd())                                    // 'labs' (experimental workflow discovery)
+	cmd.AddCommand(inGroup(newPluginGroupCmd(), groupSetup))        // 'plugin' (managed install/list/remove)
+	experimental.Register(cmd, newImportCmd())                      // 'import' (experimental; import pre-existing agent history)
+	cmd.AddCommand(inGroup(newOrgCmd(), groupControlPlane))         // 'org' — control-plane org management
+	cmd.AddCommand(inGroup(newProjectCmd(), groupControlPlane))     // 'project' — control-plane project management
+	cmd.AddCommand(inGroup(newRepoCmd(), groupControlPlane))        // 'repo' — control-plane repo lifecycle
+	cmd.AddCommand(inGroup(newGrantCmd(), groupControlPlane))       // 'grant' — control-plane access grants
 
 	// Top-level lifecycle and standalone commands.
-	cmd.AddCommand(newCleanCmd())
-	cmd.AddCommand(newSetupCmd()) // 'configure' — non-agent settings; agent CRUD lives under 'agent'
-	cmd.AddCommand(newEnableCmd())
-	cmd.AddCommand(newDisableCmd())
-	cmd.AddCommand(newStatusCmd())
-	cmd.AddCommand(newLoginCmd())
-	cmd.AddCommand(newLogoutCmd())
+	experimental.Register(cmd, cliReview.NewCommand(buildReviewDeps()))        // `review` (experimental)
+	experimental.Register(cmd, investigate.NewCommand(buildInvestigateDeps())) // `investigate` (experimental); multi-agent investigation
+	cmd.AddCommand(inGroup(newCleanCmd(), groupSetup))
+	cmd.AddCommand(inGroup(newSetupCmd(), groupSetup)) // 'configure' — non-agent settings; agent CRUD lives under 'agent'
+	cmd.AddCommand(inGroup(newEnableCmd(), groupSetup))
+	cmd.AddCommand(inGroup(newDisableCmd(), groupSetup))
+	cmd.AddCommand(inGroup(newStatusCmd(), groupSetup))
+	experimental.Register(cmd, newBlameCmd()) // 'blame' (experimental)
+	experimental.Register(cmd, newWhyCmd())   // 'why' (experimental)
+	cmd.AddCommand(inGroup(newLoginCmd(), groupAccount))
+	cmd.AddCommand(inGroup(newLogoutCmd(), groupAccount))
 	cmd.AddCommand(newVersionCmd())
-	cmd.AddCommand(newDispatchCmd())
-	cmd.AddCommand(newActivityCmd())
-	cmd.AddCommand(newLabsCmd())                                                // 'labs' (experimental workflow discovery)
-	cmd.AddCommand(newPluginGroupCmd())                                         // 'plugin' (managed install/list/remove)
-	cmd.AddCommand(cliReview.NewCommand(buildReviewDeps(newReviewAttachCmd()))) // hidden during maturation; runs configured review skills
-	cmd.AddCommand(cliInvestigate.NewCommand(buildInvestigateDeps()))           // investigate: multi-agent loop for code investigation
-	cmd.AddCommand(newRecapCmd())
-	cmd.AddCommand(newForkCmd())     // 'fork' — clone a checkpoint into a new session for A/B testing
-	cmd.AddCommand(newAnnotateCmd()) // 'annotate' — attach comments to a session/checkpoint
-	cmd.AddCommand(newCIInitCmd())   // 'ci-init' — configure CI session auto-capture
-	cmd.AddCommand(newUndoCmd())     // 'undo' — revert the most recent rewind/reset/fork/cleanup
-	cmd.AddCommand(newOplogCmd())    // 'log' — show trace's operation log
+	cmd.AddCommand(inGroup(newDispatchCmd(), groupSessions))
+	cmd.AddCommand(inGroup(newActivityCmd(), groupSessions))
+	cmd.AddCommand(inGroup(newRecapCmd(), groupSessions))
+
+	// Trace-specific commands (not present in upstream entireio/cli).
+	cmd.AddCommand(inGroup(newGraphCmd(), groupSessions))    // 'graph' — portable execution-graph export
+	cmd.AddCommand(inGroup(newForkCmd(), groupSessions))     // 'fork' — clone a checkpoint into a new session for A/B testing
+	cmd.AddCommand(inGroup(newAnnotateCmd(), groupSessions)) // 'annotate' — attach comments to a session/checkpoint
+	cmd.AddCommand(inGroup(newUndoCmd(), groupSessions))     // 'undo' — revert the most recent rewind/reset/fork/cleanup
+	cmd.AddCommand(inGroup(newCIInitCmd(), groupSetup))      // 'ci-init' — configure CI session auto-capture
+	cmd.AddCommand(inGroup(newOplogCmd(), groupSessions))    // 'log' — show trace's operation log
+	cmd.AddCommand(inGroup(newAPICmd(), groupControlPlane))  // authenticated passthrough to core/cell APIs
+	cmd.AddCommand(newAgentHelpCmd(cmd))                     // visible: agents on transports without context injection discover it via `entire help`
 
 	// Hidden top-level shortcuts. Functional but print a deprecation hint.
-	cmd.AddCommand(hideAsAlias(newRewindCmd(), "trace checkpoint rewind"))
-	cmd.AddCommand(hideAsAlias(newResumeCmd(), "trace session resume"))
-	cmd.AddCommand(hideAsAlias(newAttachCmd(), "trace session attach"))
-	cmd.AddCommand(hideAsAlias(newExplainCmd(), "trace checkpoint explain"))
-	cmd.AddCommand(hideAsAlias(newTraceCmd(), "trace doctor trace"))
-	cmd.AddCommand(newSearchCmd()) // 'trace search' = 'checkpoint search' (hidden, no hint)
+	cmd.AddCommand(hideAsAlias(newResumeCmd(), "entire session resume"))
+	cmd.AddCommand(hideAsAlias(newAttachCmd(), "entire session attach"))
+	cmd.AddCommand(hideAsAlias(newExplainCmd(), "entire checkpoint explain"))
+	cmd.AddCommand(hideAsAlias(newTraceCmd(), "entire doctor trace"))
+	experimental.Register(cmd, newSearchCmd()) // 'entire search' = 'checkpoint search' (experimental)
 
-	// Deprecated top-level alias (functional; reset.go marks it Deprecated).
+	// Experimental labs commands (listed via `entire labs`; not deprecation shortcuts).
+	experimental.Register(cmd, newExpertsCmd()) // 'experts' (experimental); agent/workflow provenance
+
+	// Deprecated top-level commands (functional; the constructors mark them
+	// Deprecated, which also excludes them from help and completion).
 	cmd.AddCommand(newResetCmd())
+	cmd.AddCommand(newRewindCmd())
 
 	// Hidden infrastructure.
+	cmd.AddCommand(newMCPCmd(cmd)) // MCP stdio server for MCP-host agents
 	cmd.AddCommand(newHooksCmd())
 	cmd.AddCommand(newTrailCmd())
 	cmd.AddCommand(newSendAnalyticsCmd())
 	cmd.AddCommand(newCurlBashPostInstallCmd())
 	cmd.AddCommand(newRefreshTrailEnablementCmd())
+
+	// Experimental command (developer-only visibility; setup/tune runners).
+	experimental.Register(cmd, newRunnerCmd()) // 'runner' (experimental)
 
 	cmd.SetVersionTemplate(versionString())
 
@@ -167,8 +187,8 @@ func NewRootCmd() *cobra.Command {
 }
 
 func versionString() string {
-	return fmt.Sprintf("Trace CLI %s (%s)\nGo version: %s\nOS/Arch: %s/%s\n",
-		versioninfo.Version, versioninfo.Commit, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	return fmt.Sprintf("Entire CLI %s\nGo version: %s\nOS/Arch: %s/%s\n",
+		versioninfo.Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
 
 func newVersionCmd() *cobra.Command {

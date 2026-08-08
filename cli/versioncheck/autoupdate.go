@@ -84,7 +84,7 @@ func MaybeAutoUpdate(ctx context.Context, w io.Writer, currentVersion, latestVer
 
 	switch action {
 	case autoUpdateActionUpdate:
-		fmt.Fprintf(w, "\nUpdating Trace CLI: %s\n", cmdStr)
+		fmt.Fprintf(w, "\nUpdating Entire CLI: %s\n", cmdStr)
 		if err := runInstaller(ctx, cmdStr); err != nil {
 			fmt.Fprintf(w, "Update failed: %v\nTry again later running:\n  %s\n", err, cmdStr)
 			return autoUpdateActionUpdate

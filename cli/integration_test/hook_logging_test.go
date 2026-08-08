@@ -21,26 +21,26 @@ func TestHookLogging_WritesToSessionLogFile(t *testing.T) {
 
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace()
+	env.InitEntire()
 
-	// Create a session state file in .git/trace-sessions/ with a known session ID
+	// Create a session state file in .git/entire-sessions/ with a known session ID
 	sessionID := "test-logging-session-123"
 	writeTestSessionStateForLogging(t, env.RepoDir, sessionID)
 
 	// Create the logs directory (Init should create it, but ensure it exists)
-	logsDir := filepath.Join(env.RepoDir, paths.TraceDir, "logs")
+	logsDir := filepath.Join(env.RepoDir, paths.EntireDir, "logs")
 	if err := os.MkdirAll(logsDir, 0o755); err != nil {
 		t.Fatalf("failed to create logs directory: %v", err)
 	}
 
-	// Run a hook with TRACE_LOG_LEVEL=debug to ensure logs are written
+	// Run a hook with ENTIRE_LOG_LEVEL=debug to ensure logs are written
 	// Use post-commit since it takes no arguments
-	cmd := exec.Command(getTestBinary(), "hooks", "git", "post-commit")
+	cmd := exec.CommandContext(t.Context(), getTestBinary(), "hooks", "git", "post-commit")
 	cmd.Dir = env.RepoDir
 	cmd.Env = append(
 		testutil.GitIsolatedEnv(),
-		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
-		"TRACE_LOG_LEVEL=debug",
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
+		"ENTIRE_LOG_LEVEL=debug",
 	)
 
 	output, err := cmd.CombinedOutput()
@@ -49,14 +49,17 @@ func TestHookLogging_WritesToSessionLogFile(t *testing.T) {
 		// Don't fail - hook may succeed even with warnings
 	}
 
-	// Verify log file was created (all logs go to trace.log)
-	logFile := filepath.Join(logsDir, "trace.log")
+	// Verify log file was created (all logs go to entire.log)
+	logFile := filepath.Join(logsDir, "entire.log")
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
 		t.Errorf("expected log file at %s but it doesn't exist", logFile)
 		t.Logf("hook stderr/stdout: %s", output)
 
 		// List what's in the logs dir for debugging
-		entries, _ := os.ReadDir(logsDir)
+		entries, dirErr := os.ReadDir(logsDir)
+		if dirErr != nil {
+			t.Logf("failed to read logs directory: %v", dirErr)
+		}
 		t.Logf("logs directory contents: %v", entries)
 	}
 
@@ -88,17 +91,17 @@ func TestHookLogging_WritesWithoutSession(t *testing.T) {
 
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitTrace()
+	env.InitEntire()
 
-	// Don't create a session state file - logging should still write to trace.log
+	// Don't create a session state file - logging should still write to entire.log
 
-	// Run a hook with TRACE_LOG_LEVEL=debug
-	cmd := exec.Command(getTestBinary(), "hooks", "git", "post-commit")
+	// Run a hook with ENTIRE_LOG_LEVEL=debug
+	cmd := exec.CommandContext(t.Context(), getTestBinary(), "hooks", "git", "post-commit")
 	cmd.Dir = env.RepoDir
 	cmd.Env = append(
 		testutil.GitIsolatedEnv(),
-		"TRACE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
-		"TRACE_LOG_LEVEL=debug",
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
+		"ENTIRE_LOG_LEVEL=debug",
 	)
 
 	output, err := cmd.CombinedOutput()
@@ -107,12 +110,12 @@ func TestHookLogging_WritesWithoutSession(t *testing.T) {
 		_ = output
 	}
 
-	// Log file should still be created (trace.log is fixed, not session-dependent)
-	logsDir := filepath.Join(env.RepoDir, paths.TraceDir, "logs")
-	logFile := filepath.Join(logsDir, "trace.log")
+	// Log file should still be created (entire.log is fixed, not session-dependent)
+	logsDir := filepath.Join(env.RepoDir, paths.EntireDir, "logs")
+	logFile := filepath.Join(logsDir, "entire.log")
 	content, err := os.ReadFile(logFile)
 	if err != nil {
-		t.Fatalf("expected trace.log to be created even without session: %v", err)
+		t.Fatalf("expected entire.log to be created even without session: %v", err)
 	}
 
 	// Logs should NOT contain session_id (no session was active)

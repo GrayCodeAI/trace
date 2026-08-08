@@ -19,39 +19,39 @@ import (
 )
 
 // Managed plugin storage. The kubectl-style dispatcher in plugin.go resolves
-// `trace-<name>` binaries from $PATH, period. To let `trace plugin install`
+// `entire-<name>` binaries from $PATH, period. To let `entire plugin install`
 // be additive rather than a parallel mechanism, this file provides:
 //
 //  1. PluginBinDir() — a per-user managed dir that main.go prepends to PATH
 //     before the dispatcher runs. Anything dropped here (or symlinked here)
-//     becomes invocable as `trace <name>` without the user fiddling with PATH.
+//     becomes invocable as `entire <name>` without the user fiddling with PATH.
 //
 //  2. PluginDataDir(name) — a per-plugin durable storage dir, passed to plugins
-//     as TRACE_PLUGIN_DATA_DIR. Independent of where the binary itself lives
+//     as ENTIRE_PLUGIN_DATA_DIR. Independent of where the binary itself lives
 //     so plugins installed via PATH and via the managed dir get the same
 //     contract.
 //
-// Honors TRACE_PLUGIN_DIR as a parent-dir override; falls back to
+// Honors ENTIRE_PLUGIN_DIR as a parent-dir override; falls back to
 // XDG_DATA_HOME, then a platform default.
 
 const (
-	pluginEnvPluginDir      = "TRACE_PLUGIN_DIR"
+	pluginEnvPluginDir      = "ENTIRE_PLUGIN_DIR"
 	pluginManagedBinSubdir  = "bin"
 	pluginManagedDataSubdir = "data"
-	pluginEnvPluginData     = "TRACE_PLUGIN_DATA_DIR"
+	pluginEnvPluginData     = "ENTIRE_PLUGIN_DATA_DIR"
 	// Path segments for the managed plugin tree. Kept as separate
-	// segments (rather than "trace/plugins") so filepath.Join produces
+	// segments (rather than "entire/plugins") so filepath.Join produces
 	// platform-native separators on Windows.
-	pluginManagedTopDir = "trace"
+	pluginManagedTopDir = "entire"
 	pluginManagedSubDir = "plugins"
 )
 
 // pluginParentDir returns the per-user directory that holds the managed
 // plugin storage. Resolution, in order:
 //
-//  1. TRACE_PLUGIN_DIR (cross-platform override).
+//  1. ENTIRE_PLUGIN_DIR (cross-platform override).
 //  2. On Windows: LOCALAPPDATA if set, else ~\AppData\Local\entire\plugins.
-//  3. On Unix: XDG_DATA_HOME if set, else ~/.local/share/trace/plugins.
+//  3. On Unix: XDG_DATA_HOME if set, else ~/.local/share/entire/plugins.
 //
 // XDG_DATA_HOME is deliberately ignored on Windows even when set (e.g. in
 // MSYS/Cygwin) — Windows users expect Windows conventions, and routing
@@ -61,7 +61,7 @@ const (
 // degenerate environment with $LOCALAPPDATA or $XDG_DATA_HOME but no home
 // still returns a usable path.
 func pluginParentDir() (string, error) {
-	// TRACE_PLUGIN_DIR must be absolute. A relative value would resolve
+	// ENTIRE_PLUGIN_DIR must be absolute. A relative value would resolve
 	// against the user's CWD at startup — typically inside their repo —
 	// which is the wrong place for managed plugin storage. Reject loudly
 	// rather than silently falling through to the platform default, since
@@ -105,12 +105,12 @@ func PluginBinDir() (string, error) {
 }
 
 // PluginDataDir returns the per-plugin data directory for the given bare name
-// (e.g. "pgr" for `trace-pgr`). The returned path is not created — that's
+// (e.g. "pgr" for `entire-pgr`). The returned path is not created — that's
 // the plugin's responsibility on first use.
 //
 // Returns an error for names the dispatcher would never invoke (empty,
 // flag-shaped, agent-protocol-reserved, "."/".." path-traversal, slashes).
-// This guarantees TRACE_PLUGIN_DATA_DIR always points inside the managed
+// This guarantees ENTIRE_PLUGIN_DATA_DIR always points inside the managed
 // data subtree.
 func PluginDataDir(name string) (string, error) {
 	if err := validatePluginName(name); err != nil {
@@ -224,19 +224,19 @@ func pathEntriesEqual(a, b string) bool {
 
 // InstalledPlugin describes a single entry in the managed bin dir.
 type InstalledPlugin struct {
-	// Name is the bare plugin name (without the `trace-` prefix and any
+	// Name is the bare plugin name (without the `entire-` prefix and any
 	// platform-specific extension).
-	Name string `json:"name"`
+	Name string
 	// Path is the absolute path inside the managed bin dir.
-	Path string `json:"path"`
+	Path string
 	// Symlink is true when Path is a symlink to a source location elsewhere
 	// (the typical local-dev install). LinkTarget is populated in that case.
-	Symlink    bool   `json:"symlink"`
-	LinkTarget string `json:"linkTarget,omitempty"`
+	Symlink    bool
+	LinkTarget string
 }
 
 // ListInstalledPlugins enumerates entries in the managed bin dir whose name
-// starts with `trace-`. Sorted by bare name. A missing dir returns no error
+// starts with `entire-`. Sorted by bare name. A missing dir returns no error
 // and an empty slice.
 func ListInstalledPlugins() ([]*InstalledPlugin, error) {
 	dir, err := PluginBinDir()
@@ -298,7 +298,7 @@ func FindInstalledPlugin(name string) (*InstalledPlugin, error) {
 type InstallPluginOptions struct {
 	// SourcePath is the absolute (or working-dir-relative) path to the plugin
 	// executable. Its basename — minus any platform extension — must match
-	// `trace-<name>` so the dispatcher can resolve it.
+	// `entire-<name>` so the dispatcher can resolve it.
 	SourcePath string
 	// Force replaces an already-installed plugin with the same name.
 	Force bool
@@ -358,7 +358,7 @@ func InstallPluginFromPath(opts InstallPluginOptions) (*InstalledPlugin, error) 
 	}
 
 	// Conflict check on the bare name (not the exact filename). On Windows,
-	// trace-foo.exe / .bat / .cmd all map to bare name "foo"; checking only
+	// entire-foo.exe / .bat / .cmd all map to bare name "foo"; checking only
 	// the destination filename would let a second install of a different
 	// extension silently coexist with the first, with PATHEXT ordering then
 	// deciding which one runs. List all variants and require --force when
@@ -388,11 +388,11 @@ func InstallPluginFromPath(opts InstallPluginOptions) (*InstalledPlugin, error) 
 	// fails, the previously installed plugin (if any) is unaffected.
 	//
 	// The tmp path uses a random suffix and a `.install-` prefix that does
-	// NOT match `trace-`. This protects against two distinct hazards:
+	// NOT match `entire-`. This protects against two distinct hazards:
 	//   1. A user can have a legitimate plugin named "foo.tmp" (file
-	//      "trace-foo.tmp"), which a naive `dest + ".tmp"` would clobber.
-	//   2. ListInstalledPlugins filters by `trace-` prefix, so a tmp that
-	//      starts with `.install-` will not appear in `trace plugin list`
+	//      "entire-foo.tmp"), which a naive `dest + ".tmp"` would clobber.
+	//   2. ListInstalledPlugins filters by `entire-` prefix, so a tmp that
+	//      starts with `.install-` will not appear in `entire plugin list`
 	//      while the install is in progress.
 	tmpDest, err := makeInstallTmpPath(binDir)
 	if err != nil {
@@ -444,7 +444,7 @@ func makeInstallTmpPath(binDir string) (string, error) {
 // Symlink-first preserves the dev-loop property that rebuilding the source
 // is immediately reflected in the managed entry. The fallbacks exist for
 // Windows: os.Symlink there requires Developer Mode or admin, and silently
-// breaks `trace plugin install` for typical users without either. Mirrors
+// breaks `entire plugin install` for typical users without either. Mirrors
 // the pattern in setup_test.go's copyExecutable.
 //
 // On a successful copy the file mode of the source is preserved so the
@@ -467,7 +467,6 @@ func copyFileStreaming(src, dest string, srcInfo os.FileInfo) error {
 	if mode == 0 {
 		mode = 0o755
 	}
-	// #nosec G304 -- src is the user-provided plugin executable; reading it is the point
 	in, err := os.Open(src) //nolint:gosec // src is the user-provided plugin executable; reading it is the point
 	if err != nil {
 		return fmt.Errorf("open source for copy fallback: %w", err)
@@ -477,7 +476,6 @@ func copyFileStreaming(src, dest string, srcInfo os.FileInfo) error {
 	// G304: dest is always inside the managed bin dir. The basename comes
 	// from a validated plugin name (validatePluginName ran upstream), and
 	// the parent dir comes from EnsurePluginBinDir.
-	// #nosec G304 -- dest is constrained to the managed bin dir with a validated plugin name
 	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode) //nolint:gosec // dest is constrained to the managed bin dir
 	if err != nil {
 		return fmt.Errorf("open destination for copy fallback: %w", err)
@@ -497,9 +495,9 @@ func copyFileStreaming(src, dest string, srcInfo os.FileInfo) error {
 // RemoveInstalledPlugin removes every managed-dir entry whose bare name
 // matches name. Symlinks are unlinked without touching the source file.
 //
-// Iterating all variants matters on Windows, where trace-foo.exe,
-// trace-foo.bat, and trace-foo.cmd all map to bare name "foo" and could
-// otherwise leave a runnable variant behind after `trace plugin remove foo`.
+// Iterating all variants matters on Windows, where entire-foo.exe,
+// entire-foo.bat, and entire-foo.cmd all map to bare name "foo" and could
+// otherwise leave a runnable variant behind after `entire plugin remove foo`.
 // On Unix the loop typically runs once.
 func RemoveInstalledPlugin(name string) error {
 	variants, err := installedVariantsByBareName(name)
@@ -518,7 +516,7 @@ func RemoveInstalledPlugin(name string) error {
 }
 
 // bareNameFromBinaryName turns a plugin executable's basename into the bare
-// name the dispatcher uses (e.g. "trace-pgr" → "pgr"). Returns "" if the
+// name the dispatcher uses (e.g. "entire-pgr" → "pgr"). Returns "" if the
 // input doesn't match the expected shape.
 //
 // Extension stripping is platform-conditional:
@@ -529,9 +527,9 @@ func RemoveInstalledPlugin(name string) error {
 //     and the dispatcher's lookup.
 //
 //   - On Unix, exec.LookPath matches the exact filename. If we stripped here,
-//     "trace-pgr.exe" would be listed as "pgr" and the user would type
-//     "entire pgr", but the dispatcher's exec.LookPath("trace-pgr") would
-//     not find "trace-pgr.exe". Leaving the dot in place keeps the listed
+//     "entire-pgr.exe" would be listed as "pgr" and the user would type
+//     "entire pgr", but the dispatcher's exec.LookPath("entire-pgr") would
+//     not find "entire-pgr.exe". Leaving the dot in place keeps the listed
 //     name aligned with the only invocation that actually resolves
 //     ("entire pgr.exe"), avoiding silent shadowing surprises.
 func bareNameFromBinaryName(base string) string {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GrayCodeAI/trace/cli/experimental"
 	"github.com/GrayCodeAI/trace/cli/versioninfo"
 	"github.com/spf13/cobra"
 )
@@ -13,24 +14,24 @@ import (
 func TestVersionFlag_OutputMatchesVersionCmd(t *testing.T) {
 	t.Parallel()
 
-	// Run "trace --version"
+	// Run "entire --version"
 	root := NewRootCmd()
 	var flagOut bytes.Buffer
 	root.SetOut(&flagOut)
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{"--version"})
 	if err := root.Execute(); err != nil {
-		t.Fatalf("trace --version failed: %v", err)
+		t.Fatalf("entire --version failed: %v", err)
 	}
 
-	// Run "trace version"
+	// Run "entire version"
 	root2 := NewRootCmd()
 	var cmdOut bytes.Buffer
 	root2.SetOut(&cmdOut)
 	root2.SetErr(&bytes.Buffer{})
 	root2.SetArgs([]string{"version"})
 	if err := root2.Execute(); err != nil {
-		t.Fatalf("trace version failed: %v", err)
+		t.Fatalf("entire version failed: %v", err)
 	}
 
 	if flagOut.String() != cmdOut.String() {
@@ -47,7 +48,7 @@ func TestVersionFlag_ContainsExpectedInfo(t *testing.T) {
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{"--version"})
 	if err := root.Execute(); err != nil {
-		t.Fatalf("trace --version failed: %v", err)
+		t.Fatalf("entire --version failed: %v", err)
 	}
 
 	output := out.String()
@@ -73,7 +74,7 @@ func TestPersistentPostRun_SkipsHiddenParent(t *testing.T) {
 
 	root := NewRootCmd()
 
-	// Find the leaf command: trace hooks git post-rewrite
+	// Find the leaf command: entire hooks git post-rewrite
 	// This exercises the real command tree where "hooks" is Hidden but its descendants are not.
 	leaf, _, err := root.Find([]string{"hooks", "git", "post-rewrite"})
 	if err != nil {
@@ -212,7 +213,7 @@ func TestRoot_NounGroupShorthandsUseCobraAliases(t *testing.T) {
 	}
 }
 
-func TestCheckpointSearchIsVisibleButTopLevelSearchIsHidden(t *testing.T) {
+func TestCheckpointSearchIsVisibleButTopLevelSearchIsExperimental(t *testing.T) {
 	t.Parallel()
 
 	root := NewRootCmd()
@@ -225,25 +226,121 @@ func TestCheckpointSearchIsVisibleButTopLevelSearchIsHidden(t *testing.T) {
 		t.Fatal("checkpoint search should be visible in checkpoint help")
 	}
 
+	// The top-level `entire search` shortcut is gated as experimental:
+	// visible and grouped in developer builds (the default test build),
+	// hidden in shipped releases.
 	topLevelSearch, _, err := root.Find([]string{"search"})
 	if err != nil {
 		t.Fatalf("find top-level search: %v", err)
 	}
-	if !topLevelSearch.Hidden {
-		t.Fatal("top-level search should remain hidden as a compatibility alias")
+	if topLevelSearch.GroupID != experimental.GroupID {
+		t.Fatalf("top-level search GroupID = %q, want %q (experimental)", topLevelSearch.GroupID, experimental.GroupID)
 	}
 }
 
-func TestGraphExportCommandIsVisible(t *testing.T) {
+func TestCheckpointPolicyCommandIsExperimental(t *testing.T) {
 	t.Parallel()
 
 	root := NewRootCmd()
-	graphExport, _, err := root.Find([]string{"graph", "export"})
+
+	checkpointPolicy, remaining, err := root.Find([]string{"checkpoint", "policy"})
 	if err != nil {
-		t.Fatalf("find graph export: %v", err)
+		t.Fatalf("find checkpoint policy command: %v", err)
 	}
-	if graphExport.Hidden {
-		t.Fatal("graph export should be visible in graph help")
+	if len(remaining) != 0 || checkpointPolicy.Use != "policy" {
+		t.Fatalf("checkpoint policy resolved to %q with remaining args %v", checkpointPolicy.Use, remaining)
+	}
+	// Gated as experimental: visible and grouped in developer builds
+	// (the default test build), hidden in shipped releases.
+	if checkpointPolicy.GroupID != experimental.GroupID {
+		t.Fatalf("checkpoint policy GroupID = %q, want %q (experimental)", checkpointPolicy.GroupID, experimental.GroupID)
+	}
+
+	topLevelPolicy, remaining, err := root.Find([]string{"policy"})
+	if err == nil && len(remaining) == 0 && topLevelPolicy.Use == "policy" {
+		t.Fatal("top-level policy command should not remain after moving policy under checkpoint")
+	}
+}
+
+func TestRoot_VisibleCommandsAreGrouped(t *testing.T) {
+	t.Parallel()
+
+	// Commands intentionally left out of any group. version, labs, agent-help,
+	// and help render under cobra's "Additional Commands"; completion is
+	// allowlisted for completeness but never renders (hidden via
+	// CompletionOptions.HiddenDefaultCmd in NewRootCmd).
+	ungrouped := map[string]bool{
+		"version":    true,
+		"labs":       true,
+		"agent-help": true,
+		"help":       true,
+		"completion": true,
+	}
+
+	wantGroups := map[string]string{
+		"enable":     groupSetup,
+		"disable":    groupSetup,
+		"configure":  groupSetup,
+		"agent":      groupSetup,
+		"plugin":     groupSetup,
+		"status":     groupSetup,
+		"doctor":     groupSetup,
+		"clean":      groupSetup,
+		"session":    groupSessions,
+		"checkpoint": groupSessions,
+		"recap":      groupSessions,
+		"activity":   groupSessions,
+		"dispatch":   groupSessions,
+		"graph":      groupSessions,
+		"fork":       groupSessions,
+		"annotate":   groupSessions,
+		"undo":       groupSessions,
+		"log":        groupSessions,
+		"ci-init":    groupSetup,
+		"login":      groupAccount,
+		"logout":     groupAccount,
+		"auth":       groupAccount,
+		"org":        groupControlPlane,
+		"project":    groupControlPlane,
+		"repo":       groupControlPlane,
+		"grant":      groupControlPlane,
+		"api":        groupControlPlane,
+	}
+
+	root := NewRootCmd()
+
+	registered := make(map[string]bool)
+	for _, g := range root.Groups() {
+		registered[g.ID] = true
+	}
+
+	for _, c := range root.Commands() {
+		if c.Hidden || c.Deprecated != "" {
+			continue
+		}
+		// Experimental commands are grouped by experimental.Register (visible
+		// only in developer/nightly builds) — not part of this table.
+		if c.GroupID == experimental.GroupID {
+			continue
+		}
+		name := c.Name()
+		if ungrouped[name] {
+			if c.GroupID != "" {
+				t.Errorf("%q should stay ungrouped, got GroupID %q", name, c.GroupID)
+			}
+			continue
+		}
+		want, ok := wantGroups[name]
+		if !ok {
+			t.Errorf("visible command %q missing from group table; assign it a group or add it to the ungrouped allowlist", name)
+			continue
+		}
+		if c.GroupID != want {
+			t.Errorf("%q GroupID = %q, want %q", name, c.GroupID, want)
+		}
+		if !registered[want] {
+			t.Errorf("group %q used by %q is not registered on root (cobra panics at Execute)", want, name)
+		}
 	}
 }
 

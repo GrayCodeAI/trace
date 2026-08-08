@@ -113,7 +113,7 @@ func TestCopilotCLIAgent_ResolveSessionFile(t *testing.T) {
 
 func TestCopilotCLIAgent_GetSessionDir_EnvOverride(t *testing.T) {
 	ag := &CopilotCLIAgent{}
-	t.Setenv("TRACE_TEST_COPILOT_SESSION_DIR", "/test/override")
+	t.Setenv("ENTIRE_TEST_COPILOT_SESSION_DIR", "/test/override")
 
 	dir, err := ag.GetSessionDir("/some/repo")
 	if err != nil {
@@ -126,7 +126,7 @@ func TestCopilotCLIAgent_GetSessionDir_EnvOverride(t *testing.T) {
 
 func TestCopilotCLIAgent_GetSessionDir_DefaultPath(t *testing.T) {
 	ag := &CopilotCLIAgent{}
-	t.Setenv("TRACE_TEST_COPILOT_SESSION_DIR", "")
+	t.Setenv("ENTIRE_TEST_COPILOT_SESSION_DIR", "")
 
 	dir, err := ag.GetSessionDir("/some/repo")
 	if err != nil {
@@ -463,7 +463,7 @@ func TestDetectPresence_NoGitHubHooksDir(t *testing.T) {
 	}
 }
 
-func TestDetectPresence_WithGitHubHooksDirButNoTraceJSON(t *testing.T) {
+func TestDetectPresence_WithGitHubHooksDirButNoEntireJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 
@@ -479,11 +479,11 @@ func TestDetectPresence_WithGitHubHooksDirButNoTraceJSON(t *testing.T) {
 		t.Fatalf("DetectPresence() error = %v", err)
 	}
 	if present {
-		t.Error("DetectPresence() = true, want false (no trace.json)")
+		t.Error("DetectPresence() = true, want false (no entire.json)")
 	}
 }
 
-func TestDetectPresence_WithTraceHooks(t *testing.T) {
+func TestDetectPresence_WithEntireHooks(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 
@@ -494,16 +494,16 @@ func TestDetectPresence_WithTraceHooks(t *testing.T) {
 		t.Fatalf("failed to create .github/hooks: %v", err)
 	}
 
-	traceJSON := `{
+	entireJSON := `{
   "version": 1,
   "hooks": {
     "sessionStart": [
-      {"type": "command", "bash": "trace hooks copilot-cli session-start"}
+      {"type": "command", "bash": "entire hooks copilot-cli session-start"}
     ]
   }
 }`
-	if err := os.WriteFile(filepath.Join(hooksPath, "trace.json"), []byte(traceJSON), 0o644); err != nil {
-		t.Fatalf("failed to write trace.json: %v", err)
+	if err := os.WriteFile(filepath.Join(hooksPath, "entire.json"), []byte(entireJSON), 0o644); err != nil {
+		t.Fatalf("failed to write entire.json: %v", err)
 	}
 
 	ag := &CopilotCLIAgent{}
@@ -512,7 +512,7 @@ func TestDetectPresence_WithTraceHooks(t *testing.T) {
 		t.Fatalf("DetectPresence() error = %v", err)
 	}
 	if !present {
-		t.Error("DetectPresence() = false, want true (trace.json has Trace hooks)")
+		t.Error("DetectPresence() = false, want true (entire.json has Entire hooks)")
 	}
 }
 

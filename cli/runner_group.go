@@ -6,8 +6,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newRunnerCmd is the root of the `trace runner` group, which manages the
-// trail runner configs under .trace/runners/. Hidden during maturation, like
+// newRunnerCmd is the root of the `entire runner` group, which manages the
+// trail runner configs under .entire/runners/. Hidden during maturation, like
 // the related `trail` group.
 func newRunnerCmd() *cobra.Command {
 	var insecureHTTPAuth bool
@@ -17,10 +17,10 @@ func newRunnerCmd() *cobra.Command {
 		Short:  "Set up and tune trail runners for this repository",
 		Hidden: true,
 		Args:   cobra.NoArgs,
-		Long: `Manage the trail runner configs in .trace/runners/.
+		Long: `Manage the trail runner configs in .entire/runners/.
 
 Runners are the per-repo evaluators (risk, confidence, drift, security, review,
-…) that score and review a branch's changes. Use ` + "`trace runner setup`" + ` to
+…) that score and review a branch's changes. Use ` + "`entire runner setup`" + ` to
 create the default set in a repo that has none, and to tailor the runner
 prompts to this repository.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {

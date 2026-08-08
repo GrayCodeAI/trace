@@ -79,7 +79,11 @@ func (m *mockFileWatcher) GetWatchPaths() ([]string, error) { return nil, nil }
 func (m *mockFileWatcher) OnFileChange(_ string) (*SessionChange, error) { return nil, nil }
 
 func TestAgentInterfaceCompliance(t *testing.T) {
+	t.Parallel()
+
 	t.Run("Agent interface can be implemented", func(t *testing.T) {
+		t.Parallel()
+
 		var agent Agent = &mockAgent{}
 		if agent.Name() != mockAgentName {
 			t.Errorf("expected Name() to return %q, got %q", mockAgentName, agent.Name())
@@ -87,6 +91,8 @@ func TestAgentInterfaceCompliance(t *testing.T) {
 	})
 
 	t.Run("HookSupport embeds Agent", func(t *testing.T) {
+		t.Parallel()
+
 		var hookSupport HookSupport = &mockHookSupport{}
 		// HookSupport should satisfy Agent interface
 		var agent Agent = hookSupport
@@ -96,6 +102,8 @@ func TestAgentInterfaceCompliance(t *testing.T) {
 	})
 
 	t.Run("FileWatcher embeds Agent", func(t *testing.T) {
+		t.Parallel()
+
 		var fileWatcher FileWatcher = &mockFileWatcher{}
 		// FileWatcher should satisfy Agent interface
 		var agent Agent = fileWatcher
@@ -106,6 +114,8 @@ func TestAgentInterfaceCompliance(t *testing.T) {
 }
 
 func TestHookTypeConstants(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		hookType HookType
 		expected string
@@ -119,6 +129,8 @@ func TestHookTypeConstants(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(string(tt.hookType), func(t *testing.T) {
+			t.Parallel()
+
 			if string(tt.hookType) != tt.expected {
 				t.Errorf("expected %q, got %q", tt.expected, string(tt.hookType))
 			}
@@ -127,6 +139,8 @@ func TestHookTypeConstants(t *testing.T) {
 }
 
 func TestEntryTypeConstants(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		entryType EntryType
 		expected  string
@@ -139,6 +153,8 @@ func TestEntryTypeConstants(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(string(tt.entryType), func(t *testing.T) {
+			t.Parallel()
+
 			if string(tt.entryType) != tt.expected {
 				t.Errorf("expected %q, got %q", tt.expected, string(tt.entryType))
 			}
@@ -148,6 +164,8 @@ func TestEntryTypeConstants(t *testing.T) {
 
 //nolint:govet // testing struct field assignment
 func TestHookInputStructure(t *testing.T) {
+	t.Parallel()
+
 	input := HookInput{
 		HookType:  HookPreToolUse,
 		SessionID: "test-session",
@@ -163,6 +181,8 @@ func TestHookInputStructure(t *testing.T) {
 }
 
 func TestSessionChangeStructure(t *testing.T) {
+	t.Parallel()
+
 	change := SessionChange{
 		SessionID: "test-session",
 		EventType: HookSessionStart,

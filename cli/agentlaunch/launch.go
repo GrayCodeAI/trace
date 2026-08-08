@@ -1,12 +1,10 @@
 // Package agentlaunch is the shared "launch a normal coding agent session
-// with a composed prompt" helper, used by `trace review --fix` and
-// `trace investigate fix`. Both commands feed accepted findings back into
-// a follow-up coding agent without spawning a review/investigate session
-// themselves.
+// with a composed prompt" helper, used by `entire investigate fix`. It feeds
+// accepted findings back into a follow-up coding agent without spawning an
+// investigate session itself.
 //
-// The package is a leaf so review and investigate (which depend on it)
-// avoid an import cycle. The env-var names it strips live in
-// cli/provenance (also a leaf).
+// The package is a leaf so its consumers avoid an import cycle. The env-var
+// names it strips live in cmd/entire/cli/provenance (also a leaf).
 package agentlaunch
 
 import (
@@ -22,7 +20,7 @@ import (
 )
 
 // LaunchFixAgent starts a normal coding agent session with the given
-// prompt. TRACE_REVIEW_* and TRACE_INVESTIGATE_* env entries are stripped
+// prompt. ENTIRE_REVIEW_* and ENTIRE_INVESTIGATE_* env entries are stripped
 // from the child process so the fix session is not tagged as a review or
 // investigate.
 //
@@ -61,7 +59,7 @@ func LaunchFixAgent(ctx context.Context, agentName string, prompt string) error 
 }
 
 // withoutReviewOrInvestigateEnv returns a copy of base with all
-// TRACE_REVIEW_* and TRACE_INVESTIGATE_* entries removed. The returned
+// ENTIRE_REVIEW_* and ENTIRE_INVESTIGATE_* entries removed. The returned
 // slice is fresh — base is never mutated.
 func withoutReviewOrInvestigateEnv(base []string) []string {
 	out := make([]string, 0, len(base))

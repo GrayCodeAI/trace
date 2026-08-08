@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
-
-	"charm.land/huh/v2"
 
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/paths"
@@ -35,19 +34,27 @@ func resolveCheckpointBackendType(name string) (string, error) {
 		typ = checkpoint.BackendTypeGitRefs
 	}
 	if err := checkpoint.ValidatePrimaryBackend(typ); err != nil {
-		return "", fmt.Errorf("invalid --%s: %w", "git-branch", err)
+		return "", fmt.Errorf("invalid --%s: %w", flagCheckpointBackend, err)
 	}
 	return typ, nil
 }
 
 // applyCheckpointBackend sets the primary checkpoint backend on settings,
-// preserving nil existing mirrors except one whose type would collide with the
+// preserving any existing mirrors except one whose type would collide with the
 // new primary (the one-of-each-type topology rule enforced in checkpoint.Open).
 // Switching the primary on an existing repo is safe: new checkpoints use the new
 // backend while read routing keeps prior checkpoints readable in their original
 // format.
-func applyCheckpointBackend(s *settings.EntireSettings, typ string) {
-	s.StrategyOptions = map[string]any{"primary": settings.BackendConfig{Type: typ}}
+func applyCheckpointBackend(s *EntireSettings, typ string) {
+	cfg := s.Checkpoints
+	if cfg == nil {
+		cfg = &settings.CheckpointsConfig{}
+	}
+	cfg.Primary = settings.BackendConfig{Type: typ}
+	cfg.Mirrors = slices.DeleteFunc(cfg.Mirrors, func(m settings.BackendConfig) bool {
+		return m.Type == typ
+	})
+	s.Checkpoints = cfg
 }
 
 // applyCheckpointBackendFlag resolves and applies a --checkpoint-backend value to
@@ -55,7 +62,7 @@ func applyCheckpointBackend(s *settings.EntireSettings, typ string) {
 // paths (interactive setup and --agent), which mutate an in-memory settings
 // object before their own save. Existing-repo enable and configure use
 // updateCheckpointBackend instead.
-func applyCheckpointBackendFlag(s *settings.EntireSettings, backend string) error {
+func applyCheckpointBackendFlag(s *EntireSettings, backend string) error {
 	if backend == "" {
 		return nil
 	}
@@ -67,52 +74,12 @@ func applyCheckpointBackendFlag(s *settings.EntireSettings, backend string) erro
 	return nil
 }
 
-// checkpointBackendChoices returns the storage picker's options — git-refs
-// first, labeled recommended — and the recommended value the caller
-// pre-selects.
-// Split from promptCheckpointBackend so the ordering/labeling contract is
-// unit-testable without a TTY.
-func checkpointBackendChoices() (opts []huh.Option[string], recommended string) {
-	return []huh.Option[string]{
-		huh.NewOption("Refs — one git ref per checkpoint (recommended)", checkpoint.BackendTypeGitRefs),
-		huh.NewOption("Branch — one shared branch, trace/checkpoints/v1", checkpoint.BackendTypeGitBranch),
-	}, checkpoint.BackendTypeGitRefs
-}
-
-// promptCheckpointBackend asks the user to choose a checkpoint storage backend
-// during first-time interactive setup, with the git-refs backend pre-selected
-// as the recommendation — most users should just press Enter. It returns the
-// chosen canonical backend type; cancellation (Ctrl+C or a cancelled ctx)
-// prints a cancellation note and returns "" (a soft skip, nil error, like
-// other setup prompts) so the caller falls through to the recommended
-// default. Callers must gate this on
-// an interactive terminal (and skip it when ENTIRE_CHECKPOINTS_PRIMARY is
-// active — the env fully replaces settings, so an answer could not take
-// effect and would only write diverging config).
-func promptCheckpointBackend(ctx context.Context, w io.Writer) (string, error) {
-	opts, recommended := checkpointBackendChoices()
-	choice := recommended
-	form := NewAccessibleForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Checkpoint storage").
-				Description("How Entire stores committed session checkpoints in your repo.").
-				Options(opts...).
-				Value(&choice),
-		),
-	)
-	if err := form.RunWithContext(ctx); err != nil {
-		return "", handleFormCancellation(w, "Checkpoint storage selection", err)
-	}
-	return choice, nil
-}
-
-// updateCheckpointBackend persists false to the target settings
-// file. Used by `trace configure` and by `trace enable` on repos that are
+// updateCheckpointBackend persists opts.CheckpointBackend to the target settings
+// file. Used by `entire configure` and by `entire enable` on repos that are
 // already set up (both operate on an on-disk file rather than the in-memory
 // settings the fresh-setup flow builds).
 func updateCheckpointBackend(ctx context.Context, w io.Writer, opts EnableOptions) error {
-	typ, err := resolveCheckpointBackendType("git-branch")
+	typ, err := resolveCheckpointBackendType(opts.CheckpointBackend)
 	if err != nil {
 		return err
 	}

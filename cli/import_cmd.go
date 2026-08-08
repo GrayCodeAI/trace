@@ -48,7 +48,7 @@ fails even with --dry-run.`, imp.AgentType()),
 			repoRoot, err := paths.WorktreeRoot(ctx)
 			if err != nil {
 				c.SilenceUsage = true
-				fmt.Fprintln(c.ErrOrStderr(), "Not a git repository. Run 'trace enable' from within a git repository.")
+				fmt.Fprintln(c.ErrOrStderr(), "Not a git repository. Run 'entire enable' from within a git repository.")
 				return NewSilentError(err)
 			}
 			repo, err := openRepository(ctx)
@@ -59,7 +59,7 @@ fails even with --dry-run.`, imp.AgentType()),
 
 			// Best-effort file logging (like explain/resume): without Init,
 			// logging.Debug below is a no-op. WorktreeRoot already succeeded,
-			// so this cannot create .trace/logs/ outside a repo.
+			// so this cannot create .entire/logs/ outside a repo.
 			logging.SetLogLevelGetter(GetLogLevel)
 			if err := logging.Init(ctx, ""); err == nil {
 				defer logging.Close()

@@ -65,10 +65,10 @@ func runResumePicker(ctx context.Context, cmd *cobra.Command, force bool) error 
 
 	// The picker is interactive. Without a usable terminal (CI, piped, agent
 	// subprocess) the form can't render — bail with guidance instead of hanging
-	// or erroring on /dev/tty, matching `trace attach`.
+	// or erroring on /dev/tty, matching `entire attach`.
 	if !interactive.CanPromptInteractively() {
 		fmt.Fprintln(w, "The resume picker needs an interactive terminal.")
-		fmt.Fprintln(w, "Pass a branch instead, e.g. 'trace session resume <branch>'.")
+		fmt.Fprintln(w, "Pass a branch instead, e.g. 'entire session resume <branch>'.")
 		return nil
 	}
 
@@ -83,7 +83,7 @@ func runResumePicker(ctx context.Context, cmd *cobra.Command, force bool) error 
 		if n := countImportedSessions(states); n > 0 {
 			fmt.Fprintf(w, "(skipping %d read-only imported session(s) — imported history can't be resumed.)\n", n)
 		}
-		fmt.Fprintln(w, "Tip: pass a branch to resume directly, e.g. 'trace session resume <branch>'.")
+		fmt.Fprintln(w, "Tip: pass a branch to resume directly, e.g. 'entire session resume <branch>'.")
 		return nil
 	}
 
@@ -97,7 +97,7 @@ func runResumePicker(ctx context.Context, cmd *cobra.Command, force bool) error 
 	options, hasSelectable := buildResumeOptions(items)
 	if !hasSelectable {
 		fmt.Fprintln(w, "Found session(s) but none can be resumed (no branch or no committed checkpoint).")
-		fmt.Fprintln(w, "Pass a branch directly to resume, e.g. 'trace session resume <branch>'.")
+		fmt.Fprintln(w, "Pass a branch directly to resume, e.g. 'entire session resume <branch>'.")
 		return nil
 	}
 
@@ -141,7 +141,7 @@ func runResumePicker(ctx context.Context, cmd *cobra.Command, force bool) error 
 	// a second checkout here. Point the user at that worktree and tell them to
 	// re-run the picker there — that preserves the selected-session flow (the
 	// picker resumes the exact session by its checkpoint), whereas suggesting
-	// `trace resume <branch>` would resume the branch's latest checkpoint and
+	// `entire resume <branch>` would resume the branch's latest checkpoint and
 	// pick the wrong session when several share the branch.
 	if otherPath, ok := branchCheckedOutElsewhere(ctx, chosen.branch); ok {
 		fmt.Fprint(w, worktreeClashMessage(chosen.branch, otherPath, chosen.state.LastPrompt))
@@ -429,7 +429,7 @@ func shellQuote(s string) string {
 // worktreeClashMessage builds the guidance shown when the chosen session's branch
 // is already checked out in another worktree. It steers the user to re-run the
 // picker in that worktree (which resumes the exact selected session by its
-// checkpoint) rather than `trace resume <branch>` (which would resume the
+// checkpoint) rather than `entire resume <branch>` (which would resume the
 // branch's latest checkpoint and pick the wrong session when several share it).
 // The only value placed in the copy-paste command is the worktree path, and it
 // is shell-quoted; the branch name appears only in non-executable prose.

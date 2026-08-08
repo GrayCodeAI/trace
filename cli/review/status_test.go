@@ -2,7 +2,7 @@ package review_test
 
 // status_test.go: this file is intentionally a comment-only stub.
 //
-// headHasReviewCheckpoint lives in the cli package (cli/
+// headHasReviewCheckpoint lives in the cli package (cmd/entire/cli/
 // review_helpers.go) — not here — because it imports checkpoint, which
 // transitively imports per-agent reviewer packages, which import review.
 // Moving it into review/ would close that cycle. Tests for it live with

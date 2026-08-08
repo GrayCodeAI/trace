@@ -1,9 +1,6 @@
 package review_test
 
 import (
-	"context"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,7 +9,6 @@ import (
 	"github.com/GrayCodeAI/trace/cli/agent/skilldiscovery"
 	"github.com/GrayCodeAI/trace/cli/review"
 	"github.com/GrayCodeAI/trace/cli/settings"
-	"github.com/GrayCodeAI/trace/cli/testutil"
 )
 
 const (
@@ -25,7 +21,7 @@ const (
 
 // TestMergePickerResults pins the data-loss regression where a
 // manually-configured external-agent entry would be silently deleted the
-// first time the user ran `trace review --edit`.
+// first time the user ran `entire review --edit`.
 func TestMergePickerResults(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -99,42 +95,6 @@ func TestMergePickerResults(t *testing.T) {
 				t.Errorf("MergePickerResults =\n  %v\nwant\n  %v", got, tc.want)
 			}
 		})
-	}
-}
-
-// TestSelectReviewAgent_OverrideResolvesSpecificAgent pins that --agent flag
-// resolves a non-default configured agent when the map has multiple entries.
-func TestSelectReviewAgent_OverrideResolvesSpecificAgent(t *testing.T) {
-	t.Parallel()
-	reviewMap := map[string]settings.ReviewConfig{
-		testAgentName:  {Skills: []string{"/a"}},
-		testCodexAgent: {Skills: []string{"/b"}},
-	}
-
-	name, cfg, err := review.SelectReviewAgent(reviewMap, testCodexAgent)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if name != testCodexAgent || len(cfg.Skills) != 1 || cfg.Skills[0] != "/b" {
-		t.Errorf("override=%s returned name=%q cfg=%+v", testCodexAgent, name, cfg)
-	}
-
-	// Default (no override) must remain the alphabetically-first agent.
-	name, _, err = review.SelectReviewAgent(reviewMap, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if name != testAgentName {
-		t.Errorf("default pick = %q, want %q", name, testAgentName)
-	}
-
-	// Unknown override must surface a helpful error listing configured agents.
-	_, _, err = review.SelectReviewAgent(reviewMap, "gemini")
-	if err == nil {
-		t.Fatal("expected error for unconfigured --agent value")
-	}
-	if !strings.Contains(err.Error(), testAgentName) || !strings.Contains(err.Error(), testCodexAgent) {
-		t.Errorf("error should list configured agents; got: %v", err)
 	}
 }
 
@@ -224,7 +184,7 @@ func TestBuildReviewPickerFields_StructureWithDiscovery(t *testing.T) {
 func TestBuildReviewPickerFields_EmptyBuiltinsRendersNote(t *testing.T) {
 	t.Parallel()
 	fields := review.BuildReviewPickerFields(
-		"gemini-cli",
+		"gemini",
 		nil,
 		nil,
 		[]skilldiscovery.InstallHint{{Message: "install gemini-code-review"}},
@@ -286,116 +246,5 @@ func TestBuildReviewPickerFields_SingleBuiltinDefaultsSelectedAndRenders(t *test
 	field.Focus()
 	if got := field.View(); !strings.Contains(got, "/review") {
 		t.Fatalf("single built-in option did not render:\n%s", got)
-	}
-}
-
-// TestSaveReviewConfig_PersistsSettings verifies SaveReviewConfig writes and
-// the settings can be read back.
-func TestSaveReviewConfig_PersistsSettings(t *testing.T) {
-	tmp := t.TempDir()
-	testutil.InitRepo(t, tmp)
-	t.Chdir(tmp)
-
-	err := review.SaveReviewConfig(context.Background(), map[string]settings.ReviewConfig{
-		testAgentName: {Skills: []string{testReviewSkill, "/test-auditor"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	s, err := settings.Load(context.Background())
-	if err != nil {
-		t.Fatalf("load settings: %v", err)
-	}
-	cfg := s.Review[testAgentName]
-	if len(cfg.Skills) != 2 {
-		t.Errorf("expected 2 skills saved, got %v", cfg.Skills)
-	}
-	if cfg.Skills[0] != testReviewSkill {
-		t.Errorf("first skill = %q", cfg.Skills[0])
-	}
-}
-
-func TestSaveReviewConfig_PreservesReviewFixAgent(t *testing.T) {
-	tmp := t.TempDir()
-	testutil.InitRepo(t, tmp)
-	t.Chdir(tmp)
-
-	traceDir := filepath.Join(tmp, ".trace")
-	if err := os.MkdirAll(traceDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	before := []byte(`{"enabled":true,"review_fix_agent":"` + testCodexAgent + `"}`)
-	if err := os.WriteFile(filepath.Join(traceDir, "settings.json"), before, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	err := review.SaveReviewConfig(context.Background(), map[string]settings.ReviewConfig{
-		testAgentName: {Skills: []string{testReviewSkill}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	s, err := settings.Load(context.Background())
-	if err != nil {
-		t.Fatalf("load settings: %v", err)
-	}
-	if s.ReviewFixAgent != testCodexAgent {
-		t.Fatalf("ReviewFixAgent = %q, want %s", s.ReviewFixAgent, testCodexAgent)
-	}
-}
-
-func TestSaveReviewFixAgent_PersistsSettings(t *testing.T) {
-	tmp := t.TempDir()
-	testutil.InitRepo(t, tmp)
-	t.Chdir(tmp)
-
-	if err := review.SaveReviewFixAgent(context.Background(), testCodexAgent); err != nil {
-		t.Fatal(err)
-	}
-
-	s, err := settings.Load(context.Background())
-	if err != nil {
-		t.Fatalf("load settings: %v", err)
-	}
-	if s.ReviewFixAgent != testCodexAgent {
-		t.Fatalf("ReviewFixAgent = %q, want %s", s.ReviewFixAgent, testCodexAgent)
-	}
-}
-
-// TestSaveReviewConfig_ReturnsErrorOnMalformedSettings ensures SaveReviewConfig
-// does not overwrite existing settings when settings.json is malformed.
-func TestSaveReviewConfig_ReturnsErrorOnMalformedSettings(t *testing.T) {
-	tmp := t.TempDir()
-	testutil.InitRepo(t, tmp)
-	t.Chdir(tmp)
-
-	traceDir := filepath.Join(tmp, ".trace")
-	if err := os.MkdirAll(traceDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	malformed := []byte(`{"enabled": true, "strategy": "manual-commit", "review": {`)
-	if err := os.WriteFile(filepath.Join(traceDir, "settings.json"), malformed, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	before, err := os.ReadFile(filepath.Join(traceDir, "settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = review.SaveReviewConfig(context.Background(), map[string]settings.ReviewConfig{
-		testAgentName: {Skills: []string{testReviewSkill}},
-	})
-	if err == nil {
-		t.Fatal("expected SaveReviewConfig to error on malformed settings")
-	}
-
-	after, err := os.ReadFile(filepath.Join(traceDir, "settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(before) != string(after) {
-		t.Errorf("settings.json was overwritten on load error:\nbefore=%q\nafter=%q", before, after)
 	}
 }

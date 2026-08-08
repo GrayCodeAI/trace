@@ -44,7 +44,7 @@ func (c *refAdvCache) infoRefs(ctx context.Context, t Transport, service string)
 	if err != nil {
 		return nil, fmt.Errorf("fetch %s advertisement: %w", service, err)
 	}
-	defer rc.Close() //nolint:errcheck // best-effort close
+	defer rc.Close()
 	buf, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, fmt.Errorf("buffer %s advertisement: %w", service, err)

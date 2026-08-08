@@ -27,16 +27,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type trailReviewCommentCounts struct {
-	Open       int
-	OpenHigh   int
-	OpenMedium int
-	OpenLow    int
-	Resolved   int
-	Dismissed  int
-	Stale      int
-}
-
 const (
 	trailResumeNoPrompt = "(no prompt)"
 )
@@ -138,17 +128,6 @@ type trailResumeFindingCounts struct {
 	Resolved   int `json:"resolved"`
 	Dismissed  int `json:"dismissed"`
 	Stale      int `json:"stale"`
-}
-
-type trailReviewListOptions struct {
-	Status           string
-	StatusChanged    bool
-	Severity         string
-	Freshness        string
-	IncludeDismissed bool
-	Limit            int
-	Offset           int
-	JSON             bool
 }
 
 func newTrailResumeCmd() *cobra.Command {

@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/GrayCodeAI/trace/cli/palette"
 	"github.com/GrayCodeAI/trace/cli/tuiutil"
 )
 
@@ -108,7 +109,7 @@ type investigateTUIModel struct {
 func newInvestigateTUIModel(topic, runID string, agents []string, maxTurns, quorum int, cancel context.CancelFunc) investigateTUIModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
-	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted))
 
 	rows := make([]agentRow, len(agents))
 	rowIdx := make(map[string]int, len(agents))
@@ -147,7 +148,7 @@ func (m investigateTUIModel) Init() tea.Cmd {
 }
 
 // Update handles all incoming messages.
-func (m investigateTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:ireturn // bubbletea interface requirement
+func (m investigateTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case turnStartedMsg:
 		return m.handleTurnStarted(msg), nil
@@ -295,7 +296,7 @@ func (m investigateTUIModel) handleTurnFinished(msg turnFinishedMsg) investigate
 }
 
 // handleKey processes keyboard input.
-func (m investigateTUIModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) { //nolint:ireturn // bubbletea interface requirement
+func (m investigateTUIModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.finished && !m.detailMode {
 		// Any key after finished dismisses.
 		return m, tea.Quit

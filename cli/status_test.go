@@ -3,16 +3,23 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/agent/types"
+	"github.com/GrayCodeAI/trace/cli/checkpoint"
+	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
+	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
 	"github.com/GrayCodeAI/trace/cli/testutil"
+	"github.com/GrayCodeAI/trace/redact"
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -24,10 +31,7 @@ func TestResolveWorktreeBranch_RegularRepo(t *testing.T) {
 		dir = resolved
 	}
 
-	_, err := git.PlainInit(dir, false)
-	if err != nil {
-		t.Fatalf("git init: %v", err)
-	}
+	testutil.InitRepo(t, dir)
 
 	// Read the default branch name directly from HEAD to avoid hard-coding it
 	headData, err := os.ReadFile(filepath.Join(dir, ".git", "HEAD"))
@@ -48,9 +52,10 @@ func TestResolveWorktreeBranch_DetachedHEAD(t *testing.T) {
 		dir = resolved
 	}
 
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("git init: %v", err)
+		t.Fatalf("git open: %v", err)
 	}
 
 	// Create a commit so we can detach HEAD
@@ -207,6 +212,47 @@ func TestRunStatus_Enabled(t *testing.T) {
 	}
 }
 
+// `entire status` surfaces the agent-help pointer for agents on transports
+// without context injection (Cursor / Copilot / Droid), but only once entire is
+// set up — not for not-set-up or not-a-git-repo states.
+func TestRunStatus_ShowsAgentHelpHintWhenSetUp(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	if !strings.Contains(stdout.String(), agentHelpCommand) {
+		t.Errorf("expected agent-help hint in status output, got: %s", stdout.String())
+	}
+}
+
+func TestRunStatus_NoAgentHelpHintWhenNotSetUp(t *testing.T) {
+	setupTestRepo(t)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	if strings.Contains(stdout.String(), agentHelpCommand) {
+		t.Errorf("agent-help hint should not appear when not set up, got: %s", stdout.String())
+	}
+}
+
+// agentHelpCommand is user-facing — docs, the installed skills, and agents key
+// off the exact string — so pin its value here. Every other assertion uses the
+// const; this guards against it silently drifting.
+func TestAgentHelpCommandValue(t *testing.T) {
+	t.Parallel()
+	const want = "entire agent-help"
+	if agentHelpCommand != want {
+		t.Errorf("agentHelpCommand = %q, want %q", agentHelpCommand, want)
+	}
+}
+
 func TestRunStatus_Disabled(t *testing.T) {
 	setupTestRepo(t)
 	writeSettings(t, testSettingsDisabled)
@@ -218,6 +264,10 @@ func TestRunStatus_Disabled(t *testing.T) {
 
 	if !strings.Contains(stdout.String(), "Disabled") {
 		t.Errorf("Expected output to show 'Disabled', got: %s", stdout.String())
+	}
+	// The agent-help footer renders whenever entire is set up, including disabled.
+	if !strings.Contains(stdout.String(), agentHelpCommand) {
+		t.Errorf("Expected agent-help hint in disabled (but set-up) status, got: %s", stdout.String())
 	}
 }
 
@@ -233,8 +283,8 @@ func TestRunStatus_NotSetUp(t *testing.T) {
 	if !strings.Contains(output, "○ not set up") {
 		t.Errorf("Expected output to show '○ not set up', got: %s", output)
 	}
-	if !strings.Contains(output, "trace enable") {
-		t.Errorf("Expected output to mention 'trace enable', got: %s", output)
+	if !strings.Contains(output, "entire enable") {
+		t.Errorf("Expected output to mention 'entire enable', got: %s", output)
 	}
 }
 
@@ -276,8 +326,8 @@ func TestRunStatus_LocalSettingsOnly(t *testing.T) {
 
 func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 	setupTestRepo(t)
-	// Project: enabled=true, strategy=manual-commit
-	// Local: enabled=false, strategy=manual-commit
+	// Project: enabled=true
+	// Local: enabled=false
 	// Detailed mode shows effective status first, then each file separately
 	writeSettings(t, `{"enabled": true}`)
 	writeLocalSettings(t, `{"enabled": false}`)
@@ -289,12 +339,12 @@ func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 
 	output := stdout.String()
 	// Should show effective status first (local overrides project)
-	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "manual-commit") {
-		t.Errorf("Expected output to show effective 'Disabled' with 'manual-commit', got: %s", output)
+	if !strings.Contains(output, "Disabled") {
+		t.Errorf("Expected output to show effective 'Disabled', got: %s", output)
 	}
 	// Should show both settings separately
-	if !strings.Contains(output, "Project") || !strings.Contains(output, "manual-commit") {
-		t.Errorf("Expected output to show Project with manual-commit, got: %s", output)
+	if !strings.Contains(output, "Project") || !strings.Contains(output, "enabled") {
+		t.Errorf("Expected output to show Project with enabled, got: %s", output)
 	}
 	if !strings.Contains(output, "Local") || !strings.Contains(output, "disabled") {
 		t.Errorf("Expected output to show Local with disabled, got: %s", output)
@@ -303,8 +353,8 @@ func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 
 func TestRunStatus_BothProjectAndLocal_Short(t *testing.T) {
 	setupTestRepo(t)
-	// Project: enabled=true, strategy=manual-commit
-	// Local: enabled=false, strategy=manual-commit
+	// Project: enabled=true
+	// Local: enabled=false
 	// Short mode shows merged/effective settings
 	writeSettings(t, `{"enabled": true}`)
 	writeLocalSettings(t, `{"enabled": false}`)
@@ -316,28 +366,8 @@ func TestRunStatus_BothProjectAndLocal_Short(t *testing.T) {
 
 	output := stdout.String()
 	// Should show merged/effective state (local overrides project)
-	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "manual-commit") {
-		t.Errorf("Expected output to show 'Disabled' with 'manual-commit', got: %s", output)
-	}
-}
-
-func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
-	setupTestRepo(t)
-	writeSettings(t, `{"enabled": false}`)
-
-	var stdout bytes.Buffer
-	if err := runStatus(context.Background(), &stdout, true, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
-	}
-
-	output := stdout.String()
-	// Should show effective status first
-	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "manual-commit") {
-		t.Errorf("Expected output to show effective 'Disabled' with 'manual-commit', got: %s", output)
-	}
-	// Should show per-file details
-	if !strings.Contains(output, "Project") || !strings.Contains(output, "disabled") {
-		t.Errorf("Expected output to show 'Project' and 'disabled', got: %s", output)
+	if !strings.Contains(output, "Disabled") {
+		t.Errorf("Expected output to show 'Disabled', got: %s", output)
 	}
 }
 
@@ -399,7 +429,7 @@ func TestWriteActiveSessions(t *testing.T) {
 			SessionID:    "def-5678-session",
 			WorktreePath: "/Users/test/repo",
 			StartedAt:    now.Add(-15 * time.Minute),
-			LastPrompt:   "Add dark mode support for the trace application and all components",
+			LastPrompt:   "Add dark mode support for the entire application and all components",
 			AgentType:    agent.AgentTypeCursor,
 			TokenUsage: &agent.TokenUsage{
 				InputTokens:  500,
@@ -799,5 +829,1591 @@ func TestFormatTokenCount(t *testing.T) {
 				t.Errorf("formatTokenCount(%d) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTotalTokens(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		if got := totalTokens(nil); got != 0 {
+			t.Errorf("totalTokens(nil) = %d, want 0", got)
+		}
+	})
+
+	t.Run("basic", func(t *testing.T) {
+		t.Parallel()
+		tu := &agent.TokenUsage{
+			InputTokens:  100,
+			OutputTokens: 50,
+		}
+		if got := totalTokens(tu); got != 150 {
+			t.Errorf("totalTokens() = %d, want 150", got)
+		}
+	})
+
+	t.Run("with subagents", func(t *testing.T) {
+		t.Parallel()
+		tu := &agent.TokenUsage{
+			InputTokens:  100,
+			OutputTokens: 50,
+			SubagentTokens: &agent.TokenUsage{
+				InputTokens:  200,
+				OutputTokens: 100,
+			},
+		}
+		if got := totalTokens(tu); got != 450 {
+			t.Errorf("totalTokens() = %d, want 450", got)
+		}
+	})
+
+	t.Run("all fields", func(t *testing.T) {
+		t.Parallel()
+		tu := &agent.TokenUsage{
+			InputTokens:         100,
+			CacheCreationTokens: 50,
+			CacheReadTokens:     25,
+			OutputTokens:        75,
+		}
+		if got := totalTokens(tu); got != 250 {
+			t.Errorf("totalTokens() = %d, want 250", got)
+		}
+	})
+}
+
+func TestTotalTokens_ExcludesAPICallCount(t *testing.T) {
+	t.Parallel()
+
+	// APICallCount should NOT be included in token totals — it's a separate metric
+	tu := &agent.TokenUsage{
+		InputTokens:  100,
+		OutputTokens: 50,
+		APICallCount: 999, // should be ignored
+	}
+	got := totalTokens(tu)
+	if got != 150 {
+		t.Errorf("totalTokens() = %d, want 150 (APICallCount should be excluded)", got)
+	}
+}
+
+func TestTotalTokens_DeepSubagentNesting(t *testing.T) {
+	t.Parallel()
+
+	tu := &agent.TokenUsage{
+		InputTokens:  100,
+		OutputTokens: 50,
+		SubagentTokens: &agent.TokenUsage{
+			InputTokens:  200,
+			OutputTokens: 100,
+			SubagentTokens: &agent.TokenUsage{
+				InputTokens:  50,
+				OutputTokens: 25,
+			},
+		},
+	}
+	// 100+50 + 200+100 + 50+25 = 525
+	if got := totalTokens(tu); got != 525 {
+		t.Errorf("totalTokens() = %d, want 525 (deep nesting)", got)
+	}
+}
+
+func TestTotalTokens_SaturatesOverflow(t *testing.T) {
+	t.Parallel()
+
+	maxInt := int(^uint(0) >> 1)
+	tu := &agent.TokenUsage{
+		InputTokens: maxInt,
+		SubagentTokens: &agent.TokenUsage{
+			OutputTokens: 1,
+		},
+	}
+	if got := totalTokens(tu); got != maxInt {
+		t.Errorf("totalTokens() = %d, want %d", got, maxInt)
+	}
+}
+
+func TestActiveTimeDisplay(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		if got := activeTimeDisplay(nil); got != "" {
+			t.Errorf("activeTimeDisplay(nil) = %q, want empty", got)
+		}
+	})
+
+	t.Run("recent", func(t *testing.T) {
+		t.Parallel()
+		now := time.Now()
+		if got := activeTimeDisplay(&now); got != "active now" {
+			t.Errorf("activeTimeDisplay(now) = %q, want 'active now'", got)
+		}
+	})
+
+	t.Run("older", func(t *testing.T) {
+		t.Parallel()
+		older := time.Now().Add(-5 * time.Minute)
+		got := activeTimeDisplay(&older)
+		if got != "active 5m ago" {
+			t.Errorf("activeTimeDisplay(-5m) = %q, want 'active 5m ago'", got)
+		}
+	})
+}
+
+func TestShouldUseColor_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	// bytes.Buffer is not a terminal → should return false
+	var buf bytes.Buffer
+	if shouldUseColor(&buf) {
+		t.Error("shouldUseColor(bytes.Buffer) should be false")
+	}
+}
+
+func TestShouldUseColor_NoColorEnv(t *testing.T) {
+	// NO_COLOR env var should force color off even for a real file
+	t.Setenv("NO_COLOR", "1")
+
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if shouldUseColor(f) {
+		t.Error("shouldUseColor should be false when NO_COLOR is set")
+	}
+}
+
+func TestShouldUseColor_RegularFile(t *testing.T) {
+	t.Parallel()
+
+	// A regular file (not a terminal) should return false
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if shouldUseColor(f) {
+		t.Error("shouldUseColor(regular file) should be false")
+	}
+}
+
+func TestNewStatusStyles_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	if sty.colorEnabled {
+		t.Error("newStatusStyles(bytes.Buffer) should have colorEnabled=false")
+	}
+}
+
+func TestRender_ColorDisabled(t *testing.T) {
+	t.Parallel()
+
+	// When color is disabled, render should return text unchanged
+	sty := statusStyles{colorEnabled: false}
+	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
+
+	got := sty.render(style, "hello")
+	if got != "hello" {
+		t.Errorf("render with color disabled = %q, want %q", got, "hello")
+	}
+}
+
+func TestRender_ColorEnabled_CallsStyleRender(t *testing.T) {
+	t.Parallel()
+
+	// When colorEnabled=true, render should call style.Render (not return plain text).
+	// Note: lipgloss may strip ANSI in test environments without a terminal, so we
+	// can't assert ANSI codes. Instead, verify the code path is exercised and
+	// the text content is preserved.
+	sty := statusStyles{
+		colorEnabled: true,
+		bold:         lipgloss.NewStyle().Bold(true),
+	}
+
+	got := sty.render(sty.bold, "hello")
+	if !strings.Contains(got, "hello") {
+		t.Errorf("render with color enabled should preserve text content, got: %q", got)
+	}
+}
+
+func TestRender_ColorToggle(t *testing.T) {
+	t.Parallel()
+
+	style := lipgloss.NewStyle().Bold(true)
+
+	// Color disabled: must return exact input
+	styOff := statusStyles{colorEnabled: false}
+	got := styOff.render(style, "test")
+	if got != "test" {
+		t.Errorf("render(colorEnabled=false) = %q, want exact %q", got, "test")
+	}
+
+	// Color enabled: exercises style.Render code path, text preserved
+	styOn := statusStyles{colorEnabled: true}
+	got = styOn.render(style, "test")
+	if !strings.Contains(got, "test") {
+		t.Errorf("render(colorEnabled=true) should contain 'test', got: %q", got)
+	}
+}
+
+func TestSectionRule_PlainText(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 40}
+	rule := sty.sectionRule("Active Sessions", 40)
+
+	// Plain text should contain the label
+	if !strings.Contains(rule, "Active Sessions") {
+		t.Errorf("sectionRule should contain label, got: %q", rule)
+	}
+	if !strings.Contains(rule, "─") {
+		t.Errorf("sectionRule should contain rule characters, got: %q", rule)
+	}
+	// With color disabled, should have no ANSI escapes
+	if strings.Contains(rule, "\x1b[") {
+		t.Errorf("sectionRule with color disabled should have no ANSI escapes, got: %q", rule)
+	}
+}
+
+func TestHorizontalRule_PlainText(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false}
+	rule := sty.horizontalRule(15)
+
+	// Should be no ANSI escapes
+	if strings.Contains(rule, "\x1b[") {
+		t.Errorf("horizontalRule with color disabled should have no ANSI escapes, got: %q", rule)
+	}
+	if len([]rune(rule)) != 15 {
+		t.Errorf("horizontalRule(15) has %d runes, want 15", len([]rune(rule)))
+	}
+}
+
+func TestHorizontalRule(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	rule := sty.horizontalRule(20)
+	if len([]rune(rule)) != 20 {
+		t.Errorf("horizontalRule(20) has %d runes, want 20", len([]rune(rule)))
+	}
+	// All characters should be the box-drawing dash
+	for _, r := range rule {
+		if r != '─' {
+			t.Errorf("horizontalRule contains unexpected rune %q", r)
+			break
+		}
+	}
+}
+
+func TestGetTerminalWidth_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	// A bytes.Buffer is not a terminal — should fall back to 60
+	var buf bytes.Buffer
+	width := getTerminalWidth(&buf)
+	// In CI/test environments without a real terminal on Stdout/Stderr,
+	// the fallback should be 60. If running in a terminal, it may be
+	// capped at 80. Either is acceptable.
+	if width != 60 && width > 80 {
+		t.Errorf("getTerminalWidth(bytes.Buffer) = %d, want 60 or ≤80", width)
+	}
+}
+
+func TestGetTerminalWidth_RegularFile(t *testing.T) {
+	t.Parallel()
+
+	// A regular file (not a terminal) should not report a terminal width
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	width := getTerminalWidth(f)
+	// Regular file fd won't have a terminal size, so it should fall back
+	if width != 60 && width > 80 {
+		t.Errorf("getTerminalWidth(regular file) = %d, want 60 or ≤80", width)
+	}
+}
+
+func TestNewStatusStyles_Width(t *testing.T) {
+	t.Parallel()
+
+	// For a non-terminal writer, width should be the fallback (60)
+	// unless Stdout/Stderr happen to be terminals
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	if sty.width == 0 {
+		t.Error("newStatusStyles should set a non-zero width")
+	}
+	if sty.width > 80 {
+		t.Errorf("newStatusStyles width = %d, should be capped at 80", sty.width)
+	}
+}
+
+func TestSectionRule_NarrowWidth(t *testing.T) {
+	t.Parallel()
+
+	// When width is very small (smaller than prefix + label), trailing should be at least 1
+	sty := statusStyles{colorEnabled: false, width: 10}
+	rule := sty.sectionRule("Active Sessions", 10)
+
+	// Should still contain the label and at least one trailing dash
+	if !strings.Contains(rule, "Active Sessions") {
+		t.Errorf("sectionRule with narrow width should still contain label, got: %q", rule)
+	}
+	if !strings.Contains(rule, "─") {
+		t.Errorf("sectionRule with narrow width should have at least one trailing dash, got: %q", rule)
+	}
+}
+
+func TestActiveTimeDisplay_Hours(t *testing.T) {
+	t.Parallel()
+
+	hoursAgo := time.Now().Add(-3 * time.Hour)
+	got := activeTimeDisplay(&hoursAgo)
+	if got != "active 3h ago" {
+		t.Errorf("activeTimeDisplay(-3h) = %q, want 'active 3h ago'", got)
+	}
+}
+
+func TestActiveTimeDisplay_Days(t *testing.T) {
+	t.Parallel()
+
+	daysAgo := time.Now().Add(-48 * time.Hour)
+	got := activeTimeDisplay(&daysAgo)
+	if got != "active 2d ago" {
+		t.Errorf("activeTimeDisplay(-48h) = %q, want 'active 2d ago'", got)
+	}
+}
+
+func TestFormatSettingsStatusShort_Enabled(t *testing.T) {
+	setupTestRepo(t)
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled: true,
+	}
+
+	result := formatSettingsStatusShort(context.Background(), s, sty)
+
+	if !strings.Contains(result, "●") {
+		t.Errorf("Enabled status should have green dot, got: %q", result)
+	}
+	if !strings.Contains(result, "Enabled") {
+		t.Errorf("Expected 'Enabled' in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatusShort_Disabled(t *testing.T) {
+	setupTestRepo(t)
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled: false,
+	}
+
+	result := formatSettingsStatusShort(context.Background(), s, sty)
+
+	if !strings.Contains(result, "○") {
+		t.Errorf("Disabled status should have open dot, got: %q", result)
+	}
+	if !strings.Contains(result, "Disabled") {
+		t.Errorf("Expected 'Disabled' in output, got: %q", result)
+	}
+}
+
+func TestRunStatus_ShowsEnabledAgents(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+	writeClaudeHooksFixture(t)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Agents ·") {
+		t.Errorf("Expected 'Agents ·' in output, got: %s", output)
+	}
+	if !strings.Contains(output, "Claude Code") {
+		t.Errorf("Expected 'Claude Code' in output, got: %s", output)
+	}
+}
+
+func TestRunStatus_EnabledNoAgentsHidesHooksLine(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+	// No agent hooks installed
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if strings.Contains(output, "Agents ·") {
+		t.Errorf("Should not show hooks line when no agents installed, got: %s", output)
+	}
+}
+
+func TestRunStatus_DetailedShowsEnabledAgents(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+	writeClaudeHooksFixture(t)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, true, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Agents ·") {
+		t.Errorf("Expected 'Agents ·' in detailed output, got: %s", output)
+	}
+	if !strings.Contains(output, "Claude Code") {
+		t.Errorf("Expected 'Claude Code' in detailed output, got: %s", output)
+	}
+}
+
+func TestWriteActiveSessions_OmitsTokensWhenNoTokenData(t *testing.T) {
+	setupTestRepo(t)
+
+	store, err := session.NewStateStore(context.Background())
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	now := time.Now()
+	recentInteraction := now.Add(-5 * time.Minute)
+
+	states := []*session.State{
+		{
+			SessionID:           "no-token-session",
+			WorktreePath:        "/Users/test/repo",
+			StartedAt:           now.Add(-30 * time.Minute),
+			LastInteractionTime: &recentInteraction,
+			Phase:               session.PhaseActive,
+			LastPrompt:          "explain this code",
+			AgentType:           "Claude Code",
+		},
+	}
+
+	for _, s := range states {
+		if err := store.Save(context.Background(), s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(context.Background(), &buf, sty)
+
+	output := buf.String()
+
+	if strings.Contains(output, "tokens") {
+		t.Errorf("Session with no token data should NOT show tokens, got: %s", output)
+	}
+}
+
+func TestWriteActiveSessions_ShowsTokensWithCheckpoints(t *testing.T) {
+	setupTestRepo(t)
+
+	store, err := session.NewStateStore(context.Background())
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	now := time.Now()
+	recentInteraction := now.Add(-5 * time.Minute)
+
+	states := []*session.State{
+		{
+			SessionID:           "has-checkpoint-session",
+			WorktreePath:        "/Users/test/repo",
+			StartedAt:           now.Add(-30 * time.Minute),
+			LastInteractionTime: &recentInteraction,
+			Phase:               session.PhaseActive,
+			LastPrompt:          "fix the bug",
+			AgentType:           "Claude Code",
+			StepCount:           2,
+			TokenUsage: &agent.TokenUsage{
+				InputTokens:  800,
+				OutputTokens: 400,
+			},
+		},
+	}
+
+	for _, s := range states {
+		if err := store.Save(context.Background(), s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(context.Background(), &buf, sty)
+
+	output := buf.String()
+
+	if !strings.Contains(output, "tokens 1.2k") {
+		t.Errorf("Session with checkpoints should show tokens, got: %s", output)
+	}
+}
+
+func TestRunStatus_DetailedDisabledDoesNotShowAgents(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsDisabled)
+	writeClaudeHooksFixture(t)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, true, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if strings.Contains(output, "Agents ·") {
+		t.Errorf("Disabled detailed status should not show agents, got: %s", output)
+	}
+}
+
+func TestRunStatus_DisabledDoesNotShowAgents(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsDisabled)
+	writeClaudeHooksFixture(t)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if strings.Contains(output, "Agents ·") {
+		t.Errorf("Disabled status should not show agents, got: %s", output)
+	}
+}
+
+func TestFormatSettingsStatus_Project(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled: true,
+	}
+
+	result := formatSettingsStatus("Project", s, sty)
+
+	if !strings.Contains(result, "Project") {
+		t.Errorf("Expected 'Project' prefix, got: %q", result)
+	}
+	if !strings.Contains(result, "enabled") {
+		t.Errorf("Expected 'enabled' in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatus_LocalDisabled(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled: false,
+	}
+
+	result := formatSettingsStatus("Local", s, sty)
+
+	if !strings.Contains(result, "Local") {
+		t.Errorf("Expected 'Local' prefix, got: %q", result)
+	}
+	if !strings.Contains(result, "disabled") {
+		t.Errorf("Expected 'disabled' in output, got: %q", result)
+	}
+}
+
+func TestWriteActiveSessions_StaleIndicator(t *testing.T) {
+	setupTestRepo(t)
+
+	store, err := session.NewStateStore(context.Background())
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	now := time.Now()
+	staleInteraction := now.Add(-2 * time.Hour) // well past 1hr threshold
+
+	states := []*session.State{
+		{
+			SessionID:           "stale-session-1",
+			WorktreePath:        "/Users/test/repo",
+			StartedAt:           now.Add(-3 * time.Hour),
+			LastInteractionTime: &staleInteraction,
+			Phase:               session.PhaseActive,
+			LastPrompt:          "fix the bug",
+			AgentType:           "Claude Code",
+		},
+	}
+
+	for _, s := range states {
+		if err := store.Save(context.Background(), s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(context.Background(), &buf, sty)
+
+	output := buf.String()
+
+	if !strings.Contains(output, "stale") {
+		t.Errorf("Expected 'stale' indicator for session with interaction >1hr ago, got: %s", output)
+	}
+	if !strings.Contains(output, "entire doctor") {
+		t.Errorf("Expected 'entire doctor' hint in stale indicator, got: %s", output)
+	}
+}
+
+func TestIsStuckActiveSession(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	recent := now.Add(-5 * time.Minute)
+	stale := now.Add(-2 * time.Hour)
+	brandNew := now.Add(-10 * time.Second)
+
+	tests := []struct {
+		name  string
+		state *session.State
+		want  bool
+	}{
+		{
+			name:  "active with stale interaction",
+			state: &session.State{Phase: session.PhaseActive, LastInteractionTime: &stale},
+			want:  true,
+		},
+		{
+			name:  "active with nil interaction and old start",
+			state: &session.State{Phase: session.PhaseActive, LastInteractionTime: nil, StartedAt: now.Add(-2 * time.Hour)},
+			want:  true,
+		},
+		{
+			name:  "active with nil interaction and recent start",
+			state: &session.State{Phase: session.PhaseActive, LastInteractionTime: nil, StartedAt: brandNew},
+			want:  false,
+		},
+		{
+			name:  "active with recent interaction",
+			state: &session.State{Phase: session.PhaseActive, LastInteractionTime: &recent},
+			want:  false,
+		},
+		{
+			name:  "idle with stale interaction",
+			state: &session.State{Phase: session.PhaseIdle, LastInteractionTime: &stale},
+			want:  false,
+		},
+		{
+			name:  "ended with stale interaction",
+			state: &session.State{Phase: session.PhaseEnded, LastInteractionTime: &stale},
+			want:  false,
+		},
+		{
+			name:  "empty phase with stale interaction",
+			state: &session.State{Phase: "", LastInteractionTime: &stale},
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.state.IsStuckActive(); got != tt.want {
+				t.Errorf("IsStuckActive() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteActiveSessions_StaleWithNilInteractionOldStart(t *testing.T) {
+	setupTestRepo(t)
+
+	store, err := session.NewStateStore(context.Background())
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	now := time.Now()
+
+	states := []*session.State{
+		{
+			SessionID:           "old-nil-interaction-session",
+			WorktreePath:        "/Users/test/repo",
+			StartedAt:           now.Add(-2 * time.Hour),
+			LastInteractionTime: nil,
+			Phase:               session.PhaseActive,
+			LastPrompt:          "do something",
+			AgentType:           "Claude Code",
+		},
+	}
+
+	for _, s := range states {
+		if err := store.Save(context.Background(), s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(context.Background(), &buf, sty)
+
+	output := buf.String()
+
+	if !strings.Contains(output, "stale") {
+		t.Errorf("Old session with nil LastInteractionTime should show stale indicator, got: %s", output)
+	}
+}
+
+func TestWriteActiveSessions_NotStaleWhenBrandNew(t *testing.T) {
+	setupTestRepo(t)
+
+	store, err := session.NewStateStore(context.Background())
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	now := time.Now()
+
+	states := []*session.State{
+		{
+			SessionID:           "brand-new-session",
+			WorktreePath:        "/Users/test/repo",
+			StartedAt:           now.Add(-10 * time.Second),
+			LastInteractionTime: nil,
+			Phase:               session.PhaseActive,
+			LastPrompt:          "hello",
+			AgentType:           "Claude Code",
+		},
+	}
+
+	for _, s := range states {
+		if err := store.Save(context.Background(), s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(context.Background(), &buf, sty)
+
+	output := buf.String()
+
+	if strings.Contains(output, "stale") {
+		t.Errorf("Brand-new session should NOT show stale indicator, got: %s", output)
+	}
+}
+
+func TestWriteActiveSessions_NotStaleWhenRecent(t *testing.T) {
+	setupTestRepo(t)
+
+	store, err := session.NewStateStore(context.Background())
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	now := time.Now()
+	recentInteraction := now.Add(-5 * time.Minute)
+
+	states := []*session.State{
+		{
+			SessionID:           "fresh-session-1",
+			WorktreePath:        "/Users/test/repo",
+			StartedAt:           now.Add(-30 * time.Minute),
+			LastInteractionTime: &recentInteraction,
+			Phase:               session.PhaseActive,
+			LastPrompt:          "add feature",
+			AgentType:           "Claude Code",
+		},
+	}
+
+	for _, s := range states {
+		if err := store.Save(context.Background(), s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(context.Background(), &buf, sty)
+
+	output := buf.String()
+
+	if strings.Contains(output, "stale") {
+		t.Errorf("Session with recent interaction should NOT show stale indicator, got: %s", output)
+	}
+}
+
+func TestFormatSettingsStatus_Separators(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled: true,
+	}
+
+	result := formatSettingsStatus("Project", s, sty)
+
+	// Should use · as separator (plain text, no ANSI)
+	if !strings.Contains(result, "·") {
+		t.Errorf("Expected '·' separators in output, got: %q", result)
+	}
+}
+
+func TestRunStatusJSON_Enabled(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+	writeClaudeHooksFixture(t)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if !result.Enabled {
+		t.Error("Expected enabled=true")
+	}
+	found := false
+	for _, a := range result.Agents {
+		if a == "Claude Code" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected agents to contain 'Claude Code', got %v", result.Agents)
+	}
+	if result.Error != "" {
+		t.Errorf("Expected no error, got %q", result.Error)
+	}
+	// No-channel agents (Cursor/Copilot/Droid/MCP) parse --json, not the text
+	// footer, so the agent-help pointer must be present once entire is set up.
+	if result.AgentHelp != agentHelpCommand {
+		t.Errorf("Expected agent_help='entire agent-help', got %q", result.AgentHelp)
+	}
+}
+
+// TestRunStatusJSON_HooksOutdated — when Claude Code hooks are installed under
+// the outdated Task/TodoWrite matchers, `entire status --json` reports the agent
+// under hooks_outdated so scripts/agents can detect the drift.
+func TestRunStatusJSON_HooksOutdated(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+
+	if err := os.MkdirAll(".claude", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	stale := `{
+  "hooks": {
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "entire hooks claude-code stop"}]}],
+    "PreToolUse": [{"matcher": "Task", "hooks": [{"type": "command", "command": "entire hooks claude-code pre-task"}]}],
+    "PostToolUse": [
+      {"matcher": "Task", "hooks": [{"type": "command", "command": "entire hooks claude-code post-task"}]},
+      {"matcher": "TodoWrite", "hooks": [{"type": "command", "command": "entire hooks claude-code post-todo"}]}
+    ]
+  }
+}`
+	if err := os.WriteFile(".claude/settings.json", []byte(stale), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if !slices.Contains(result.HooksOutdated, "claude-code") {
+		t.Errorf("Expected hooks_outdated to contain 'claude-code', got %v", result.HooksOutdated)
+	}
+}
+
+func TestRunStatusJSON_Disabled(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsDisabled)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if result.Enabled {
+		t.Error("Expected enabled=false")
+	}
+	// Disabled-but-set-up still advertises the passive agent-help pointer (the
+	// hint is gated on "set up", not on "enabled") — matches the text footer.
+	if result.AgentHelp != agentHelpCommand {
+		t.Errorf("Expected agent_help='entire agent-help' when disabled-but-set-up, got %q", result.AgentHelp)
+	}
+}
+
+func TestRunStatusJSON_NotSetUp(t *testing.T) {
+	setupTestRepo(t)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if result.Enabled {
+		t.Error("Expected enabled=false")
+	}
+	if result.Error != "not set up" {
+		t.Errorf("Expected error='not set up', got %q", result.Error)
+	}
+	// Mirrors the text footer: no agent-help pointer until entire is set up.
+	if result.AgentHelp != "" {
+		t.Errorf("agent_help should be empty when not set up, got %q", result.AgentHelp)
+	}
+}
+
+func TestRunStatusJSON_NotGitRepo(t *testing.T) {
+	setupTestDir(t)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if result.Enabled {
+		t.Error("Expected enabled=false")
+	}
+	if result.Error != "not a git repository" {
+		t.Errorf("Expected error='not a git repository', got %q", result.Error)
+	}
+	if result.AgentHelp != "" {
+		t.Errorf("agent_help should be empty when not a git repo, got %q", result.AgentHelp)
+	}
+}
+
+func TestRunStatusJSON_WithActiveSessions(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+	writeClaudeHooksFixture(t)
+
+	store, err := session.NewStateStore(context.Background())
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	state := &session.State{
+		SessionID:    "test-json-session",
+		WorktreePath: "/test/repo",
+		StartedAt:    time.Now(),
+		Phase:        session.PhaseActive,
+		AgentType:    "Claude Code",
+		ModelName:    "sonnet-4.1",
+	}
+	if err := store.Save(context.Background(), state); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if len(result.ActiveSessions) != 1 {
+		t.Fatalf("Expected 1 active session, got %d", len(result.ActiveSessions))
+	}
+	s := result.ActiveSessions[0]
+	if s.Agent != "Claude Code" {
+		t.Errorf("Expected agent='Claude Code', got %q", s.Agent)
+	}
+	if s.Model != "sonnet-4.1" {
+		t.Errorf("Expected model='sonnet-4.1', got %q", s.Model)
+	}
+	if s.Status != "active" {
+		t.Errorf("Expected status='active', got %q", s.Status)
+	}
+	if result.AgentHelp != agentHelpCommand {
+		t.Errorf("Expected agent_help='entire agent-help' with active sessions, got %q", result.AgentHelp)
+	}
+}
+
+func TestRunStatusJSON_DeduplicatesSessions(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+
+	store, err := session.NewStateStore(context.Background())
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	now := time.Now()
+	states := []*session.State{
+		{
+			SessionID:    "codex-idle-1",
+			WorktreePath: "/test/repo",
+			StartedAt:    now.Add(-30 * time.Minute),
+			Phase:        session.PhaseIdle,
+			AgentType:    "Codex",
+		},
+		{
+			SessionID:    "codex-idle-2",
+			WorktreePath: "/test/repo",
+			StartedAt:    now.Add(-20 * time.Minute),
+			Phase:        session.PhaseIdle,
+			AgentType:    "Codex",
+		},
+		{
+			SessionID:    "codex-active",
+			WorktreePath: "/test/repo",
+			StartedAt:    now.Add(-5 * time.Minute),
+			Phase:        session.PhaseActive,
+			AgentType:    "Codex",
+			ModelName:    "codex-mini",
+		},
+	}
+	for _, s := range states {
+		if err := store.Save(context.Background(), s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if len(result.ActiveSessions) != 1 {
+		t.Fatalf("Expected 1 deduplicated session, got %d", len(result.ActiveSessions))
+	}
+	s := result.ActiveSessions[0]
+	if s.Agent != "Codex" {
+		t.Errorf("Expected agent='Codex', got %q", s.Agent)
+	}
+	if s.Status != "active" {
+		t.Errorf("Expected status='active' (active wins over idle), got %q", s.Status)
+	}
+	if s.Model != "codex-mini" {
+		t.Errorf("Expected model='codex-mini' from active session, got %q", s.Model)
+	}
+}
+
+// writeStatusHeadCheckpoint writes a v1 checkpoint with the requested
+// review/investigation flags, then amends HEAD to carry the
+// Entire-Checkpoint trailer. Mirrors the helper used in
+// head_checkpoint_flags_test.go but inlined to keep status_test.go
+// self-contained for readers comparing to other status tests.
+func writeStatusHeadCheckpoint(t *testing.T, hasReview, hasInvestigation bool) {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	repo, err := git.PlainOpen(cwd)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+
+	// Use a deterministic id per (review, investigation) pairing so multiple
+	// status tests writing different combinations don't collide on the same id.
+	cpHex := "abcdef011234"
+	switch {
+	case hasReview && hasInvestigation:
+		cpHex = "abcdef011111"
+	case hasReview:
+		cpHex = "abcdef012222"
+	case hasInvestigation:
+		cpHex = "abcdef013333"
+	}
+	cpID := id.MustCheckpointID(cpHex)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
+	if err := store.Write(context.Background(), checkpoint.Session{
+		CheckpointID:     cpID,
+		SessionID:        "status-test-session",
+		Strategy:         "manual-commit",
+		Transcript:       redact.AlreadyRedacted([]byte(`{"type":"user","message":{"content":[{"type":"text","text":"hi"}]}}` + "\n")),
+		AuthorName:       "Status Test",
+		AuthorEmail:      "status-test@entire.local",
+		HasReview:        hasReview,
+		HasInvestigation: hasInvestigation,
+	}); err != nil {
+		t.Fatalf("WriteCommitted: %v", err)
+	}
+
+	runGitInDir(t, cwd, "commit", "--amend", "-m", "init\n\nEntire-Checkpoint: "+cpID.String())
+}
+
+func TestRunStatus_PrintsInvestigationLine(t *testing.T) {
+	setupTestRepo(t)
+	// Need an initial commit before we can amend it with the trailer.
+	testutil.WriteFile(t, ".", "init.txt", "init")
+	testutil.GitAdd(t, ".", "init.txt")
+	testutil.GitCommit(t, ".", "init")
+	writeSettings(t, `{"enabled": true}`)
+	writeStatusHeadCheckpoint(t, false, true)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Investigation") || !strings.Contains(out, "investigated") {
+		t.Errorf("expected 'Investigation' / 'investigated' line in status output; got:\n%s", out)
+	}
+	if strings.Contains(out, "Review · ") {
+		t.Errorf("Review line must not appear when only HasInvestigation is set; got:\n%s", out)
+	}
+}
+
+func TestRunStatus_PrintsBothReviewAndInvestigation(t *testing.T) {
+	setupTestRepo(t)
+	testutil.WriteFile(t, ".", "init.txt", "init")
+	testutil.GitAdd(t, ".", "init.txt")
+	testutil.GitCommit(t, ".", "init")
+	writeSettings(t, `{"enabled": true}`)
+	writeStatusHeadCheckpoint(t, true, true)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Review") || !strings.Contains(out, "reviewed") {
+		t.Errorf("expected 'Review' / 'reviewed' line in status output; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Investigation") || !strings.Contains(out, "investigated") {
+		t.Errorf("expected 'Investigation' / 'investigated' line in status output; got:\n%s", out)
+	}
+}
+
+// --- Checkpoint sync visibility (single-remote gate observability) ---
+
+// checkpointSyncTestCommit creates a commit in the cwd test repo and returns
+// its hash. setupTestRepo leaves the repo without commits, and both the v1
+// counter and ref updates need at least one.
+func checkpointSyncTestCommit(t *testing.T, name, content string) string {
+	t.Helper()
+	testutil.WriteFile(t, ".", name, content)
+	testutil.GitAdd(t, ".", name)
+	testutil.GitCommit(t, ".", "commit "+name)
+	return testutil.GetHeadHash(t, ".")
+}
+
+func TestRunStatus_CheckpointSyncDestination_Origin(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+	testutil.AddRemote(t, ".", "origin", "https://example.com/origin.git")
+	testutil.AddRemote(t, ".", "publish", "https://example.com/publish.git")
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Checkpoints sync to: origin") {
+		t.Errorf("expected destination line naming origin, got:\n%s", out)
+	}
+	if strings.Contains(out, "(set by checkpoint_push_remote)") {
+		t.Errorf("default election must not carry the config annotation, got:\n%s", out)
+	}
+	if strings.Contains(out, "not yet on") {
+		t.Errorf("counter line must be omitted when nothing is unpushed, got:\n%s", out)
+	}
+}
+
+func TestRunStatus_CheckpointSyncDestination_ConfigAnnotated(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, `{"enabled": true, "strategy_options": {"checkpoint_push_remote": "private"}}`)
+	testutil.AddRemote(t, ".", "origin", "https://example.com/origin.git")
+	testutil.AddRemote(t, ".", "private", "https://example.com/private.git")
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Checkpoints sync to: private (set by checkpoint_push_remote)") {
+		t.Errorf("expected annotated destination line for configured remote, got:\n%s", out)
+	}
+}
+
+func TestRunStatus_CheckpointSyncFailClosed(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, `{"enabled": true, "strategy_options": {"checkpoint_push_remote": "gone"}}`)
+	testutil.AddRemote(t, ".", "origin", "https://example.com/origin.git")
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Checkpoints NOT syncing:") {
+		t.Errorf("expected fail-closed warning line, got:\n%s", out)
+	}
+	if !strings.Contains(out, `"gone"`) {
+		t.Errorf("fail-closed line should name the misconfigured remote, got:\n%s", out)
+	}
+	if strings.Contains(out, "Checkpoints sync to:") {
+		t.Errorf("fail-closed status must not also print a destination line, got:\n%s", out)
+	}
+}
+
+func TestRunStatus_CheckpointSyncHiddenWhenNoRemotes(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	if strings.Contains(stdout.String(), "Checkpoints sync") || strings.Contains(stdout.String(), "Checkpoints NOT syncing") {
+		t.Errorf("no remotes: checkpoint sync lines must be absent, got:\n%s", stdout.String())
+	}
+}
+
+func TestRunStatus_CheckpointSyncHiddenWhenDisabled(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, testSettingsDisabled)
+	testutil.AddRemote(t, ".", "origin", "https://example.com/origin.git")
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	if strings.Contains(stdout.String(), "Checkpoints sync to:") {
+		t.Errorf("disabled: checkpoint sync lines must be absent, got:\n%s", stdout.String())
+	}
+}
+
+func TestRunStatus_CheckpointSyncCounter_GitBranchAhead(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+	testutil.AddRemote(t, ".", "origin", "https://example.com/origin.git")
+	checkpointSyncTestCommit(t, "a.txt", "one")
+	second := checkpointSyncTestCommit(t, "b.txt", "two")
+	// Local v1 with no origin-tracking ref: every v1 commit counts as unpushed
+	// (the deferred-publish reading).
+	testutil.GitUpdateRef(t, ".", "refs/heads/"+paths.MetadataBranchName, second)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "2 checkpoints not yet on origin — they sync with your next 'git push origin'") {
+		t.Errorf("expected unpushed counter line, got:\n%s", out)
+	}
+}
+
+func TestRunStatus_CheckpointSyncCounterOmitted_WhenSynced(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+	testutil.AddRemote(t, ".", "origin", "https://example.com/origin.git")
+	head := checkpointSyncTestCommit(t, "a.txt", "one")
+	testutil.GitUpdateRef(t, ".", "refs/heads/"+paths.MetadataBranchName, head)
+	testutil.GitUpdateRef(t, ".", "refs/remotes/origin/"+paths.MetadataBranchName, head)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Checkpoints sync to: origin") {
+		t.Errorf("expected destination line, got:\n%s", out)
+	}
+	if strings.Contains(out, "not yet on") {
+		t.Errorf("tracking ref equals local v1: counter must be omitted, got:\n%s", out)
+	}
+}
+
+func TestRunStatus_CheckpointSyncDedicated_GitBranch_NoCounter(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, `{"enabled": true, "strategy_options": {"checkpoint_remote": {"provider": "github", "repo": "org/checkpoints"}}}`)
+	// Same owner ("org") as checkpoint_remote and a parseable GitHub URL, so
+	// PushURL derivation succeeds locally and dedicated mode is verified.
+	testutil.AddRemote(t, ".", "origin", "https://github.com/org/repo.git")
+	head := checkpointSyncTestCommit(t, "a.txt", "one")
+	// A local v1 branch exists, but in dedicated URL mode on the git-branch
+	// backend the tracking-ref comparison would permanently read "all
+	// unpushed" — the counter must be suppressed.
+	testutil.GitUpdateRef(t, ".", "refs/heads/"+paths.MetadataBranchName, head)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Checkpoints sync to: dedicated checkpoint remote (org/checkpoints)") {
+		t.Errorf("expected dedicated destination line with repo slug, got:\n%s", out)
+	}
+	if strings.Contains(out, "not yet") {
+		t.Errorf("dedicated + git-branch: counter must be suppressed, got:\n%s", out)
+	}
+}
+
+func TestRunStatus_CheckpointSyncDedicated_GitRefs_QueueCounter(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, `{"enabled": true, "strategy_options": {"checkpoint_remote": {"provider": "github", "repo": "org/checkpoints"}}, "checkpoints": {"primary": {"type": "git-refs"}}}`)
+	testutil.AddRemote(t, ".", "origin", "https://github.com/org/repo.git")
+	checkpointSyncTestCommit(t, "a.txt", "one")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	queue := checkpoint.NewPushQueue(filepath.Join(cwd, ".git"))
+	if err := queue.Enqueue("refs/entire/checkpoints/aa/bb0000000001"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if err := queue.Enqueue("refs/entire/checkpoints/aa/bb0000000002"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Checkpoints sync to: dedicated checkpoint remote (org/checkpoints)") {
+		t.Errorf("expected dedicated destination line, got:\n%s", out)
+	}
+	// Dedicated mode has no remote name to phrase the counter around.
+	if !strings.Contains(out, "2 checkpoints not yet pushed") {
+		t.Errorf("expected queue-length counter without a remote name, got:\n%s", out)
+	}
+	if strings.Contains(out, "not yet on") {
+		t.Errorf("dedicated counter must not name a git remote, got:\n%s", out)
+	}
+}
+
+func TestRunStatusJSON_CheckpointSync_Elected(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+	testutil.AddRemote(t, ".", "origin", "https://example.com/origin.git")
+	checkpointSyncTestCommit(t, "a.txt", "one")
+	second := checkpointSyncTestCommit(t, "b.txt", "two")
+	testutil.GitUpdateRef(t, ".", "refs/heads/"+paths.MetadataBranchName, second)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if result.CheckpointSyncRemote != "origin" {
+		t.Errorf("checkpoint_sync_remote = %q, want %q", result.CheckpointSyncRemote, "origin")
+	}
+	if result.CheckpointSyncRemoteSource != "default" {
+		t.Errorf("checkpoint_sync_remote_source = %q, want %q", result.CheckpointSyncRemoteSource, "default")
+	}
+	if result.CheckpointSyncError != "" {
+		t.Errorf("checkpoint_sync_error should be empty, got %q", result.CheckpointSyncError)
+	}
+	if result.UnpushedCheckpoints != 2 {
+		t.Errorf("unpushed_checkpoints = %d, want 2", result.UnpushedCheckpoints)
+	}
+}
+
+func TestRunStatusJSON_CheckpointSync_FailClosed(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, `{"enabled": true, "strategy_options": {"checkpoint_push_remote": "gone"}}`)
+	testutil.AddRemote(t, ".", "origin", "https://example.com/origin.git")
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if result.CheckpointSyncRemote != "" {
+		t.Errorf("checkpoint_sync_remote should be empty when unresolved, got %q", result.CheckpointSyncRemote)
+	}
+	if result.CheckpointSyncRemoteSource != "" {
+		t.Errorf("checkpoint_sync_remote_source should be empty when unresolved, got %q", result.CheckpointSyncRemoteSource)
+	}
+	if !strings.Contains(result.CheckpointSyncError, `"gone"`) {
+		t.Errorf("checkpoint_sync_error should name the misconfigured remote, got %q", result.CheckpointSyncError)
+	}
+}
+
+func TestRunStatusJSON_CheckpointSync_Dedicated(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, `{"enabled": true, "strategy_options": {"checkpoint_remote": {"provider": "github", "repo": "org/checkpoints"}}}`)
+	testutil.AddRemote(t, ".", "origin", "https://github.com/org/repo.git")
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if result.CheckpointSyncRemote != "org/checkpoints" {
+		t.Errorf("checkpoint_sync_remote = %q, want the org/repo slug", result.CheckpointSyncRemote)
+	}
+	if result.CheckpointSyncRemoteSource != "dedicated" {
+		t.Errorf("checkpoint_sync_remote_source = %q, want %q", result.CheckpointSyncRemoteSource, "dedicated")
+	}
+	if result.UnpushedCheckpoints != 0 {
+		t.Errorf("dedicated + git-branch must not report a count, got %d", result.UnpushedCheckpoints)
+	}
+}
+
+// Dedicated mode is reported only when PushURL derivation succeeds (the same
+// condition the pre-push gate's exemption uses). An owner mismatch between the
+// elected remote and checkpoint_remote makes derivation fall back, so the next
+// push uses normal single-remote sync — status must say so.
+func TestRunStatus_CheckpointSyncDedicated_IneligibleFallsBackToElected(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, `{"enabled": true, "strategy_options": {"checkpoint_remote": {"provider": "github", "repo": "org/checkpoints"}}}`)
+	// Remote owner "other" != checkpoint_remote owner "org": fork detection
+	// rejects the dedicated store at push time.
+	testutil.AddRemote(t, ".", "origin", "https://github.com/other/repo.git")
+	checkpointSyncTestCommit(t, "a.txt", "one")
+	second := checkpointSyncTestCommit(t, "b.txt", "two")
+	testutil.GitUpdateRef(t, ".", "refs/heads/"+paths.MetadataBranchName, second)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	out := stdout.String()
+	if strings.Contains(out, "dedicated") {
+		t.Errorf("ineligible derivation must not render dedicated mode, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Checkpoints sync to: origin") {
+		t.Errorf("expected normal elected-remote destination line, got:\n%s", out)
+	}
+	// The elected-remote counter applies in normal mode (v1 ahead, no
+	// tracking ref -> all commits count).
+	if !strings.Contains(out, "2 checkpoints not yet on origin") {
+		t.Errorf("expected elected-remote counter in fallback mode, got:\n%s", out)
+	}
+}
+
+func TestRunStatusJSON_CheckpointSync_DedicatedIneligible(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, `{"enabled": true, "strategy_options": {"checkpoint_remote": {"provider": "github", "repo": "org/checkpoints"}}}`)
+	testutil.AddRemote(t, ".", "origin", "https://github.com/other/repo.git")
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if result.CheckpointSyncRemote != "origin" {
+		t.Errorf("checkpoint_sync_remote = %q, want the elected remote %q", result.CheckpointSyncRemote, "origin")
+	}
+	if result.CheckpointSyncRemoteSource != "default" {
+		t.Errorf("checkpoint_sync_remote_source = %q, want %q (not dedicated)", result.CheckpointSyncRemoteSource, "default")
+	}
+	if result.CheckpointSyncError != "" {
+		t.Errorf("checkpoint_sync_error should be empty, got %q", result.CheckpointSyncError)
+	}
+}
+
+func TestRunStatusJSON_CheckpointSync_AbsentWhenNoRemotes(t *testing.T) {
+	testutil.IsolateGitConfigEnv(t)
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+
+	var stdout bytes.Buffer
+	if err := runStatus(context.Background(), &stdout, false, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	var result statusJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if result.CheckpointSyncRemote != "" || result.CheckpointSyncRemoteSource != "" || result.CheckpointSyncError != "" {
+		t.Errorf("no remotes: checkpoint sync JSON fields must be absent, got remote=%q source=%q err=%q",
+			result.CheckpointSyncRemote, result.CheckpointSyncRemoteSource, result.CheckpointSyncError)
+	}
+	if strings.Contains(stdout.String(), "checkpoint_sync_remote") {
+		t.Errorf("omitempty should drop empty checkpoint sync fields, got: %s", stdout.String())
 	}
 }

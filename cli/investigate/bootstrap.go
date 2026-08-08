@@ -213,16 +213,19 @@ section reflects the current best hypothesis with confidence ("likely",
 
 <!-- What was searched, what was found, what was ruled out. If nothing
 relevant, say "no prior work found; searched for: <queries>". When a
-finding cites a commit hash, also note the Trace-Checkpoint trailer
-(if any) and what `+"`trace explain --checkpoint <id> --no-pager`"+`
+finding cites a commit hash, also note the Entire-Checkpoint trailer
+(if any) and what `+"`entire checkpoint explain --checkpoint <id> --no-pager`"+`
 revealed. -->
 
 ## System under investigation
 
-<!-- A small diagram of the path under investigation. For
-producer/consumer or queue-shaped systems, show: who writes the input,
-who reads it, where retries happen, and the per-attempt cost. ASCII or
-mermaid both fine. Two boxes and an arrow beats a paragraph. -->
+<!-- A small Mermaid diagram of the path under investigation, in a
+`+"```mermaid"+` fenced block (use `+"`flowchart LR`"+`; it may fork to show
+success/failure paths). Do NOT use ASCII art — it renders poorly. For
+producer/consumer or queue-shaped systems, show: who writes the input, who
+reads it, where retries happen, and the per-attempt cost. Keep node and
+edge labels to a few words so the rendered diagram stays readable. Two boxes
+and an arrow beats a paragraph. -->
 
 ## Approach
 
@@ -231,8 +234,8 @@ conducted: the key queries, files read, hypotheses formed, and
 hypotheses ruled out. Edit in place each turn — replace stale text,
 keep the section tight. NO per-agent attribution; NO per-turn entries
 ("claude-code (round 1):" / "codex (round 2):"). The reasoning trail
-lives in the agent session transcripts on trace/checkpoints/v1; run
-`+"`trace checkpoint explain <id>`"+` to retrieve it. -->
+lives in the agent session transcripts on entire/checkpoints/v1; run
+`+"`entire checkpoint explain <id>`"+` to retrieve it. -->
 
 ## Findings
 

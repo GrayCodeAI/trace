@@ -12,68 +12,44 @@ import (
 var ErrInsecureHTTP = errors.New("refusing to use insecure http:// base URL for authentication (use --insecure-http-auth to override)")
 
 const (
-	// DefaultBaseURL is the production Trace API origin.
-	DefaultBaseURL = "https://trace.io"
+	// DefaultBaseURL is the production Entire API origin.
+	DefaultBaseURL = "https://entire.io"
 
-	// BaseURLEnvVar overrides the Trace API origin for local development.
-	BaseURLEnvVar = "TRACE_API_BASE_URL"
+	// DefaultAuthBaseURL is the production Entire login server — the
+	// default for `entire login --server`.
+	DefaultAuthBaseURL = "https://us.auth.entire.io"
 
-	// AuthBaseURLEnvVar overrides only the auth/login origin (device flow,
-	// auth-tokens management, keyring key). Falls back to BaseURLEnvVar when
-	// unset, which is the right behavior for single-host deployments. Split
-	// hosts (e.g. auth on us.console.partial.to, data on partial.to) set
-	// both.
-	AuthBaseURLEnvVar = "TRACE_AUTH_BASE_URL"
+	// BaseURLEnvVar overrides the Entire API origin for local development.
+	BaseURLEnvVar = "ENTIRE_API_BASE_URL"
+
+	// AuthBaseURLEnvVar is the retired auth-origin override. Nothing reads
+	// its value — RejectRemovedAuthEnv fails every command when it is set,
+	// pointing at `entire login --server`.
+	AuthBaseURLEnvVar = "ENTIRE_AUTH_BASE_URL"
 
 	schemeHTTP  = "http"
 	schemeHTTPS = "https"
 )
 
-// BaseURL returns the effective Trace API base URL.
-// TRACE_API_BASE_URL takes precedence over the production default.
+// RejectRemovedAuthEnv returns an error when ENTIRE_AUTH_BASE_URL is set
+// at all (even empty). The variable is retired in favour of
+// `entire login --server`; failing loudly beats silently ignoring an
+// override the operator believes is in effect.
+func RejectRemovedAuthEnv() error {
+	if _, ok := os.LookupEnv(AuthBaseURLEnvVar); ok {
+		return fmt.Errorf("%s is no longer supported; unset it, and use `entire login --server <url>` to log in to a non-default login server", AuthBaseURLEnvVar)
+	}
+	return nil
+}
+
+// BaseURL returns the effective Entire API base URL.
+// ENTIRE_API_BASE_URL takes precedence over the production default.
 func BaseURL() string {
 	if raw := strings.TrimSpace(os.Getenv(BaseURLEnvVar)); raw != "" {
 		return normalizeBaseURL(raw)
 	}
 
 	return DefaultBaseURL
-}
-
-// AuthBaseURL returns the origin used for the device-flow login, auth-token
-// management endpoints, and the keyring key under which the bearer token is
-// stored. TRACE_AUTH_BASE_URL takes precedence; otherwise it falls back to
-// BaseURL() so single-host deployments keep working unchanged.
-//
-// The result is canonicalised — lowercased scheme/host, default port stripped,
-// path/query/fragment dropped, trailing slash collapsed — so the value that
-// flows into store.SaveToken keys matches what tokenmanager.New emits after
-// its own NormalizeOriginURL pass. Without this, a user setting
-// TRACE_AUTH_BASE_URL=https:...443/ would log in successfully
-// (saved under the raw form) but every subsequent data-API command would
-// resolve "not logged in" because the manager probes under the normalised
-// "https://auth.example.com".
-func AuthBaseURL() string {
-	raw := strings.TrimSpace(os.Getenv(AuthBaseURLEnvVar))
-	if raw == "" {
-		raw = BaseURL()
-	}
-	return NormalizeOriginURL(raw)
-}
-
-// IsSplitHost reports whether the CLI is configured for split-host —
-// i.e. TRACE_AUTH_BASE_URL points at a different origin than the data
-// API. Both sides are canonicalised via NormalizeOriginURL before
-// comparison: AuthBaseURL already does this internally, but BaseURL
-// only trims whitespace and a trailing slash, so a cosmetically-
-// different TRACE_API_BASE_URL (uppercase host, explicit :443, path
-// suffix) would otherwise look split when it isn't.
-func IsSplitHost() bool {
-	return AuthBaseURL() != NormalizeOriginURL(BaseURL())
-}
-
-// ResolveURL joins an API-relative path against the effective base URL.
-func ResolveURL(path string) (string, error) {
-	return ResolveURLFromBase(BaseURL(), path)
 }
 
 // ResolveURLFromBase joins an API-relative path against an explicit base URL.
@@ -84,7 +60,7 @@ func ResolveURLFromBase(baseURL, path string) (string, error) {
 		return "", fmt.Errorf("parse base URL: %w", err)
 	}
 
-	if base.Scheme != "http" && base.Scheme != "https" {
+	if base.Scheme != schemeHTTP && base.Scheme != schemeHTTPS {
 		return "", fmt.Errorf("unsupported base URL scheme %q (must be http or https)", base.Scheme)
 	}
 
@@ -104,7 +80,7 @@ func RequireSecureURL(baseURL string) error {
 		return fmt.Errorf("parse base URL: %w", err)
 	}
 
-	if u.Scheme == "http" {
+	if u.Scheme == schemeHTTP {
 		return ErrInsecureHTTP
 	}
 
@@ -115,8 +91,17 @@ func normalizeBaseURL(raw string) string {
 	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
 
-// NormalizeOriginURL canonicalises a URL to a lowercase scheme+host origin
-// with default ports stripped. Path, query, and fragment are dropped.
+// NormalizeOriginURL canonicalises an origin URL the same way auth-go's
+// tokenmanager does internally: lowercase scheme/host, default port stripped
+// (80 for http, 443 for https), path/query/fragment dropped, trailing slash
+// collapsed. On parse failure, raw is returned unchanged so non-URL audience
+// values still compare byte-for-byte.
+//
+// Mirrors auth-go's internal/oauthhttp.NormalizeOriginURL so the value the
+// CLI hands to the manager as Issuer survives the manager's own normalisation
+// pass byte-for-byte; a cosmetically-different origin (uppercase host,
+// explicit :443, trailing slash) would otherwise be keyed under a different
+// keyring slot than the manager later reads.
 func NormalizeOriginURL(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	u, err := url.Parse(trimmed)
@@ -145,7 +130,9 @@ func NormalizeOriginURL(raw string) string {
 }
 
 // OriginOnly is a backwards-compatible alias for NormalizeOriginURL.
-// Callers reading raw URLs (e.g. TRACE_SEARCH_URL) and feeding them into
+// Callers reading raw URLs (e.g. ENTIRE_API_BASE_URL) and feeding them into
 // tokenmanager.TokenRequest.Resource use this to strip path/query/fragment
 // before the lib's stricter origin-only validator runs.
-var OriginOnly = NormalizeOriginURL
+func OriginOnly(raw string) string {
+	return NormalizeOriginURL(raw)
+}

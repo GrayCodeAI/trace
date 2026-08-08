@@ -32,7 +32,7 @@ func newDoctorCmd() *cobra.Command {
 
 Checks performed:
   1. Disconnected metadata branches: detects when local and remote
-     trace/checkpoints/v1 branches share no common ancestor (caused by a
+     entire/checkpoints/v1 branches share no common ancestor (caused by a
      previous bug). Fixes by cherry-picking local checkpoints onto remote tip.
 
   When Codex hooks are installed:
@@ -44,7 +44,7 @@ Checks performed:
   When Claude Code hooks are installed:
   3. Claude Code hook config: warn when the installed hooks are out of
      date (e.g. an older release wrote tool matchers that no longer fire).
-     Fix by re-running 'trace enable --force'.
+     Fix by re-running 'entire enable --force'.
 
   4. Stuck sessions: sessions stuck in ACTIVE or ENDED phase that need cleanup.
 
@@ -108,6 +108,9 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 	// Agent-specific: Claude Code hook config drift.
 	checkClaudeCodeHookDrift(cmd)
 
+	// Where checkpoints land, when the repo's remotes make that ambiguous.
+	printCheckpointDestinationNote(ctx, cmd.OutOrStdout(), "Checkpoint destination: REVIEW")
+
 	// Stuck sessions
 	// Load all session states
 	states, err := strategy.ListSessionStates(ctx)
@@ -158,7 +161,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 	}
 
 	// Get the current strategy for condense operations
-	stratg := GetStrategy(ctx)
+	start := GetStrategy(ctx)
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Found %d stuck session(s):\n\n", len(stuck))
 
@@ -167,7 +170,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 
 		if force {
 			if ss.HasShadowBranch && ss.CheckpointCount > 0 {
-				if err := stratg.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
+				if err := start.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to condense session %s: %v\n", ss.State.SessionID, err)
 				} else {
 					fmt.Fprintf(cmd.OutOrStdout(), "  ✓ Condensed session %s\n\n", ss.State.SessionID)
@@ -194,7 +197,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 
 		switch action {
 		case "condense":
-			if err := stratg.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
+			if err := start.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to condense session %s: %v\n", ss.State.SessionID, err)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "  ✓ Condensed session %s\n\n", ss.State.SessionID)
@@ -433,23 +436,9 @@ func confirmDoctorFix(ctx context.Context, w io.Writer, title string) (bool, err
 	return confirmed, nil
 }
 
-// checkCodexHookTrust warns about two kinds of drift in the Codex hook
-// setup:
-//
-//  1. .codex/hooks.json is stale relative to what the CLI installs
-//     today (e.g. a release added PostToolUse after the user enabled
-//     Codex). Fix: re-run `trace enable`.
-//
-//  2. A declared hook lacks a `trusted_hash` entry in the user's Codex
-//     config — either a fresh clone or a newer hook on the file the
-//     user hasn't approved yet. Fix: open /hooks in Codex.
-//
-// Both checks are structural (file/key presence). Stays silent when
-// this repo doesn't have codex hooks installed or when we can't
-// resolve the worktree root. Warn-only.
 // checkClaudeCodeHookDrift warns when Entire's Claude Code hooks are installed
 // but out of date — e.g. an older release wrote tool matchers that no longer
-// fire on current Claude Code. Read-only; the fix is `trace enable --force`.
+// fire on current Claude Code. Read-only; the fix is `entire enable --force`.
 // Stays silent when Claude Code hooks aren't installed here.
 func checkClaudeCodeHookDrift(cmd *cobra.Command) {
 	w := cmd.OutOrStdout()
@@ -461,10 +450,24 @@ func checkClaudeCodeHookDrift(cmd *cobra.Command) {
 	case claudecode.HooksOutdated:
 		fmt.Fprintln(w, "Claude Code hooks: OUT OF DATE")
 		fmt.Fprintln(w, "  The installed hooks use outdated tool matchers and no longer fire.")
-		fmt.Fprintln(w, "  Run `trace enable --force` to update the hooks file.")
+		fmt.Fprintln(w, "  Run `entire enable --force` to update the hooks file.")
 	}
 }
 
+// checkCodexHookTrust warns about two kinds of drift in the Codex hook
+// setup:
+//
+//  1. .codex/hooks.json is stale relative to what the CLI installs
+//     today (e.g. a release added PostToolUse after the user enabled
+//     Codex). Fix: re-run `entire enable`.
+//
+//  2. A declared hook lacks a `trusted_hash` entry in the user's Codex
+//     config — either a fresh clone or a newer hook on the file the
+//     user hasn't approved yet. Fix: open /hooks in Codex.
+//
+// Both checks are structural (file/key presence). Stays silent when
+// this repo doesn't have codex hooks installed or when we can't
+// resolve the worktree root. Warn-only.
 func checkCodexHookTrust(cmd *cobra.Command) {
 	repoRoot, err := paths.WorktreeRoot(cmd.Context())
 	if err != nil {
@@ -489,7 +492,7 @@ func checkCodexHookTrust(cmd *cobra.Command) {
 		for _, ev := range missing {
 			fmt.Fprintf(w, "    - %s\n", ev)
 		}
-		fmt.Fprintln(w, "  Run `trace enable` to refresh the hooks file.")
+		fmt.Fprintln(w, "  Run `entire enable` to refresh the hooks file.")
 	}
 
 	if len(gaps) > 0 {

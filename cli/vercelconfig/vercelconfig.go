@@ -19,13 +19,13 @@ import (
 )
 
 const (
-	BranchPattern = "trace/**"
+	BranchPattern = "entire/**"
 	FileName      = "vercel.json"
 )
 
 var (
 	cachedSettingsMu sync.RWMutex
-	cachedSettings   *settings.TraceSettings
+	cachedSettings   *settings.EntireSettings
 )
 
 var errSettingsNotInitialized = errors.New("vercel settings cache not initialized")
@@ -53,7 +53,7 @@ func InitSettings(ctx context.Context) error {
 }
 
 // CachedSettings returns the most recently initialized repository settings.
-func CachedSettings() (*settings.TraceSettings, error) {
+func CachedSettings() (*settings.EntireSettings, error) {
 	cachedSettingsMu.RLock()
 	defer cachedSettingsMu.RUnlock()
 	if cachedSettings == nil {
@@ -73,7 +73,7 @@ func ResetSettingsCache() {
 // Load reads a Vercel config file if present.
 func Load(path string) (map[string]any, bool, error) {
 	//nolint:gosec // path is provided by repository-local callers and intentionally supports arbitrary locations in tests
-	data, err := os.ReadFile(path) // #nosec G304 -- path is repo-local, provided by callers within this tool, not remote/untrusted input
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return make(map[string]any), false, nil
@@ -92,7 +92,7 @@ func Load(path string) (map[string]any, bool, error) {
 	return config, DeploymentDisabled(config), nil
 }
 
-// DeploymentDisabled reports whether Trace branches are disabled in the config.
+// DeploymentDisabled reports whether Entire branches are disabled in the config.
 func DeploymentDisabled(config map[string]any) bool {
 	gitConfig, ok := config["git"].(map[string]any)
 	if !ok {
@@ -106,7 +106,7 @@ func DeploymentDisabled(config map[string]any) bool {
 	return ok && !enabled
 }
 
-// MergeDeploymentDisabled sets deploymentEnabled["trace/**"] = false while preserving other fields.
+// MergeDeploymentDisabled sets deploymentEnabled["entire/**"] = false while preserving other fields.
 func MergeDeploymentDisabled(config map[string]any) {
 	gitConfig, ok := config["git"].(map[string]any)
 	if !ok {
@@ -133,7 +133,7 @@ func Marshal(config map[string]any) ([]byte, error) {
 }
 
 // MaybeMergeMetadataBranchConfig ensures the metadata branch root tree contains
-// a vercel.json disabling deployments for Trace branches when Vercel support
+// a vercel.json disabling deployments for Entire branches when Vercel support
 // is enabled in cached settings. Existing vercel.json content is preserved.
 func MaybeMergeMetadataBranchConfig(repo *git.Repository, rootTreeHash plumbing.Hash) (plumbing.Hash, error) {
 	projectSettings, settingsErr := CachedSettings()

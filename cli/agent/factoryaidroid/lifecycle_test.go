@@ -259,7 +259,7 @@ func TestParseHookEvent_MissingToolUseID_RepeatedInputsStayUniqueAndCorrelate(t 
 		t.Fatalf("expected earlier fallback tool_use_id %q, got %q", startOne.ToolUseID, endOne.ToolUseID)
 	}
 
-	matches, err := filepath.Glob(filepath.Join(repoDir, paths.TraceTmpDir, fallbackToolUseStatePrefix+"*.json"))
+	matches, err := filepath.Glob(filepath.Join(repoDir, paths.EntireTmpDir, fallbackToolUseStatePrefix+"*.json"))
 	if err != nil {
 		t.Fatalf("glob fallback state files: %v", err)
 	}

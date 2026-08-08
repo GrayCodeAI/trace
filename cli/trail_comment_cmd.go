@@ -68,7 +68,7 @@ func newTrailCommentCmd() *cobra.Command {
 		Long: `Manage discussion threads (comments) on a trail.
 
 A thread is a titled conversation with one or more messages; messages can have
-replies. Code-review comments are managed separately under 'trace trail finding'.`,
+replies. Code-review comments are managed separately under 'entire trail finding'.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
@@ -286,7 +286,7 @@ func newTrailCommentEditCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit <thread-id> <message-id>",
 		Short: "Edit a message in a discussion thread",
-		Long:  "Edit a message in a discussion thread.\n\nFind <thread-id> with 'trace trail comment list' and <message-id> with 'trace trail comment show <thread-id>'.",
+		Long:  "Edit a message in a discussion thread.\n\nFind <thread-id> with 'entire trail comment list' and <message-id> with 'entire trail comment show <thread-id>'.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			threadID, messageID := args[0], args[1]
@@ -321,7 +321,7 @@ func newTrailCommentDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <thread-id> <message-id>",
 		Short: "Delete a message from a discussion thread",
-		Long:  "Delete a message from a discussion thread.\n\nFind <thread-id> with 'trace trail comment list' and <message-id> with 'trace trail comment show <thread-id>'.",
+		Long:  "Delete a message from a discussion thread.\n\nFind <thread-id> with 'entire trail comment list' and <message-id> with 'entire trail comment show <thread-id>'.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			threadID, messageID := args[0], args[1]

@@ -12,37 +12,37 @@ func TestGitHubRepoURL(t *testing.T) {
 	}{
 		{
 			name:     "valid",
-			fullName: "GrayCodeAI/cli",
+			fullName: "entireio/cli",
 			want:     testRepoURL,
 		},
 		{
 			name:     "valid punctuation in repo",
-			fullName: "GrayCodeAI/trace.io",
-			want:     "https://github.com/GrayCodeAI/trace.io",
+			fullName: "entireio/entire.io",
+			want:     "https://github.com/entireio/entire.io",
 		},
 		{
 			name:     "missing slash",
-			fullName: "GrayCodeAI",
+			fullName: "entireio",
 			want:     "",
 		},
 		{
 			name:     "nested path",
-			fullName: "GrayCodeAI/cli/issues",
+			fullName: "entireio/cli/issues",
 			want:     "",
 		},
 		{
 			name:     "unsafe owner",
-			fullName: "-GrayCodeAI/cli",
+			fullName: "-entireio/cli",
 			want:     "",
 		},
 		{
 			name:     "unsafe repo",
-			fullName: "GrayCodeAI/cli)",
+			fullName: "entireio/cli)",
 			want:     "",
 		},
 		{
 			name:     "dot repo",
-			fullName: "GrayCodeAI/.",
+			fullName: "entireio/.",
 			want:     "",
 		},
 	}

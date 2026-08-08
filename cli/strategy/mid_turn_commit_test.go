@@ -136,7 +136,7 @@ func TestSessionHasNewContentFromLiveTranscript_IncludesSubagentFiles(t *testing
 	// Create a main transcript that ONLY has a Task tool call — no direct Write/Edit.
 	// The assistant invokes Task, and the user line returns the tool_result with agentId.
 	const modelSessionID = "model-session-sub"
-	transcriptDir := filepath.Join(dir, ".trace", "metadata")
+	transcriptDir := filepath.Join(dir, ".entire", "metadata")
 	require.NoError(t, os.MkdirAll(transcriptDir, 0o755))
 
 	mainTranscript := `{"type":"assistant","uuid":"a1","message":{"content":[{"type":"tool_use","id":"toolu_task1","name":"Task","input":{"prompt":"implement feature"}}]}}
@@ -195,7 +195,7 @@ func TestSessionHasNewContentFromLiveTranscript_IncludesSubagentFiles(t *testing
 }
 
 // TestPostCommit_NoTrailer_UpdatesBaseCommit verifies that when a commit has no
-// Trace-Checkpoint trailer, PostCommit still updates BaseCommit for active sessions.
+// Entire-Checkpoint trailer, PostCommit still updates BaseCommit for active sessions.
 //
 // Bug: PostCommit early-returns when no trailer is found (line ~530-536). EventGitCommit
 // never fires, BaseCommit never updates. All subsequent commits fail the

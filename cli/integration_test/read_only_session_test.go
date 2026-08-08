@@ -106,7 +106,7 @@ func TestReadOnlySession_NotCondensed(t *testing.T) {
 	commitHash := env.GetHeadHash()
 	cpID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if cpID == "" {
-		t.Fatal("Commit should have an Trace-Checkpoint trailer")
+		t.Fatal("Commit should have an Entire-Checkpoint trailer")
 	}
 
 	// ========================================
@@ -114,7 +114,7 @@ func TestReadOnlySession_NotCondensed(t *testing.T) {
 	// ========================================
 	t.Log("Phase 4: Verify checkpoint contains only the coding session")
 
-	// Read the checkpoint summary from trace/checkpoints/v1
+	// Read the checkpoint summary from entire/checkpoints/v1
 	summaryPath := CheckpointSummaryPath(cpID)
 	summaryContent, found := env.ReadFileFromBranch(paths.MetadataBranchName, summaryPath)
 	if !found {
@@ -231,7 +231,7 @@ func TestReadOnlySession_ActiveDuringCommit_NotCondensed(t *testing.T) {
 	commitHash := env.GetHeadHash()
 	cpID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if cpID == "" {
-		t.Fatal("Commit should have an Trace-Checkpoint trailer")
+		t.Fatal("Commit should have an Entire-Checkpoint trailer")
 	}
 
 	// ========================================
@@ -467,7 +467,7 @@ func TestMultipleReadOnlySessions_NoneCondensed(t *testing.T) {
 	commitHash := env.GetHeadHash()
 	cpID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if cpID == "" {
-		t.Fatal("Commit should have an Trace-Checkpoint trailer")
+		t.Fatal("Commit should have an Entire-Checkpoint trailer")
 	}
 
 	// ========================================
@@ -558,7 +558,7 @@ func TestAllReadOnlySessions_NoCheckpointCreated(t *testing.T) {
 	commitHash := env.GetHeadHash()
 	cpID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if cpID != "" {
-		t.Errorf("Commit should NOT have an Trace-Checkpoint trailer when only read-only sessions exist, got %q", cpID)
+		t.Errorf("Commit should NOT have an Entire-Checkpoint trailer when only read-only sessions exist, got %q", cpID)
 	}
 
 	// Verify the read-only session state is unchanged
@@ -650,7 +650,7 @@ func TestEmptySession_NoTranscriptPath_NotCondensed(t *testing.T) {
 	commitHash := env.GetHeadHash()
 	cpID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if cpID == "" {
-		t.Fatal("Commit should have an Trace-Checkpoint trailer")
+		t.Fatal("Commit should have an Entire-Checkpoint trailer")
 	}
 
 	// ========================================
@@ -751,7 +751,7 @@ func TestEmptySession_ActiveDuringCommit_NotCondensed(t *testing.T) {
 	commitHash := env.GetHeadHash()
 	cpID := env.GetCheckpointIDFromCommitMessage(commitHash)
 	if cpID == "" {
-		t.Fatal("Commit should have an Trace-Checkpoint trailer")
+		t.Fatal("Commit should have an Entire-Checkpoint trailer")
 	}
 
 	// ========================================

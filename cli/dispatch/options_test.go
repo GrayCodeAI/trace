@@ -13,7 +13,7 @@ func TestResolveOptions_NormalizesScopeValues(t *testing.T) {
 		"7d",
 		"",
 		false,
-		[]string{" GrayCodeAI/cli ", "", "GrayCodeAI/cli"},
+		[]string{" entireio/cli ", "", "entireio/cli"},
 		"",
 		false,
 		func() (string, error) { return testDefaultBranchName, nil },
@@ -21,7 +21,7 @@ func TestResolveOptions_NormalizesScopeValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(opts.RepoPaths) != 1 || opts.RepoPaths[0] != "GrayCodeAI/cli" {
+	if len(opts.RepoPaths) != 1 || opts.RepoPaths[0] != "entireio/cli" {
 		t.Fatalf("unexpected normalized repo paths: %v", opts.RepoPaths)
 	}
 	if opts.Branches != nil {
@@ -37,7 +37,7 @@ func TestResolveOptions_CloudRejectsAllBranches(t *testing.T) {
 		"7d",
 		"",
 		true,
-		[]string{"GrayCodeAI/cli"},
+		[]string{"entireio/cli"},
 		"",
 		false,
 		func() (string, error) { return testDefaultBranchName, nil },
@@ -98,7 +98,7 @@ func TestResolveOptions_ForwardsInsecureHTTPAuth(t *testing.T) {
 		"7d",
 		"",
 		false,
-		[]string{"GrayCodeAI/cli"},
+		[]string{"entireio/cli"},
 		"",
 		true,
 		func() (string, error) { return testDefaultBranchName, nil },

@@ -51,12 +51,12 @@ type CleanupResult struct {
 //
 // The pattern requires at least 7 hex characters for the commit, optionally followed
 // by a dash and exactly 6 hex characters for the worktree hash.
-var shadowBranchPattern = regexp.MustCompile(`^trace/[0-9a-fA-F]{7,}(-[0-9a-fA-F]{6})?$`)
+var shadowBranchPattern = regexp.MustCompile(`^entire/[0-9a-fA-F]{7,}(-[0-9a-fA-F]{6})?$`)
 
 // IsShadowBranch returns true if the branch name matches the shadow branch pattern.
 // Shadow branches have the format "entire/<commit-hash>-<worktree-hash>" where the
 // commit hash is at least 7 hex characters and worktree hash is 6 hex characters.
-// The "trace/checkpoints/v1" branch is NOT a shadow branch.
+// The "entire/checkpoints/v1" branch is NOT a shadow branch.
 func IsShadowBranch(branchName string) bool {
 	// Explicitly exclude metadata and trails branches
 	if branchName == paths.MetadataBranchName || branchName == paths.TrailsBranchName {
@@ -67,7 +67,7 @@ func IsShadowBranch(branchName string) bool {
 
 // ListShadowBranches returns all shadow branches in the repository.
 // Shadow branches match the pattern "entire/<commit-hash>" (7+ hex chars).
-// The "trace/checkpoints/v1" branch is excluded as it stores permanent metadata.
+// The "entire/checkpoints/v1" branch is excluded as it stores permanent metadata.
 // Returns an empty slice (not nil) if no shadow branches exist.
 func ListShadowBranches(ctx context.Context) ([]string, error) {
 	heads, err := listShadowBranchHeads(ctx)
@@ -301,7 +301,7 @@ func DeleteOrphanedSessionStates(ctx context.Context, sessionIDs []string) (dele
 	return deleted, failed, nil
 }
 
-// DeleteOrphanedCheckpoints removes checkpoint directories from the trace/checkpoints/v1 branch.
+// DeleteOrphanedCheckpoints removes checkpoint directories from the entire/checkpoints/v1 branch.
 func DeleteOrphanedCheckpoints(ctx context.Context, checkpointIDs []string) (deleted []string, failed []string, err error) {
 	if len(checkpointIDs) == 0 {
 		return []string{}, []string{}, nil
@@ -364,13 +364,13 @@ func DeleteOrphanedCheckpoints(ctx context.Context, checkpointIDs []string) (del
 	// Create commit
 	commit := &object.Commit{
 		Author: object.Signature{
-			Name:  "Trace CLI",
-			Email: "cli@trace.io",
+			Name:  "Entire CLI",
+			Email: "cli@entire.io",
 			When:  parentCommit.Author.When,
 		},
 		Committer: object.Signature{
-			Name:  "Trace CLI",
-			Email: "cli@trace.io",
+			Name:  "Entire CLI",
+			Email: "cli@entire.io",
 			When:  parentCommit.Committer.When,
 		},
 		Message:      fmt.Sprintf("Cleanup: removed %d orphaned checkpoints", len(checkpointIDs)),

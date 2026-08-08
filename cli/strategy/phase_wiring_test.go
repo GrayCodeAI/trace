@@ -180,15 +180,8 @@ func setupGitRepo(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	repo, err := git.PlainInit(dir, false)
-	require.NoError(t, err)
-
-	// Configure git for commits
-	cfg, err := repo.Config()
-	require.NoError(t, err)
-	cfg.User.Name = "Test User"
-	cfg.User.Email = "test@test.com"
-	err = repo.SetConfig(cfg)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	require.NoError(t, err)
 
 	// Create initial commit (required for HEAD to exist)
@@ -322,10 +315,10 @@ func TestInitializeSession_ReconcileRecomputesAttributionAgainstNewBase(t *testi
 	dir := setupGitRepo(t)
 	t.Chdir(dir)
 
-	// C1: condensed checkpoint with a matching Trace-Checkpoint trailer.
+	// C1: condensed checkpoint with a matching Entire-Checkpoint trailer.
 	testutil.WriteFile(t, dir, "test.txt", "init\ncondensed\n")
 	testutil.GitAdd(t, dir, "test.txt")
-	testutil.GitCommit(t, dir, "condensed\n\nTrace-Checkpoint: abc123def456")
+	testutil.GitCommit(t, dir, "condensed\n\nEntire-Checkpoint: abc123def456")
 	c1 := testutil.GetHeadHash(t, dir)
 
 	// C2: a discarded commit on top of C1 (simulating work the user reset away).
@@ -455,7 +448,7 @@ func TestCondenseAndMarkFullyCondensed_WithDataNoFiles(t *testing.T) {
 	sessionID := "eager-condense-with-data"
 
 	// Create metadata directory with a transcript file
-	metadataDir := ".trace/metadata/" + sessionID
+	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
 	require.NoError(t, os.MkdirAll(metadataDirAbs, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(testTranscriptPromptResponse), 0o644))
@@ -506,5 +499,5 @@ func TestCondenseAndMarkFullyCondensed_WithDataNoFiles(t *testing.T) {
 
 	// Verify checkpoints branch was created (data condensed)
 	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
-	require.NoError(t, err, "trace/checkpoints/v1 should exist after condensation")
+	require.NoError(t, err, "entire/checkpoints/v1 should exist after condensation")
 }

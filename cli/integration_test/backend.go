@@ -51,7 +51,7 @@ func (env *TestEnv) usingGitRefs() bool {
 
 // LatestCheckpointID returns the most recent checkpoint ID in a backend-aware
 // way: from the v1 branch commit message (git-branch) or from the code commit's
-// Trace-Checkpoint trailer (git-refs, where there is no v1 commit to parse).
+// Entire-Checkpoint trailer (git-refs, where there is no v1 commit to parse).
 // The trailer is written for both backends, so the git-refs path also works for
 // git-branch — the split keeps each backend on its established reader.
 func (env *TestEnv) LatestCheckpointID() string {

@@ -18,7 +18,7 @@ import (
 // Ensure GeminiCLIAgent implements HookSupport
 var _ agent.HookSupport = (*GeminiCLIAgent)(nil)
 
-// Gemini CLI hook names - these become subcommands under `hawk trace hooks gemini`
+// Gemini CLI hook names - these become subcommands under `entire hooks gemini`
 const (
 	HookNameSessionStart        = "session-start"
 	HookNameSessionEnd          = "session-end"
@@ -36,16 +36,17 @@ const (
 // GeminiSettingsFileName is the settings file used by Gemini CLI.
 const GeminiSettingsFileName = "settings.json"
 
-// traceHookPrefixes are command prefixes that identify Trace hooks
-var traceHookPrefixes = []string{
-	"hawk trace ",
-	`go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace `,
-	"trace ",
-	`go run "$(git rev-parse --show-toplevel)"/cmd/trace/main.go `,
+// entireHookPrefixes are command prefixes that identify Entire hooks. The
+// "go run" prefix is retained so hooks installed by older versions are still
+// recognized.
+var entireHookPrefixes = []string{
+	"entire ",
+	agent.LocalDevHookScript + " ",
+	`go run "$(git rev-parse --show-toplevel)"/cmd/entire/main.go `,
 }
 
 // InstallHooks installs Gemini CLI hooks in .gemini/settings.json.
-// If force is true, removes existing Trace hooks before installing.
+// If force is true, removes existing Entire hooks before installing.
 // Returns the number of hooks installed.
 func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force bool) (int, error) {
 	// Use repo root instead of CWD to find .gemini directory
@@ -69,7 +70,6 @@ func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force 
 
 	var hooksConfig GeminiHooksConfig
 
-	// #nosec G304 -- settingsPath is constructed from cwd + fixed path, not external input
 	existingData, readErr := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from cwd + fixed path
 	if readErr == nil {
 		if err := json.Unmarshal(existingData, &rawSettings); err != nil {
@@ -94,7 +94,7 @@ func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force 
 	}
 
 	// Strip non-array values from hooks (removes legacy fields like "enabled": true
-	// that old Trace versions wrote directly into hooks, which Gemini CLI 0.33+
+	// that old Entire versions wrote directly into hooks, which Gemini CLI 0.33+
 	// rejects because hooks.additionalProperties requires arrays).
 	cleanupDone := stripNonArrayHookFields(ctx, rawHooks)
 
@@ -105,9 +105,9 @@ func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force 
 	// Define hook commands based on localDev mode
 	var cmdPrefix string
 	if localDev {
-		cmdPrefix = `go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace hooks gemini `
+		cmdPrefix = agent.LocalDevHookScript + " hooks gemini "
 	} else {
-		cmdPrefix = "hawk trace hooks gemini "
+		cmdPrefix = "entire hooks gemini "
 	}
 
 	// Parse only the hook types we need to modify
@@ -131,7 +131,7 @@ func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force 
 	// When cleanupDone, we still need to write the file to persist the cleanup,
 	// but we return 0 (not 12) so callers know no hooks were added.
 	if !force {
-		existingCmd := getFirstTraceHookCommand(sessionStart)
+		existingCmd := getFirstEntireHookCommand(sessionStart)
 		expectedCmd := cmdPrefix + "session-start"
 		if !localDev {
 			expectedCmd = agent.WrapProductionJSONWarningHookCommand(expectedCmd, agent.WarningFormatSingleLine)
@@ -146,18 +146,18 @@ func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force 
 		}
 	}
 
-	// Remove existing Trace hooks first (for clean installs and mode switching)
-	sessionStart = removeTraceHooks(sessionStart)
-	sessionEnd = removeTraceHooks(sessionEnd)
-	beforeAgent = removeTraceHooks(beforeAgent)
-	afterAgent = removeTraceHooks(afterAgent)
-	beforeModel = removeTraceHooks(beforeModel)
-	afterModel = removeTraceHooks(afterModel)
-	beforeToolSelection = removeTraceHooks(beforeToolSelection)
-	beforeTool = removeTraceHooks(beforeTool)
-	afterTool = removeTraceHooks(afterTool)
-	preCompress = removeTraceHooks(preCompress)
-	notification = removeTraceHooks(notification)
+	// Remove existing Entire hooks first (for clean installs and mode switching)
+	sessionStart = removeEntireHooks(sessionStart)
+	sessionEnd = removeEntireHooks(sessionEnd)
+	beforeAgent = removeEntireHooks(beforeAgent)
+	afterAgent = removeEntireHooks(afterAgent)
+	beforeModel = removeEntireHooks(beforeModel)
+	afterModel = removeEntireHooks(afterModel)
+	beforeToolSelection = removeEntireHooks(beforeToolSelection)
+	beforeTool = removeEntireHooks(beforeTool)
+	afterTool = removeEntireHooks(afterTool)
+	preCompress = removeEntireHooks(preCompress)
+	notification = removeEntireHooks(notification)
 
 	// Install all hooks
 	// Session lifecycle hooks
@@ -165,14 +165,14 @@ func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force 
 	if !localDev {
 		sessionStartCmd = agent.WrapProductionJSONWarningHookCommand(sessionStartCmd, agent.WarningFormatSingleLine)
 	}
-	sessionStart = addGeminiHook(sessionStart, "", "trace-session-start", sessionStartCmd)
+	sessionStart = addGeminiHook(sessionStart, "", "entire-session-start", sessionStartCmd)
 	// SessionEnd fires on both "exit" and "logout" - install hooks for both matchers
 	sessionEndCmd := cmdPrefix + "session-end"
 	if !localDev {
 		sessionEndCmd = agent.WrapProductionSilentHookCommand(sessionEndCmd)
 	}
-	sessionEnd = addGeminiHook(sessionEnd, "exit", "trace-session-end-exit", sessionEndCmd)
-	sessionEnd = addGeminiHook(sessionEnd, "logout", "trace-session-end-logout", sessionEndCmd)
+	sessionEnd = addGeminiHook(sessionEnd, "exit", "entire-session-end-exit", sessionEndCmd)
+	sessionEnd = addGeminiHook(sessionEnd, "logout", "entire-session-end-logout", sessionEndCmd)
 
 	// Agent hooks (user prompt and response)
 	beforeAgentCmd := cmdPrefix + "before-agent"
@@ -195,25 +195,25 @@ func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force 
 		preCompressCmd = agent.WrapProductionSilentHookCommand(preCompressCmd)
 		notificationCmd = agent.WrapProductionSilentHookCommand(notificationCmd)
 	}
-	beforeAgent = addGeminiHook(beforeAgent, "", "trace-before-agent", beforeAgentCmd)
-	afterAgent = addGeminiHook(afterAgent, "", "trace-after-agent", afterAgentCmd)
+	beforeAgent = addGeminiHook(beforeAgent, "", "entire-before-agent", beforeAgentCmd)
+	afterAgent = addGeminiHook(afterAgent, "", "entire-after-agent", afterAgentCmd)
 
 	// Model hooks (LLM request/response - fires on every LLM call)
-	beforeModel = addGeminiHook(beforeModel, "", "trace-before-model", beforeModelCmd)
-	afterModel = addGeminiHook(afterModel, "", "trace-after-model", afterModelCmd)
+	beforeModel = addGeminiHook(beforeModel, "", "entire-before-model", beforeModelCmd)
+	afterModel = addGeminiHook(afterModel, "", "entire-after-model", afterModelCmd)
 
 	// Tool selection hook (before planner selects tools)
-	beforeToolSelection = addGeminiHook(beforeToolSelection, "", "trace-before-tool-selection", beforeToolSelectionCmd)
+	beforeToolSelection = addGeminiHook(beforeToolSelection, "", "entire-before-tool-selection", beforeToolSelectionCmd)
 
 	// Tool hooks (before/after tool execution)
-	beforeTool = addGeminiHook(beforeTool, "*", "trace-before-tool", beforeToolCmd)
-	afterTool = addGeminiHook(afterTool, "*", "trace-after-tool", afterToolCmd)
+	beforeTool = addGeminiHook(beforeTool, "*", "entire-before-tool", beforeToolCmd)
+	afterTool = addGeminiHook(afterTool, "*", "entire-after-tool", afterToolCmd)
 
 	// Compression hook (before chat history compression)
-	preCompress = addGeminiHook(preCompress, "", "trace-pre-compress", preCompressCmd)
+	preCompress = addGeminiHook(preCompress, "", "entire-pre-compress", preCompressCmd)
 
 	// Notification hook (errors, warnings, info)
-	notification = addGeminiHook(notification, "", "trace-notification", notificationCmd)
+	notification = addGeminiHook(notification, "", "entire-notification", notificationCmd)
 
 	// 12 hooks total:
 	// - session-start (1)
@@ -246,7 +246,7 @@ func (g *GeminiCLIAgent) InstallHooks(ctx context.Context, localDev bool, force 
 }
 
 // stripNonArrayHookFields removes non-array values from rawHooks (e.g., legacy
-// "enabled": true that old Trace versions wrote directly into hooks, which
+// "enabled": true that old Entire versions wrote directly into hooks, which
 // Gemini CLI 0.33+ rejects because hooks.additionalProperties requires arrays).
 // Returns true if any fields were removed.
 func stripNonArrayHookFields(ctx context.Context, rawHooks map[string]json.RawMessage) bool {
@@ -296,7 +296,7 @@ func writeGeminiSettingsFile(rawSettings map[string]json.RawMessage, rawHooks ma
 func parseGeminiHookType(rawHooks map[string]json.RawMessage, hookType string, target *[]GeminiHookMatcher) {
 	if data, ok := rawHooks[hookType]; ok {
 		//nolint:errcheck,gosec // Intentionally ignoring parse errors - leave target as nil/empty
-		json.Unmarshal(data, target) // #nosec G104 -- intentionally ignoring parse errors, leave target as nil/empty
+		json.Unmarshal(data, target)
 	}
 }
 
@@ -314,7 +314,7 @@ func marshalGeminiHookType(rawHooks map[string]json.RawMessage, hookType string,
 	rawHooks[hookType] = data
 }
 
-// UninstallHooks removes Trace hooks from Gemini CLI settings.
+// UninstallHooks removes Entire hooks from Gemini CLI settings.
 func (g *GeminiCLIAgent) UninstallHooks(ctx context.Context) error {
 	// Use repo root to find .gemini directory when run from a subdirectory
 	repoRoot, err := paths.WorktreeRoot(ctx)
@@ -322,7 +322,6 @@ func (g *GeminiCLIAgent) UninstallHooks(ctx context.Context) error {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".gemini", GeminiSettingsFileName)
-	// #nosec G304 -- settingsPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return nil //nolint:nilerr // No settings file means nothing to uninstall
@@ -363,18 +362,18 @@ func (g *GeminiCLIAgent) UninstallHooks(ctx context.Context) error {
 	parseGeminiHookType(rawHooks, "PreCompress", &preCompress)
 	parseGeminiHookType(rawHooks, "Notification", &notification)
 
-	// Remove Trace hooks from all hook types
-	sessionStart = removeTraceHooks(sessionStart)
-	sessionEnd = removeTraceHooks(sessionEnd)
-	beforeAgent = removeTraceHooks(beforeAgent)
-	afterAgent = removeTraceHooks(afterAgent)
-	beforeModel = removeTraceHooks(beforeModel)
-	afterModel = removeTraceHooks(afterModel)
-	beforeToolSelection = removeTraceHooks(beforeToolSelection)
-	beforeTool = removeTraceHooks(beforeTool)
-	afterTool = removeTraceHooks(afterTool)
-	preCompress = removeTraceHooks(preCompress)
-	notification = removeTraceHooks(notification)
+	// Remove Entire hooks from all hook types
+	sessionStart = removeEntireHooks(sessionStart)
+	sessionEnd = removeEntireHooks(sessionEnd)
+	beforeAgent = removeEntireHooks(beforeAgent)
+	afterAgent = removeEntireHooks(afterAgent)
+	beforeModel = removeEntireHooks(beforeModel)
+	afterModel = removeEntireHooks(afterModel)
+	beforeToolSelection = removeEntireHooks(beforeToolSelection)
+	beforeTool = removeEntireHooks(beforeTool)
+	afterTool = removeEntireHooks(afterTool)
+	preCompress = removeEntireHooks(preCompress)
+	notification = removeEntireHooks(notification)
 
 	// Marshal modified hook types back to rawHooks
 	marshalGeminiHookType(rawHooks, "SessionStart", sessionStart)
@@ -412,7 +411,7 @@ func (g *GeminiCLIAgent) UninstallHooks(ctx context.Context) error {
 	return nil
 }
 
-// AreHooksInstalled checks if Trace hooks are installed.
+// AreHooksInstalled checks if Entire hooks are installed.
 func (g *GeminiCLIAgent) AreHooksInstalled(ctx context.Context) bool {
 	// Use repo root to find .gemini directory when run from a subdirectory
 	repoRoot, err := paths.WorktreeRoot(ctx)
@@ -420,7 +419,6 @@ func (g *GeminiCLIAgent) AreHooksInstalled(ctx context.Context) bool {
 		repoRoot = "." // Fallback to CWD if not in a git repo
 	}
 	settingsPath := filepath.Join(repoRoot, ".gemini", GeminiSettingsFileName)
-	// #nosec G304 -- settingsPath is constructed from repo root + fixed path, not external input
 	data, err := os.ReadFile(settingsPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return false
@@ -431,18 +429,18 @@ func (g *GeminiCLIAgent) AreHooksInstalled(ctx context.Context) bool {
 		return false
 	}
 
-	// Check for at least one of our hooks using isTraceHook (works for both localDev and production)
-	return hasTraceHook(settings.Hooks.SessionStart) ||
-		hasTraceHook(settings.Hooks.SessionEnd) ||
-		hasTraceHook(settings.Hooks.BeforeAgent) ||
-		hasTraceHook(settings.Hooks.AfterAgent) ||
-		hasTraceHook(settings.Hooks.BeforeModel) ||
-		hasTraceHook(settings.Hooks.AfterModel) ||
-		hasTraceHook(settings.Hooks.BeforeToolSelection) ||
-		hasTraceHook(settings.Hooks.BeforeTool) ||
-		hasTraceHook(settings.Hooks.AfterTool) ||
-		hasTraceHook(settings.Hooks.PreCompress) ||
-		hasTraceHook(settings.Hooks.Notification)
+	// Check for at least one of our hooks using isEntireHook (works for both localDev and production)
+	return hasEntireHook(settings.Hooks.SessionStart) ||
+		hasEntireHook(settings.Hooks.SessionEnd) ||
+		hasEntireHook(settings.Hooks.BeforeAgent) ||
+		hasEntireHook(settings.Hooks.AfterAgent) ||
+		hasEntireHook(settings.Hooks.BeforeModel) ||
+		hasEntireHook(settings.Hooks.AfterModel) ||
+		hasEntireHook(settings.Hooks.BeforeToolSelection) ||
+		hasEntireHook(settings.Hooks.BeforeTool) ||
+		hasEntireHook(settings.Hooks.AfterTool) ||
+		hasEntireHook(settings.Hooks.PreCompress) ||
+		hasEntireHook(settings.Hooks.Notification)
 }
 
 // Helper functions for hook management
@@ -474,16 +472,16 @@ func addGeminiHook(matchers []GeminiHookMatcher, matcherName, hookName, command 
 	return append(matchers, newMatcher)
 }
 
-// isTraceHook checks if a command is an Trace hook
-func isTraceHook(command string) bool {
-	return agent.IsManagedHookCommand(command, traceHookPrefixes)
+// isEntireHook checks if a command is an Entire hook
+func isEntireHook(command string) bool {
+	return agent.IsManagedHookCommand(command, entireHookPrefixes)
 }
 
-// hasTraceHook checks if any hook in the matchers is an Trace hook
-func hasTraceHook(matchers []GeminiHookMatcher) bool {
+// hasEntireHook checks if any hook in the matchers is an Entire hook
+func hasEntireHook(matchers []GeminiHookMatcher) bool {
 	for _, matcher := range matchers {
 		for _, hook := range matcher.Hooks {
-			if isTraceHook(hook.Command) {
+			if isEntireHook(hook.Command) {
 				return true
 			}
 		}
@@ -491,11 +489,11 @@ func hasTraceHook(matchers []GeminiHookMatcher) bool {
 	return false
 }
 
-// getFirstTraceHookCommand returns the command of the first Trace hook found, or empty string
-func getFirstTraceHookCommand(matchers []GeminiHookMatcher) string {
+// getFirstEntireHookCommand returns the command of the first Entire hook found, or empty string
+func getFirstEntireHookCommand(matchers []GeminiHookMatcher) string {
 	for _, matcher := range matchers {
 		for _, hook := range matcher.Hooks {
-			if isTraceHook(hook.Command) {
+			if isEntireHook(hook.Command) {
 				return hook.Command
 			}
 		}
@@ -503,13 +501,13 @@ func getFirstTraceHookCommand(matchers []GeminiHookMatcher) string {
 	return ""
 }
 
-// removeTraceHooks removes all Trace hooks from a list of matchers
-func removeTraceHooks(matchers []GeminiHookMatcher) []GeminiHookMatcher {
+// removeEntireHooks removes all Entire hooks from a list of matchers
+func removeEntireHooks(matchers []GeminiHookMatcher) []GeminiHookMatcher {
 	result := make([]GeminiHookMatcher, 0, len(matchers))
 	for _, matcher := range matchers {
 		filteredHooks := make([]GeminiHookEntry, 0, len(matcher.Hooks))
 		for _, hook := range matcher.Hooks {
-			if !isTraceHook(hook.Command) {
+			if !isEntireHook(hook.Command) {
 				filteredHooks = append(filteredHooks, hook)
 			}
 		}

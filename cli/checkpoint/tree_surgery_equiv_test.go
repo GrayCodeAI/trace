@@ -46,7 +46,7 @@ func TestBuildTreeWithChanges_AppliesModificationsDeletionsAndMetadata(t *testin
 	}
 
 	// Create metadata directory with a file
-	metadataDir := ".trace/metadata/test-session"
+	metadataDir := ".entire/metadata/test-session"
 	metadataDirAbs := filepath.Join(dir, metadataDir)
 	if err := os.MkdirAll(metadataDirAbs, 0o750); err != nil {
 		t.Fatalf("mkdir metadata: %v", err)
@@ -181,7 +181,7 @@ func TestAddTaskMetadataToTree_IncrementalPath(t *testing.T) {
 		t.Fatalf("read new tree: %v", err)
 	}
 
-	expectedPath := ".trace/metadata/sess-002/tasks/tool-002/checkpoints/003-tool-002.json"
+	expectedPath := ".entire/metadata/sess-002/tasks/tool-002/checkpoints/003-tool-002.json"
 	file, err := newTree.File(expectedPath)
 	if err != nil {
 		t.Fatalf("file not found at %s: %v", expectedPath, err)
@@ -276,7 +276,7 @@ func flattenRebuildTaskMetadata(
 		t.Fatalf("flatten: %v", err)
 	}
 
-	sessionMetadataDir := ".trace/metadata/" + opts.SessionID
+	sessionMetadataDir := ".entire/metadata/" + opts.SessionID
 	taskMetadataDir := sessionMetadataDir + "/tasks/" + opts.ToolUseID
 
 	// Checkpoint.json

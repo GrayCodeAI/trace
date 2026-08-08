@@ -262,7 +262,7 @@ func TestNewCommand_FreshRunWritesManifest(t *testing.T) {
 		t.Fatal("LoopInput.RunID was empty — fresh-run path didn't generate one")
 	}
 	// Manifest should mention how to run fix.
-	if !strings.Contains(out.String(), "trace investigate fix") {
+	if !strings.Contains(out.String(), "entire investigate fix") {
 		t.Errorf("expected fix hint in output, got:\n%s", out.String())
 	}
 	// Footer should embed the findings body (rendered via mdrender;
@@ -274,7 +274,7 @@ func TestNewCommand_FreshRunWritesManifest(t *testing.T) {
 
 	// Manifest should have captured the findings body.
 	manifestStore := investigate.NewLocalManifestStoreWithDir(
-		filepath.Join(tmp, ".git", "trace-investigations", "manifests"),
+		filepath.Join(tmp, ".git", "entire-investigations", "manifests"),
 	)
 	m, ok, err := manifestStore.FindByRunID(context.Background(), captured.RunID)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestNewCommand_FreshRunWritesManifest(t *testing.T) {
 	}
 
 	// Per-run dir should be cleaned up.
-	runDir := filepath.Join(tmp, ".git", "trace-investigations", captured.RunID)
+	runDir := filepath.Join(tmp, ".git", "entire-investigations", captured.RunID)
 	if _, statErr := os.Stat(runDir); !os.IsNotExist(statErr) {
 		t.Errorf("per-run dir should be cleaned up on Quorum, but exists: %s (err=%v)", runDir, statErr)
 	}
@@ -299,7 +299,7 @@ func TestNewCommand_FreshRunWritesManifest(t *testing.T) {
 
 // TestNewCommand_FreshRunPausedKeepsPerRunDir verifies that resumable
 // outcomes (Paused/Cancelled) leave the per-run directory in place so
-// `trace investigate --continue` has files to read, and the manifest
+// `entire investigate --continue` has files to read, and the manifest
 // records the path with empty FindingsContent.
 func TestNewCommand_FreshRunPausedKeepsPerRunDir(t *testing.T) {
 	tmp := setupInvestigateRepo(t)
@@ -326,7 +326,7 @@ func TestNewCommand_FreshRunPausedKeepsPerRunDir(t *testing.T) {
 	}
 
 	manifestStore := investigate.NewLocalManifestStoreWithDir(
-		filepath.Join(tmp, ".git", "trace-investigations", "manifests"),
+		filepath.Join(tmp, ".git", "entire-investigations", "manifests"),
 	)
 	m, ok, err := manifestStore.FindByRunID(context.Background(), captured.RunID)
 	if err != nil {
@@ -343,7 +343,7 @@ func TestNewCommand_FreshRunPausedKeepsPerRunDir(t *testing.T) {
 	}
 
 	// Per-run dir must remain so --continue can resume.
-	runDir := filepath.Join(tmp, ".git", "trace-investigations", captured.RunID)
+	runDir := filepath.Join(tmp, ".git", "entire-investigations", captured.RunID)
 	if _, statErr := os.Stat(runDir); statErr != nil {
 		t.Errorf("per-run dir should remain on Paused, but stat failed: %v", statErr)
 	}
@@ -411,7 +411,7 @@ func TestNewCommand_FreshRunRejectsAgentWithoutHooks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when configured agent has no hooks")
 	}
-	if !strings.Contains(errBuf.String(), "trace configure --agent") {
+	if !strings.Contains(errBuf.String(), "entire configure --agent") {
 		t.Errorf("stderr should hint at `entire configure --agent`, got: %s", errBuf.String())
 	}
 }
@@ -420,7 +420,7 @@ func TestNewCommand_ContinueLoadsExistingState(t *testing.T) {
 	tmp := setupInvestigateRepo(t)
 
 	// Create a state file in the conventional location.
-	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
+	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestNewCommand_ContinueLoadsExistingState(t *testing.T) {
 func TestNewCommand_ContinueWritesTerminalManifest(t *testing.T) {
 	tmp := setupInvestigateRepo(t)
 
-	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
+	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +566,7 @@ func TestNewCommand_ContinueLoadsAlwaysPromptFromSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
+	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -608,7 +608,7 @@ func TestNewCommand_ContinueLoadsAlwaysPromptFromSettings(t *testing.T) {
 func TestNewCommand_ContinueRejectsAgentShrink(t *testing.T) {
 	tmp := setupInvestigateRepo(t)
 
-	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
+	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -658,14 +658,14 @@ func TestNewCommand_ContinueWarnsOnSettingsLoadFailure(t *testing.T) {
 	tmp := setupInvestigateRepo(t)
 
 	// Write a malformed settings.json so settings.Load fails.
-	if err := os.MkdirAll(filepath.Join(tmp, ".trace"), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmp, ".entire"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tmp, ".trace", "settings.json"), []byte("{broken-json"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, ".entire", "settings.json"), []byte("{broken-json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	stateDir := filepath.Join(tmp, ".git", "trace-investigations")
+	stateDir := filepath.Join(tmp, ".git", "entire-investigations")
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -725,7 +725,7 @@ func TestNewCommand_ContinueWithMissingState(t *testing.T) {
 // --- helpers ---------------------------------------------------------------
 
 // saveInvestigateSettings writes an InvestigateConfig into the CWD's
-// .trace/settings.json. Mirrors review.SaveReviewConfig.
+// .entire/settings.json.
 func saveInvestigateSettings(cfg *settings.InvestigateConfig) error {
 	ctx := context.Background()
 	s, err := settings.Load(ctx)
@@ -733,7 +733,7 @@ func saveInvestigateSettings(cfg *settings.InvestigateConfig) error {
 		return err
 	}
 	if s == nil {
-		s = &settings.TraceSettings{}
+		s = &settings.EntireSettings{}
 	}
 	s.Investigate = cfg
 	return settings.Save(ctx, s)
@@ -786,9 +786,9 @@ func TestRunFresh_SkipsMultipickerWhenAgentsFlagPresent(t *testing.T) {
 	testutil.WriteFile(t, tmp, "f.txt", "x")
 	testutil.GitAdd(t, tmp, "f.txt")
 	testutil.GitCommit(t, tmp, "init")
-	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".trace"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".entire"), 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(tmp, ".trace/settings.local.json"),
+		filepath.Join(tmp, ".entire/settings.local.json"),
 		[]byte(`{"investigate":{"agents":["claude-code","codex"]}}`), 0o644,
 	))
 
@@ -815,11 +815,6 @@ func TestRunFresh_SkipsMultipickerWhenAgentsFlagPresent(t *testing.T) {
 	require.Equal(t, 0, pickerCalls, "multipicker must not run when --agents is set")
 }
 
-// TestRunInvestigate_SoftWarnSilentInNonInteractive verifies that when
-// the user can't prompt (PromptYN is nil and CanPromptInteractively
-// returns false under `go test`), the soft-warn does NOT block the loop
-// — it proceeds and a single informational log line is emitted.
-
 func TestRunFresh_InvokesMultipickerWhenTwoAgentsAndNoFlag(t *testing.T) {
 	tmp := t.TempDir()
 	t.Chdir(tmp)
@@ -827,9 +822,9 @@ func TestRunFresh_InvokesMultipickerWhenTwoAgentsAndNoFlag(t *testing.T) {
 	testutil.WriteFile(t, tmp, "f.txt", "x")
 	testutil.GitAdd(t, tmp, "f.txt")
 	testutil.GitCommit(t, tmp, "init")
-	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".trace"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".entire"), 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(tmp, ".trace/settings.local.json"),
+		filepath.Join(tmp, ".entire/settings.local.json"),
 		[]byte(`{"investigate":{"agents":["claude-code","codex"]}}`), 0o644,
 	))
 
@@ -872,32 +867,42 @@ func TestRunInvestigate_SoftWarnAcceptedRunsLoop(t *testing.T) {
 	testutil.WriteFile(t, tmp, "f.txt", "x")
 	testutil.GitAdd(t, tmp, "f.txt")
 	testutil.GitCommit(t, tmp, "init")
-	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".trace"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".entire"), 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(tmp, ".trace/settings.local.json"),
+		filepath.Join(tmp, ".entire/settings.local.json"),
 		[]byte(`{"investigate":{"agents":["claude-code"],"max_turns":1}}`), 0o644,
 	))
 
 	var loopCalled bool
 	deps := investigate.Deps{
 		GetAgentsWithHooksInstalled: func(_ context.Context) []types.AgentName {
-			return []types.AgentName{"claude-code"}
+			return []types.AgentName{types.AgentName("claude-code")}
 		},
 		NewSilentError: func(err error) error { return err },
-		SpawnerFor:     func(name string) spawn.Spawner { return stubSpawner{name: name} },
+		SpawnerFor:     func(_ string) spawn.Spawner { return stubSpawner{name: "claude-code"} },
+		HeadHasInvestigateCheckpoint: func(_ context.Context) (bool, string) {
+			return true, "checkpoint xyz"
+		},
+		PromptYN: func(_ context.Context, _ string, _ bool) (bool, error) {
+			return true, nil // accept
+		},
 		LoopRun: func(_ context.Context, _ investigate.LoopInput, _ investigate.LoopDeps) (investigate.LoopResult, error) {
 			loopCalled = true
 			return investigate.LoopResult{Outcome: investigate.OutcomeQuorum}, nil
 		},
 	}
 	cmd := investigate.NewCommand(deps)
-	cmd.SetArgs([]string{seedArg(t, "test topic")})
+	cmd.SetArgs([]string{seedArg(t, "foo")})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	_ = cmd.ExecuteContext(context.Background()) //nolint:errcheck
-	require.True(t, loopCalled, "loop must run after soft warn accepted")
+	_ = cmd.ExecuteContext(context.Background()) //nolint:errcheck // soft-warn accept proceeds; ignore downstream errors
+	require.True(t, loopCalled, "loop must run when user accepts soft warn")
 }
 
+// TestRunInvestigate_SoftWarnSilentInNonInteractive verifies that when
+// the user can't prompt (PromptYN is nil and CanPromptInteractively
+// returns false under `go test`), the soft-warn does NOT block the loop
+// — it proceeds and a single informational log line is emitted.
 func TestRunInvestigate_SoftWarnSilentInNonInteractive(t *testing.T) {
 	tmp := t.TempDir()
 	t.Chdir(tmp)
@@ -905,28 +910,33 @@ func TestRunInvestigate_SoftWarnSilentInNonInteractive(t *testing.T) {
 	testutil.WriteFile(t, tmp, "f.txt", "x")
 	testutil.GitAdd(t, tmp, "f.txt")
 	testutil.GitCommit(t, tmp, "init")
-	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".trace"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, ".entire"), 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(tmp, ".trace/settings.local.json"),
+		filepath.Join(tmp, ".entire/settings.local.json"),
 		[]byte(`{"investigate":{"agents":["claude-code"],"max_turns":1}}`), 0o644,
 	))
 
 	var loopCalled bool
 	deps := investigate.Deps{
 		GetAgentsWithHooksInstalled: func(_ context.Context) []types.AgentName {
-			return []types.AgentName{"claude-code"}
+			return []types.AgentName{types.AgentName("claude-code")}
 		},
 		NewSilentError: func(err error) error { return err },
-		SpawnerFor:     func(name string) spawn.Spawner { return stubSpawner{name: name} },
+		SpawnerFor:     func(_ string) spawn.Spawner { return stubSpawner{name: "claude-code"} },
+		HeadHasInvestigateCheckpoint: func(_ context.Context) (bool, string) {
+			return true, "checkpoint nonint"
+		},
+		// PromptYN intentionally nil → falls back to interactive.CanPromptInteractively(),
+		// which returns false under `go test` → soft-warn is silent.
 		LoopRun: func(_ context.Context, _ investigate.LoopInput, _ investigate.LoopDeps) (investigate.LoopResult, error) {
 			loopCalled = true
 			return investigate.LoopResult{Outcome: investigate.OutcomeQuorum}, nil
 		},
 	}
 	cmd := investigate.NewCommand(deps)
-	cmd.SetArgs([]string{seedArg(t, "test topic")})
+	cmd.SetArgs([]string{seedArg(t, "foo")})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	_ = cmd.ExecuteContext(context.Background()) //nolint:errcheck
-	require.True(t, loopCalled, "loop must run silently in non-interactive mode")
+	_ = cmd.ExecuteContext(context.Background()) //nolint:errcheck // non-interactive path proceeds
+	require.True(t, loopCalled, "loop must run when soft-warn is silent (non-interactive)")
 }

@@ -32,7 +32,7 @@ import (
 
 const (
 	// ShadowBranchPrefix is the prefix for shadow branches.
-	ShadowBranchPrefix = "trace/"
+	ShadowBranchPrefix = "entire/"
 
 	// ShadowBranchHashLength is the number of hex characters used in shadow branch names.
 	// Shadow branches are named "entire/<hash>" using the first 7 characters of the commit hash.
@@ -637,7 +637,7 @@ var errStop = errors.New("stop iteration")
 
 // GetTranscriptFromCommit retrieves the transcript from a specific commit's tree.
 // This is used for shadow branch checkpoints where the transcript is stored in the commit tree
-// rather than on the trace/checkpoints/v1 branch.
+// rather than on the entire/checkpoints/v1 branch.
 // commitHash is the commit to read from, metadataDir is the path within the tree.
 // agentType is used for reassembling chunked transcripts in the correct format.
 // Handles both chunked and non-chunked transcripts.
@@ -1123,7 +1123,7 @@ func sortTreeEntries(entries []object.TreeEntry) {
 //
 // Uses git CLI instead of go-git because go-git's worktree.Status() does not respect
 // global gitignore, which can cause globally ignored files to appear as untracked.
-// See: https://github.com/entireio/cli/pull/129
+// See: https://github.com/GrayCodeAI/trace/pull/129
 //
 // changedFilesResult contains both changed and deleted files from git status.
 type changedFilesResult struct {

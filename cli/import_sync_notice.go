@@ -54,7 +54,7 @@ var importLoggedIn = func() bool {
 // the Entire dashboard. It is a no-op when logged in or when nothing local was
 // imported.
 //
-// Import writes read-only checkpoints to the local trace/checkpoints/v1 store
+// Import writes read-only checkpoints to the local entire/checkpoints/v1 store
 // and never syncs on its own; sync happens later via the git pre-push hook once
 // logged in. Importing while logged out therefore succeeds locally but silently
 // never reaches the dashboard — this notice surfaces that instead of leaving the
@@ -64,5 +64,5 @@ func warnIfImportNotSynced(w io.Writer, importedLocalHistory bool) {
 		return
 	}
 	fmt.Fprintln(w, "Note: you're not logged in, so this history was imported locally only and won't appear in your Entire dashboard.")
-	fmt.Fprintln(w, "Log in with 'trace login' before importing to have your history synced.")
+	fmt.Fprintln(w, "Log in with 'entire login' before importing to have your history synced.")
 }

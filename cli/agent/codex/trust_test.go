@@ -114,12 +114,12 @@ func TestHookTrustGaps_NilWhenConfigUnreadable(t *testing.T) {
 // TestMissingEntireHooks_FlagsStaleFile — user enabled Codex on an
 // older release that didn't include PostToolUse. Their hooks.json has
 // the three legacy events but the CLI now installs four. Detection
-// must surface the gap so doctor can prompt `trace enable`.
+// must surface the gap so doctor can prompt `entire enable`.
 func TestMissingEntireHooks_FlagsStaleFile(t *testing.T) {
 	hooksJSON := `{"hooks":{
-		"SessionStart":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex session-start","timeout":30}]}],
-		"UserPromptSubmit":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex user-prompt-submit","timeout":30}]}],
-		"Stop":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex stop","timeout":30}]}]
+		"SessionStart":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex session-start","timeout":30}]}],
+		"UserPromptSubmit":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex user-prompt-submit","timeout":30}]}],
+		"Stop":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex stop","timeout":30}]}]
 	}}`
 	repoRoot, _ := writeTrustFixture(t, hooksJSON)
 	require.Equal(t, []string{"post_tool_use"}, MissingEntireHooks(repoRoot))
@@ -130,11 +130,11 @@ func TestMissingEntireHooks_FlagsStaleFile(t *testing.T) {
 // also contains unrelated user-defined entries.
 func TestMissingEntireHooks_NilWhenAllPresent(t *testing.T) {
 	hooksJSON := `{"hooks":{
-		"SessionStart":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex session-start","timeout":30}]}],
-		"UserPromptSubmit":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex user-prompt-submit","timeout":30}]}],
-		"Stop":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex stop","timeout":30}]},
+		"SessionStart":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex session-start","timeout":30}]}],
+		"UserPromptSubmit":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex user-prompt-submit","timeout":30}]}],
+		"Stop":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex stop","timeout":30}]},
 		        {"matcher":null,"hooks":[{"type":"command","command":"my-custom-tool","timeout":30}]}],
-		"PostToolUse":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex post-tool-use","timeout":30}]}]
+		"PostToolUse":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex post-tool-use","timeout":30}]}]
 	}}`
 	repoRoot, _ := writeTrustFixture(t, hooksJSON)
 	require.Empty(t, MissingEntireHooks(repoRoot))
@@ -154,9 +154,9 @@ func TestMissingEntireHooks_NilWhenFileMissing(t *testing.T) {
 func TestMissingEntireHooks_IgnoresNonEntireCommands(t *testing.T) {
 	hooksJSON := `{"hooks":{
 		"SessionStart":[{"matcher":null,"hooks":[{"type":"command","command":"my-other-tool","timeout":30}]}],
-		"UserPromptSubmit":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex user-prompt-submit","timeout":30}]}],
-		"Stop":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex stop","timeout":30}]}],
-		"PostToolUse":[{"matcher":null,"hooks":[{"type":"command","command":"trace hooks codex post-tool-use","timeout":30}]}]
+		"UserPromptSubmit":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex user-prompt-submit","timeout":30}]}],
+		"Stop":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex stop","timeout":30}]}],
+		"PostToolUse":[{"matcher":null,"hooks":[{"type":"command","command":"entire hooks codex post-tool-use","timeout":30}]}]
 	}}`
 	repoRoot, _ := writeTrustFixture(t, hooksJSON)
 	require.Equal(t, []string{"session_start"}, MissingEntireHooks(repoRoot))

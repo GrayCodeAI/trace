@@ -52,13 +52,13 @@ func Run(ctx context.Context, t Transport, protocolVersion int, stdin io.Reader,
 		switch {
 		case line == "capabilities":
 			if protocolVersion >= 2 {
-				fmt.Fprintln(stdout, "stateless-connect") //nolint:errcheck // best-effort protocol output
-				fmt.Fprintln(stdout, "push")              //nolint:errcheck // best-effort protocol output
+				fmt.Fprintln(stdout, "stateless-connect")
+				fmt.Fprintln(stdout, "push")
 			} else {
-				fmt.Fprintln(stdout, "connect") //nolint:errcheck // best-effort protocol output
+				fmt.Fprintln(stdout, "connect")
 			}
-			fmt.Fprintln(stdout, "option") //nolint:errcheck // best-effort protocol output
-			fmt.Fprintln(stdout)           //nolint:errcheck // best-effort protocol output
+			fmt.Fprintln(stdout, "option")
+			fmt.Fprintln(stdout)
 
 		case line == "list" || line == "list for-push":
 			if err := handleList(ctx, t, adv, line == "list for-push", stdout); err != nil {
@@ -67,7 +67,7 @@ func Run(ctx context.Context, t Transport, protocolVersion int, stdin io.Reader,
 
 		case strings.HasPrefix(line, "option "):
 			name, value, _ := strings.Cut(strings.TrimPrefix(line, "option "), " ")
-			fmt.Fprintln(stdout, opts.Set(name, value)) //nolint:errcheck // best-effort protocol output
+			fmt.Fprintln(stdout, opts.Set(name, value))
 
 		case strings.HasPrefix(line, "stateless-connect "):
 			service := strings.TrimPrefix(line, "stateless-connect ")
@@ -81,7 +81,7 @@ func Run(ctx context.Context, t Transport, protocolVersion int, stdin io.Reader,
 			if service != serviceUploadPack && service != serviceReceivePack {
 				return fmt.Errorf("unsupported service: %s", service)
 			}
-			fmt.Fprintln(stdout) //nolint:errcheck // best-effort protocol output
+			fmt.Fprintln(stdout)
 			if err := handleConnect(ctx, t, service, commandReader, stdout); err != nil {
 				return err
 			}

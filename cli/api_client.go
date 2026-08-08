@@ -40,7 +40,7 @@ func NewAuthenticatedAPIClient(ctx context.Context, insecureHTTP bool) (*api.Cli
 			// because err already wraps the sentinel; replacing it
 			// with the bare sentinel would drop that context for
 			// zero behavioural gain.
-			return nil, fmt.Errorf("not logged in (run 'trace login' first): %w", err)
+			return nil, fmt.Errorf("not logged in (run 'entire login' first): %w", err)
 		}
 		return nil, fmt.Errorf("resolve API token: %w", err)
 	}

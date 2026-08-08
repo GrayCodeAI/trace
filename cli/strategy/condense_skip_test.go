@@ -71,7 +71,7 @@ func TestCondenseSession_SkipsEmptySessionEvenWithCommittedFiles(t *testing.T) {
 	// Before the fix, filterFilesTouched's fallback would assign these to the
 	// session, defeating the skip gate.
 	committedFiles := map[string]struct{}{
-		"cli/strategy/manual_commit_condensation.go": {},
+		"cmd/entire/cli/strategy/manual_commit_condensation.go": {},
 	}
 
 	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, committedFiles)
@@ -183,15 +183,15 @@ func TestFilterFilesTouched_AppliesFallbackForMidTurnCommit(t *testing.T) {
 		StepCount: 2, // prior SaveStep evidence
 	}
 	committedFiles := map[string]struct{}{
-		"app/foo.go":      {},
-		".trace/internal": {},
-		"app/bar.go":      {},
+		"app/foo.go":       {},
+		".entire/internal": {},
+		"app/bar.go":       {},
 	}
 
 	filterFilesTouched(sessionData, committedFiles, state)
 
 	require.ElementsMatch(t, []string{"app/foo.go", "app/bar.go"}, sessionData.FilesTouched,
-		"should fall back to committed files (excluding .trace/) when session has SaveStep evidence")
+		"should fall back to committed files (excluding .entire/) when session has SaveStep evidence")
 }
 
 // A first-turn mid-session commit can happen before SaveStep records the
@@ -268,7 +268,7 @@ func TestCondenseSessionByID_SkippedPreservesState(t *testing.T) {
 	sessionID := "test-byid-skip"
 
 	// Create a metadata dir with NO transcript (empty dir)
-	metadataDir := ".trace/metadata/" + sessionID
+	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
 	require.NoError(t, os.MkdirAll(metadataDirAbs, 0o755))
 
@@ -319,7 +319,7 @@ func TestCondenseAndMarkFullyCondensed_SkippedMarksFullyCondensed(t *testing.T) 
 	sessionID := "test-eager-skip"
 
 	// Create a metadata dir with NO transcript
-	metadataDir := ".trace/metadata/" + sessionID
+	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
 	require.NoError(t, os.MkdirAll(metadataDirAbs, 0o755))
 
@@ -386,7 +386,7 @@ func TestTryAgentCommitFastPath_SkipsEmptySession(t *testing.T) {
 	// Verify no trailer was added
 	content, err := os.ReadFile(commitMsgFile)
 	require.NoError(t, err)
-	assert.NotContains(t, string(content), "Trace-Checkpoint", "should not add trailer for empty session")
+	assert.NotContains(t, string(content), "Entire-Checkpoint", "should not add trailer for empty session")
 }
 
 func TestTryAgentCommitFastPath_AcceptsSessionWithContent(t *testing.T) {
@@ -413,7 +413,7 @@ func TestTryAgentCommitFastPath_AcceptsSessionWithContent(t *testing.T) {
 	// Verify trailer was added
 	content, err := os.ReadFile(commitMsgFile)
 	require.NoError(t, err)
-	assert.Contains(t, string(content), "Trace-Checkpoint", "should add trailer for session with content")
+	assert.Contains(t, string(content), "Entire-Checkpoint", "should add trailer for session with content")
 }
 
 func TestTryAgentCommitFastPath_SkipsEmptyButAcceptsContentSession(t *testing.T) {
@@ -444,7 +444,7 @@ func TestTryAgentCommitFastPath_SkipsEmptyButAcceptsContentSession(t *testing.T)
 
 	content, err := os.ReadFile(commitMsgFile)
 	require.NoError(t, err)
-	assert.Contains(t, string(content), "Trace-Checkpoint", "should add trailer from the content session")
+	assert.Contains(t, string(content), "Entire-Checkpoint", "should add trailer from the content session")
 }
 
 // getHeadHash returns the HEAD commit hash as a string.

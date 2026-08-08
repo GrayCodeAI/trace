@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,7 +34,7 @@ func withPathDir(t *testing.T, dir string) {
 }
 
 func newTestRoot() *cobra.Command {
-	root := &cobra.Command{Use: "trace"}
+	root := &cobra.Command{Use: "entire"}
 	root.AddCommand(&cobra.Command{Use: "session", Run: func(*cobra.Command, []string) {}})
 	root.AddCommand(&cobra.Command{Use: "agent", Run: func(*cobra.Command, []string) {}})
 	return root
@@ -41,7 +42,7 @@ func newTestRoot() *cobra.Command {
 
 func TestResolvePlugin_FoundOnPath(t *testing.T) { //nolint:paralleltest // mutates PATH via t.Setenv
 	dir := t.TempDir()
-	binPath := writePluginBinary(t, dir, "trace-pgr", filepath.Join(dir, "args.txt"), 0)
+	binPath := writePluginBinary(t, dir, "entire-pgr", filepath.Join(dir, "args.txt"), 0)
 	withPathDir(t, dir)
 
 	got, args, ok := resolvePlugin(newTestRoot(), []string{"pgr", "--flag", "value"})
@@ -58,11 +59,11 @@ func TestResolvePlugin_FoundOnPath(t *testing.T) { //nolint:paralleltest // muta
 
 func TestResolvePlugin_BuiltinWins(t *testing.T) { //nolint:paralleltest // mutates PATH via t.Setenv
 	dir := t.TempDir()
-	writePluginBinary(t, dir, "trace-session", filepath.Join(dir, "args.txt"), 0)
+	writePluginBinary(t, dir, "entire-session", filepath.Join(dir, "args.txt"), 0)
 	withPathDir(t, dir)
 
 	if _, _, ok := resolvePlugin(newTestRoot(), []string{"session", "list"}); ok {
-		t.Fatal("built-in 'session' must take precedence over trace-session plugin")
+		t.Fatal("built-in 'session' must take precedence over entire-session plugin")
 	}
 }
 
@@ -75,11 +76,11 @@ func TestResolvePlugin_NotFound(t *testing.T) {
 
 // Cobra registers `help` and `completion` lazily, inside Execute. The plugin
 // resolver runs before Execute, so it must prime those commands before
-// consulting Find — otherwise an trace-help / trace-completion binary on
+// consulting Find — otherwise an entire-help / entire-completion binary on
 // PATH would shadow the built-in, violating "built-ins always win."
 func TestResolvePlugin_BuiltinHelpWins(t *testing.T) { //nolint:paralleltest // mutates PATH via t.Setenv
 	dir := t.TempDir()
-	writePluginBinary(t, dir, "trace-help", filepath.Join(dir, "args.txt"), 0)
+	writePluginBinary(t, dir, "entire-help", filepath.Join(dir, "args.txt"), 0)
 	withPathDir(t, dir)
 
 	// Use a Cobra-style root that mirrors NewRootCmd: SetHelpCommand only
@@ -89,26 +90,26 @@ func TestResolvePlugin_BuiltinHelpWins(t *testing.T) { //nolint:paralleltest // 
 	root.SetHelpCommand(&cobra.Command{Use: "help"})
 
 	if _, _, ok := resolvePlugin(root, []string{"help"}); ok {
-		t.Fatal("built-in 'help' must take precedence over trace-help plugin")
+		t.Fatal("built-in 'help' must take precedence over entire-help plugin")
 	}
 	if _, _, ok := resolvePlugin(root, []string{"help", "session"}); ok {
-		t.Fatal("'help session' must route to built-in help, not trace-help plugin")
+		t.Fatal("'help session' must route to built-in help, not entire-help plugin")
 	}
 }
 
 func TestResolvePlugin_BuiltinCompletionWins(t *testing.T) { //nolint:paralleltest // mutates PATH via t.Setenv
 	dir := t.TempDir()
-	writePluginBinary(t, dir, "trace-completion", filepath.Join(dir, "args.txt"), 0)
+	writePluginBinary(t, dir, "entire-completion", filepath.Join(dir, "args.txt"), 0)
 	withPathDir(t, dir)
 
 	if _, _, ok := resolvePlugin(newTestRoot(), []string{"completion", "bash"}); ok {
-		t.Fatal("built-in 'completion' must take precedence over trace-completion plugin")
+		t.Fatal("built-in 'completion' must take precedence over entire-completion plugin")
 	}
 }
 
 func TestResolvePlugin_RejectsAgentPrefix(t *testing.T) { //nolint:paralleltest // mutates PATH via t.Setenv
 	dir := t.TempDir()
-	writePluginBinary(t, dir, "trace-agent-foo", filepath.Join(dir, "args.txt"), 0)
+	writePluginBinary(t, dir, "entire-agent-foo", filepath.Join(dir, "args.txt"), 0)
 	withPathDir(t, dir)
 
 	if _, _, ok := resolvePlugin(newTestRoot(), []string{"agent-foo"}); ok {
@@ -122,11 +123,11 @@ func TestIsAgentProtocolBinary(t *testing.T) {
 		path string
 		want bool
 	}{
-		{"/usr/local/bin/trace-agent-foo", true},
-		{"/usr/local/bin/trace-agent-foo.exe", true},
-		{"/usr/local/bin/trace-pgr", false},
-		{"trace-pgr", false},
-		{"trace-agent-bar.bat", true},
+		{"/usr/local/bin/entire-agent-foo", true},
+		{"/usr/local/bin/entire-agent-foo.exe", true},
+		{"/usr/local/bin/entire-pgr", false},
+		{"entire-pgr", false},
+		{"entire-agent-bar.bat", true},
 	}
 	for _, tc := range cases {
 		if got := isAgentProtocolBinary(tc.path); got != tc.want {
@@ -148,7 +149,7 @@ func TestResolvePlugin_NonExecutableSurfacesAsLaunchError(t *testing.T) { //noli
 	}
 	dir := t.TempDir()
 	// Same script body as writePluginBinary but mode 0o644 (not executable).
-	path := filepath.Join(dir, "trace-bad")
+	path := filepath.Join(dir, "entire-bad")
 	script := "#!/bin/sh\nexit 0\n"
 	if err := os.WriteFile(path, []byte(script), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
@@ -176,7 +177,7 @@ func TestResolvePlugin_PathTraversal(t *testing.T) {
 func TestRunPlugin_ExitCodePropagation(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	binPath := writePluginBinary(t, dir, "trace-exit42", filepath.Join(dir, "args.txt"), 42)
+	binPath := writePluginBinary(t, dir, "entire-exit42", filepath.Join(dir, "args.txt"), 42)
 
 	code := runPlugin(context.Background(), "exit42", binPath, []string{"a", "b"})
 	if code != 42 {
@@ -188,6 +189,65 @@ func TestRunPlugin_ExitCodePropagation(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(contents)); got != "a\nb" {
 		t.Errorf("argv: got %q, want %q", got, "a\nb")
+	}
+}
+
+// interceptVersionCheck swaps the post-plugin version-check seam for a
+// counter and restores it on cleanup.
+func interceptVersionCheck(t *testing.T) *int {
+	t.Helper()
+	calls := 0
+	orig := postPluginVersionCheck
+	postPluginVersionCheck = func(context.Context, io.Writer, string) { calls++ }
+	t.Cleanup(func() { postPluginVersionCheck = orig })
+	return &calls
+}
+
+func TestMaybeRunPlugin_VersionCheckAfterSuccess(t *testing.T) { //nolint:paralleltest // mutates PATH and the version-check seam
+	dir := t.TempDir()
+	writePluginBinary(t, dir, "entire-pgr", filepath.Join(dir, "args.txt"), 0)
+	withPathDir(t, dir)
+	calls := interceptVersionCheck(t)
+
+	handled, code := MaybeRunPlugin(context.Background(), newTestRoot(), []string{"pgr"})
+	if !handled || code != 0 {
+		t.Fatalf("handled=%v code=%d, want handled=true code=0", handled, code)
+	}
+	if *calls != 1 {
+		t.Errorf("version check calls: got %d, want 1", *calls)
+	}
+}
+
+// After `entire upgrade` replaces the binary on disk, this process still
+// carries the pre-upgrade compiled-in version — a post-run version check
+// would see itself as outdated and prompt to redo the finished upgrade.
+func TestMaybeRunPlugin_NoVersionCheckAfterSelfUpdate(t *testing.T) { //nolint:paralleltest // mutates PATH and the version-check seam
+	dir := t.TempDir()
+	writePluginBinary(t, dir, "entire-upgrade", filepath.Join(dir, "args.txt"), 0)
+	withPathDir(t, dir)
+	calls := interceptVersionCheck(t)
+
+	handled, code := MaybeRunPlugin(context.Background(), newTestRoot(), []string{"upgrade", "--nightly"})
+	if !handled || code != 0 {
+		t.Fatalf("handled=%v code=%d, want handled=true code=0", handled, code)
+	}
+	if *calls != 0 {
+		t.Errorf("version check calls: got %d, want 0", *calls)
+	}
+}
+
+func TestMaybeRunPlugin_NoVersionCheckAfterFailure(t *testing.T) { //nolint:paralleltest // mutates PATH and the version-check seam
+	dir := t.TempDir()
+	writePluginBinary(t, dir, "entire-pgr", filepath.Join(dir, "args.txt"), 3)
+	withPathDir(t, dir)
+	calls := interceptVersionCheck(t)
+
+	handled, code := MaybeRunPlugin(context.Background(), newTestRoot(), []string{"pgr"})
+	if !handled || code != 3 {
+		t.Fatalf("handled=%v code=%d, want handled=true code=3", handled, code)
+	}
+	if *calls != 0 {
+		t.Errorf("version check calls: got %d, want 0", *calls)
 	}
 }
 

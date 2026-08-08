@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 )
 
 // BenchmarkHookSessionStart measures the end-to-end latency of the
-// "trace hooks claude-code session-start" subprocess.
+// "entire hooks claude-code session-start" subprocess.
 //
 // Each sub-benchmark isolates a single scaling dimension that appears
 // in the session-start hot path (see hook_registry.go → lifecycle.go):
@@ -28,11 +29,11 @@ import (
 //
 // Run all:
 //
-//	go test -tags=integration -bench=BenchmarkHookSessionStart -benchtime=3x -run='^$' -timeout=10m ./cli/integration_test/...
+//	go test -tags=integration -bench=BenchmarkHookSessionStart -benchtime=3x -run='^$' -timeout=10m ./cmd/entire/cli/integration_test/...
 //
 // Run one dimension:
 //
-//	go test -tags=integration -bench=BenchmarkHookSessionStart/Subprocess -benchtime=5x -run='^$' ./cli/integration_test/...
+//	go test -tags=integration -bench=BenchmarkHookSessionStart/Subprocess -benchtime=5x -run='^$' ./cmd/entire/cli/integration_test/...
 func BenchmarkHookSessionStart(b *testing.B) {
 	b.Run("Sessions", benchSessions)
 	b.Run("SessionsXRefs", benchSessionsXRefs)
@@ -41,13 +42,13 @@ func BenchmarkHookSessionStart(b *testing.B) {
 	b.Run("Subprocess", benchSubprocessOverhead)
 }
 
-// benchSessions scales session state files in .git/trace-sessions/.
+// benchSessions scales session state files in .git/entire-sessions/.
 // listAllSessionStates() is called twice: once in FindMostRecentSession (logging init),
 // once in CountOtherActiveSessionsWithCheckpoints. Each call does
 // ReadDir + (ReadFile + JSON unmarshal + repo.Reference) per file.
 func benchSessions(b *testing.B) {
 	for _, n := range []int{0, 1, 5, 10, 25, 50, 100, 200} {
-		b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			repo := benchutil.NewBenchRepo(b, benchutil.RepoOpts{
 				FileCount:     10,
 				FeatureBranch: "feature/bench",
@@ -102,7 +103,7 @@ func benchSessionsXRefs(b *testing.B) {
 // scans it. Session count held constant at 5.
 func benchPackedRefs(b *testing.B) {
 	for _, n := range []int{0, 50, 200, 500, 1000, 2000} {
-		b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			repo := benchutil.NewBenchRepo(b, benchutil.RepoOpts{
 				FileCount:     10,
 				FeatureBranch: "feature/bench",
@@ -127,7 +128,7 @@ func benchPackedRefs(b *testing.B) {
 // This also affects repo.Head() and repo.Reference() indirectly.
 func benchGitObjects(b *testing.B) {
 	for _, n := range []int{0, 1000, 5000, 10000} {
-		b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			repo := benchutil.NewBenchRepo(b, benchutil.RepoOpts{
 				FileCount:     10,
 				FeatureBranch: "feature/bench",
@@ -148,7 +149,7 @@ func benchGitObjects(b *testing.B) {
 
 // benchSubprocessOverhead isolates the cost of subprocess spawns that happen
 // during session-start. The hook calls git rev-parse multiple times (some cached,
-// some not) plus spawns the trace binary itself. This benchmark measures each
+// some not) plus spawns the entire binary itself. This benchmark measures each
 // component so we can see what fraction of the total is subprocess overhead.
 func benchSubprocessOverhead(b *testing.B) {
 	repo := benchutil.NewBenchRepo(b, benchutil.RepoOpts{
@@ -161,7 +162,7 @@ func benchSubprocessOverhead(b *testing.B) {
 		b.ResetTimer()
 		for range b.N {
 			start := time.Now()
-			cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+			cmd := exec.CommandContext(b.Context(), "git", "rev-parse", "--show-toplevel")
 			cmd.Dir = repo.Dir
 			cmd.Env = testutil.GitIsolatedEnv()
 			if output, err := cmd.CombinedOutput(); err != nil {
@@ -177,7 +178,7 @@ func benchSubprocessOverhead(b *testing.B) {
 		for range b.N {
 			start := time.Now()
 			for range 7 {
-				cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+				cmd := exec.CommandContext(b.Context(), "git", "rev-parse", "--show-toplevel")
 				cmd.Dir = repo.Dir
 				cmd.Env = testutil.GitIsolatedEnv()
 				if output, err := cmd.CombinedOutput(); err != nil {
@@ -188,16 +189,16 @@ func benchSubprocessOverhead(b *testing.B) {
 		}
 	})
 
-	// 3. Bare `trace` binary spawn (version command — minimal work, no git)
-	b.Run("TraceBinary_version", func(b *testing.B) {
+	// 3. Bare `entire` binary spawn (version command — minimal work, no git)
+	b.Run("EntireBinary_version", func(b *testing.B) {
 		binary := getTestBinary()
 		b.ResetTimer()
 		for range b.N {
 			start := time.Now()
-			cmd := exec.Command(binary, "version")
+			cmd := exec.CommandContext(b.Context(), binary, "version")
 			cmd.Dir = repo.Dir
 			if output, err := cmd.CombinedOutput(); err != nil {
-				b.Fatalf("trace version failed: %v\n%s", err, output)
+				b.Fatalf("entire version failed: %v\n%s", err, output)
 			}
 			b.ReportMetric(float64(time.Since(start).Milliseconds()), "ms/op")
 		}
@@ -235,12 +236,12 @@ func runSessionStartHook(b *testing.B, repo *benchutil.BenchRepo) {
 	for range b.N {
 		start := time.Now()
 
-		cmd := exec.Command(binary, "hooks", "claude-code", "session-start")
+		cmd := exec.CommandContext(b.Context(), binary, "hooks", agentClaudeCode, "session-start")
 		cmd.Dir = repo.Dir
 		cmd.Stdin = bytes.NewReader(stdinPayload)
 		cmd.Env = append(
 			testutil.GitIsolatedEnv(),
-			"TRACE_TEST_CLAUDE_PROJECT_DIR="+claudeProjectDir,
+			"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+claudeProjectDir,
 		)
 
 		output, err := cmd.CombinedOutput()

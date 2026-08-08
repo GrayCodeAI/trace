@@ -21,7 +21,7 @@ import (
 // This is the baseline before introducing a postCommitCache.
 //
 // Setup: 1 active session with a shadow branch checkpoint, then a commit
-// with the Trace-Checkpoint trailer. PostCommit reads HEAD, finds the session,
+// with the Entire-Checkpoint trailer. PostCommit reads HEAD, finds the session,
 // runs condensation (filesOverlapWithContent, CondenseSession, carry-forward).
 func BenchmarkPostCommit(b *testing.B) {
 	b.Run("SingleSession_Active", benchPostCommitSingleSession(session.PhaseActive))
@@ -65,7 +65,7 @@ func benchPostCommitMultipleSessions(sessionCount int) func(*testing.B) {
 }
 
 // benchSetupPostCommitRepo creates a git repo with N sessions that have shadow branch
-// checkpoints, then creates a commit with the Trace-Checkpoint trailer.
+// checkpoints, then creates a commit with the Entire-Checkpoint trailer.
 // Returns the repo directory path, ready for PostCommit() to run.
 func benchSetupPostCommitRepo(b *testing.B, phase session.Phase, sessionCount int) string {
 	b.Helper()
@@ -122,7 +122,7 @@ func benchSetupPostCommitRepo(b *testing.B, phase session.Phase, sessionCount in
 
 	s := &ManualCommitStrategy{}
 
-	// Chdir to repo dir for the trace setup (SaveStep, loadSessionState, etc.
+	// Chdir to repo dir for the entire setup (SaveStep, loadSessionState, etc.
 	// all depend on paths.WorktreeRoot() which uses cwd). b.Chdir restores
 	// the original directory when the benchmark function returns.
 	b.Chdir(dir)
@@ -143,7 +143,7 @@ func benchSetupPostCommitRepo(b *testing.B, phase session.Phase, sessionCount in
 		}
 
 		// Create metadata directory with transcript
-		metadataDir := ".trace/metadata/" + sessionID
+		metadataDir := ".entire/metadata/" + sessionID
 		metadataDirAbs := filepath.Join(dir, metadataDir)
 		if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
 			b.Fatalf("mkdir: %v", err)

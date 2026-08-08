@@ -13,14 +13,14 @@ set -e
 #
 # ARGUMENTS:
 #   CHECKPOINT_ID   Optional. Migrate only this checkpoint (e.g., "a1b2c3d4e5f6")
-#                   If omitted, migrates all checkpoints from trace/sessions-legacy.
+#                   If omitted, migrates all checkpoints from entire/sessions-legacy.
 #
 # DESCRIPTION:
 #   Migrates checkpoint data from the old format (latest session at root, archived
 #   sessions in numbered folders 1/, 2/, etc.) to the new v1 format (all sessions
 #   in 0-indexed folders 0/, 1/, 2/, with a CheckpointSummary at the root).
 #
-#   The script reads from 'trace/sessions-legacy' and writes to 'trace/checkpoints/v1',
+#   The script reads from 'entire/sessions-legacy' and writes to 'entire/checkpoints/v1',
 #   leaving the original branch untouched as a backup.
 #
 #   By default, runs in dry-run mode showing what would be migrated.
@@ -51,7 +51,7 @@ set -e
 # PREREQUISITES:
 #   - jq (JSON processor) must be installed
 #   - Clean working tree (no uncommitted changes)
-#   - The trace/sessions-legacy branch must exist (renamed from trace/sessions)
+#   - The entire/sessions-legacy branch must exist (renamed from entire/sessions)
 #   - DISABLE ALL YOUR ENTIRE GIT HOOKS FIRST (e.g., pre-commit, pre-push) to avoid issues during migration
 #
 # EXAMPLES:
@@ -68,29 +68,29 @@ set -e
 #   ./scripts/migrate-sessions.sh a1b2c3d4e5f6 --apply
 #
 # BEFORE MIGRATION:
-#   1. Rename local trace/sessions to trace/sessions-legacy:
-#      git branch -m trace/sessions trace/sessions-legacy
+#   1. Rename local entire/sessions to entire/sessions-legacy:
+#      git branch -m entire/sessions entire/sessions-legacy
 #
 # AFTER MIGRATION:
 #   1. Verify the migration:
-#      git log trace/checkpoints/v1
-#      git show trace/checkpoints/v1:<checkpoint_path>/metadata.json
+#      git log entire/checkpoints/v1
+#      git show entire/checkpoints/v1:<checkpoint_path>/metadata.json
 #
-#   2. Rename remote trace/sessions to avoid conflict:
-#      git push origin trace/sessions:trace/sessions-old
-#      git push origin --delete trace/sessions
+#   2. Rename remote entire/sessions to avoid conflict:
+#      git push origin entire/sessions:entire/sessions-old
+#      git push origin --delete entire/sessions
 #
 #   3. Push new v1 branch to remote:
-#      git push origin trace/checkpoints/v1
+#      git push origin entire/checkpoints/v1
 #
 #   4. (Optional) Delete local legacy branch:
-#      git branch -D trace/sessions-legacy
+#      git branch -D entire/sessions-legacy
 #
 # ROLLBACK:
-#   The original branch is preserved as trace/sessions-legacy locally.
+#   The original branch is preserved as entire/sessions-legacy locally.
 #   If migration fails, delete the v1 branch and rename back:
-#      git branch -D trace/checkpoints/v1
-#      git branch -m trace/sessions-legacy trace/sessions
+#      git branch -D entire/checkpoints/v1
+#      git branch -m entire/sessions-legacy entire/sessions
 #
 
 # Colors for output
@@ -99,8 +99,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-SOURCE_BRANCH="trace/sessions-legacy"
-TARGET_BRANCH="trace/checkpoints/v1"
+SOURCE_BRANCH="entire/sessions-legacy"
+TARGET_BRANCH="entire/checkpoints/v1"
 
 # Parse arguments
 DRY_RUN=true

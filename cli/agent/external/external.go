@@ -232,11 +232,16 @@ func (e *Agent) HookNames() []string {
 
 func (e *Agent) ParseHookEvent(ctx context.Context, hookName string, stdin io.Reader) (*agent.Event, error) {
 	const maxParseHookBytes = 10 * 1024 * 1024 // 10 MB
-	data, err := io.ReadAll(io.LimitReader(stdin, maxParseHookBytes))
+	// Stream a single (size-bounded) JSON value rather than io.ReadAll, so the
+	// hook never blocks waiting for stdin EOF that some agents don't send on
+	// Windows/Git Bash (issue #1398). The external "parse-hook" contract receives
+	// the host's hook payload — which is JSON — and we forward its raw bytes
+	// verbatim to the subprocess, so a plain byte copy is preserved.
+	raw, err := agent.ReadHookInputRawLimited(stdin, maxParseHookBytes)
 	if err != nil {
 		return nil, fmt.Errorf("parse-hook: read stdin: %w", err)
 	}
-	stdout, err := e.run(ctx, data, "parse-hook", "--hook", hookName)
+	stdout, err := e.run(ctx, raw, "parse-hook", "--hook", hookName)
 	if err != nil {
 		return nil, fmt.Errorf("parse-hook: %w", err)
 	}
@@ -430,18 +435,18 @@ func (e *Agent) run(ctx context.Context, stdin []byte, args ...string) ([]byte, 
 		ctx, cancel = context.WithTimeout(ctx, defaultRunTimeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, e.binaryPath, args...) // #nosec G204 -- e.binaryPath is the user-configured external agent binary, a trusted operator-provided path; args are internally constructed
+	cmd := exec.CommandContext(ctx, e.binaryPath, args...)
 	// Ensure I/O goroutines are released shortly after the process is killed,
 	// so cmd.Run() doesn't block waiting for pipe reads.
 	cmd.WaitDelay = 3 * time.Second
 
 	cmd.Env = append(
 		cmd.Environ(),
-		"TRACE_PROTOCOL_VERSION="+strconv.Itoa(ProtocolVersion),
-		"TRACE_CLI_VERSION="+versioninfo.Version,
+		"ENTIRE_PROTOCOL_VERSION="+strconv.Itoa(ProtocolVersion),
+		"ENTIRE_CLI_VERSION="+versioninfo.Version,
 	)
 	if repoRoot, err := paths.WorktreeRoot(ctx); err == nil {
-		cmd.Env = append(cmd.Env, "TRACE_REPO_ROOT="+repoRoot)
+		cmd.Env = append(cmd.Env, "ENTIRE_REPO_ROOT="+repoRoot)
 		cmd.Dir = repoRoot
 	}
 

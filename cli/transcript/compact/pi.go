@@ -23,7 +23,7 @@ import (
 //
 // Parsing primitives (Entry/Message/ContentItem types, ResolveActiveBranch,
 // SkipLines, NewScanner) are shared with the pi agent package via
-// cli/agent/pi/pijsonl so a fix applied here also lands there.
+// cmd/entire/cli/agent/pi/pijsonl so a fix applied here also lands there.
 
 const (
 	piToolResultStatusOK  = "success"
@@ -84,7 +84,7 @@ type piCompactToolResult struct {
 	Status string `json:"status"`
 }
 
-// compactPi converts a Pi JSONL transcript into the Trace compact format.
+// compactPi converts a Pi JSONL transcript into the Entire compact format.
 //
 // opts.StartLine is treated as a JSONL line offset.
 //

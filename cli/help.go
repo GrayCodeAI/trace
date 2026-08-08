@@ -7,14 +7,14 @@ import (
 )
 
 // NewHelpCmd creates a custom help command that supports a hidden -t flag
-// to display the trace command tree.
+// to display the entire command tree.
 func NewHelpCmd(rootCmd *cobra.Command) *cobra.Command {
 	var showTree bool
 
 	helpCmd := &cobra.Command{
 		Use:   "help [command]",
 		Short: "Help about any command",
-		Long: `Provides help for any Trace CLI subcommand.
+		Long: `Provides help for any Entire CLI subcommand.
 Simply type '` + rootCmd.Name() + ` help [command]' for full details.`,
 		Run: func(_ *cobra.Command, args []string) {
 			if showTree {
@@ -27,13 +27,11 @@ Simply type '` + rootCmd.Name() + ` help [command]' for full details.`,
 			if err != nil || targetCmd == nil {
 				targetCmd = rootCmd
 			}
-			// #nosec G104 -- Help() only fails on write errors to stdout, non-actionable
 			targetCmd.Help() //nolint:errcheck,gosec // Help() only fails on write errors to stdout
 		},
 	}
 
 	helpCmd.Flags().BoolVarP(&showTree, "tree", "t", false, "Show full command tree")
-	// #nosec G104 -- MarkHidden error is only returned for an undefined flag, which cannot happen here
 	helpCmd.Flags().MarkHidden("tree") //nolint:errcheck,gosec // flag is defined above
 
 	return helpCmd

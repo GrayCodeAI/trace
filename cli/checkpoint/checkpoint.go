@@ -42,7 +42,7 @@ const (
 	Ephemeral Type = iota
 
 	// Persistent checkpoints contain metadata + commit reference and are stored
-	// on the trace/checkpoints/v1 branch. They are the permanent record.
+	// on the entire/checkpoints/v1 branch. They are the permanent record.
 	Persistent
 )
 

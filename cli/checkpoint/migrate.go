@@ -28,7 +28,7 @@ type MigrateResult struct {
 }
 
 // MigrateBranchToRefs converts every checkpoint stored on the git-branch v1
-// branch (trace/checkpoints/v1) into a per-checkpoint ref under
+// branch (entire/checkpoints/v1) into a per-checkpoint ref under
 // refs/entire/checkpoints/<shard>/<id> — the layout the git-refs store uses.
 //
 // Each checkpoint's current subtree from the v1 branch tip is wrapped in a

@@ -23,12 +23,6 @@ func SplitPromptContent(content string) []string {
 	return prompts
 }
 
-// JoinPrompts serializes prompts into a single prompt.txt blob using the
-// canonical PromptSeparator.
-func JoinPrompts(prompts []string) string {
-	return strings.Join(prompts, PromptSeparator)
-}
-
 // RedactedJoinedPrompts joins prompts and runs the regex-only redaction
 // pipeline (the eight always-on/opt-in layers). OPF runs exclusively in
 // the pre-push rewrite (not here),

@@ -15,13 +15,13 @@ import (
 	"github.com/GrayCodeAI/trace/cli/auth"
 	"github.com/GrayCodeAI/trace/cli/execx"
 	"github.com/GrayCodeAI/trace/cli/gitremote"
+	"github.com/GrayCodeAI/trace/cli/internal/flock"
 	"github.com/GrayCodeAI/trace/cli/jsonutil"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
 	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/validation"
-	"github.com/GrayCodeAI/trace/internal/flock"
 
 	"github.com/spf13/cobra"
 )
@@ -272,7 +272,7 @@ func runTrailEnablementRefresh(ctx context.Context) error {
 	defer cancel()
 
 	// This runs detached with stdout/stderr discarded, so log at debug to the
-	// repo's .trace/logs/entire.log (initialized by newRefreshTrailEnablementCmd).
+	// repo's .entire/logs/entire.log (initialized by newRefreshTrailEnablementCmd).
 	// Without this, an unreachable/failing host would leave the background
 	// refresh silently failing with no diagnostic trail.
 	logCtx := logging.WithComponent(ctx, "trail-refresh")
@@ -402,11 +402,11 @@ func newRefreshTrailEnablementCmd() *cobra.Command {
 			ctx := cmd.Context()
 			// Detached child with discarded stdout/stderr: initialize file
 			// logging so a failing background refresh (e.g. an unreachable
-			// host) is diagnosable in .trace/logs/entire.log rather than
+			// host) is diagnosable in .entire/logs/entire.log rather than
 			// vanishing. Guard on WorktreeRoot first — matching resume/rewind/
 			// reset/explain — so a child whose worktree was removed or relocated
 			// between spawn and exec (or a manual invocation outside a repo)
-			// doesn't create a stray .trace/logs/ in an arbitrary directory;
+			// doesn't create a stray .entire/logs/ in an arbitrary directory;
 			// logging.Init falls back to cwd when WorktreeRoot fails.
 			if _, err := paths.WorktreeRoot(ctx); err == nil {
 				logging.SetLogLevelGetter(GetLogLevel)

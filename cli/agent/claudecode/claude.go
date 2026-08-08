@@ -94,7 +94,7 @@ func (c *ClaudeCodeAgent) ProtectedDirs() []string { return []string{".claude"} 
 // GetSessionDir returns the directory where Claude stores session transcripts.
 func (c *ClaudeCodeAgent) GetSessionDir(repoPath string) (string, error) {
 	// Check for test environment override
-	if override := os.Getenv("TRACE_TEST_CLAUDE_PROJECT_DIR"); override != "" {
+	if override := os.Getenv("ENTIRE_TEST_CLAUDE_PROJECT_DIR"); override != "" {
 		return override, nil
 	}
 
@@ -108,7 +108,7 @@ func (c *ClaudeCodeAgent) GetSessionDir(repoPath string) (string, error) {
 }
 
 // GetSessionBaseDir returns the base directory containing per-project session subdirectories.
-// Unlike GetSessionDir, this does NOT use TRACE_TEST_CLAUDE_PROJECT_DIR because the
+// Unlike GetSessionDir, this does NOT use ENTIRE_TEST_CLAUDE_PROJECT_DIR because the
 // test override points to a specific project dir, not the base containing all projects.
 func (c *ClaudeCodeAgent) GetSessionBaseDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -278,7 +278,6 @@ func (c *ClaudeCodeAgent) GetTranscriptPosition(path string) (int, error) {
 		return 0, nil
 	}
 
-	// #nosec G304 -- path comes from Claude Code transcript location, not remote/untrusted input
 	file, err := os.Open(path) //nolint:gosec // Path comes from Claude Code transcript location
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -320,7 +319,6 @@ func (c *ClaudeCodeAgent) ExtractModifiedFilesFromOffset(path string, startOffse
 		return nil, 0, nil
 	}
 
-	// #nosec G304 -- path comes from Claude Code transcript location, not remote/untrusted input
 	file, openErr := os.Open(path) //nolint:gosec // Path comes from Claude Code transcript location
 	if openErr != nil {
 		return nil, 0, fmt.Errorf("failed to open transcript file: %w", openErr)
@@ -383,7 +381,7 @@ func (c *ClaudeCodeAgent) LaunchCmd(ctx context.Context, initialPrompt string) (
 	if err != nil {
 		return nil, fmt.Errorf("claude binary not on PATH: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, bin, initialPrompt) // #nosec G204 -- bin is resolved via exec.LookPath("claude"); initialPrompt is passed as a single argument, not shell-interpreted
+	cmd := exec.CommandContext(ctx, bin, initialPrompt)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

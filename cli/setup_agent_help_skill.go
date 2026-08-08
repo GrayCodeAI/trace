@@ -21,7 +21,7 @@ const entireManagedAgentHelpSkillMarker = "ENTIRE-MANAGED AGENT-HELP SKILL v1"
 
 // setupOptionalAgentHelpSkill installs the stable "how to use entire" skill for
 // ag when opts.AgentHelpSkill is set. The skill body is near-immutable — it only
-// points the agent at `trace agent-help` — so re-running enable reports
+// points the agent at `entire agent-help` — so re-running enable reports
 // "unchanged" rather than churning a diff.
 func setupOptionalAgentHelpSkill(ctx context.Context, w io.Writer, ag agent.Agent, opts EnableOptions) error {
 	if !opts.AgentHelpSkill {
@@ -102,8 +102,8 @@ func agentHelpSkillTemplate(agentName types.AgentName) (string, []byte, bool) {
 // static skill never points the agent at a command it can't use.
 const agentHelpSkillBody = `Entire's CLI is the source of truth for its own usage. Do not guess flags or subcommands.
 
-Run ` + "`trace agent-help`" + ` for a map of when to use entire and which subcommand to use,
-then ` + "`trace agent-help <command>`" + ` (e.g. ` + "`trace agent-help checkpoint`" + `) for that command's
+Run ` + "`entire agent-help`" + ` for a map of when to use entire and which subcommand to use,
+then ` + "`entire agent-help <command>`" + ` (e.g. ` + "`entire agent-help checkpoint`" + `) for that command's
 exact, currently-installed flags.
 
 You are already inside the repo — entire auto-detects it from the git origin remote.
@@ -112,7 +112,7 @@ Never ask the user for the repo name.`
 const claudeAgentHelpSkillTemplate = `
 ---
 name: entire
-description: How to use the Trace CLI (checkpoints, search, sessions, and more). Use whenever a task involves entire, checkpoints, or the ` + "`entire`" + ` command.
+description: How to use the Entire CLI (checkpoints, search, sessions, and more). Use whenever a task involves entire, checkpoints, or the ` + "`entire`" + ` command.
 ---
 
 <!-- ` + entireManagedAgentHelpSkillMarker + ` -->
@@ -123,7 +123,7 @@ description: How to use the Trace CLI (checkpoints, search, sessions, and more).
 const geminiAgentHelpSkillTemplate = `
 ---
 name: entire
-description: How to use the Trace CLI (checkpoints, search, sessions, and more). Use whenever a task involves entire, checkpoints, or the ` + "`entire`" + ` command.
+description: How to use the Entire CLI (checkpoints, search, sessions, and more). Use whenever a task involves entire, checkpoints, or the ` + "`entire`" + ` command.
 kind: local
 tools:
   - run_shell_command
@@ -137,7 +137,7 @@ tools:
 const codexAgentHelpSkillTemplate = `
 # ` + entireManagedAgentHelpSkillMarker + `
 name = "entire"
-description = "How to use the Trace CLI (checkpoints, search, sessions, and more). Use whenever a task involves entire, checkpoints, or the ` + "`entire`" + ` command."
+description = "How to use the Entire CLI (checkpoints, search, sessions, and more). Use whenever a task involves entire, checkpoints, or the ` + "`entire`" + ` command."
 developer_instructions = """
 ` + agentHelpSkillBody + `
 """

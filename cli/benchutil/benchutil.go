@@ -50,7 +50,7 @@ type BenchRepo struct {
 	// WorktreeID is the worktree identifier (empty for main worktree).
 	WorktreeID string
 
-	// Strategy is the strategy name used in .trace/settings.json.
+	// Strategy is the strategy name used in .entire/settings.json.
 	Strategy string
 }
 
@@ -66,7 +66,7 @@ type RepoOpts struct {
 	// CommitCount is the number of commits to create. Defaults to 1.
 	CommitCount int
 
-	// Strategy is the strategy name for .trace/settings.json.
+	// Strategy is the strategy name for .entire/settings.json.
 	// Defaults to "manual-commit".
 	Strategy string
 
@@ -94,7 +94,7 @@ func (o *RepoOpts) withDefaults() RepoOpts {
 
 // NewBenchRepo creates an isolated git repository for benchmarks.
 // The repo has an initial commit with the configured number of files,
-// a .gitignore excluding .trace/, and Entire settings initialized.
+// a .gitignore excluding .entire/, and Entire settings initialized.
 //
 // Uses b.TempDir() so cleanup is automatic.
 func NewBenchRepo(b *testing.B, opts RepoOpts) *BenchRepo {
@@ -115,8 +115,8 @@ func NewBenchRepo(b *testing.B, opts RepoOpts) *BenchRepo {
 	b.Cleanup(func() { _ = repo.Close() })
 
 	// Create .gitignore and .entire settings
-	writeFile(b, dir, ".gitignore", ".trace/\n")
-	initTraceSettings(b, dir, opts.Strategy)
+	writeFile(b, dir, ".gitignore", ".entire/\n")
+	initEntireSettings(b, dir, opts.Strategy)
 
 	// Generate initial files
 	wt, err := repo.Worktree()
@@ -315,7 +315,7 @@ func GenerateTranscript(opts TranscriptOpts) []byte {
 // WriteTranscriptFile writes transcript data to a file and returns the path.
 func (br *BenchRepo) WriteTranscriptFile(b *testing.B, sessionID string, data []byte) string {
 	b.Helper()
-	// Write to .trace/metadata/<session-id>/full.jsonl (matching real layout)
+	// Write to .entire/metadata/<session-id>/full.jsonl (matching real layout)
 	relDir := filepath.Join(".entire", "metadata", sessionID)
 	relPath := filepath.Join(relDir, "full.jsonl")
 	absDir := filepath.Join(br.Dir, relDir)
@@ -383,7 +383,7 @@ func (br *BenchRepo) SeedShadowBranch(b *testing.B, sessionID string, checkpoint
 	}
 }
 
-// SeedMetadataBranch creates N committed checkpoints on the trace/checkpoints/v1
+// SeedMetadataBranch creates N committed checkpoints on the entire/checkpoints/v1
 // branch. This simulates a repository with prior checkpoint history.
 func (br *BenchRepo) SeedMetadataBranch(b *testing.B, checkpointCount int) {
 	b.Helper()
@@ -475,7 +475,7 @@ func writeFile(b *testing.B, dir, relPath, content string) {
 }
 
 //nolint:gosec // G301/G306: benchmark fixtures use standard permissions in temp dirs
-func initTraceSettings(b *testing.B, dir, strategy string) {
+func initEntireSettings(b *testing.B, dir, strategy string) {
 	b.Helper()
 	entireDir := filepath.Join(dir, ".entire")
 	if err := os.MkdirAll(filepath.Join(entireDir, "tmp"), 0o755); err != nil {

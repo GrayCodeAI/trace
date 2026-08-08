@@ -134,7 +134,7 @@ func (s *ManualCommitStrategy) GetRewindPoints(ctx context.Context, limit int) (
 // The function works by:
 // 1. Getting all checkpoints from committed checkpoint storage
 // 2. Building a map of checkpoint ID -> checkpoint info
-// 3. Scanning the current branch history for commits with Trace-Checkpoint trailers
+// 3. Scanning the current branch history for commits with Entire-Checkpoint trailers
 // 4. Matching by checkpoint ID (stable across amend/rebase)
 func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(ctx context.Context, limit int) ([]RewindPoint, error) {
 	repo, err := OpenRepository(ctx)
@@ -155,7 +155,7 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(ctx context.Context, limi
 	}
 
 	// Build map of checkpoint ID -> checkpoint info
-	// Checkpoint ID is the stable link from Trace-Checkpoint trailer
+	// Checkpoint ID is the stable link from Entire-Checkpoint trailer
 	checkpointInfoMap := make(map[id.CheckpointID]CheckpointInfo)
 	for _, cp := range checkpoints {
 		if !cp.CheckpointID.IsEmpty() {
@@ -193,14 +193,14 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(ctx context.Context, limi
 		}
 		count++
 
-		// Extract all checkpoint IDs from Trace-Checkpoint trailers.
+		// Extract all checkpoint IDs from Entire-Checkpoint trailers.
 		// Squash merge commits may contain multiple trailers from the original commits.
 		allCpIDs := trailers.ParseAllCheckpoints(c.Message)
 		if len(allCpIDs) == 0 {
 			return nil
 		}
 
-		// Resolve to the latest checkpoint by creation time (consistent with `trace resume`).
+		// Resolve to the latest checkpoint by creation time (consistent with `entire resume`).
 		cpInfo, found := ResolveLatestCheckpointFromMap(allCpIDs, checkpointInfoMap)
 		if !found {
 			return nil
@@ -309,7 +309,7 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, w, errW io.Writer, po
 	// This ensures the next checkpoint will only include prompts from this point forward
 	if err := s.resetShadowBranchToCheckpoint(ctx, repo, commit); err != nil {
 		// Log warning but don't fail - file restoration is the primary operation
-		fmt.Fprintf(os.Stderr, "[trace] Warning: failed to reset shadow branch: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[entire] Warning: failed to reset shadow branch: %v\n", err)
 	}
 
 	// Load session state to get untracked files that existed at session start
@@ -491,7 +491,7 @@ func (s *ManualCommitStrategy) resetShadowBranchToCheckpoint(ctx context.Context
 		return fmt.Errorf("failed to update shadow branch: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "[trace] Reset shadow branch %s to checkpoint %s\n", shadowBranchName, commit.Hash.String()[:7])
+	fmt.Fprintf(os.Stderr, "[entire] Reset shadow branch %s to checkpoint %s\n", shadowBranchName, commit.Hash.String()[:7])
 	return nil
 }
 
@@ -619,7 +619,7 @@ func (s *ManualCommitStrategy) PreviewRewind(ctx context.Context, point RewindPo
 }
 
 // RestoreLogsOnly restores session logs from a logs-only rewind point.
-// This fetches the transcript from trace/checkpoints/v1 and writes it to the agent's session directory.
+// This fetches the transcript from entire/checkpoints/v1 and writes it to the agent's session directory.
 // Does not modify the working directory.
 // When multiple sessions were condensed to the same checkpoint, ALL sessions are restored.
 // If force is false, prompts for confirmation when local logs have newer timestamps.
@@ -694,7 +694,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(ctx context.Context, w, errW io.W
 			fmt.Fprintf(errW, "  Warning: session %d has no session ID, skipping\n", i)
 			continue
 		}
-		// Checkpoint metadata comes from the shared trace/checkpoints/v1 branch
+		// Checkpoint metadata comes from the shared entire/checkpoints/v1 branch
 		// and is attacker-influenceable. Reject path separators/absolute IDs before
 		// they reach ResolveSessionFile + Session, which would otherwise let a
 		// crafted session ID overwrite files outside the agent session directory.

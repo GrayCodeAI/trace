@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -14,16 +13,6 @@ import (
 	"github.com/GrayCodeAI/trace/cli/auth"
 	"github.com/GrayCodeAI/trace/internal/coreapi"
 )
-
-func makeJWT(t *testing.T, headerJSON, payloadJSON string) string {
-	t.Helper()
-	enc := base64.RawURLEncoding
-	return strings.Join([]string{
-		enc.EncodeToString([]byte(headerJSON)),
-		enc.EncodeToString([]byte(payloadJSON)),
-		enc.EncodeToString([]byte("sig")),
-	}, ".")
-}
 
 // --- status -----------------------------------------------------------------
 
@@ -223,7 +212,7 @@ func TestRunAuthStatus_RendersSessionsTable(t *testing.T) {
 			t.Fatalf("output = %q, want table to contain %q", got, want)
 		}
 	}
-	if !strings.Contains(got, "trace logout --everywhere") {
+	if !strings.Contains(got, "entire logout --everywhere") {
 		t.Fatalf("output = %q, want logout hint tying the table to logout", got)
 	}
 }
@@ -328,7 +317,7 @@ func TestRunAuthStatus_InvalidTokenShapes(t *testing.T) {
 			if !strings.Contains(out.String(), "no longer valid") {
 				t.Fatalf("output = %q, want invalid-token message", out.String())
 			}
-			if !strings.Contains(out.String(), "trace login") {
+			if !strings.Contains(out.String(), "entire login") {
 				t.Fatalf("output = %q, want re-auth hint", out.String())
 			}
 		})

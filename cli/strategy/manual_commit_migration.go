@@ -17,7 +17,7 @@ import (
 // and either reconciles or migrates the shadow branch accordingly.
 //
 // Reconcile path: if HEAD carries this session's LastCheckpointID as an
-// Trace-Checkpoint trailer (e.g. after git reset --hard to a condensed commit),
+// Entire-Checkpoint trailer (e.g. after git reset --hard to a condensed commit),
 // both BaseCommit and AttributionBaseCommit are updated to HEAD. The old shadow
 // branch is intentionally left untouched to preserve rewind data.
 //

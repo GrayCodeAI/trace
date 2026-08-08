@@ -15,11 +15,11 @@ import (
 	"github.com/GrayCodeAI/trace/cli/versioninfo"
 )
 
-// `trace mcp` runs a Model Context Protocol (MCP) server over stdio so that
+// `entire mcp` runs a Model Context Protocol (MCP) server over stdio so that
 // "MCP-host" agents — agents with no entire hook or context-injection channel —
 // can reach entire's machine-readable surface as MCP tools. It is the active
-// counterpart to the passive `trace status` / `trace help` discovery path: the
-// host launches `trace mcp` as a stdio server and calls the agent_help and
+// counterpart to the passive `entire status` / `entire help` discovery path: the
+// host launches `entire mcp` as a stdio server and calls the agent_help and
 // entire_status tools. The server is read-only and reuses the same live
 // agent-help / status rendering the CLI uses, so it always matches the installed
 // binary. Transport is newline-delimited JSON-RPC 2.0 (the MCP stdio framing).
@@ -216,7 +216,7 @@ func handleMCPToolCall(ctx context.Context, rootCmd *cobra.Command, params json.
 	switch call.Name {
 	case "agent_help":
 		args := strings.Fields(call.Arguments.Command)
-		// Resolve origin once (mirrors `trace agent-help`): derive both the repo
+		// Resolve origin once (mirrors `entire agent-help`): derive both the repo
 		// line and the trails-enablement check from a single scope.
 		repoLine, trailsEnabled := agentHelpRepoContext(ctx)
 		text, err := runAgentHelp(rootCmd, args, repoLine, true, trailsEnabled)

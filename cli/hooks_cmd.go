@@ -32,7 +32,7 @@ func newHooksCmd() *cobra.Command {
 		Long:   "Commands called by hooks. These are internal and not for direct user use.",
 		Hidden: true, // Internal command, not for direct user use
 		// RunE handles external agent hooks that aren't registered as subcommands.
-		// When Cobra can't match a subcommand (e.g., "trace hooks my-ext-agent stop"),
+		// When Cobra can't match a subcommand (e.g., "entire hooks my-ext-agent stop"),
 		// it falls back to this RunE with args ["my-ext-agent", "stop"].
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

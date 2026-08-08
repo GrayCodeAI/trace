@@ -18,25 +18,27 @@ import (
 	"github.com/GrayCodeAI/trace/cli/session"
 )
 
+const reviewSkillPR = "/pr-review-toolkit:review-pr"
+
 // TestReview_EnvVarAdoptionCondensesReviewMetadataOnNextCommit exercises
-// the full adoption pipeline: TRACE_REVIEW_* env vars are present when the
-// UserPromptSubmit hook fires (as `trace review` sets them on the spawned
+// the full adoption pipeline: ENTIRE_REVIEW_* env vars are present when the
+// UserPromptSubmit hook fires (as `entire review` sets them on the spawned
 // agent process), the session is tagged as a review, and the metadata is
 // condensed into the checkpoint on the next git commit.
 func TestReview_EnvVarAdoptionCondensesReviewMetadataOnNextCommit(t *testing.T) {
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	enableReviewAgent(t, env, "claude-code")
+	enableReviewAgent(t, env, agentClaudeCode)
 
-	skills := []string{"/pr-review-toolkit:review-pr", "/test-auditor"}
+	skills := []string{reviewSkillPR, "/test-auditor"}
 	reviewPrompt := composeReviewPromptForTest(skills)
 	skillsJSON, err := review.EncodeSkills(skills)
 	if err != nil {
 		t.Fatalf("encode skills: %v", err)
 	}
 
-	// Simulate the env vars that `trace review` sets on the spawned agent
+	// Simulate the env vars that `entire review` sets on the spawned agent
 	// process before running the hook.
 	reviewEnv := []string{
 		review.EnvSession + "=1",
@@ -61,7 +63,7 @@ func TestReview_EnvVarAdoptionCondensesReviewMetadataOnNextCommit(t *testing.T) 
 	if state.Kind != session.KindAgentReview {
 		t.Fatalf("state.Kind = %q, want %q", state.Kind, session.KindAgentReview)
 	}
-	if len(state.ReviewSkills) != 2 || state.ReviewSkills[0] != "/pr-review-toolkit:review-pr" || state.ReviewSkills[1] != "/test-auditor" {
+	if len(state.ReviewSkills) != 2 || state.ReviewSkills[0] != reviewSkillPR || state.ReviewSkills[1] != "/test-auditor" {
 		t.Fatalf("state.ReviewSkills = %v", state.ReviewSkills)
 	}
 	if state.ReviewPrompt != reviewPrompt {
@@ -80,7 +82,7 @@ func TestReview_EnvVarAdoptionCondensesReviewMetadataOnNextCommit(t *testing.T) 
 
 	checkpointID := env.GetCheckpointIDFromCommitMessage(env.GetHeadHash())
 	if checkpointID == "" {
-		t.Fatal("expected Trace-Checkpoint trailer on HEAD after commit")
+		t.Fatal("expected Entire-Checkpoint trailer on HEAD after commit")
 	}
 
 	summary := readCheckpointSummary(t, env, checkpointID)
@@ -95,7 +97,7 @@ func TestReview_EnvVarAdoptionCondensesReviewMetadataOnNextCommit(t *testing.T) 
 	if metadata.Kind != string(session.KindAgentReview) {
 		t.Fatalf("metadata.Kind = %q, want %q", metadata.Kind, session.KindAgentReview)
 	}
-	if len(metadata.ReviewSkills) != 2 || metadata.ReviewSkills[0] != "/pr-review-toolkit:review-pr" || metadata.ReviewSkills[1] != "/test-auditor" {
+	if len(metadata.ReviewSkills) != 2 || metadata.ReviewSkills[0] != reviewSkillPR || metadata.ReviewSkills[1] != "/test-auditor" {
 		t.Fatalf("metadata.ReviewSkills = %v", metadata.ReviewSkills)
 	}
 	if metadata.ReviewPrompt != state.ReviewPrompt {
@@ -104,18 +106,25 @@ func TestReview_EnvVarAdoptionCondensesReviewMetadataOnNextCommit(t *testing.T) 
 }
 
 func TestReviewCommand_PassesReviewEnvToSpawnedAgentHook(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		t.Skip("fake agent launcher uses a POSIX shell script")
 	}
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	enableReviewAgent(t, env, "claude-code")
+	enableReviewAgent(t, env, agentClaudeCode)
 	env.WriteSettings(map[string]any{
-		"enabled": true,
-		"review": map[string]any{
-			"claude-code": map[string]any{
-				"skills": []string{"/review"},
+		"enabled":                true,
+		"review_default_profile": "general",
+		"review_profiles": map[string]any{
+			"general": map[string]any{
+				"task": "Test review task.",
+				"agents": map[string]any{
+					agentClaudeCode: map[string]any{
+						"skills": []string{"/review"},
+					},
+				},
+				"judge": map[string]any{"agent": agentClaudeCode},
 			},
 		},
 	})
@@ -125,22 +134,25 @@ func TestReviewCommand_PassesReviewEnvToSpawnedAgentHook(t *testing.T) {
 	fakeClaude := filepath.Join(fakeBinDir, "claude")
 	fakeAgent := `#!/bin/sh
 set -eu
-printf '%s\n' '{"session_id":"` + sessionID + `","transcript_path":"","prompt":"review command prompt"}' | "$TRACE_TEST_BINARY" hooks claude-code user-prompt-submit
+printf '%s\n' '{"session_id":"` + sessionID + `","transcript_path":"","prompt":"review command prompt"}' | "$ENTIRE_TEST_BINARY" hooks claude-code user-prompt-submit
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":0,"output_tokens":0}}'
 `
 	if err := os.WriteFile(fakeClaude, []byte(fakeAgent), 0o755); err != nil {
 		t.Fatalf("write fake claude: %v", err)
 	}
 
-	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "review")
+	// Bare `entire review` requires an explicit profile in non-interactive mode,
+	// so name the configured profile.
+	cmd := execx.NonInteractive(context.Background(), getTestBinary(), "review", "general")
 	cmd.Dir = env.RepoDir
 	cmd.Env = envWithOverrides(
 		env.cliEnv(),
 		"PATH="+fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"TRACE_TEST_BINARY="+getTestBinary(),
+		"ENTIRE_TEST_BINARY="+getTestBinary(),
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("trace review failed: %v\nOutput:\n%s", err, output)
+		t.Fatalf("entire review failed: %v\nOutput:\n%s", err, output)
 	}
 
 	state, err := env.GetSessionState(sessionID)
@@ -175,14 +187,14 @@ func TestReviewAttach_TagsAttachedSessionAsReview(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	output := env.RunCLI("review", "attach", sessionID, "--force", "--agent", "claude-code", "--skills", "/pr-review-toolkit:review-pr")
+	output := env.RunCLI("attach", "--review", sessionID, "--force", "--agent", agentClaudeCode, "--skills", reviewSkillPR)
 	if !strings.Contains(output, "Attached session") {
 		t.Fatalf("expected attached session output, got:\n%s", output)
 	}
 
 	checkpointID := env.GetCheckpointIDFromCommitMessage(env.GetHeadHash())
 	if checkpointID == "" {
-		t.Fatal("expected Trace-Checkpoint trailer on HEAD after review attach")
+		t.Fatal("expected Entire-Checkpoint trailer on HEAD after review attach")
 	}
 
 	state, err := env.GetSessionState(sessionID)
@@ -195,7 +207,7 @@ func TestReviewAttach_TagsAttachedSessionAsReview(t *testing.T) {
 	if state.Kind != session.KindAgentReview {
 		t.Fatalf("state.Kind = %q, want %q", state.Kind, session.KindAgentReview)
 	}
-	if len(state.ReviewSkills) != 1 || state.ReviewSkills[0] != "/pr-review-toolkit:review-pr" {
+	if len(state.ReviewSkills) != 1 || state.ReviewSkills[0] != reviewSkillPR {
 		t.Fatalf("state.ReviewSkills = %v", state.ReviewSkills)
 	}
 	if state.ReviewPrompt != "review the branch for security regressions" {
@@ -211,7 +223,7 @@ func TestReviewAttach_TagsAttachedSessionAsReview(t *testing.T) {
 	if metadata.Kind != string(session.KindAgentReview) {
 		t.Fatalf("metadata.Kind = %q, want %q", metadata.Kind, session.KindAgentReview)
 	}
-	if len(metadata.ReviewSkills) != 1 || metadata.ReviewSkills[0] != "/pr-review-toolkit:review-pr" {
+	if len(metadata.ReviewSkills) != 1 || metadata.ReviewSkills[0] != reviewSkillPR {
 		t.Fatalf("metadata.ReviewSkills = %v", metadata.ReviewSkills)
 	}
 	if metadata.ReviewPrompt != "review the branch for security regressions" {
@@ -220,30 +232,39 @@ func TestReviewAttach_TagsAttachedSessionAsReview(t *testing.T) {
 }
 
 // TestReview_MissingSkillAtSpawn_ErrorsCleanly pins the runtime verification
-// guard: a settings file naming a nonexistent skill must cause trace review
+// guard: a settings file naming a nonexistent skill must cause entire review
 // to exit non-zero with a clear stderr message and leave no pending marker.
 func TestReview_MissingSkillAtSpawn_ErrorsCleanly(t *testing.T) {
 	t.Parallel()
 
 	env := NewFeatureBranchEnv(t)
-	enableReviewAgent(t, env, "claude-code")
+	enableReviewAgent(t, env, agentClaudeCode)
 
 	env.WriteSettings(map[string]any{
-		"review": map[string]any{
-			"claude-code": map[string]any{
-				"skills": []string{"/nonexistent:skill-xyz"},
+		"review_default_profile": "general",
+		"review_profiles": map[string]any{
+			"general": map[string]any{
+				"task": "Test review task.",
+				"agents": map[string]any{
+					agentClaudeCode: map[string]any{
+						"skills": []string{"/nonexistent:skill-xyz"},
+					},
+				},
+				"judge": map[string]any{"agent": agentClaudeCode},
 			},
 		},
 	})
 
-	output, exitErr := env.RunCLIWithError("review")
+	// Bare `entire review` requires an explicit profile in non-interactive mode,
+	// so name the configured profile to reach the skill-verification guard.
+	output, exitErr := env.RunCLIWithError("review", "general")
 	if exitErr == nil {
 		t.Fatalf("expected non-zero exit; output:\n%s", output)
 	}
 	if !strings.Contains(output, "not installed") {
 		t.Errorf("stderr should mention skill not installed; got:\n%s", output)
 	}
-	if _, err := os.Stat(filepath.Join(env.RepoDir, ".git", "trace-sessions", "review-pending.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(env.RepoDir, ".git", "entire-sessions", "review-pending.json")); !os.IsNotExist(err) {
 		t.Errorf("pending marker should not exist; stat err=%v", err)
 	}
 }
@@ -272,7 +293,10 @@ func envWithOverrides(base []string, overrides ...string) []string {
 
 func enableReviewAgent(t *testing.T, env *TestEnv, name string) {
 	t.Helper()
-	env.RunCLI("enable", "--agent", name, "--telemetry=false")
+	// Pin the git-branch backend: readCheckpointSummary/readSessionMetadata
+	// resolve checkpoint content from the v1 metadata branch, and first-run
+	// enable now defaults new setups to git-refs.
+	env.RunCLI("enable", "--agent", name, "--telemetry=false", "--checkpoint-backend", "branch")
 }
 
 func readCheckpointSummary(t *testing.T, env *TestEnv, checkpointID string) checkpoint.CheckpointSummary {
@@ -290,7 +314,7 @@ func readCheckpointSummary(t *testing.T, env *TestEnv, checkpointID string) chec
 	return summary
 }
 
-func readSessionMetadata(t *testing.T, env *TestEnv, checkpointID string) checkpoint.CommittedMetadata {
+func readSessionMetadata(t *testing.T, env *TestEnv, checkpointID string) checkpoint.Metadata {
 	t.Helper()
 
 	content, found := env.ReadFileFromBranch(paths.MetadataBranchName, SessionMetadataPath(checkpointID))
@@ -298,7 +322,7 @@ func readSessionMetadata(t *testing.T, env *TestEnv, checkpointID string) checkp
 		t.Fatalf("session metadata not found for %s", checkpointID)
 	}
 
-	var metadata checkpoint.CommittedMetadata
+	var metadata checkpoint.Metadata
 	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
 		t.Fatalf("failed to parse session metadata: %v\n%s", err, content)
 	}

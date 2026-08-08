@@ -97,7 +97,7 @@ func TestServerMode_HappyPath(t *testing.T) {
 	nowUTC = func() time.Time { return time.Date(2026, 4, 16, 0, 0, 0, 0, time.UTC) }
 	t.Cleanup(func() { nowUTC = oldNow })
 
-	t.Setenv("TRACE_API_BASE_URL", mock.URL)
+	t.Setenv("ENTIRE_API_BASE_URL", mock.URL)
 	t.Chdir(dir)
 
 	got, err := Run(context.Background(), Options{
@@ -127,7 +127,7 @@ func TestServerMode_ExplicitReposDoNotRequireCurrentRepo(t *testing.T) {
 			t.Fatal(err)
 		}
 		repos, ok := body["repos"].([]any)
-		if !ok || len(repos) != 2 || repos[0] != testRepoFullName || repos[1] != "GrayCodeAI/trace.io" {
+		if !ok || len(repos) != 2 || repos[0] != testRepoFullName || repos[1] != "entireio/entire.io" {
 			t.Fatalf("unexpected repos payload: %v", body)
 		}
 		if _, ok := body["repo"]; ok {
@@ -141,7 +141,7 @@ func TestServerMode_ExplicitReposDoNotRequireCurrentRepo(t *testing.T) {
 				"normalized_since": "2026-04-09T00:00:00Z",
 				"normalized_until": "2026-04-16T00:00:00Z",
 			},
-			"covered_repos":      []string{testRepoFullName, "GrayCodeAI/trace.io"},
+			"covered_repos":      []string{testRepoFullName, "entireio/entire.io"},
 			"repos":              []any{},
 			"generated_markdown": testDispatchGeneratedHello,
 			"totals": map[string]any{
@@ -168,11 +168,11 @@ func TestServerMode_ExplicitReposDoNotRequireCurrentRepo(t *testing.T) {
 	nowUTC = func() time.Time { return time.Date(2026, 4, 16, 0, 0, 0, 0, time.UTC) }
 	t.Cleanup(func() { nowUTC = oldNow })
 
-	t.Setenv("TRACE_API_BASE_URL", mock.URL)
+	t.Setenv("ENTIRE_API_BASE_URL", mock.URL)
 
 	got, err := Run(context.Background(), Options{
 		Mode:      ModeServer,
-		RepoPaths: []string{testRepoFullName, "GrayCodeAI/trace.io"},
+		RepoPaths: []string{testRepoFullName, "entireio/entire.io"},
 		Since:     "7d",
 	})
 	if err != nil {
@@ -253,7 +253,7 @@ func TestServerMode_RequiresGeneratedMarkdown(t *testing.T) {
 	nowUTC = func() time.Time { return time.Date(2026, 4, 16, 0, 0, 0, 0, time.UTC) }
 	t.Cleanup(func() { nowUTC = oldNow })
 
-	t.Setenv("TRACE_API_BASE_URL", mock.URL)
+	t.Setenv("ENTIRE_API_BASE_URL", mock.URL)
 	t.Chdir(dir)
 
 	_, err := Run(context.Background(), Options{
@@ -324,7 +324,7 @@ func TestServerMode_NormalizesWindowAndSanitizesVoice(t *testing.T) {
 
 	stubCloudDispatchAuth(t)
 
-	t.Setenv("TRACE_API_BASE_URL", mock.URL)
+	t.Setenv("ENTIRE_API_BASE_URL", mock.URL)
 
 	got, err := Run(context.Background(), Options{
 		Mode:      ModeServer,
@@ -380,7 +380,7 @@ func TestServerMode_InsecureHTTPAuthBypassesSecureURLCheck(t *testing.T) {
 		nowUTC = oldNow
 	})
 
-	t.Setenv("TRACE_API_BASE_URL", mock.URL)
+	t.Setenv("ENTIRE_API_BASE_URL", mock.URL)
 
 	got, err := Run(context.Background(), Options{
 		Mode:             ModeServer,
@@ -408,7 +408,7 @@ func TestServerMode_RejectsPlainHTTPBaseURL(t *testing.T) {
 	}
 	t.Cleanup(func() { lookupResourceToken = oldResource })
 
-	t.Setenv("TRACE_API_BASE_URL", "http://dispatch.example.invalid")
+	t.Setenv("ENTIRE_API_BASE_URL", "http://dispatch.example.invalid")
 
 	_, err := Run(context.Background(), Options{
 		Mode:      ModeServer,

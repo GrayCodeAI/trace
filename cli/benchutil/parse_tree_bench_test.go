@@ -159,7 +159,7 @@ func benchUpdateSubtreeTreeSurgery(priorCheckpoints int) func(*testing.B) {
 	}
 }
 
-// benchUpdateSubtreeFlattenRebuild benchmarks the old approach: flatten trace tree,
+// benchUpdateSubtreeFlattenRebuild benchmarks the old approach: flatten entire tree,
 // add new entries, rebuild from scratch. O(total checkpoints).
 func benchUpdateSubtreeFlattenRebuild(priorCheckpoints int) func(*testing.B) {
 	return func(b *testing.B) {
@@ -184,7 +184,7 @@ func benchUpdateSubtreeFlattenRebuild(priorCheckpoints int) func(*testing.B) {
 
 		b.ResetTimer()
 		for range b.N {
-			// Flatten trace tree
+			// Flatten entire tree
 			tree, err := repo.TreeObject(rootTree)
 			if err != nil {
 				b.Fatalf("read tree: %v", err)
@@ -203,7 +203,7 @@ func benchUpdateSubtreeFlattenRebuild(priorCheckpoints int) func(*testing.B) {
 				}
 			}
 
-			// Rebuild trace tree
+			// Rebuild entire tree
 			_, err = checkpoint.BuildTreeFromEntries(context.Background(), repo, entries)
 			if err != nil {
 				b.Fatalf("BuildTreeFromEntries: %v", err)
@@ -288,7 +288,7 @@ func benchApplyTreeChangesFlattenRebuild(fileCount, changeCount int) func(*testi
 
 		b.ResetTimer()
 		for range b.N {
-			// Flatten trace tree
+			// Flatten entire tree
 			tree, err := repo.TreeObject(rootTree)
 			if err != nil {
 				b.Fatalf("read tree: %v", err)

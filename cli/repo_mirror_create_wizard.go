@@ -314,7 +314,7 @@ func mirrorCreateResultRow(r mirrorResult) []string {
 	return []string{r.owner + "/" + r.repo, r.regionLabel, r.status, url}
 }
 
-// runMirrorCreateWizard is the zero-argument `trace repo mirror create` flow:
+// runMirrorCreateWizard is the zero-argument `entire repo mirror create` flow:
 // verify auth, pick repos, pick regions, then create the cross-product of
 // mirrors in parallel and report the clone URLs. noWait/waitTimeout carry the
 // same meaning as the positional-arg create path.
@@ -329,7 +329,7 @@ func runMirrorCreateWizard(cmd *cobra.Command, noWait bool, waitTimeout time.Dur
 	// non-interactive form rather than letting huh error obscurely.
 	if !interactive.CanPromptInteractively() {
 		fmt.Fprintln(errW, "The mirror create wizard needs an interactive terminal.")
-		fmt.Fprintln(errW, "Run 'trace repo mirror create <github-url> [cluster-host]' to create one non-interactively.")
+		fmt.Fprintln(errW, "Run 'entire repo mirror create <github-url> [cluster-host]' to create one non-interactively.")
 		return NewSilentError(errors.New("not an interactive terminal"))
 	}
 
@@ -359,7 +359,7 @@ func runMirrorCreateWizard(cmd *cobra.Command, noWait bool, waitTimeout time.Dur
 	repos := selectableAvailableRepos(avail.Available)
 	if len(repos) == 0 {
 		fmt.Fprintln(errW, "No GitHub repos available to mirror (you need write access to a repo that isn't mirrored yet).")
-		fmt.Fprintln(errW, "Run 'trace repo mirror list' to see what's onboardable.")
+		fmt.Fprintln(errW, "Run 'entire repo mirror list' to see what's onboardable.")
 		return nil
 	}
 	selectedRepos, err := pickRepos(ctx, outW, repos)
@@ -395,7 +395,7 @@ func runMirrorCreateWizard(cmd *cobra.Command, noWait bool, waitTimeout time.Dur
 	return reportMirrorResults(outW, errW, results)
 }
 
-// ensureMirrorWizardAuth mirrors `trace auth status`: resolve the active
+// ensureMirrorWizardAuth mirrors `entire auth status`: resolve the active
 // target (honouring ENTIRE_TOKEN), enforce TLS on the core we'll dial, and
 // validate the token with a /me probe so the wizard fails fast with a re-login
 // hint rather than deep inside the first API call. Returns the caller's home
@@ -407,7 +407,7 @@ func ensureMirrorWizardAuth(ctx context.Context, errW io.Writer, insecure bool) 
 		return "", err
 	}
 	if target.token == "" {
-		fmt.Fprintln(errW, "Not logged in. Run 'trace login' to authenticate.")
+		fmt.Fprintln(errW, "Not logged in. Run 'entire login' to authenticate.")
 		return "", NewSilentError(errors.New("not logged in"))
 	}
 	if !insecure && target.coreURL != "" {
@@ -418,7 +418,7 @@ func ensureMirrorWizardAuth(ctx context.Context, errW io.Writer, insecure bool) 
 	profile, err := defaultFetchProfile(ctx, target.coreURL, target.token)
 	if err != nil {
 		if isKeychainTokenRejected(err) {
-			fmt.Fprintf(errW, "Login for %s is no longer valid. Run 'trace login' to re-authenticate.\n", target.coreURL)
+			fmt.Fprintf(errW, "Login for %s is no longer valid. Run 'entire login' to re-authenticate.\n", target.coreURL)
 			return "", NewSilentError(errors.New("login no longer valid"))
 		}
 		return "", fmt.Errorf("validate auth: %w", err)

@@ -37,7 +37,7 @@ func ResolveTarget(ctx context.Context) (Target, error) {
 	if err != nil {
 		return Target{}, fmt.Errorf("resolve worktree root: %w", err)
 	}
-	target, err := remote.FetchURL(ctx)
+	target, err := remote.FetchURL(ctx, remote.FetchURLOptions{WorktreeRoot: dir})
 	if err != nil {
 		return Target{}, fmt.Errorf("resolve checkpoint remote URL: %w", err)
 	}

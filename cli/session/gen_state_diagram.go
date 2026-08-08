@@ -1,7 +1,7 @@
 //go:build ignore
 
 // gen_mermaid generates the session phase state machine Mermaid diagram.
-// Run via: go generate ./cli/session/
+// Run via: go generate ./cmd/entire/cli/session/
 package main
 
 import (

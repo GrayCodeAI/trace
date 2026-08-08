@@ -7,7 +7,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/go-git/go-git/v6/config"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -99,6 +98,10 @@ var scopeName = map[config.Scope]string{
 	config.SystemScope: "system",
 }
 
+// defaultSSHSignProgram is the git-default SSH signing program ("ssh-keygen"),
+// used to detect custom signing programs like 1Password's op-ssh-sign.
+const defaultSSHSignProgram = "ssh-keygen"
+
 // hasCustomSSHSignProgram checks whether gpg.ssh.program is set to a
 // non-default value in the raw config. The git default is "ssh-keygen",
 // which works with go-git's native SSH agent signing. Custom programs
@@ -112,7 +115,7 @@ func hasCustomSSHSignProgram(raw *format.Config) bool {
 
 	program := raw.Section("gpg").Subsection("ssh").Option("program")
 
-	return program != "" && program != checkpoint.DefaultSSHSignProgram
+	return program != "" && program != defaultSSHSignProgram
 }
 
 func loadScopedConfig(source plugin.ConfigSource, scope config.Scope) *config.Config {

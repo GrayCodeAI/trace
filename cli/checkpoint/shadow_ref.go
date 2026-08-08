@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GrayCodeAI/trace/internal/flock"
+	"github.com/GrayCodeAI/trace/cli/internal/flock"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )

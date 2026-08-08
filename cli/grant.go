@@ -9,7 +9,7 @@ import (
 	"github.com/GrayCodeAI/trace/internal/coreapi"
 )
 
-// parseOrgRole maps the --role flag for `trace grant org add` to the
+// parseOrgRole maps the --role flag for `entire grant org add` to the
 // generated enum, rejecting unknown values at the CLI boundary so the
 // user gets a clear message instead of a server 422. Mirrors
 // parseProjectOwnerType. The empty string means "use the server default
@@ -42,7 +42,7 @@ func validateGrantRole(role string) error {
 	}
 }
 
-// newGrantCmd is the `trace grant` command group: manage access
+// newGrantCmd is the `entire grant` command group: manage access
 // grants and org membership on the Entire control plane. Org, project, and
 // repo each support add / list / remove.
 //

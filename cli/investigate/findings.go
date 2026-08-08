@@ -13,13 +13,13 @@ import (
 	"github.com/GrayCodeAI/trace/cli/paths"
 )
 
-// runInvestigateFindings handles `trace investigate --findings`: prints
-// a plain list of saved investigations with `trace investigate fix
+// runInvestigateFindings handles `entire investigate --findings`: prints
+// a plain list of saved investigations with `entire investigate fix
 // <run-id>` hints.
 func runInvestigateFindings(ctx context.Context, cmd *cobra.Command, silentErr func(error) error) error {
 	if _, err := paths.WorktreeRoot(ctx); err != nil {
 		cmd.SilenceUsage = true
-		fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Run `trace enable` first.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Run `entire enable` first.")
 		return wrapSilent(silentErr, errors.New("not a git repository"))
 	}
 	store, err := NewLocalManifestStore(ctx)
@@ -48,7 +48,7 @@ func PrintInvestigateFindingsListForTest(w io.Writer, manifests []LocalManifest)
 
 // printInvestigateFindingsList renders the non-TTY list view. Each
 // manifest gets a header row, a `view:` hint (pointing at
-// `trace investigate show <run-id>` which works regardless of where the
+// `entire investigate show <run-id>` which works regardless of where the
 // findings live), and a `fix:` hint (the apply-findings next step). When
 // findings are still on disk (paused/cancelled), an additional `path:`
 // line points at the file for direct inspection.
@@ -57,15 +57,15 @@ func printInvestigateFindingsList(w io.Writer, manifests []LocalManifest) {
 	fmt.Fprintln(w)
 	for _, m := range manifests {
 		fmt.Fprintln(w, investigateManifestListLabel(m))
-		fmt.Fprintf(w, "  view:    trace investigate show %s\n", m.RunID)
+		fmt.Fprintf(w, "  view:    entire investigate show %s\n", m.RunID)
 		// `fix` only makes sense for terminal outcomes (Quorum/Stalled).
 		// Paused/Cancelled runs need to be resumed (or cleaned), not fed
 		// into a coding agent off of partial findings.
 		switch m.Outcome {
 		case string(OutcomePaused), string(OutcomeCancelled):
-			fmt.Fprintf(w, "  resume:  trace investigate --continue %s\n", m.RunID)
+			fmt.Fprintf(w, "  resume:  entire investigate --continue %s\n", m.RunID)
 		default:
-			fmt.Fprintf(w, "  fix:     trace investigate fix %s\n", m.RunID)
+			fmt.Fprintf(w, "  fix:     entire investigate fix %s\n", m.RunID)
 		}
 		// Add the on-disk path only when it points at a still-present
 		// file (paused/cancelled). Terminal outcomes auto-clean the

@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	trailWorktreesRelDir      = ".trace/worktrees"
+	trailWorktreesRelDir      = ".entire/worktrees"
 	trailWorktreeFallbackName = "branch"
 )
 
@@ -78,7 +78,7 @@ func trailWorktreeBaseRoot(ctx context.Context) (string, error) {
 	return filepath.Dir(gitDir), nil
 }
 
-// ensureTrailWorktreeIgnoreRule appends the .trace/worktrees/ rule to an
+// ensureTrailWorktreeIgnoreRule appends the .entire/worktrees/ rule to an
 // existing repo-root .gitignore when the directory isn't already ignored.
 // Already ignored, or no .gitignore at all → silent no-op: the CLI doesn't
 // impose ignore policy on a repo that hasn't opted into one, and committing
@@ -100,7 +100,7 @@ func ensureTrailWorktreeIgnoreRule(ctx context.Context, w io.Writer, root string
 		return err
 	}
 	if appended {
-		fmt.Fprintln(w, "Added .trace/worktrees/ to .gitignore — commit it to keep the rule.")
+		fmt.Fprintln(w, "Added .entire/worktrees/ to .gitignore — commit it to keep the rule.")
 	}
 	return nil
 }
@@ -190,7 +190,7 @@ func loadWorktreeIncludePatterns(root string) ([]string, error) {
 }
 
 // listIgnoredFiles returns untracked files ignored by repo ignore rules,
-// relative to root. Paths under .trace/worktrees are excluded: sibling trail
+// relative to root. Paths under .entire/worktrees are excluded: sibling trail
 // worktrees' own ignored files (e.g. their .env) appear in the listing at the
 // main root and would otherwise be copied into every new worktree.
 func listIgnoredFiles(ctx context.Context, root string) ([]string, error) {
@@ -293,7 +293,7 @@ func copyIncludedFile(src string, destRoot *os.Root, rel string) error {
 }
 
 // checkoutTrailWorktree checks branch out into a managed worktree under
-// <main-root>/.trace/worktrees instead of switching the current checkout.
+// <main-root>/.entire/worktrees instead of switching the current checkout.
 // The final output line is a shell-safe `cd '<path>'` hint.
 func checkoutTrailWorktree(ctx context.Context, w, errW io.Writer, branch string, force bool, trailNumber int) error {
 	// The trail number disambiguates the worktree directory: sanitized branch
@@ -437,7 +437,7 @@ func staleTrailWorktreeError(branch, path string) error {
 }
 
 // trailWorktreeMatch describes an existing worktree that has a branch checked
-// out; managed means it lives under <root>/.trace/worktrees.
+// out; managed means it lives under <root>/.entire/worktrees.
 type trailWorktreeMatch struct {
 	path    string
 	managed bool

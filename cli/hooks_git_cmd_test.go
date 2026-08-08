@@ -13,6 +13,8 @@ import (
 	"github.com/GrayCodeAI/trace/cli/agent/types"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
+	"github.com/GrayCodeAI/trace/cli/testutil"
+	"github.com/go-git/go-git/v6"
 )
 
 func TestInitHookLogging(t *testing.T) {
@@ -30,12 +32,12 @@ func TestInitHookLogging(t *testing.T) {
 	}
 
 	t.Run("returns cleanup func when no session state exists", func(t *testing.T) {
-		// Create settings.json to indicate Trace is set up
-		traceDir := filepath.Join(tmpDir, paths.TraceDir)
-		if err := os.MkdirAll(traceDir, 0o755); err != nil {
-			t.Fatalf("failed to create .trace directory: %v", err)
+		// Create settings.json to indicate Entire is set up
+		entireDir := filepath.Join(tmpDir, paths.EntireDir)
+		if err := os.MkdirAll(entireDir, 0o755); err != nil {
+			t.Fatalf("failed to create .entire directory: %v", err)
 		}
-		settingsFile := filepath.Join(traceDir, "settings.json")
+		settingsFile := filepath.Join(entireDir, "settings.json")
 		if err := os.WriteFile(settingsFile, []byte(`{"enabled":true}`), 0o644); err != nil {
 			t.Fatalf("failed to create settings file: %v", err)
 		}
@@ -48,19 +50,19 @@ func TestInitHookLogging(t *testing.T) {
 	})
 
 	t.Run("initializes logging when session state exists", func(t *testing.T) {
-		// Create .trace directory
-		traceDir := filepath.Join(tmpDir, paths.TraceDir)
-		if err := os.MkdirAll(traceDir, 0o755); err != nil {
-			t.Fatalf("failed to create .trace directory: %v", err)
+		// Create .entire directory
+		entireDir := filepath.Join(tmpDir, paths.EntireDir)
+		if err := os.MkdirAll(entireDir, 0o755); err != nil {
+			t.Fatalf("failed to create .entire directory: %v", err)
 		}
 
-		// Create settings.json to indicate Trace is set up in this repo
-		settingsFile := filepath.Join(traceDir, "settings.json")
+		// Create settings.json to indicate Entire is set up in this repo
+		settingsFile := filepath.Join(entireDir, "settings.json")
 		if err := os.WriteFile(settingsFile, []byte(`{"enabled":true,"strategy":"manual-commit"}`), 0o644); err != nil {
 			t.Fatalf("failed to create settings file: %v", err)
 		}
 
-		// Create session state file in .git/trace-sessions/
+		// Create session state file in .git/entire-sessions/
 		sessionID := "test-session-12345"
 		stateDir := filepath.Join(tmpDir, ".git", session.SessionStateDirName)
 		if err := os.MkdirAll(stateDir, 0o755); err != nil {
@@ -85,7 +87,7 @@ func TestInitHookLogging(t *testing.T) {
 		defer os.Remove(stateFile)
 
 		// Create logs directory (logging.Init will try to create the log file)
-		logsDir := filepath.Join(traceDir, "logs")
+		logsDir := filepath.Join(entireDir, "logs")
 		if err := os.MkdirAll(logsDir, 0o755); err != nil {
 			t.Fatalf("failed to create logs directory: %v", err)
 		}
@@ -97,7 +99,7 @@ func TestInitHookLogging(t *testing.T) {
 		defer cleanup()
 
 		// Verify log file was created
-		logFile := filepath.Join(logsDir, "trace.log")
+		logFile := filepath.Join(logsDir, "entire.log")
 		if _, err := os.Stat(logFile); os.IsNotExist(err) {
 			t.Errorf("expected log file to be created at %s", logFile)
 		}
@@ -105,10 +107,10 @@ func TestInitHookLogging(t *testing.T) {
 }
 
 // TestInitHookLogging_SkipsWhenNotSetUp tests that initHookLogging(context.Background()) does not
-// create .trace/logs/ in repos where Trace has not been set up.
+// create .entire/logs/ in repos where Entire has not been set up.
 // This is a separate test because it needs its own t.Chdir() to a different directory.
 func TestInitHookLogging_SkipsWhenNotSetUp(t *testing.T) {
-	// Create a temp directory without .trace/settings.json
+	// Create a temp directory without .entire/settings.json
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 
@@ -119,7 +121,7 @@ func TestInitHookLogging_SkipsWhenNotSetUp(t *testing.T) {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
-	// Do NOT create .trace/settings.json - simulating a repo where Trace is not set up
+	// Do NOT create .entire/settings.json - simulating a repo where Entire is not set up
 
 	cleanup := initHookLogging(context.Background())
 	if cleanup == nil {
@@ -127,15 +129,15 @@ func TestInitHookLogging_SkipsWhenNotSetUp(t *testing.T) {
 	}
 	cleanup() // Should not panic
 
-	// Verify .trace/logs was NOT created
-	logsDir := filepath.Join(tmpDir, ".trace", "logs")
+	// Verify .entire/logs was NOT created
+	logsDir := filepath.Join(tmpDir, ".entire", "logs")
 	if _, err := os.Stat(logsDir); !os.IsNotExist(err) {
-		t.Errorf("expected .trace/logs to NOT be created when Trace is not set up, but it exists")
+		t.Errorf("expected .entire/logs to NOT be created when Entire is not set up, but it exists")
 	}
 }
 
 // TestInitHookLogging_SkipsWhenDisabled tests that initHookLogging(context.Background()) does not
-// create .trace/logs/ when Trace is set up but disabled.
+// create .entire/logs/ when Entire is set up but disabled.
 func TestInitHookLogging_SkipsWhenDisabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
@@ -147,12 +149,12 @@ func TestInitHookLogging_SkipsWhenDisabled(t *testing.T) {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
-	// Create .trace/settings.json with enabled: false
-	traceDir := filepath.Join(tmpDir, paths.TraceDir)
-	if err := os.MkdirAll(traceDir, 0o755); err != nil {
-		t.Fatalf("failed to create .trace directory: %v", err)
+	// Create .entire/settings.json with enabled: false
+	entireDir := filepath.Join(tmpDir, paths.EntireDir)
+	if err := os.MkdirAll(entireDir, 0o755); err != nil {
+		t.Fatalf("failed to create .entire directory: %v", err)
 	}
-	settingsFile := filepath.Join(traceDir, "settings.json")
+	settingsFile := filepath.Join(entireDir, "settings.json")
 	if err := os.WriteFile(settingsFile, []byte(`{"enabled":false,"strategy":"manual-commit"}`), 0o644); err != nil {
 		t.Fatalf("failed to create settings file: %v", err)
 	}
@@ -163,14 +165,14 @@ func TestInitHookLogging_SkipsWhenDisabled(t *testing.T) {
 	}
 	cleanup() // Should not panic
 
-	// Verify .trace/logs was NOT created
-	logsDir := filepath.Join(tmpDir, ".trace", "logs")
+	// Verify .entire/logs was NOT created
+	logsDir := filepath.Join(tmpDir, ".entire", "logs")
 	if _, err := os.Stat(logsDir); !os.IsNotExist(err) {
-		t.Errorf("expected .trace/logs to NOT be created when Trace is disabled, but it exists")
+		t.Errorf("expected .entire/logs to NOT be created when Entire is disabled, but it exists")
 	}
 }
 
-// TestHooksGitCmd_DiscoverExternalAgents_WhenEnabled verifies that when Trace is set up
+// TestHooksGitCmd_DiscoverExternalAgents_WhenEnabled verifies that when Entire is set up
 // and enabled, PersistentPreRunE calls external.DiscoverAndRegister so that external
 // agents are available during hook execution (e.g. post-commit condensation).
 func TestHooksGitCmd_DiscoverExternalAgents_WhenEnabled(t *testing.T) {
@@ -191,12 +193,15 @@ func TestHooksGitCmd_DiscoverExternalAgents_WhenEnabled(t *testing.T) {
 	paths.ClearWorktreeRootCache()
 	session.ClearGitCommonDirCache()
 
-	// Create .trace/settings.json with enabled: true and external_agents: true
-	traceDir := filepath.Join(tmpDir, paths.TraceDir)
-	if err := os.MkdirAll(traceDir, 0o755); err != nil {
-		t.Fatalf("failed to create .trace directory: %v", err)
+	// Reset global state before the test
+	gitHooksDisabled = false
+
+	// Create .entire/settings.json with enabled: true and external_agents: true
+	entireDir := filepath.Join(tmpDir, paths.EntireDir)
+	if err := os.MkdirAll(entireDir, 0o755); err != nil {
+		t.Fatalf("failed to create .entire directory: %v", err)
 	}
-	settingsFile := filepath.Join(traceDir, "settings.json")
+	settingsFile := filepath.Join(entireDir, "settings.json")
 	if err := os.WriteFile(settingsFile, []byte(`{"enabled":true,"external_agents":true}`), 0o644); err != nil {
 		t.Fatalf("failed to write settings file: %v", err)
 	}
@@ -205,7 +210,7 @@ func TestHooksGitCmd_DiscoverExternalAgents_WhenEnabled(t *testing.T) {
 	// Use a unique name to avoid conflicts with agents registered by other tests.
 	agentName := types.AgentName("hooktest-discovery-agent")
 	binDir := t.TempDir()
-	binPath := filepath.Join(binDir, "trace-agent-"+string(agentName))
+	binPath := filepath.Join(binDir, "entire-agent-"+string(agentName))
 	infoJSON := `{
   "protocol_version": 1,
   "name": "` + string(agentName) + `",
@@ -231,9 +236,9 @@ func TestHooksGitCmd_DiscoverExternalAgents_WhenEnabled(t *testing.T) {
 		t.Fatalf("git hook command failed: %v", err)
 	}
 
-	// PersistentPreRunE should not have set the disabled context key
-	if cmd.Context().Value(gitHooksDisabledKey) == true {
-		t.Fatal("gitHooksDisabledKey should not be set when Trace is enabled")
+	// PersistentPreRunE should not have disabled hooks
+	if gitHooksDisabled {
+		t.Fatal("gitHooksDisabled should be false when Entire is enabled")
 	}
 
 	// The external agent should have been discovered and registered in the agent registry,
@@ -257,5 +262,105 @@ func TestHooksGitCmd_ExposesPostRewriteSubcommand(t *testing.T) {
 	}
 	if found.Use != "post-rewrite <rewrite-type>" {
 		t.Fatalf("post-rewrite Use = %q, want %q", found.Use, "post-rewrite <rewrite-type>")
+	}
+}
+
+func TestHooksGitCommitMsgSkipsWhenPolicyUnsupported(t *testing.T) {
+	repoDir := t.TempDir()
+	testutil.InitRepo(t, repoDir)
+	testutil.WriteFile(t, repoDir, "f.txt", "x")
+	testutil.GitAdd(t, repoDir, "f.txt")
+	testutil.GitCommit(t, repoDir, "init")
+	t.Chdir(repoDir)
+	paths.ClearWorktreeRootCache()
+	session.ClearGitCommonDirCache()
+	gitHooksDisabled = false
+
+	enableEntire(t, repoDir)
+
+	repo, err := git.PlainOpen(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	writeUnsupportedCheckpointPolicyForCLITest(t, repo)
+
+	msgFile := filepath.Join(repoDir, "COMMIT_EDITMSG")
+	message := []byte("Entire-Checkpoint: abc123def456\n")
+	if err := os.WriteFile(msgFile, message, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newHooksGitCmd()
+	cmd.SetArgs([]string{"commit-msg", msgFile})
+	cmd.SetContext(context.Background())
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("commit-msg should skip checkpoint work when policy is unsupported: %v", err)
+	}
+
+	got, err := os.ReadFile(msgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(message) {
+		t.Fatalf("commit message changed under unsupported policy:\ngot:\n%s\nwant:\n%s", got, message)
+	}
+}
+
+func TestHooksGitCommitMsgSkipsWhenPolicyUnreadable(t *testing.T) {
+	repoDir := t.TempDir()
+	testutil.InitRepo(t, repoDir)
+	testutil.WriteFile(t, repoDir, "f.txt", "x")
+	testutil.GitAdd(t, repoDir, "f.txt")
+	testutil.GitCommit(t, repoDir, "init")
+	t.Chdir(repoDir)
+	paths.ClearWorktreeRootCache()
+	session.ClearGitCommonDirCache()
+	gitHooksDisabled = false
+
+	enableEntire(t, repoDir)
+
+	repo, err := git.PlainOpen(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	writeMalformedCheckpointPolicyForCLITest(t, repo)
+
+	msgFile := filepath.Join(repoDir, "COMMIT_EDITMSG")
+	message := []byte("Entire-Checkpoint: abc123def456\n")
+	if err := os.WriteFile(msgFile, message, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newHooksGitCmd()
+	cmd.SetArgs([]string{"commit-msg", msgFile})
+	cmd.SetContext(context.Background())
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("commit-msg should skip checkpoint work when policy is unreadable: %v", err)
+	}
+
+	got, err := os.ReadFile(msgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(message) {
+		t.Fatalf("commit message changed under unreadable policy:\ngot:\n%s\nwant:\n%s", got, message)
+	}
+}
+
+func TestGitHookPolicySkipsWhenRepoCannotOpen(t *testing.T) {
+	t.Chdir(t.TempDir())
+	paths.ClearWorktreeRootCache()
+
+	g := &gitHookContext{
+		hookName: "commit-msg",
+		ctx:      context.Background(),
+	}
+
+	if !g.skipUnsupportedCheckpointPolicy() {
+		t.Fatal("expected git hook to skip when repository cannot be opened")
 	}
 }

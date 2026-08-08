@@ -97,7 +97,7 @@ func hookManagerWarning(managers []hookManager, cmdPrefix string) string {
 		} else {
 			fmt.Fprintf(&b, "Note: %s detected (%s)\n", m.Name, m.ConfigPath)
 			fmt.Fprintf(&b, "\n")
-			fmt.Fprintf(&b, "  If %s reinstalls hooks, run 'trace enable' to restore Trace's hooks.\n", m.Name)
+			fmt.Fprintf(&b, "  If %s reinstalls hooks, run 'entire enable' to restore Entire's hooks.\n", m.Name)
 			fmt.Fprintf(&b, "\n")
 		}
 	}

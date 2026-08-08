@@ -13,7 +13,7 @@ import (
 	"github.com/GrayCodeAI/trace/internal/coreapi"
 )
 
-// newRepoCmd is the `trace repo` command group: control-plane
+// newRepoCmd is the `entire repo` command group: control-plane
 // repository lifecycle (create, list within a project, get, delete), the
 // `mirror` and `visibility` subtrees, plus the `clone` convenience that
 // resolves a mirror and shells out to `git clone`. Other git content

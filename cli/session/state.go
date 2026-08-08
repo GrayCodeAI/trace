@@ -24,7 +24,7 @@ import (
 
 const (
 	// SessionStateDirName is the directory name for session state files within git common dir.
-	SessionStateDirName = "trace-sessions"
+	SessionStateDirName = "entire-sessions"
 
 	// StaleSessionThreshold is the duration after which an ended session is considered stale
 	// and will be automatically deleted during load/list operations.
@@ -33,18 +33,6 @@ const (
 	// StuckActiveThreshold is the duration after which an ACTIVE session with no
 	// interaction is considered stuck (used by "entire doctor" and "entire status").
 	StuckActiveThreshold = 1 * time.Hour
-
-	// MaxFilesTouched is the maximum number of files tracked in FilesTouched.
-	// When exceeded, oldest entries are removed to prevent unbounded growth.
-	MaxFilesTouched = 1000
-
-	// MaxPromptAttributions is the maximum number of attributions tracked.
-	// When exceeded, oldest entries are removed to prevent unbounded growth.
-	MaxPromptAttributions = 100
-
-	// MaxTurnCheckpointIDs is the maximum number of checkpoint IDs tracked per turn.
-	// When exceeded, oldest entries are removed to prevent unbounded growth.
-	MaxTurnCheckpointIDs = 500
 )
 
 // Kind identifies the purpose of a session. Empty means "normal" (legacy
@@ -58,20 +46,20 @@ const (
 type Kind string
 
 const (
-	// KindAgentReview tags a session created by `trace review` (agent-driven
+	// KindAgentReview tags a session created by `entire review` (agent-driven
 	// review). Future review kinds (e.g., manual review) should be defined as
 	// distinct Kind values AND added to Kind.IsReview so the checkpoint's
 	// HasReview umbrella flag keeps covering them.
 	KindAgentReview Kind = "agent_review"
 
-	// KindAgentInvestigate tags a session created by `trace investigate`
+	// KindAgentInvestigate tags a session created by `entire investigate`
 	// (agent-driven investigation). A session is review OR investigate, not
 	// both — Kind is single-valued. Future investigate kinds should be added
 	// to Kind.IsInvestigate so the checkpoint's HasInvestigation umbrella
 	// flag keeps covering them.
 	KindAgentInvestigate Kind = "agent_investigate"
 
-	// KindImported tags a checkpoint created by `trace import` from a
+	// KindImported tags a checkpoint created by `entire import` from a
 	// pre-existing agent transcript. Imported checkpoints are read-only and
 	// commit-less; they live on the v1 metadata branch and push like any other
 	// checkpoint.
@@ -99,7 +87,7 @@ func (k Kind) IsInvestigate() bool {
 }
 
 // IsImported reports whether this Kind is a read-only session reconstructed by
-// `trace import` from a pre-existing transcript. Imported sessions are exempt
+// `entire import` from a pre-existing transcript. Imported sessions are exempt
 // from lifecycle management (staleness, orphan cleanup) and are not
 // resumable/rewindable. Centralized here so those call sites don't couple to
 // the string literal across packages.
@@ -136,7 +124,7 @@ type State struct {
 	WorktreeID string `json:"worktree_id,omitempty"`
 
 	// AdoptedIntoWorktreePath marks a source-side tombstone left behind after
-	// `trace session adopt` moves this session into another repository/worktree.
+	// `entire session adopt` moves this session into another repository/worktree.
 	// Hook TurnStart must not reactivate tombstoned source records, otherwise the
 	// same session ID can diverge in two session stores.
 	AdoptedIntoWorktreePath string `json:"adopted_into_worktree_path,omitempty"`
@@ -149,7 +137,7 @@ type State struct {
 	// turn. Captured on each turn start so it tracks branches created or renamed
 	// after the session began. Empty when HEAD was detached or for sessions
 	// recorded before this field existed (callers derive it from commit trailers
-	// as a fallback). Lets `trace resume` map a stopped session back to its
+	// as a fallback). Lets `entire resume` map a stopped session back to its
 	// branch without the user remembering it.
 	Branch string `json:"branch,omitempty"`
 
@@ -165,7 +153,7 @@ type State struct {
 	Phase Phase `json:"phase,omitempty"`
 
 	// Kind tags the session's purpose. Empty for normal agent sessions;
-	// set to KindAgentReview when the session was started by `trace review`.
+	// set to KindAgentReview when the session was started by `entire review`.
 	Kind Kind `json:"kind,omitempty"`
 
 	// ReviewSkills is the snapshot of configured review skills at session start.
@@ -240,7 +228,7 @@ type State struct {
 	FilesTouched []string `json:"files_touched,omitempty"`
 
 	// LastCheckpointID is the checkpoint ID from the most recent condensation.
-	// Used to restore the Trace-Checkpoint trailer on amend and to identify
+	// Used to restore the Entire-Checkpoint trailer on amend and to identify
 	// sessions that have been condensed at least once. Cleared on new prompt.
 	LastCheckpointID id.CheckpointID `json:"last_checkpoint_id,omitempty"`
 
@@ -268,12 +256,12 @@ type State struct {
 	// successful condensation). Prevents repeated warnings on every commit.
 	DivergenceNoticeShown bool `json:"divergence_notice_shown,omitempty"`
 
-	// AttachedManually indicates this session was imported via `trace attach` rather
+	// AttachedManually indicates this session was imported via `entire attach` rather
 	// than being captured by hooks during normal agent execution.
 	AttachedManually bool `json:"attached_manually,omitempty"`
 
 	// ContextInjectionDecided records that the once-per-session model-context
-	// injection (e.g. the `trace trail` pointer) has been handled for this
+	// injection (e.g. the `entire trail` pointer) has been handled for this
 	// session, so the dispatcher does not re-inject on later turns. Set on the
 	// first normal turn regardless of whether anything was injected: the prompt
 	// path reads only clone-local cached trail enablement, and a missing/stale
@@ -379,15 +367,12 @@ type State struct {
 	// timeout. Only meaningful on Owner.Host.
 	Owner *proclive.Identity `json:"owner,omitempty"`
 
-	// Metadata holds user-defined session tags collected from TRACE_TAG_*
-	// environment variables (e.g. TRACE_TAG_HAWK_SESSION_ID for hawk-eco
-	// integration). Displayed by `trace sessions` and used for cross-tool
-	// correlation.
-	Metadata map[string]string `json:"metadata,omitempty"`
-
-	// Annotations holds free-form user comments attached to the session via
-	// `trace annotate`. Appended by annotate_cmd; rendered in session listings.
+	// Annotations holds user comments attached via `trace annotate`.
 	Annotations []Annotation `json:"annotations,omitempty"`
+
+	// Metadata holds user-defined session tags collected from TRACE_TAG_*
+	// environment variables plus fork-provenance keys written by `trace fork`.
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // Annotation is a user comment attached to a session via `trace annotate`.
@@ -561,7 +546,7 @@ func (s *State) OwnerExited() bool {
 func (s *State) IsStale() bool {
 	// Imported sessions are historical, read-only records reconstructed from
 	// pre-existing transcripts; their timestamps are always old by nature.
-	// Never auto-purge them or they'd vanish from `trace session list` on the
+	// Never auto-purge them or they'd vanish from `entire session list` on the
 	// first read after import.
 	if s.Kind.IsImported() {
 		return false
@@ -661,8 +646,6 @@ func (s *StateStore) Save(ctx context.Context, state *State) error {
 		return fmt.Errorf("invalid session ID: %w", err)
 	}
 
-	state.EnforceLimits()
-
 	if err := os.MkdirAll(s.stateDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create session state directory: %w", err)
 	}
@@ -714,27 +697,6 @@ func (s *StateStore) Save(ctx context.Context, state *State) error {
 }
 
 // Clear removes the session state file for the given session ID.
-// EnforceLimits caps unbounded arrays to prevent state file bloat.
-// When limits are exceeded, the oldest entries (those at the front of each
-// slice) are discarded, preserving the most recent data.
-// Call this after modifying state and before Save.
-func (s *State) EnforceLimits() {
-	// Cap FilesTouched: keep the most recent MaxFilesTouched entries
-	if len(s.FilesTouched) > MaxFilesTouched {
-		s.FilesTouched = s.FilesTouched[len(s.FilesTouched)-MaxFilesTouched:]
-	}
-
-	// Cap PromptAttributions: keep the most recent entries
-	if len(s.PromptAttributions) > MaxPromptAttributions {
-		s.PromptAttributions = s.PromptAttributions[len(s.PromptAttributions)-MaxPromptAttributions:]
-	}
-
-	// Cap TurnCheckpointIDs: keep the most recent entries
-	if len(s.TurnCheckpointIDs) > MaxTurnCheckpointIDs {
-		s.TurnCheckpointIDs = s.TurnCheckpointIDs[len(s.TurnCheckpointIDs)-MaxTurnCheckpointIDs:]
-	}
-}
-
 func (s *StateStore) Clear(ctx context.Context, sessionID string) error {
 	_ = ctx // Reserved for future use
 

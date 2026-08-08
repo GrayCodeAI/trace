@@ -65,6 +65,7 @@ func GetGitAuthor(ctx context.Context) (*GitAuthor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
 	name, email := strategy.GetGitAuthorFromRepo(repo)
 
@@ -109,11 +110,14 @@ func IsOnDefaultBranch(ctx context.Context) (bool, string, error) {
 	if err != nil {
 		return false, "", fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 	return isOnDefaultBranchRepo(repo)
 }
 
-// isOnDefaultBranchRepo reports whether the repository's HEAD is on its
-// default branch, returning the branch name.
+// isOnDefaultBranchRepo reports whether the repo's current branch is its default
+// branch, along with the current branch name (empty on a detached HEAD). It
+// operates on an already-open repository so callers that already hold one need
+// not reopen it.
 func isOnDefaultBranchRepo(repo *git.Repository) (bool, string, error) {
 	// Get current branch
 	head, err := repo.Head()
@@ -187,6 +191,7 @@ func GetCurrentBranch(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
 	head, err := repo.Head()
 	if err != nil {
@@ -198,50 +203,6 @@ func GetCurrentBranch(ctx context.Context) (string, error) {
 	}
 
 	return head.Name().Short(), nil
-}
-
-// GetMergeBase finds the common ancestor (merge-base) between two branches.
-// Returns the hash of the merge-base commit.
-func GetMergeBase(ctx context.Context, branch1, branch2 string) (*plumbing.Hash, error) {
-	repo, err := openRepository(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open git repository: %w", err)
-	}
-
-	// Resolve branch references
-	ref1, err := repo.Reference(plumbing.NewBranchReferenceName(branch1), true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve branch %s: %w", branch1, err)
-	}
-
-	ref2, err := repo.Reference(plumbing.NewBranchReferenceName(branch2), true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve branch %s: %w", branch2, err)
-	}
-
-	// Get commit objects
-	commit1, err := repo.CommitObject(ref1.Hash())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get commit for %s: %w", branch1, err)
-	}
-
-	commit2, err := repo.CommitObject(ref2.Hash())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get commit for %s: %w", branch2, err)
-	}
-
-	// Find common ancestor
-	mergeBase, err := commit1.MergeBase(commit2)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find merge base: %w", err)
-	}
-
-	if len(mergeBase) == 0 {
-		return nil, errors.New("no common ancestor found")
-	}
-
-	hash := mergeBase[0].Hash
-	return &hash, nil
 }
 
 // HasUncommittedChanges checks if there are any uncommitted changes in the repository.
@@ -268,6 +229,7 @@ func BranchExistsOnRemote(ctx context.Context, branchName string) (bool, error) 
 	if err != nil {
 		return false, fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
 	// Check for remote reference: refs/remotes/origin/<branchName>
 	_, err = repo.Reference(plumbing.NewRemoteReferenceName("origin", branchName), true)
@@ -282,7 +244,7 @@ func BranchExistsOnRemote(ctx context.Context, branchName string) (bool, error) 
 	lsCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	lsCmd := exec.CommandContext(lsCtx, "git", "ls-remote", "--heads", "origin", "refs/heads/"+branchName) // #nosec G204 -- branchName is passed as a single argument (not shell-interpreted); fixed git subcommand
+	lsCmd := exec.CommandContext(lsCtx, "git", "ls-remote", "--heads", "origin", "refs/heads/"+branchName)
 	output, lsErr := lsCmd.Output()
 	if lsErr != nil {
 		// ls-remote failed (no network, no remote, etc.) — treat as not found
@@ -298,6 +260,7 @@ func BranchExistsLocally(ctx context.Context, branchName string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
 	_, err = repo.Reference(plumbing.NewBranchReferenceName(branchName), true)
 	if err != nil {
@@ -311,45 +274,27 @@ func BranchExistsLocally(ctx context.Context, branchName string) (bool, error) {
 }
 
 // CheckoutBranch switches to the specified local branch or commit.
-// Uses go-git v6 Worktree.Checkout (the go-git v5 bug where Checkout
-// deleted untracked files — go-git/go-git#970 — is fixed in v6).
+// Uses git CLI instead of go-git to work around go-git v5 bug where Checkout
+// deletes untracked files (see https://github.com/go-git/go-git/issues/970).
+// Should be switched back to go-git once we upgrade to go-git v6
 // Returns an error if the ref doesn't exist or checkout fails.
 func CheckoutBranch(ctx context.Context, ref string) error {
 	if strings.HasPrefix(ref, "-") {
 		return fmt.Errorf("checkout failed: invalid ref %q", ref)
 	}
-
-	repo, err := openRepository(ctx)
-	if err != nil {
-		return fmt.Errorf("checkout failed: %w", err)
+	cmd := exec.CommandContext(ctx, "git", "checkout", ref)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("checkout failed: %s: %w", strings.TrimSpace(string(output)), err)
 	}
-
-	wt, err := repo.Worktree()
-	if err != nil {
-		return fmt.Errorf("checkout failed: could not get worktree: %w", err)
-	}
-
-	// Try to resolve as a branch name first.
-	branchRef := plumbing.NewBranchReferenceName(ref)
-	if _, refErr := repo.Reference(branchRef, true); refErr == nil {
-		return wt.Checkout(&git.CheckoutOptions{ //nolint:forbidigo,wrapcheck // Safe: go-git v6 fixed the v5 bug that deleted .gitignored dirs (go-git/go-git#970)
-			Branch: branchRef,
-		})
-	}
-
-	// Fall back to resolving as a commit hash (full or abbreviated).
-	hash, err := repo.ResolveRevision(plumbing.Revision(ref))
-	if err != nil {
-		return fmt.Errorf("checkout failed: ref %q not found: %w", ref, err)
-	}
-	return wt.Checkout(&git.CheckoutOptions{ //nolint:forbidigo,wrapcheck // Safe: go-git v6 fixed the v5 bug that deleted .gitignored dirs (go-git/go-git#970)
-		Hash: *hash,
-	})
+	return nil
 }
 
 // ValidateBranchName checks if a branch name is valid using git check-ref-format.
 // Returns an error if the name is invalid or contains unsafe characters.
 func ValidateBranchName(ctx context.Context, branchName string) error {
+	if strings.HasPrefix(branchName, "-") {
+		return fmt.Errorf("invalid branch name %q", branchName)
+	}
 	cmd := exec.CommandContext(ctx, "git", "check-ref-format", "--branch", branchName)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("invalid branch name %q", branchName)
@@ -390,6 +335,7 @@ func FetchAndCheckoutRemoteBranch(ctx context.Context, branchName string) error 
 	if err != nil {
 		return fmt.Errorf("failed to open repository: %w", err)
 	}
+	defer repo.Close()
 
 	// Get the remote branch reference
 	remoteRef, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", branchName), true)
@@ -408,28 +354,48 @@ func FetchAndCheckoutRemoteBranch(ctx context.Context, branchName string) error 
 	return CheckoutBranch(ctx, branchName)
 }
 
-// FetchMetadataBranch fetches the trace/checkpoints/v1 branch from origin and
-// creates/updates the local branch. The fetch is unfiltered (no --filter=blob:none)
-// because callers (resume, explain) need blob content, not just tree structure.
+// metadataFetchDepth is the absolute --depth used when fetching the metadata
+// branch. It is far above any realistic checkpoint-branch length, so it fully
+// fetches the branch (and heals a prior --depth=1 shallow boundary on it),
+// while staying below math.MaxInt32 (2147483647) — which git special-cases as
+// a global unshallow that would also deepen an unrelated shallow source tree.
+const metadataFetchDepth = 1_000_000_000
+
+// FetchMetadataBranch fetches the entire/checkpoints/v1 branch from origin
+// with full blob content. Used as a fallback by resume/explain when the
+// tree-only probe is insufficient (e.g. the metadata.json blob is missing).
 func FetchMetadataBranch(ctx context.Context) error {
-	return fetchMetadataFromOrigin(ctx, false /* shallow */, true /* noFilter */)
+	return fetchMetadataFromOrigin(ctx, true /* noFilter */)
 }
 
-// FetchMetadataTreeOnly fetches the tip of the trace/checkpoints/v1 branch
-// from origin with --depth=1, downloading only the latest commit and its tree
-// objects. After this call, tree navigation via go-git works but blob reads
-// will fail for objects that weren't previously fetched.
+// FetchMetadataTreeOnly fetches the entire/checkpoints/v1 commit+tree graph
+// from origin to resolve the latest checkpoint, relying on --filter=blob:none
+// (when filtered fetches are enabled) to skip blob content rather than on a
+// shallow --depth=1 fetch.
+//
+// It deliberately does NOT use --depth=1. A depth-1 fetch adds the fetched tip
+// to .git/shallow, and any ref pointing at a shallow commit (the durable
+// refs/remotes/origin/<branch> that git updates opportunistically, or the local
+// primary) can no longer be walked past that boundary. A later `git merge-base`
+// against it then falsely reports "no common ancestor", which makes push and
+// `entire doctor` treat an ordinary diverged-but-behind branch as disconnected
+// (see strategy.IsMetadataDisconnected). Fetching at full depth keeps the
+// remote-tracking ref connected; git fetches incrementally, so after the first
+// fetch only new commits/trees travel.
+//
+// It also heals a repo that an older CLI already shallowed: the ref-scoped deep
+// fetch removes the boundary left by a prior --depth=1 fetch rather than letting
+// it linger forever, without deepening an independently-shallow source tree.
 func FetchMetadataTreeOnly(ctx context.Context) error {
-	return fetchMetadataFromOrigin(ctx, true /* shallow */, false /* noFilter */)
+	return fetchMetadataFromOrigin(ctx, false /* noFilter */)
 }
 
-// fetchMetadataFromOrigin fetches the v1 metadata branch from origin into the
-// remote-tracking ref refs/remotes/origin/<branch>, then safely advances the
-// local branch to match. When shallow is true, --depth=1 is added so only
-// the tip is downloaded. When noFilter is true, --filter=blob:none is suppressed
-// so blob content is included.
-func fetchMetadataFromOrigin(ctx context.Context, shallow, noFilter bool) error {
-	branchName := paths.MetadataBranchName
+func fetchMetadataFromOrigin(ctx context.Context, noFilter bool) error {
+	refs := checkpoint.ResolveRefs(ctx)
+	if !refs.Primary.IsBranch() {
+		return fmt.Errorf("primary metadata ref %s is not a branch", refs.Primary)
+	}
+	branchName := refs.Primary.Short()
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -445,8 +411,14 @@ func fetchMetadataFromOrigin(ctx context.Context, shallow, noFilter bool) error 
 		Remote:   fetchTarget,
 		RefSpecs: []string{refSpec},
 		NoTags:   true,
-		Shallow:  shallow,
 		NoFilter: noFilter,
+		// Heal a repo that an older CLI already shallowed with --depth=1: the
+		// metadata tip is grafted in .git/shallow, which breaks merge-base
+		// connectivity checks for the metadata branch. A ref-scoped deep fetch
+		// removes that boundary without deepening an independently-shallow
+		// source-tree clone (unlike --unshallow), and is a no-op on a normally
+		// cloned repo.
+		Depth: metadataFetchDepth,
 	})
 	if fetchErr != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -459,15 +431,41 @@ func fetchMetadataFromOrigin(ctx context.Context, shallow, noFilter bool) error 
 	if err != nil {
 		return fmt.Errorf("failed to open repository: %w", err)
 	}
+	defer repo.Close()
 
 	remoteRef, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", branchName), true)
 	if err != nil {
 		return fmt.Errorf("branch '%s' not found on origin: %w", branchName, err)
 	}
-	if err := strategy.SafelyAdvanceLocalRef(ctx, repo, plumbing.NewBranchReferenceName(branchName), remoteRef.Hash()); err != nil {
+	if err := strategy.SafelyAdvanceLocalRef(ctx, repo, refs.Primary, remoteRef.Hash()); err != nil {
 		return fmt.Errorf("failed to advance local %s branch: %w", branchName, err)
 	}
 	return nil
+}
+
+// FetchMetadataFromCheckpointRemote fetches the entire/checkpoints/v1 branch from the
+// configured checkpoint_remote URL and updates the local branch.
+// Returns an error if the fetch fails or no checkpoint_remote is configured.
+func FetchMetadataFromCheckpointRemote(ctx context.Context) error {
+	configured := remote.Configured(ctx)
+	if !configured {
+		return errors.New("no checkpoint_remote configured")
+	}
+	checkpointURL, err := remote.FetchURL(ctx)
+	if err != nil {
+		return fmt.Errorf("checkpoint_remote configured but could not resolve URL: %w", err)
+	}
+
+	if err := strategy.FetchMetadataBranch(ctx, checkpointURL); err != nil {
+		return fmt.Errorf("failed to fetch from checkpoint remote: %w", err)
+	}
+	return nil
+}
+
+// resolveCheckpointFetchTarget returns the fetch target for checkpoint data.
+// Thin alias for remote.CheckpointFetchTarget (the single source of truth).
+func resolveCheckpointFetchTarget(ctx context.Context) string {
+	return remote.CheckpointFetchTarget(ctx)
 }
 
 // FetchCheckpointRef fetches a single per-checkpoint ref from the checkpoint
@@ -480,7 +478,7 @@ func FetchCheckpointRef(ctx context.Context, ref plumbing.ReferenceName) error {
 }
 
 // checkpointRefListTimeout bounds the names-only ls-remote used by user-facing
-// `trace checkpoint list` / branch explain. Kept short (not a full fetch
+// `entire checkpoint list` / branch explain. Kept short (not a full fetch
 // budget): discovery is best-effort and additive — on timeout or unreachable
 // remote the store falls back to local refs rather than stalling a previously
 // instant command for tens of seconds.
@@ -548,37 +546,6 @@ func parseCheckpointRefNames(output []byte) []plumbing.ReferenceName {
 		names = append(names, plumbing.ReferenceName(name))
 	}
 	return names
-}
-
-// FetchMetadataFromCheckpointRemote fetches the trace/checkpoints/v1 branch from the
-// configured checkpoint_remote URL and updates the local branch.
-// Returns an error if the fetch fails or no checkpoint_remote is configured.
-func FetchMetadataFromCheckpointRemote(ctx context.Context) error {
-	configured := remote.Configured(ctx)
-	if !configured {
-		return errors.New("no checkpoint_remote configured")
-	}
-	checkpointURL, err := remote.FetchURL(ctx)
-	if err != nil {
-		return fmt.Errorf("checkpoint_remote configured but could not resolve URL: %w", err)
-	}
-
-	if err := strategy.FetchMetadataBranch(ctx, checkpointURL); err != nil {
-		return fmt.Errorf("failed to fetch from checkpoint remote: %w", err)
-	}
-	return nil
-}
-
-// resolveCheckpointFetchTarget returns the fetch target for checkpoint data.
-// It prefers the effective URL resolved by checkpoint/remote.FetchURL, which is
-// the source of truth for checkpoint fetch location. If URL resolution fails, it
-// falls back to the origin remote name so callers can still attempt a fetch.
-func resolveCheckpointFetchTarget(ctx context.Context) string {
-	url, err := remote.FetchURL(ctx)
-	if err == nil && url != "" {
-		return url
-	}
-	return "origin"
 }
 
 // FetchBlobsByHash fetches specific blob objects from the remote by their SHA-1 hashes.

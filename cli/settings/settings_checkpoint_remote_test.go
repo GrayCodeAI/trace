@@ -13,14 +13,14 @@ import (
 func TestGetCheckpointRemote_NotConfigured(t *testing.T) {
 	t.Parallel()
 
-	s := &TraceSettings{}
+	s := &EntireSettings{}
 	assert.Nil(t, s.GetCheckpointRemote())
 }
 
 func TestGetCheckpointRemote_EmptyStrategyOptions(t *testing.T) {
 	t.Parallel()
 
-	s := &TraceSettings{
+	s := &EntireSettings{
 		StrategyOptions: map[string]any{},
 	}
 	assert.Nil(t, s.GetCheckpointRemote())
@@ -29,7 +29,7 @@ func TestGetCheckpointRemote_EmptyStrategyOptions(t *testing.T) {
 func TestGetCheckpointRemote_StructuredGithub(t *testing.T) {
 	t.Parallel()
 
-	s := &TraceSettings{
+	s := &EntireSettings{
 		StrategyOptions: map[string]any{
 			"checkpoint_remote": map[string]any{
 				"provider": "github",
@@ -46,7 +46,7 @@ func TestGetCheckpointRemote_StructuredGithub(t *testing.T) {
 func TestGetCheckpointRemote_MissingProvider(t *testing.T) {
 	t.Parallel()
 
-	s := &TraceSettings{
+	s := &EntireSettings{
 		StrategyOptions: map[string]any{
 			"checkpoint_remote": map[string]any{
 				"repo": "org/checkpoints",
@@ -59,7 +59,7 @@ func TestGetCheckpointRemote_MissingProvider(t *testing.T) {
 func TestGetCheckpointRemote_MissingRepo(t *testing.T) {
 	t.Parallel()
 
-	s := &TraceSettings{
+	s := &EntireSettings{
 		StrategyOptions: map[string]any{
 			"checkpoint_remote": map[string]any{
 				"provider": "github",
@@ -72,7 +72,7 @@ func TestGetCheckpointRemote_MissingRepo(t *testing.T) {
 func TestGetCheckpointRemote_RepoWithoutSlash(t *testing.T) {
 	t.Parallel()
 
-	s := &TraceSettings{
+	s := &EntireSettings{
 		StrategyOptions: map[string]any{
 			"checkpoint_remote": map[string]any{
 				"provider": "github",
@@ -86,7 +86,7 @@ func TestGetCheckpointRemote_RepoWithoutSlash(t *testing.T) {
 func TestGetCheckpointRemote_LegacyStringIgnored(t *testing.T) {
 	t.Parallel()
 
-	s := &TraceSettings{
+	s := &EntireSettings{
 		StrategyOptions: map[string]any{
 			"checkpoint_remote": "git@github.com:org/checkpoints.git",
 		},
@@ -97,7 +97,7 @@ func TestGetCheckpointRemote_LegacyStringIgnored(t *testing.T) {
 func TestGetCheckpointRemote_WrongType(t *testing.T) {
 	t.Parallel()
 
-	s := &TraceSettings{
+	s := &EntireSettings{
 		StrategyOptions: map[string]any{
 			"checkpoint_remote": 42,
 		},
@@ -107,8 +107,8 @@ func TestGetCheckpointRemote_WrongType(t *testing.T) {
 
 func TestGetCheckpointRemote_JSONRoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
-	traceDir := filepath.Join(tmpDir, ".trace")
-	require.NoError(t, os.MkdirAll(traceDir, 0o755))
+	entireDir := filepath.Join(tmpDir, ".entire")
+	require.NoError(t, os.MkdirAll(entireDir, 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".git"), 0o755))
 
 	settingsJSON := `{
@@ -120,7 +120,7 @@ func TestGetCheckpointRemote_JSONRoundTrip(t *testing.T) {
 			}
 		}
 	}`
-	require.NoError(t, os.WriteFile(filepath.Join(traceDir, "settings.json"), []byte(settingsJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(entireDir, "settings.json"), []byte(settingsJSON), 0o644))
 
 	t.Chdir(tmpDir)
 
@@ -135,7 +135,7 @@ func TestGetCheckpointRemote_JSONRoundTrip(t *testing.T) {
 func TestGetCheckpointRemote_CoexistsWithPushSessions(t *testing.T) {
 	t.Parallel()
 
-	s := &TraceSettings{
+	s := &EntireSettings{
 		StrategyOptions: map[string]any{
 			"push_sessions": false,
 			"checkpoint_remote": map[string]any{
@@ -170,4 +170,22 @@ func TestCheckpointRemoteConfig_Owner(t *testing.T) {
 			assert.Equal(t, tt.want, c.Owner())
 		})
 	}
+}
+
+func TestHasCheckpointRemoteKey(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, (&EntireSettings{}).HasCheckpointRemoteKey(), "nil strategy options")
+	assert.False(t, (&EntireSettings{StrategyOptions: map[string]any{}}).HasCheckpointRemoteKey(), "empty strategy options")
+	assert.True(t, (&EntireSettings{StrategyOptions: map[string]any{
+		"checkpoint_remote": map[string]any{"provider": "github", "repo": "org/repo"},
+	}}).HasCheckpointRemoteKey(), "well-formed entry")
+	// The reason this method exists: a malformed entry still counts as
+	// present even though GetCheckpointRemote rejects it.
+	assert.True(t, (&EntireSettings{StrategyOptions: map[string]any{
+		"checkpoint_remote": map[string]any{"provider": "github"},
+	}}).HasCheckpointRemoteKey(), "malformed entry still counts as present")
+	assert.True(t, (&EntireSettings{StrategyOptions: map[string]any{
+		"checkpoint_remote": nil,
+	}}).HasCheckpointRemoteKey(), "null entry still counts as present")
 }

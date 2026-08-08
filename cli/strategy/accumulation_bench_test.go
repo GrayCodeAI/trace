@@ -62,7 +62,7 @@ func TestPostCommit_Issue591_SubagentScaleRegression(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("session work"), 0o644))
 	_, err = wt.Add("test.txt")
 	require.NoError(t, err)
-	_, err = wt.Commit("commit session work\n\nTrace-Checkpoint: a1b2c3d4e5f6\n", &git.CommitOptions{
+	_, err = wt.Commit("commit session work\n\nEntire-Checkpoint: a1b2c3d4e5f6\n", &git.CommitOptions{
 		Author: &object.Signature{Name: "User", Email: "user@test.com", When: time.Now()},
 	})
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestPostCommit_Issue591_SubagentScaleRegression(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "unrelated.txt"), []byte("unrelated"), 0o644))
 	_, err = wt.Add("unrelated.txt")
 	require.NoError(t, err)
-	_, err = wt.Commit("unrelated work\n\nTrace-Checkpoint: b1b2b3b4b5b6\n", &git.CommitOptions{
+	_, err = wt.Commit("unrelated work\n\nEntire-Checkpoint: b1b2b3b4b5b6\n", &git.CommitOptions{
 		Author: &object.Signature{Name: "User", Email: "user@test.com", When: time.Now()},
 	})
 	require.NoError(t, err)

@@ -36,7 +36,7 @@ func checkpointMatchesSessionFilter(p strategy.RewindPoint, sessionFilter string
 }
 
 // explainExportOptions describes a request for one of the machine-readable
-// output modes of `trace checkpoint explain`. Exactly one of json,
+// output modes of `entire checkpoint explain`. Exactly one of json,
 // transcript, or rawTranscript is set when this struct reaches
 // runExplainExport. sessionIndex is meaningful only for transcript /
 // rawTranscript requests; cobra-layer validation rejects it elsewhere.
@@ -87,7 +87,7 @@ func runExplainExport(ctx context.Context, w, errW io.Writer, opts explainExport
 // resolveExplainCheckpointID resolves a target to a fully-qualified checkpoint
 // ID. Resolution order matches the prose explain command:
 //
-//  1. --commit <ref>  → resolve as a git commit, read Trace-Checkpoint
+//  1. --commit <ref>  → resolve as a git commit, read Entire-Checkpoint
 //     trailer; remote metadata fetch-on-miss when the trailer points at
 //     an unknown checkpoint.
 //  2. --checkpoint <id> or positional checkpoint-id-prefix → match against
@@ -164,7 +164,7 @@ func resolveExplainCheckpointID(ctx context.Context, errW io.Writer, opts explai
 var errExportTargetNotCommit = errors.New("commit not found")
 
 // resolveCheckpointFromCommitRef opens the repo, resolves a git commit-ish,
-// and extracts the Trace-Checkpoint trailer. If the resolved checkpoint
+// and extracts the Entire-Checkpoint trailer. If the resolved checkpoint
 // isn't present in the local committed list, retries once after fetching
 // metadata from the remote — symmetry with the prefix path so
 // `--commit <sha>` and `--checkpoint <prefix>` share the same fetch
@@ -199,7 +199,7 @@ func resolveCheckpointFromCommitRef(ctx context.Context, errW io.Writer, commitR
 	}
 	cpID, found := trailers.ParseCheckpoint(commit.Message)
 	if !found {
-		return id.CheckpointID(""), nil, fmt.Errorf("commit %s has no Trace-Checkpoint trailer", commit.Hash)
+		return id.CheckpointID(""), nil, fmt.Errorf("commit %s has no Entire-Checkpoint trailer", commit.Hash)
 	}
 	lookup, lookupErr := newExplainCheckpointLookup(ctx)
 	if lookupErr != nil {
@@ -252,7 +252,7 @@ func matchCheckpointPrefixWithRemoteFallback(ctx context.Context, errW io.Writer
 
 	// git-refs primary: there is no single metadata branch to fetch — each
 	// checkpoint is its own ref. When the prefix is a full checkpoint ID (the
-	// Trace-Checkpoint commit trailer always is), fetch that one ref directly,
+	// Entire-Checkpoint commit trailer always is), fetch that one ref directly,
 	// then re-list. A shorter prefix cannot be fetched per-ref, and under a
 	// refs primary there is no v1 metadata branch to fetch either, so a
 	// short-prefix miss stays local-only.
@@ -383,7 +383,7 @@ func runExplainStreamTranscript(ctx context.Context, w, errW io.Writer, opts exp
 }
 
 // checkpointExportJSON is the metadata-only envelope returned by
-// `trace checkpoint explain --json`. It exposes only existing CheckpointSummary
+// `entire checkpoint explain --json`. It exposes only existing CheckpointSummary
 // and Metadata fields — no schema invention, no transcript bytes.
 //
 // `partial` is true when any session metadata read failed; the offending
@@ -598,7 +598,7 @@ func summaryToExportJSON(s *checkpoint.Summary) *checkpointSessionSummary {
 }
 
 // branchCheckpointJSON is one entry in the list emitted by
-// `trace checkpoint explain --json` (no target).
+// `entire checkpoint explain --json` (no target).
 type branchCheckpointJSON struct {
 	CheckpointID     string    `json:"checkpoint_id"`
 	SessionID        string    `json:"session_id,omitempty"`

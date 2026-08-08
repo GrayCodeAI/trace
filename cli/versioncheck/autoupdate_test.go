@@ -24,7 +24,7 @@ func newAutoUpdateFixture(t *testing.T) *autoUpdateFixture {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(envKillSwitch, "")
 	// Force interactive mode on by default; individual tests can opt out.
-	t.Setenv("TRACE_TEST_TTY", "1")
+	t.Setenv("ENTIRE_TEST_TTY", "1")
 
 	f := &autoUpdateFixture{chooseValue: autoUpdateActionUpdate}
 
@@ -133,7 +133,7 @@ func TestMaybeAutoUpdate_NoTTY(t *testing.T) {
 	f := newAutoUpdateFixture(t)
 	useBrewExecutable(t)
 	// No TTY → MaybeAutoUpdate must print the manual hint instead of prompting.
-	t.Setenv("TRACE_TEST_TTY", "0")
+	t.Setenv("ENTIRE_TEST_TTY", "0")
 
 	var buf bytes.Buffer
 	MaybeAutoUpdate(context.Background(), &buf, "1.0.0", "v2.0.0")
@@ -148,7 +148,7 @@ func TestMaybeAutoUpdate_CIEnv(t *testing.T) {
 	f := newAutoUpdateFixture(t)
 	useBrewExecutable(t)
 	// Clear the test override so the real CanPromptInteractively path runs.
-	t.Setenv("TRACE_TEST_TTY", "")
+	t.Setenv("ENTIRE_TEST_TTY", "")
 	t.Setenv("CI", "true")
 
 	var buf bytes.Buffer
@@ -200,7 +200,7 @@ func TestMaybeAutoUpdate_WindowsUnknownInstallerNoAutoRun(t *testing.T) {
 	}
 	out := buf.String()
 	if !strings.Contains(out, "download the latest release") ||
-		!strings.Contains(out, "github.com/entireio/cli/releases") {
+		!strings.Contains(out, "github.com/GrayCodeAI/trace/releases") {
 		t.Errorf("expected download-page hint, got: %q", out)
 	}
 	if strings.Contains(out, "curl -fsSL") {

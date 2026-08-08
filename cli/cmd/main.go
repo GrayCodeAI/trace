@@ -266,7 +266,7 @@ func fatalMessage(err error, parsedURL *url.URL) string {
 // URL that omits its cluster host. Two shapes reach here: a forge id typed
 // where the host belongs (entire://gh/owner/repo, Host="gh") and an empty host
 // (entire:///gh/owner/repo, Host=""). When the reconstructed shorthand is a
-// complete forge/owner/repo triple that `trace repo clone` can resolve, it
+// complete forge/owner/repo triple that `entire repo clone` can resolve, it
 // points at the interactive picker; a partial path (entire://gh,
 // entire://gh/owner) or a non-forge segment falls back to the plain
 // missing-host error rather than suggesting a clone command that would reject
@@ -279,7 +279,7 @@ func missingClusterHostMessage(parsedURL *url.URL, rawURL string) string {
 	if parsedURL.Host != "" {
 		shorthand = parsedURL.Host + "/" + shorthand
 	}
-	// Only point at `trace repo clone` for a complete forge/owner/repo triple
+	// Only point at `entire repo clone` for a complete forge/owner/repo triple
 	// (the shape parseMirrorCloneRef accepts); anything shorter would relocate
 	// the failure into a clone command that rejects the ref.
 	seg := strings.Split(strings.Trim(shorthand, "/"), "/")
@@ -311,7 +311,7 @@ func infoFlagText(flag, version string) (string, bool) {
 	case "--help":
 		return fmt.Sprintf("%s %s\n\n"+
 			"This is a helper which Git calls when encountering entire://... URLs.  "+
-			"For more information see https://github.com/entireio/cli.\n",
+			"For more information see https://github.com/GrayCodeAI/trace.\n",
 			remotehelper.BinaryName, version), true
 	}
 	return "", false
@@ -386,13 +386,13 @@ func resolveCreds(ctx context.Context, parsedURL *url.URL, skipTLS bool, httpCli
 	// The login-JWT provider transparently refreshes an expired login JWT
 	// from the stored refresh token (serialised across processes, rotated
 	// tokens persisted) before the git transport uses it as the bearer.
-	_, _ = auth.NewRefreshingLoginCredential(nil, httpClient.Transport, skipTLS)
+	loginCredential, err := auth.NewRefreshingLoginCredential(clusterCtx, httpClient.Transport, skipTLS)
 	if err != nil {
-		return nil, nil, err //nolint:wrapcheck
+		return nil, nil, err //nolint:wrapcheck // NewRefreshingLoginCredential already returns a user-facing error
 	}
 
 	debuglog.Printf("auth: login token bearer (core=%s)", clusterCtx.CoreURL)
-	provider, onUnauthorized := refreshingProvider(nil)
+	provider, onUnauthorized := refreshingProvider(loginCredential)
 	return provider, onUnauthorized, nil
 }
 

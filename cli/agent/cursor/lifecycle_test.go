@@ -135,7 +135,7 @@ func TestParseHookEvent_TurnStart_CLINoTranscriptPath(t *testing.T) {
 	if err := os.WriteFile(transcriptFile, []byte(`{"role":"user"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
-	t.Setenv("TRACE_TEST_CURSOR_PROJECT_DIR", tmpDir)
+	t.Setenv("ENTIRE_TEST_CURSOR_PROJECT_DIR", tmpDir)
 
 	// Cursor CLI sends null for transcript_path in BeforeSubmitPrompt
 	input := `{"conversation_id": "cli-turn-start", "prompt": "Hello"}`
@@ -174,6 +174,79 @@ func TestParseHookEvent_TurnEnd(t *testing.T) {
 	if event.SessionID != "sess-789" {
 		t.Errorf("expected conversation_id 'sess-789', got %q", event.SessionID)
 	}
+}
+
+// TestParseHookEvent_TurnEnd_PopulatesTokenUsage verifies that Cursor's stop
+// hook payload — which carries token usage fields not present in the JSONL
+// transcript — is converted into event.TokenUsage. The framework treats this
+// as the canonical token-usage signal for Cursor sessions because the JSONL
+// transcript has no usage data.
+//
+// Cursor reports input_tokens as the total (cache + fresh), so the derived
+// input must subtract cache_read_tokens and cache_write_tokens to avoid
+// double-counting.
+func TestParseHookEvent_TurnEnd_PopulatesTokenUsage(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{
+		"conversation_id": "tok-1",
+		"transcript_path": "/tmp/stop.jsonl",
+		"input_tokens": 5000,
+		"output_tokens": 200,
+		"cache_read_tokens": 4000,
+		"cache_write_tokens": 800
+	}`
+
+	event, err := ag.ParseHookEvent(context.Background(), HookNameStop, strings.NewReader(input))
+	require.NoError(t, err)
+	require.NotNil(t, event)
+	require.NotNil(t, event.TokenUsage, "stop hook with token fields must populate event.TokenUsage")
+
+	require.Equal(t, 200, event.TokenUsage.InputTokens, "InputTokens = total_input - cache_read - cache_write = 5000-4000-800")
+	require.Equal(t, 4000, event.TokenUsage.CacheReadTokens)
+	require.Equal(t, 800, event.TokenUsage.CacheCreationTokens)
+	require.Equal(t, 200, event.TokenUsage.OutputTokens)
+	require.Equal(t, 1, event.TokenUsage.APICallCount)
+}
+
+// TestParseHookEvent_TurnEnd_OmittedTokensYieldNil verifies that older Cursor
+// versions / hook variants without token fields produce a nil TokenUsage so
+// downstream code can distinguish "no data" from "all zeros".
+func TestParseHookEvent_TurnEnd_OmittedTokensYieldNil(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{"conversation_id": "no-tok", "transcript_path": "/tmp/stop.jsonl"}`
+
+	event, err := ag.ParseHookEvent(context.Background(), HookNameStop, strings.NewReader(input))
+	require.NoError(t, err)
+	require.NotNil(t, event)
+	require.Nil(t, event.TokenUsage, "TokenUsage must be nil when the hook payload reports no token fields")
+}
+
+// TestParseHookEvent_TurnEnd_CacheLargerThanInputClampsToZero is a defensive
+// check: if cache_read + cache_write exceeds input_tokens (likely a Cursor
+// reporting bug), the derived fresh input is clamped to zero rather than
+// going negative, since negative tokens are nonsensical for billing displays.
+func TestParseHookEvent_TurnEnd_CacheLargerThanInputClampsToZero(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{
+		"conversation_id": "clamp",
+		"transcript_path": "/tmp/stop.jsonl",
+		"input_tokens": 100,
+		"output_tokens": 50,
+		"cache_read_tokens": 80,
+		"cache_write_tokens": 80
+	}`
+
+	event, err := ag.ParseHookEvent(context.Background(), HookNameStop, strings.NewReader(input))
+	require.NoError(t, err)
+	require.NotNil(t, event)
+	require.NotNil(t, event.TokenUsage)
+	require.Equal(t, 0, event.TokenUsage.InputTokens, "negative fresh-input must clamp to zero")
 }
 
 func TestParseHookEvent_SessionEnd(t *testing.T) {
@@ -223,7 +296,7 @@ func TestParseHookEvent_TurnEnd_CLINoTranscriptPath(t *testing.T) {
 	if err := os.WriteFile(transcriptFile, []byte(`{"role":"user"}`), 0o644); err != nil {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
-	t.Setenv("TRACE_TEST_CURSOR_PROJECT_DIR", transcriptDir)
+	t.Setenv("ENTIRE_TEST_CURSOR_PROJECT_DIR", transcriptDir)
 
 	// CLI stop hook: no transcript_path
 	input := `{"conversation_id": "cli-session-id", "status": "completed", "loop_count": 3}`
@@ -259,7 +332,7 @@ func TestParseHookEvent_SessionEnd_CLINoTranscriptPath(t *testing.T) {
 	if err := os.WriteFile(transcriptFile, []byte(`{"role":"user"}`), 0o644); err != nil {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
-	t.Setenv("TRACE_TEST_CURSOR_PROJECT_DIR", transcriptDir)
+	t.Setenv("ENTIRE_TEST_CURSOR_PROJECT_DIR", transcriptDir)
 
 	// CLI sessionEnd hook: no transcript_path, has richer fields
 	input := `{"conversation_id": "cli-end-session", "reason": "user_closed", "duration_ms": 45000, "is_background_agent": false, "final_status": "completed"}`

@@ -22,7 +22,7 @@ func newDoctorLogsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs",
 		Short: "Show recent operational logs",
-		Long: `Print operational logs from .trace/logs/trace.log.
+		Long: `Print operational logs from .entire/logs/entire.log.
 
 By default, prints the last 100 lines. Use --tail N to change.
 Use --follow to stream new lines as they are written (Ctrl+C to exit).`,
@@ -32,8 +32,8 @@ Use --follow to stream new lines as they are written (Ctrl+C to exit).`,
 				cmd.SilenceUsage = true
 				return errors.New("not a git repository")
 			}
-			logFile := filepath.Join(repoRoot, logging.LogsDir, "trace.log")
-			if _, err := os.Stat(logFile); errors.Is(err, os.ErrNotExist) {
+			logFile := filepath.Join(repoRoot, logging.LogsDir, "entire.log")
+			if _, err := os.Lstat(logFile); errors.Is(err, os.ErrNotExist) {
 				fmt.Fprintf(cmd.OutOrStdout(), "No log file at %s yet.\n", logFile)
 				return nil
 			}
@@ -53,8 +53,7 @@ Use --follow to stream new lines as they are written (Ctrl+C to exit).`,
 }
 
 func printTail(w io.Writer, path string, n int) error {
-	// #nosec G304 -- path is .trace/logs/trace.log under repo root, not external input
-	f, err := os.Open(path) //nolint:gosec // path is .trace/logs/trace.log under repo root
+	f, err := os.Open(path) //nolint:gosec // path is .entire/logs/entire.log under repo root
 	if err != nil {
 		return fmt.Errorf("open log: %w", err)
 	}
@@ -113,8 +112,7 @@ func readLastNLines(r io.Reader, n int) ([]string, error) {
 // followFile polls the log file for appended bytes. It exits cleanly when the
 // command's context is cancelled (Ctrl+C in a TTY).
 func followFile(ctx context.Context, w io.Writer, path string) error {
-	// #nosec G304 -- path is .trace/logs/trace.log under repo root, not external input
-	f, err := os.Open(path) //nolint:gosec // path is .trace/logs/trace.log under repo root
+	f, err := os.Open(path) //nolint:gosec // path is .entire/logs/entire.log under repo root
 	if err != nil {
 		return fmt.Errorf("open log: %w", err)
 	}

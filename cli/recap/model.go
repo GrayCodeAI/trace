@@ -2,7 +2,7 @@ package recap
 
 import "time"
 
-// RangeKey names the static recap windows supported by `trace recap`.
+// RangeKey names the static recap windows supported by `entire recap`.
 type RangeKey string
 
 const (

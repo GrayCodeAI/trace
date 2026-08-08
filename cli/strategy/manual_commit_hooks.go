@@ -24,15 +24,16 @@ import (
 	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/checkpointpolicy"
 	"github.com/GrayCodeAI/trace/cli/gitops"
+	"github.com/GrayCodeAI/trace/cli/gitrepo"
 	"github.com/GrayCodeAI/trace/cli/interactive"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
-	"github.com/GrayCodeAI/trace/cli/perf"
 	"github.com/GrayCodeAI/trace/cli/proclive"
 	"github.com/GrayCodeAI/trace/cli/session"
 	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/stringutil"
 	"github.com/GrayCodeAI/trace/cli/trailers"
+	"github.com/GrayCodeAI/trace/perf"
 	"github.com/GrayCodeAI/trace/redact"
 
 	"github.com/go-git/go-git/v6"
@@ -298,7 +299,7 @@ func hasUserContent(message string) bool {
 	return false
 }
 
-// stripCheckpointTrailer removes the Trace-Checkpoint trailer line from the message.
+// stripCheckpointTrailer removes the Entire-Checkpoint trailer line from the message.
 func stripCheckpointTrailer(message string) string {
 	trailerPrefix := trailers.CheckpointTrailerKey + ":"
 	var result []string
@@ -345,7 +346,7 @@ func isGitSequenceOperation(ctx context.Context) bool {
 }
 
 // PrepareCommitMsg is called by the git prepare-commit-msg hook.
-// Adds an Trace-Checkpoint trailer to the commit message with a stable checkpoint ID.
+// Adds an Entire-Checkpoint trailer to the commit message with a stable checkpoint ID.
 // Only adds a trailer if there's actually new session content to condense.
 // The actual condensation happens in PostCommit - if the user removes the trailer,
 // the commit will not be linked to the session (useful for "manual" commits).
@@ -860,8 +861,8 @@ func warnStaleEndedSessionsTo(ctx context.Context, count int, w io.Writer) {
 	os.WriteFile(warnFile, []byte{}, 0o644)
 	fmt.Fprintf(
 		w,
-		"\ntrace: %d ended session(s) are accumulating and slowing down commits.\n"+
-			"Run 'trace doctor' to condense them and restore commit performance.\n\n",
+		"\nentire: %d ended session(s) are accumulating and slowing down commits.\n"+
+			"Run 'entire doctor' to condense them and restore commit performance.\n\n",
 		count,
 	)
 }
@@ -1142,7 +1143,7 @@ func (s *ManualCommitStrategy) updateCombinedAttributionForCheckpoint(
 	var agentAdded, agentRemoved, humanAdded, humanRemoved int
 	for _, filePath := range allChangedFiles {
 		// Skip CLI/agent config metadata — not human or agent code work
-		if strings.HasPrefix(filePath, ".trace/") || strings.HasPrefix(filePath, paths.EntireMetadataDir+"/") ||
+		if strings.HasPrefix(filePath, ".entire/") || strings.HasPrefix(filePath, paths.EntireMetadataDir+"/") ||
 			strings.HasPrefix(filePath, ".claude/") {
 			continue
 		}
@@ -1396,7 +1397,7 @@ func (s *ManualCommitStrategy) postCommitProcessSessionLocked(
 	// State is saved by the outer MutateSessionState in PostCommit.
 
 	// Only preserve shadow branch for active sessions that were NOT condensed.
-	// Condensed sessions already have their data on trace/checkpoints/v1.
+	// Condensed sessions already have their data on entire/checkpoints/v1.
 	if state.Phase.IsActive() && !handler.condensed {
 		uncondensedActiveOnBranch[shadowBranchName] = true
 	}
@@ -1444,7 +1445,7 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	state.RealignAttributionBase(newHead)
 	resetCheckpointWindow(state)
 	state.CheckpointTranscriptStart = result.TotalTranscriptLines
-	state.CheckpointTranscriptSize = int64(len(result.Transcript))
+	state.CheckpointTranscriptSize = result.TranscriptSizeBaseline
 
 	// Clear attribution tracking — condensation already used these values
 	state.PromptAttributions = nil
@@ -1504,7 +1505,7 @@ func (s *ManualCommitStrategy) updateBaseCommitIfChanged(ctx context.Context, st
 }
 
 // postCommitUpdateBaseCommitOnly updates BaseCommit for all sessions on the current
-// worktree when a commit has no Trace-Checkpoint trailer. This prevents BaseCommit
+// worktree when a commit has no Entire-Checkpoint trailer. This prevents BaseCommit
 // from going stale, which would cause future PrepareCommitMsg calls to skip the
 // session (BaseCommit != currentHeadHash filter).
 //
@@ -2085,7 +2086,7 @@ func (s *ManualCommitStrategy) warnIfAttributionDiverged(ctx context.Context, se
 			continue
 		}
 		if !printed {
-			fmt.Fprintln(stderrWriter, "trace: session attribution diverged after recent history movement; figures may be off until next checkpoint")
+			fmt.Fprintln(stderrWriter, "entire: session attribution diverged after recent history movement; figures may be off until next checkpoint")
 			printed = true
 		}
 		sessionID := sess.SessionID
@@ -2140,7 +2141,7 @@ func (s *ManualCommitStrategy) tryAgentCommitFastPath(ctx context.Context, commi
 		// Skip sessions that have no condensable content: no transcript path,
 		// no tracked files, and no shadow branch data (StepCount == 0). These
 		// would produce a Skipped result in CondenseSession, leaving the
-		// Trace-Checkpoint trailer pointing to nothing on the metadata branch.
+		// Entire-Checkpoint trailer pointing to nothing on the metadata branch.
 		// NOTE: conservative approximation of the skip gate in CondenseSession
 		// (which checks extracted data, not raw state). Keep aligned.
 		if state.TranscriptPath == "" && len(state.FilesTouched) == 0 && state.StepCount == 0 {
@@ -2212,20 +2213,20 @@ func (s *ManualCommitStrategy) addTrailerForAgentCommit(logCtx context.Context, 
 	return nil
 }
 
-// addCheckpointTrailer adds the Trace-Checkpoint trailer to a commit message.
+// addCheckpointTrailer adds the Entire-Checkpoint trailer to a commit message.
 // Delegates to trailers.AppendCheckpointTrailer for trailer-aware formatting.
 func addCheckpointTrailer(message string, checkpointID id.CheckpointID) string {
 	return trailers.AppendCheckpointTrailer(message, checkpointID.String())
 }
 
-// addCheckpointTrailerWithComment adds the Trace-Checkpoint trailer with an explanatory comment.
+// addCheckpointTrailerWithComment adds the Entire-Checkpoint trailer with an explanatory comment.
 // The trailer is placed above the git comment block but below the user's message area,
 // with a comment explaining that the user can remove it if they don't want to link the commit
 // to the agent session. If prompt is non-empty, it's shown as context.
 func addCheckpointTrailerWithComment(message string, checkpointID id.CheckpointID, agentName, prompt string) string {
 	trailer := trailers.CheckpointTrailerKey + ": " + checkpointID.String()
 	commentLines := []string{
-		"# Remove the Trace-Checkpoint trailer above if you don't want to link this commit to " + agentName + " session context.",
+		"# Remove the Entire-Checkpoint trailer above if you don't want to link this commit to " + agentName + " session context.",
 	}
 	if prompt != "" {
 		commentLines = append(commentLines, "# Last Prompt: "+prompt)
@@ -2452,7 +2453,7 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 }
 
 // captureSessionBranch records the branch HEAD currently points at into the
-// session state so `trace resume` can map a stopped session back to its branch.
+// session state so `entire resume` can map a stopped session back to its branch.
 // It is a no-op when HEAD is detached or cannot be read — the branch field is
 // best-effort and resume derives it from commit trailers when absent.
 func captureSessionBranch(repo *git.Repository, state *SessionState) {
@@ -2557,8 +2558,10 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 		return result
 	}
 
-	// Get worktree status to find ALL changed files
-	status, err := worktree.Status()
+	// Get worktree status to find ALL changed files. Shared with the turn-start
+	// pre-prompt capture via the context status cache, so the expensive go-git
+	// worktree walk runs once per hook rather than once per caller.
+	status, err := gitrepo.Status(ctx, repo)
 	if err != nil {
 		logging.Debug(logCtx, "prompt attribution skipped: failed to get worktree status",
 			slog.String("error", err.Error()))
@@ -2577,7 +2580,7 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 			continue
 		}
 		// Skip .entire metadata directory (session data, not user code)
-		if strings.HasPrefix(filePath, paths.EntireMetadataDir+"/") || strings.HasPrefix(filePath, ".trace/") {
+		if strings.HasPrefix(filePath, paths.EntireMetadataDir+"/") || strings.HasPrefix(filePath, ".entire/") {
 			continue
 		}
 
@@ -2909,6 +2912,12 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(ctx context.Context, s
 
 	ag, _ := agent.GetByAgentType(state.AgentType) //nolint:errcheck // ag may be nil for unknown agent types; ExtractSkillEvents handles nil
 	skillEvents := mergeSkillEvents(state.SkillEvents, withSkillEventTurnID(agent.ExtractSkillEvents(ctx, ag, fullTranscript, 0), state.TurnID))
+
+	// Sanitize before externalizing and redacting, matching CondenseSession's
+	// sanitize -> externalize -> redact order. Skill events above are extracted from
+	// the pre-sanitization bytes because they are session telemetry rather than
+	// stored transcript content.
+	fullTranscript = agent.SanitizeTranscriptForStorage(ag, fullTranscript)
 
 	// Redact secrets before writing. Checkpoint store methods require
 	// pre-redacted in-memory transcript content from callers. The live

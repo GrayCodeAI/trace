@@ -23,8 +23,8 @@ func TestHookRunner_SimulateUserPromptSubmit(t *testing.T) {
 		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
 	}
 
-	// Verify pre-prompt state was captured (uses trace session ID with date prefix)
-	statePath := filepath.Join(env.RepoDir, ".trace", "tmp", "pre-prompt-"+modelSessionID+".json")
+	// Verify pre-prompt state was captured (uses entire session ID with date prefix)
+	statePath := filepath.Join(env.RepoDir, ".entire", "tmp", "pre-prompt-"+modelSessionID+".json")
 	if _, err := os.Stat(statePath); os.IsNotExist(err) {
 		t.Error("pre-prompt state file should exist")
 	}
@@ -298,9 +298,9 @@ func TestUserPromptSubmit_ReinstallsOverwrittenHooks(t *testing.T) {
 		}
 	}
 
-	// Step 3: Verify hooks are no longer Trace hooks
+	// Step 3: Verify hooks are no longer Entire hooks
 	if strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
-		t.Fatal("hooks should NOT be detected as Trace hooks after overwrite")
+		t.Fatal("hooks should NOT be detected as Entire hooks after overwrite")
 	}
 
 	// Step 4: Second user-prompt-submit should reinstall hooks
@@ -316,9 +316,9 @@ func TestUserPromptSubmit_ReinstallsOverwrittenHooks(t *testing.T) {
 
 	// Step 6: Verify the hooks chain to original hooks (backup should exist)
 	for _, hookName := range hookNames {
-		backupPath := filepath.Join(hooksDir, hookName+".pre-trace")
+		backupPath := filepath.Join(hooksDir, hookName+".pre-entire")
 		if _, err := os.Stat(backupPath); os.IsNotExist(err) {
-			t.Errorf("backup hook %s.pre-trace should exist", hookName)
+			t.Errorf("backup hook %s.pre-entire should exist", hookName)
 		}
 	}
 }

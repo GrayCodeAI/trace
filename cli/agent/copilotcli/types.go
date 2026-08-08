@@ -1,6 +1,6 @@
 package copilotcli
 
-// CopilotHooksFile represents the .github/hooks/trace.json structure.
+// CopilotHooksFile represents the .github/hooks/entire.json structure.
 // Copilot CLI uses a flat JSON file with version and hooks sections.
 // All JSON files in .github/hooks/ are auto-discovered by the Copilot CLI.
 //

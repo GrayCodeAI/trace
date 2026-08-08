@@ -6,41 +6,35 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"unicode"
-
-	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 )
 
 // Directory constants
 const (
-	TraceDir         = ".trace"
-	TraceTmpDir      = ".trace/tmp"
-	TraceMetadataDir = ".trace/metadata"
+	EntireDir         = ".entire"
+	EntireTmpDir      = ".entire/tmp"
+	EntireMetadataDir = ".entire/metadata"
 
 	osWindows = "windows"
 	osDarwin  = "darwin"
 )
 
-// EntireMetadataDir is an alias for TraceMetadataDir (CLI compatibility).
-const EntireMetadataDir = TraceMetadataDir
-
 // Metadata file names
 const (
-	PromptFileName                = "prompt.txt"
-	TranscriptFileName            = "full.jsonl"
-	TranscriptFileNameLegacy      = "full.log"
-	CompactTranscriptFileName     = "transcript.jsonl"
-	CompactTranscriptHashFileName = "transcript_hash.txt"
-	V2RawTranscriptFileName       = "raw_transcript"
-	V2RawTranscriptHashFileName   = "raw_transcript_hash.txt"
-	MetadataFileName              = "metadata.json"
-	CheckpointFileName            = "checkpoint.json"
-	ContentHashFileName           = "content_hash.txt"
-	SettingsFileName              = "settings.json"
+	PromptFileName           = "prompt.txt"
+	TranscriptFileName       = "full.jsonl"
+	TranscriptFileNameLegacy = "full.log"
+	// CompactTranscriptFileName is the compact transcript stored alongside
+	// full.jsonl. It holds the full compacted session; this checkpoint's slice
+	// begins at the session metadata's compact_transcript_start.
+	CompactTranscriptFileName = "transcript.jsonl"
+	MetadataFileName          = "metadata.json"
+	CheckpointFileName        = "checkpoint.json"
+	ContentHashFileName       = "content_hash.txt"
+	SettingsFileName          = "settings.json"
 
 	// AssetsDir is the per-session subfolder holding externalized transcript
 	// assets (e.g. images); AssetsManifestFile indexes them. AssetsDirName is the
@@ -51,36 +45,11 @@ const (
 )
 
 // MetadataBranchName is the orphan branch used by manual-commit strategy to store metadata
-const MetadataBranchName = "trace/checkpoints/v1"
-
-// V2 ref names use custom refs under refs/trace/ (not refs/heads/).
-// These are invisible in GitHub's branch UI and not fetched by default.
-const (
-	// V2MainRefName stores permanent metadata + compact transcripts.
-	V2MainRefName = "refs/trace/checkpoints/v2/main"
-
-	// V2FullCurrentRefName stores the active generation of raw transcripts.
-	V2FullCurrentRefName = "refs/trace/checkpoints/v2/full/current"
-
-	// V2FullRefPrefix is the common prefix for all /full/* refs (current + archived).
-	V2FullRefPrefix = "refs/trace/checkpoints/v2/full/"
-
-	// GenerationFileName is the metadata file at the root of each /full/* generation tree.
-	GenerationFileName = "generation.json"
-)
+const MetadataBranchName = "entire/checkpoints/v1"
 
 // TrailsBranchName is the orphan branch used to store trail metadata.
 // Trails are branch-centric work tracking abstractions that link to checkpoints by branch name.
-const TrailsBranchName = "trace/trails/v1"
-
-// CheckpointPath returns the sharded storage path for a checkpoint ID.
-// Uses first 2 characters as shard (256 buckets), remaining as folder name.
-// Example: "a3b2c4d5e6f7" -> "a3/b2c4d5e6f7"
-//
-// Deprecated: Use checkpointID.Path() directly instead.
-func CheckpointPath(checkpointID id.CheckpointID) string {
-	return checkpointID.Path()
-}
+const TrailsBranchName = "entire/trails/v1"
 
 // worktreeRootCache caches the worktree root to avoid repeated git commands.
 // The cache is keyed by the current working directory to handle directory changes.
@@ -154,15 +123,25 @@ func AbsPath(ctx context.Context, relPath string) (string, error) {
 }
 
 // IsInfrastructurePath returns true if the path is part of CLI infrastructure
-// (i.e., inside the .trace directory)
+// (i.e., inside the .entire directory). It is used only to EXCLUDE infra paths
+// from checkpoints/tracking, so it matches case-insensitively on
+// case-insensitive filesystems via IsProtectedSubpath. Do not use it as a
+// containment/allow gate.
 func IsInfrastructurePath(path string) bool {
-	return IsSubpath(TraceDir, path)
+	return IsProtectedSubpath(EntireDir, path)
 }
 
 // IsSubpath reports whether child is lexically under parent (or equal to it).
 // It uses filepath.Rel, which cleans both inputs and is traversal-resistant:
 // a crafted child like "/a/b/../../../etc/passwd" that escapes parent will
 // produce a relative path starting with ".." and be rejected.
+//
+// Matching is case-SENSITIVE. This is the correct primitive for fail-closed
+// containment/allow checks (e.g. validating an attacker-influenced path stays
+// under an Entire-owned dir): on a case-sensitive volume a differently-cased
+// path names a different directory, so folding it in would fail open. For
+// EXCLUSION decisions that must also catch case variants on Windows/macOS, use
+// IsProtectedSubpath instead.
 func IsSubpath(parent, child string) bool {
 	rel, err := filepath.Rel(parent, child)
 	if err != nil {
@@ -235,7 +214,7 @@ func ToRelativePath(absPath, cwd string) string {
 		return absPath
 	}
 	relPath, err := filepath.Rel(cwd, absPath)
-	if err != nil || strings.HasPrefix(relPath, "..") {
+	if err != nil || IsRelativeTraversal(relPath) {
 		return ""
 	}
 
@@ -258,39 +237,11 @@ func normalizeMSYSPath(p string) string {
 	return p
 }
 
-// nonAlphanumericRegex matches any non-alphanumeric character
-var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
-
-// SanitizePathForClaude converts a path to Claude's project directory format.
-// Claude replaces any non-alphanumeric character with a dash.
-func SanitizePathForClaude(path string) string {
-	return nonAlphanumericRegex.ReplaceAllString(path, "-")
-}
-
-// GetClaudeProjectDir returns the directory where Claude stores session transcripts
-// for the given repository path.
-//
-// In test environments, set TRACE_TEST_CLAUDE_PROJECT_DIR to override the default location.
-func GetClaudeProjectDir(repoPath string) (string, error) {
-	override := os.Getenv("TRACE_TEST_CLAUDE_PROJECT_DIR")
-	if override != "" {
-		return override, nil
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	projectDir := SanitizePathForClaude(repoPath)
-	return filepath.Join(homeDir, ".claude", "projects", projectDir), nil
-}
-
 // SessionMetadataDirFromSessionID returns the path to a session's metadata directory
-// for the given Trace session ID. The sessionID must be the full, already date-prefixed
-// Trace session identifier as stored on disk, not an agent-specific or raw Claude ID.
+// for the given Entire session ID. The sessionID must be the full, already date-prefixed
+// Entire session identifier as stored on disk, not an agent-specific or raw Claude ID.
 func SessionMetadataDirFromSessionID(sessionID string) string {
-	return TraceMetadataDir + "/" + sessionID
+	return EntireMetadataDir + "/" + sessionID
 }
 
 // ExtractSessionIDFromTranscriptPath attempts to extract a session ID from a transcript path.

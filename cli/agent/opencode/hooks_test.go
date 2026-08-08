@@ -29,22 +29,22 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 	}
 
 	// Verify plugin file was created
-	pluginPath := filepath.Join(dir, ".opencode", "plugins", "trace.ts")
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "entire.ts")
 	data, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("plugin file not created: %v", err)
 	}
 
 	content := string(data)
-	// The plugin uses JS template literal ${TRACE_CMD} — check the constant was set correctly
-	if !strings.Contains(content, `const TRACE_CMD = 'hawk trace'`) {
+	// The plugin uses JS template literal ${ENTIRE_CMD} — check the constant was set correctly
+	if !strings.Contains(content, `const ENTIRE_CMD = 'entire'`) {
 		t.Error("plugin file does not contain production command constant")
 	}
 	if !strings.Contains(content, "hooks opencode") {
 		t.Error("plugin file does not contain 'hooks opencode'")
 	}
-	if !strings.Contains(content, "TracePlugin") {
-		t.Error("plugin file does not contain 'TracePlugin' export")
+	if !strings.Contains(content, "EntirePlugin") {
+		t.Error("plugin file does not contain 'EntirePlugin' export")
 	}
 	// Should use production command
 	if strings.Contains(content, "go run") {
@@ -89,15 +89,15 @@ func TestInstallHooks_LocalDev(t *testing.T) {
 		t.Errorf("expected 1 hook installed, got %d", count)
 	}
 
-	pluginPath := filepath.Join(dir, ".opencode", "plugins", "trace.ts")
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "entire.ts")
 	data, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("plugin file not created: %v", err)
 	}
 
 	content := string(data)
-	if !strings.Contains(content, `go run "$(git rev-parse --show-toplevel)"/cmd/hawk trace`) {
-		t.Error("local dev mode: plugin file should use git rev-parse for go run path")
+	if !strings.Contains(content, `"$(git rev-parse --show-toplevel)"/scripts/entire-dev`) {
+		t.Error("local dev mode: plugin file should delegate to the entire-dev launcher via git rev-parse")
 	}
 }
 
@@ -110,7 +110,7 @@ func TestInstallHooks_SessionStartIsGuardedBySessionSwitch(t *testing.T) {
 		t.Fatalf("install failed: %v", err)
 	}
 
-	pluginPath := filepath.Join(dir, ".opencode", "plugins", "trace.ts")
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "entire.ts")
 	data, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("plugin file not created: %v", err)
@@ -133,7 +133,7 @@ func TestInstallHooks_SessionStartIsGuardedBySessionSwitch(t *testing.T) {
 		t.Fatalf("expected guarded session-start call after guard, got guard=%d hook=%d",
 			guardIdx, hookIdx)
 	}
-	if !strings.Contains(content, `if ! command -v trace >/dev/null 2>&1; then exit 0; fi; exec trace hooks opencode ${hookName}`) {
+	if !strings.Contains(content, `if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks opencode ${hookName}`) {
 		t.Fatal("plugin file missing silent production hook command")
 	}
 }
@@ -147,18 +147,70 @@ func TestInstallHooks_TurnStartUsesSyncHook(t *testing.T) {
 		t.Fatalf("install failed: %v", err)
 	}
 
-	pluginPath := filepath.Join(dir, ".opencode", "plugins", "trace.ts")
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "entire.ts")
 	data, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("plugin file not created: %v", err)
 	}
 
 	content := string(data)
-	if !strings.Contains(content, `callHookSync("turn-start", {`) {
-		t.Fatal("plugin file should dispatch turn-start via callHookSync")
+	// turn-start is dispatched via fireTurnStart, which fires synchronously
+	// (Bun.spawnSync) so session state is ready before any mid-turn commit, and
+	// also captures the hook's stdout to apply Entire's one-time context injection.
+	if !strings.Contains(content, `fireTurnStart({`) {
+		t.Fatal("plugin file should dispatch turn-start via fireTurnStart")
+	}
+	if !strings.Contains(content, `const proc = Bun.spawnSync(hookCmd("turn-start"), {`) {
+		t.Fatal("fireTurnStart should dispatch turn-start synchronously via Bun.spawnSync")
 	}
 	if strings.Contains(content, `await callHook("turn-start", {`) {
 		t.Fatal("plugin file should not dispatch turn-start via async callHook")
+	}
+}
+
+func TestInstallHooks_AppliesContextInjection(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	ag := &OpenCodeAgent{}
+
+	if _, err := ag.InstallHooks(context.Background(), false, false); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "entire.ts")
+	data, err := os.ReadFile(pluginPath)
+	if err != nil {
+		t.Fatalf("plugin file not created: %v", err)
+	}
+
+	content := string(data)
+	// The plugin must read the injection envelope from the turn-start hook's
+	// stdout and apply it to the system prompt via the chat system transform.
+	if !strings.Contains(content, `inject_context`) {
+		t.Fatal("plugin file should parse the inject_context envelope")
+	}
+	if !strings.Contains(content, `"experimental.chat.system.transform"`) {
+		t.Fatal("plugin file should apply injection via experimental.chat.system.transform")
+	}
+	if !strings.Contains(content, `output.system.push(pendingInjection)`) {
+		t.Fatal("plugin file should push the injection onto the system prompt")
+	}
+	// Every session-reset site must clear the stashed injection so a session
+	// change cannot leak the prior session's context into the next session.
+	resetSites := []struct{ name, start, end string }{
+		{"resetSessionTracking", "function resetSessionTracking", "return true"},
+		{"session.deleted", `case "session.deleted"`, `callHookSync("session-end"`},
+		{"server.instance.disposed", `case "server.instance.disposed"`, `callHookSync("session-end"`},
+	}
+	for _, site := range resetSites {
+		_, after, found := strings.Cut(content, site.start)
+		if !found {
+			t.Fatalf("plugin file missing reset site %q", site.name)
+		}
+		body, _, _ := strings.Cut(after, site.end)
+		if !strings.Contains(body, `pendingInjection = null`) {
+			t.Fatalf("%s should clear pendingInjection to avoid cross-session leakage", site.name)
+		}
 	}
 }
 
@@ -171,7 +223,7 @@ func TestInstallHooks_MessageUpdatedFallsBackToSessionStart(t *testing.T) {
 		t.Fatalf("install failed: %v", err)
 	}
 
-	pluginPath := filepath.Join(dir, ".opencode", "plugins", "trace.ts")
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "entire.ts")
 	data, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("plugin file not created: %v", err)
@@ -198,7 +250,7 @@ func TestInstallHooks_MessageUpdatedFallsBackToTurnStart(t *testing.T) {
 		t.Fatalf("install failed: %v", err)
 	}
 
-	pluginPath := filepath.Join(dir, ".opencode", "plugins", "trace.ts")
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "entire.ts")
 	data, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("plugin file not created: %v", err)
@@ -247,13 +299,13 @@ func TestInstallHooks_RewritesWhenContentDiffers(t *testing.T) {
 		t.Errorf("first install: expected 1, got %d", count)
 	}
 
-	pluginPath := filepath.Join(dir, ".opencode", "plugins", "trace.ts")
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "entire.ts")
 	before, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("failed to read plugin file: %v", err)
 	}
-	if !strings.Contains(string(before), "go run") {
-		t.Fatal("expected localDev content with 'go run'")
+	if !strings.Contains(string(before), "scripts/entire-dev") {
+		t.Fatal("expected localDev content to delegate to scripts/entire-dev")
 	}
 
 	// Reinstall with localDev=false (content differs) — should rewrite
@@ -269,10 +321,10 @@ func TestInstallHooks_RewritesWhenContentDiffers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read plugin file after rewrite: %v", err)
 	}
-	if strings.Contains(string(after), "go run") {
-		t.Error("expected production content after rewrite, but still contains 'go run'")
+	if strings.Contains(string(after), "scripts/entire-dev") {
+		t.Error("expected production content after rewrite, but still references scripts/entire-dev")
 	}
-	if !strings.Contains(string(after), `const TRACE_CMD = 'hawk trace'`) {
+	if !strings.Contains(string(after), `const ENTIRE_CMD = 'entire'`) {
 		t.Error("expected production command constant after rewrite")
 	}
 }
@@ -290,7 +342,7 @@ func TestUninstallHooks(t *testing.T) {
 		t.Fatalf("uninstall failed: %v", err)
 	}
 
-	pluginPath := filepath.Join(dir, ".opencode", "plugins", "trace.ts")
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "entire.ts")
 	if _, err := os.Stat(pluginPath); !os.IsNotExist(err) {
 		t.Error("plugin file still exists after uninstall")
 	}

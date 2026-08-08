@@ -183,6 +183,9 @@ func runBinaryCheckScriptWithEnv(t *testing.T, repoDir, baseSHA, headSHA string,
 	require.True(t, ok)
 
 	scriptPath := filepath.Join(filepath.Dir(filename), "..", "scripts", "check-pr-binaries.sh")
+	if _, err := os.Stat(scriptPath); err != nil {
+		scriptPath = filepath.Join(filepath.Dir(filename), "..", "..", "..", "scripts", "check-pr-binaries.sh")
+	}
 	cmd := exec.CommandContext(context.Background(), "bash", scriptPath, baseSHA, headSHA)
 	cmd.Dir = repoDir
 	cmd.Env = os.Environ()

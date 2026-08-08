@@ -14,7 +14,7 @@ import (
 )
 
 // agentHelpAnnotation marks an otherwise-hidden command as worth advertising to
-// coding agents through `trace agent-help`. Hidden commands (e.g. trail) opt in
+// coding agents through `entire agent-help`. Hidden commands (e.g. trail) opt in
 // by setting Annotations[agentHelpAnnotation] = "true".
 const agentHelpAnnotation = "entire_agent_help"
 
@@ -38,15 +38,15 @@ subcommands — read them from this command. You are already inside the repo:
 entire auto-detects it from the git origin remote, so never ask the user for the
 repo name. Pass --repo only to target a DIFFERENT repo.`
 
-// newAgentHelpCmd builds the `trace agent-help` command. It is visible in
-// `trace help` (so agents on transports without context injection can still
+// newAgentHelpCmd builds the `entire agent-help` command. It is visible in
+// `entire help` (so agents on transports without context injection can still
 // find it) and renders agent-facing usage live from rootCmd's command tree.
 func newAgentHelpCmd(rootCmd *cobra.Command) *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "agent-help [command...]",
 		Short: "Machine-readable usage for coding agents (always matches the installed CLI)",
-		Long: `Prints agent-facing usage for the Trace CLI, generated live from the installed
+		Long: `Prints agent-facing usage for the Entire CLI, generated live from the installed
 command tree so it always matches this binary. With no arguments it prints a
 high-level map of when to use entire and which subcommand; pass a command path
 (e.g. "agent-help checkpoint") to see that command's exact, current flags.`,
@@ -146,7 +146,7 @@ func runAgentHelp(rootCmd *cobra.Command, args []string, repoLine string, asJSON
 	for _, name := range args {
 		child := agentHelpFindChild(target, name)
 		if child == nil {
-			return "", fmt.Errorf("unknown command %q; run `trace agent-help` for the list of commands", name)
+			return "", fmt.Errorf("unknown command %q; run `entire agent-help` for the list of commands", name)
 		}
 		// Keep the specific, actionable message for the trail-gated case.
 		if !trailsEnabled && child.Annotations[agentHelpRequiresTrailsAnnotation] == agentHelpAnnotationEnabled {
@@ -156,7 +156,7 @@ func runAgentHelp(rootCmd *cobra.Command, args []string, repoLine string, asJSON
 		// guesses for a command the listing intentionally hides (help, deprecated,
 		// or plain-hidden infra like `hooks`) reads as nonexistent here too.
 		if !isAgentHelpAdvertised(child, trailsEnabled) {
-			return "", fmt.Errorf("unknown command %q; run `trace agent-help` for the list of commands", name)
+			return "", fmt.Errorf("unknown command %q; run `entire agent-help` for the list of commands", name)
 		}
 		target = child
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/paths"
+	"github.com/GrayCodeAI/trace/cli/testutil"
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -20,34 +21,34 @@ func TestIsShadowBranch(t *testing.T) {
 		want       bool
 	}{
 		// Valid shadow branches - old format (7+ hex chars)
-		{"old format: 7 hex chars", "trace/abc1234", true},
-		{"old format: 7 hex chars numeric", "trace/1234567", true},
-		{"old format: full commit hash", "trace/abcdef0123456789abcdef0123456789abcdef01", true},
-		{"old format: mixed case hex", "trace/AbCdEf1", true},
+		{"old format: 7 hex chars", "entire/abc1234", true},
+		{"old format: 7 hex chars numeric", "entire/1234567", true},
+		{"old format: full commit hash", "entire/abcdef0123456789abcdef0123456789abcdef01", true},
+		{"old format: mixed case hex", "entire/AbCdEf1", true},
 
-		// Valid shadow branches - new format with worktree hash (12 hex + dash + 10 hex)
-		{"new format: standard", "trace/abc1234-e3b0c4", true},
-		{"new format: numeric worktree hash", "trace/1234567-123456", true},
-		{"new format: full commit with worktree", "trace/abcdef0123456789-fedcba", true},
-		{"new format: mixed case", "trace/AbCdEf1-AbCdEf", true},
+		// Valid shadow branches - new format with worktree hash (7 hex + dash + 6 hex)
+		{"new format: standard", "entire/abc1234-e3b0c4", true},
+		{"new format: numeric worktree hash", "entire/1234567-123456", true},
+		{"new format: full commit with worktree", "entire/abcdef0123456789-fedcba", true},
+		{"new format: mixed case", "entire/AbCdEf1-AbCdEf", true},
 
 		// Invalid patterns
-		{"empty after prefix", "trace/", false},
-		{"too short commit (6 chars)", "trace/abc123", false},
-		{"too short commit (1 char)", "trace/a", false},
-		{"non-hex chars in commit", "trace/ghijklm", false},
+		{"empty after prefix", "entire/", false},
+		{"too short commit (6 chars)", "entire/abc123", false},
+		{"too short commit (1 char)", "entire/a", false},
+		{"non-hex chars in commit", "entire/ghijklm", false},
 		{"sessions branch", paths.MetadataBranchName, false},
 		{"no prefix", "abc1234", false},
 		{"wrong prefix", "feature/abc1234", false},
 		{"main branch", "main", false},
 		{"master branch", "master", false},
 		{"empty string", "", false},
-		{"just trace", "trace", false},
-		{"trace with slash only", "trace/", false},
-		{"worktree hash too short (5 chars)", "trace/abc1234-e3b0c", false},
-		{"worktree hash too long (11 chars)", "trace/abc1234-e3b0c442987", false},
-		{"non-hex in worktree hash", "trace/abc1234-ghijkl", false},
-		{"missing commit hash", "trace/-e3b0c4", false},
+		{"just entire", "entire", false},
+		{"entire with slash only", "entire/", false},
+		{"worktree hash too short (5 chars)", "entire/abc1234-e3b0c", false},
+		{"worktree hash too long (7 chars)", "entire/abc1234-e3b0c44", false},
+		{"non-hex in worktree hash", "entire/abc1234-ghijkl", false},
+		{"missing commit hash", "entire/-e3b0c4", false},
 	}
 
 	for _, tt := range tests {
@@ -63,9 +64,10 @@ func TestIsShadowBranch(t *testing.T) {
 func TestListShadowBranches(t *testing.T) {
 	// Setup: create a temp git repo with various branches
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("failed to init git repo: %v", err)
+		t.Fatalf("failed to open git repo: %v", err)
 	}
 
 	t.Chdir(dir)
@@ -92,8 +94,8 @@ func TestListShadowBranches(t *testing.T) {
 		name     string
 		isShadow bool
 	}{
-		{"trace/abc1234", true},
-		{"trace/def5678", true},
+		{"entire/abc1234", true},
+		{"entire/def5678", true},
 		{paths.MetadataBranchName, false}, // Should NOT be listed
 		{"feature/foo", false},
 		{"main", false},
@@ -123,11 +125,11 @@ func TestListShadowBranches(t *testing.T) {
 		shadowSet[b] = true
 	}
 
-	if !shadowSet["trace/abc1234"] {
-		t.Error("ListShadowBranches(context.Background()) missing 'trace/abc1234'")
+	if !shadowSet["entire/abc1234"] {
+		t.Error("ListShadowBranches(context.Background()) missing 'entire/abc1234'")
 	}
-	if !shadowSet["trace/def5678"] {
-		t.Error("ListShadowBranches(context.Background()) missing 'trace/def5678'")
+	if !shadowSet["entire/def5678"] {
+		t.Error("ListShadowBranches(context.Background()) missing 'entire/def5678'")
 	}
 	if shadowSet[paths.MetadataBranchName] {
 		t.Errorf("ListShadowBranches(context.Background()) should not include '%s'", paths.MetadataBranchName)
@@ -137,9 +139,10 @@ func TestListShadowBranches(t *testing.T) {
 func TestListShadowBranches_Empty(t *testing.T) {
 	// Setup: create a temp git repo with no shadow branches
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("failed to init git repo: %v", err)
+		t.Fatalf("failed to open git repo: %v", err)
 	}
 
 	t.Chdir(dir)
@@ -179,9 +182,10 @@ func TestListShadowBranches_Empty(t *testing.T) {
 func TestDeleteShadowBranches(t *testing.T) {
 	// Setup: create a temp git repo with shadow branches
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("failed to init git repo: %v", err)
+		t.Fatalf("failed to open git repo: %v", err)
 	}
 
 	t.Chdir(dir)
@@ -204,7 +208,7 @@ func TestDeleteShadowBranches(t *testing.T) {
 	}
 
 	// Create shadow branches
-	shadowBranches := []string{"trace/abc1234", "trace/def5678"}
+	shadowBranches := []string{"entire/abc1234", "entire/def5678"}
 	for _, b := range shadowBranches {
 		ref := plumbing.NewHashReference(plumbing.NewBranchReferenceName(b), commitHash)
 		if err := repo.Storer.SetReference(ref); err != nil {
@@ -243,9 +247,10 @@ func TestDeleteShadowBranches(t *testing.T) {
 func TestDeleteShadowBranches_NonExistent(t *testing.T) {
 	// Setup: create a temp git repo
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	testutil.InitRepo(t, dir)
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		t.Fatalf("failed to init git repo: %v", err)
+		t.Fatalf("failed to open git repo: %v", err)
 	}
 
 	t.Chdir(dir)
@@ -268,7 +273,7 @@ func TestDeleteShadowBranches_NonExistent(t *testing.T) {
 	}
 
 	// Try to delete non-existent branches
-	nonExistent := []string{"trace/doesnotexist"}
+	nonExistent := []string{"entire/doesnotexist"}
 	deleted, failed, err := DeleteShadowBranches(context.Background(), nonExistent)
 	if err != nil {
 		t.Fatalf("DeleteShadowBranches() error = %v", err)
@@ -286,10 +291,7 @@ func TestDeleteShadowBranches_NonExistent(t *testing.T) {
 func TestDeleteShadowBranches_Empty(t *testing.T) {
 	// Setup: create a temp git repo
 	dir := t.TempDir()
-	_, err := git.PlainInit(dir, false)
-	if err != nil {
-		t.Fatalf("failed to init git repo: %v", err)
-	}
+	testutil.InitRepo(t, dir)
 
 	t.Chdir(dir)
 
@@ -303,14 +305,3 @@ func TestDeleteShadowBranches_Empty(t *testing.T) {
 		t.Errorf("DeleteShadowBranches([]) = (%v, %v), want ([], [])", deleted, failed)
 	}
 }
-
-// TestListOrphanedSessionStates_RecentSessionNotOrphaned tests that recently started
-// sessions are NOT marked as orphaned, even if they have no checkpoints yet.
-//
-// P1 Bug: A session that just started (via InitializeSession) but hasn't created
-// its first checkpoint yet would be incorrectly marked as orphaned because it has:
-// - A session state file
-// - No checkpoints on trace/checkpoints/v1
-// - No shadow branch before first checkpoint
-//
-// This test should FAIL with the current implementation, demonstrating the bug.

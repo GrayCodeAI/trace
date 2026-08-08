@@ -31,7 +31,7 @@ type PromptAttribution = session.PromptAttribution
 // CheckpointInfo represents checkpoint metadata stored on the sessions branch.
 // Metadata is stored at sharded path: <checkpoint_id[:2]>/<checkpoint_id[2:]>/
 type CheckpointInfo struct {
-	CheckpointID     id.CheckpointID `json:"checkpoint_id"` // 12-hex-char from Trace-Checkpoint trailer, used as directory path
+	CheckpointID     id.CheckpointID `json:"checkpoint_id"` // 12-hex-char from Entire-Checkpoint trailer, used as directory path
 	SessionID        string          `json:"session_id"`
 	CreatedAt        time.Time       `json:"created_at"`
 	CheckpointsCount int             `json:"checkpoints_count"`
@@ -46,14 +46,22 @@ type CheckpointInfo struct {
 
 // CondenseResult contains the result of a session condensation operation.
 type CondenseResult struct {
-	CheckpointID         id.CheckpointID // 12-hex-char from Trace-Checkpoint trailer, used as directory path
+	CheckpointID         id.CheckpointID // 12-hex-char from Entire-Checkpoint trailer, used as directory path
 	SessionID            string
 	CheckpointsCount     int
 	FilesTouched         []string
 	Prompts              []string // User prompts from the condensed session
 	TotalTranscriptLines int      // Total transcript units after this condensation (JSONL line count or message count by agent format)
-	Transcript           []byte   // Raw transcript bytes for downstream consumers (trail title generation)
 	Skipped              bool     // True if condensation was skipped (no transcript or files to condense)
+
+	// TranscriptSizeBaseline is the byte size to record as
+	// SessionState.CheckpointTranscriptSize. It must be measured on the SANITIZED,
+	// pre-externalization transcript so it lives in the same coordinate as the
+	// shadow-branch blob it is later compared against in sessionHasNewContent. A
+	// raw-transcript size makes `blobSize > baseline` false forever for agents with
+	// a TranscriptSanitizer, so the session silently stops condensing after its
+	// first commit.
+	TranscriptSizeBaseline int64
 }
 
 // ExtractedSessionData contains data extracted from a shadow branch.

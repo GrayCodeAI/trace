@@ -13,7 +13,7 @@ import (
 )
 
 // TestDispatcher_ForwardedStopFromNonOwnerIsSkipped verifies the dispatcher
-// skip end-to-end through the real `trace hooks claude-code stop` binary
+// skip end-to-end through the real `entire hooks claude-code stop` binary
 // invocation. Cursor IDE forwards Stop to both .cursor/hooks.json and
 // .claude/settings.json — when the SessionState records Cursor as the owner,
 // the claude-code-side hook must no-op so we don't double-write checkpoints
@@ -23,7 +23,7 @@ func TestDispatcher_ForwardedStopFromNonOwnerIsSkipped(t *testing.T) {
 	env := NewRepoWithCommit(t)
 
 	sessionID := "test-cursor-forward-stop"
-	statePath := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
+	statePath := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(statePath), 0o755))
 
 	// Pre-record state with AgentType=Cursor: the firing claude-code hook
@@ -71,7 +71,7 @@ func TestDispatcher_ForwardedSessionEndFromNonOwnerIsSkipped(t *testing.T) {
 	env := NewRepoWithCommit(t)
 
 	sessionID := "test-cursor-forward-sessionend"
-	statePath := filepath.Join(env.RepoDir, ".git", "trace-sessions", sessionID+".json")
+	statePath := filepath.Join(env.RepoDir, ".git", "entire-sessions", sessionID+".json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(statePath), 0o755))
 
 	initialState := map[string]any{

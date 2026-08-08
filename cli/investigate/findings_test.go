@@ -76,7 +76,7 @@ func TestRunInvestigateFindings_PrintsListNonTTY(t *testing.T) {
 	investigate.PrintInvestigateFindingsListForTest(out, manifests)
 
 	got := out.String()
-	for _, want := range []string{"aaaaaaaaaaaa", "bbbbbbbbbbbb", "first topic", "second topic", "trace investigate fix"} {
+	for _, want := range []string{"aaaaaaaaaaaa", "bbbbbbbbbbbb", "first topic", "second topic", "entire investigate fix"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}
@@ -123,20 +123,20 @@ func TestRunInvestigateFindings_PrintsCapturedMarker(t *testing.T) {
 	// Both rows must surface a `view:` hint pointing at the show
 	// subcommand — that's the actionable next step regardless of where
 	// the findings live.
-	if !strings.Contains(got, "  view:    trace investigate show aaaaaaaaaaaa") {
+	if !strings.Contains(got, "  view:    entire investigate show aaaaaaaaaaaa") {
 		t.Errorf("expected view hint for terminal run, got:\n%s", got)
 	}
-	if !strings.Contains(got, "  view:    trace investigate show bbbbbbbbbbbb") {
+	if !strings.Contains(got, "  view:    entire investigate show bbbbbbbbbbbb") {
 		t.Errorf("expected view hint for paused run, got:\n%s", got)
 	}
 	// Terminal outcome → `fix:` hint; paused → `resume:` hint instead.
-	if !strings.Contains(got, "  fix:     trace investigate fix aaaaaaaaaaaa") {
+	if !strings.Contains(got, "  fix:     entire investigate fix aaaaaaaaaaaa") {
 		t.Errorf("expected fix hint for terminal run, got:\n%s", got)
 	}
-	if !strings.Contains(got, "  resume:  trace investigate --continue bbbbbbbbbbbb") {
+	if !strings.Contains(got, "  resume:  entire investigate --continue bbbbbbbbbbbb") {
 		t.Errorf("expected resume hint for paused run, got:\n%s", got)
 	}
-	if strings.Contains(got, "trace investigate fix bbbbbbbbbbbb") {
+	if strings.Contains(got, "entire investigate fix bbbbbbbbbbbb") {
 		t.Errorf("paused run must not advertise `fix` (no terminal findings), got:\n%s", got)
 	}
 	// Paused run still has its findings.md on disk — surface the path

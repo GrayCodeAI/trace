@@ -24,7 +24,7 @@ type AgentChoice struct {
 	Label string
 }
 
-// newAccessibleForm creates a huh form with Trace's standard theme,
+// newAccessibleForm creates a huh form with Entire's standard theme,
 // switching to accessibility mode when ACCESSIBLE is set.
 func newAccessibleForm(groups ...*huh.Group) *huh.Form {
 	return uiform.New(groups...)
@@ -38,7 +38,7 @@ func ConfirmFirstRunSetup(ctx context.Context, out io.Writer) bool {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "You'll pick which agents take turns during an investigation, and the")
 	fmt.Fprintln(out, "max-turns / quorum the loop should use. The selection is saved to local")
-	fmt.Fprintln(out, "preferences (.trace/settings.local.json, not committed); edit later with `trace investigate --edit`.")
+	fmt.Fprintln(out, "preferences (.entire/settings.local.json, not committed); edit later with `entire investigate --edit`.")
 	fmt.Fprintln(out, "After setup, the investigation will run with your selection.")
 	fmt.Fprintln(out)
 
@@ -141,7 +141,7 @@ func RunInvestigateConfigPicker(
 	if len(eligible) == 0 {
 		return nil, errors.New(
 			"no launchable agents with hooks installed; " +
-				"run `trace configure --agent <name>` for one of: " +
+				"run `entire configure --agent <name>` for one of: " +
 				"claude-code, codex, gemini-cli",
 		)
 	}

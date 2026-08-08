@@ -140,7 +140,7 @@ func reviewCommittedCheckpointContext(ctx context.Context, worktreeRoot string, 
 
 	return "Checkpoint context from commits in scope:\n" +
 		strings.Join(lines, "\n") +
-		"\n\nUse `trace checkpoint explain <id>` for full checkpoint context, or `trace checkpoint explain <id> --raw-transcript` for raw transcripts."
+		"\n\nUse `entire checkpoint explain <id>` for full checkpoint context, or `entire checkpoint explain <id> --raw-transcript` for raw transcripts."
 }
 
 // reviewSessionContext returns a "In-progress session context (uncommitted):"
@@ -156,7 +156,7 @@ func reviewCommittedCheckpointContext(ctx context.Context, worktreeRoot string, 
 //
 //	<sessionID[:8]> <agent-name> [(touched: N file(s))] prompt: <latest prompt>
 //
-// where latest prompt is read from <worktree>/.trace/metadata/<sessionID>/prompt.txt
+// where latest prompt is read from <worktree>/.entire/metadata/<sessionID>/prompt.txt
 // (the on-filesystem path lifecycle.go appends to on every turn), passed through
 // the existing reviewPromptText helper to match the committed-pipeline fallback
 // format (loops backwards for the newest non-empty prompt, collapses whitespace,

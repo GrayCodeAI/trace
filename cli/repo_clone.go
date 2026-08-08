@@ -15,7 +15,7 @@ import (
 	"github.com/GrayCodeAI/trace/internal/coreapi"
 )
 
-// mirrorCloneRefRe parses the clone-ref shape `trace repo clone` accepts:
+// mirrorCloneRefRe parses the clone-ref shape `entire repo clone` accepts:
 // the `/gh/<owner>/<repo>` path of a mirror's clone URL, with or without the
 // leading slash. owner/repo reuse the GitHub identifier charsets from
 // parseGitHubURL so the same metacharacter vectors are closed at the boundary
@@ -155,7 +155,7 @@ func newRepoCloneCmd() *cobra.Command {
 			}
 
 			if len(placements) == 0 {
-				return fmt.Errorf("no mirror found for /gh/%s/%s; run 'trace repo mirror create github.com/%s/%s' to onboard it", owner, repo, owner, repo)
+				return fmt.Errorf("no mirror found for /gh/%s/%s; run 'entire repo mirror create github.com/%s/%s' to onboard it", owner, repo, owner, repo)
 			}
 
 			chosen, err := selectCloneTarget(cmd, placements, cluster)

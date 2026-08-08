@@ -20,18 +20,18 @@ func TestWriteDoctorBundle_ContainsExpectedEntries(t *testing.T) {
 	dir := t.TempDir()
 	testutil.InitRepo(t, dir)
 
-	// Write a fixture log file under .trace/logs/.
+	// Write a fixture log file under .entire/logs/.
 	logsDir := filepath.Join(dir, logging.LogsDir)
 	if err := os.MkdirAll(logsDir, 0o755); err != nil {
 		t.Fatalf("mkdir logs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(logsDir, "trace.log"), []byte("hello\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(logsDir, "entire.log"), []byte("hello\n"), 0o600); err != nil {
 		t.Fatalf("write log: %v", err)
 	}
 
 	// Write a project settings file.
-	traceDir := filepath.Join(dir, ".trace")
-	if err := os.WriteFile(filepath.Join(traceDir, "settings.json"), []byte(`{"enabled":true}`), 0o600); err != nil {
+	entireDir := filepath.Join(dir, ".entire")
+	if err := os.WriteFile(filepath.Join(entireDir, "settings.json"), []byte(`{"enabled":true}`), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 
@@ -62,7 +62,7 @@ func TestWriteDoctorBundle_ContainsExpectedEntries(t *testing.T) {
 	}
 
 	required := []string{
-		"logs/trace.log",
+		"logs/entire.log",
 		"settings/settings.json",
 		"git-status.txt",
 		"git-log.txt",
@@ -73,6 +73,29 @@ func TestWriteDoctorBundle_ContainsExpectedEntries(t *testing.T) {
 		if !got[name] {
 			t.Errorf("missing entry %q in bundle. Have: %v", name, mapKeys(got))
 		}
+	}
+}
+
+// The bundle must record entire's git refs.
+func TestWriteDoctorBundle_CapturesEntireRefs(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	testutil.InitRepo(t, dir)
+	testutil.WriteFile(t, dir, "f.txt", "init")
+	testutil.GitAdd(t, dir, "f.txt")
+	testutil.GitCommit(t, dir, "init")
+
+	runDoctorBundleGit(t, dir, "update-ref", "refs/heads/entire/checkpoints/v1", "HEAD")
+
+	out := filepath.Join(dir, "bundle.zip")
+	if err := writeDoctorBundle(context.Background(), dir, out, false); err != nil {
+		t.Fatalf("writeDoctorBundle: %v", err)
+	}
+
+	content := readZipEntry(t, out, "entire-refs.txt")
+	if !strings.Contains(content, "refs/heads/entire/checkpoints/v1") {
+		t.Errorf("entire-refs.txt missing v1 branch ref, got:\n%s", content)
 	}
 }
 
@@ -178,7 +201,7 @@ func TestWriteDoctorBundle_RedactsLogContents(t *testing.T) {
 	}
 	const apiKey = "sk-ant-api03-xK9mZ2vL8nQ5rT1wY4bC7dF0gH3jE6pA"
 	logBody := "request issued\nAuthorization: Bearer " + apiKey + "\nDB_PASSWORD=hunter2supersecret\n"
-	if err := os.WriteFile(filepath.Join(logsDir, "trace.log"), []byte(logBody), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(logsDir, "entire.log"), []byte(logBody), 0o600); err != nil {
 		t.Fatalf("write log: %v", err)
 	}
 
@@ -187,7 +210,7 @@ func TestWriteDoctorBundle_RedactsLogContents(t *testing.T) {
 		t.Fatalf("writeDoctorBundle: %v", err)
 	}
 
-	got := readZipEntry(t, out, "logs/trace.log")
+	got := readZipEntry(t, out, "logs/entire.log")
 	if strings.Contains(got, apiKey) {
 		t.Fatalf("redacted bundle leaked API key: %q", got)
 	}
@@ -205,13 +228,13 @@ func TestWriteDoctorBundle_RedactsSettings(t *testing.T) {
 	dir := t.TempDir()
 	testutil.InitRepo(t, dir)
 
-	traceDir := filepath.Join(dir, ".trace")
-	if err := os.MkdirAll(traceDir, 0o755); err != nil {
-		t.Fatalf("mkdir .trace: %v", err)
+	entireDir := filepath.Join(dir, ".entire")
+	if err := os.MkdirAll(entireDir, 0o755); err != nil {
+		t.Fatalf("mkdir .entire: %v", err)
 	}
 	const credURI = "postgres://app:s3cretP4ssw0rd@db.example.com:5432/app"
 	settingsLocal := `{"strategy_options":{"checkpoint_remote":{"url":"` + credURI + `"}}}`
-	if err := os.WriteFile(filepath.Join(traceDir, "settings.local.json"), []byte(settingsLocal), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(entireDir, "settings.local.json"), []byte(settingsLocal), 0o600); err != nil {
 		t.Fatalf("write settings.local.json: %v", err)
 	}
 
@@ -240,7 +263,7 @@ func TestWriteDoctorBundle_RawSkipsRedaction(t *testing.T) {
 		t.Fatalf("mkdir logs: %v", err)
 	}
 	const apiKey = "sk-ant-api03-xK9mZ2vL8nQ5rT1wY4bC7dF0gH3jE6pA"
-	if err := os.WriteFile(filepath.Join(logsDir, "trace.log"), []byte("Authorization: Bearer "+apiKey+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(logsDir, "entire.log"), []byte("Authorization: Bearer "+apiKey+"\n"), 0o600); err != nil {
 		t.Fatalf("write log: %v", err)
 	}
 
@@ -249,7 +272,7 @@ func TestWriteDoctorBundle_RawSkipsRedaction(t *testing.T) {
 		t.Fatalf("writeDoctorBundle raw: %v", err)
 	}
 
-	got := readZipEntry(t, out, "logs/trace.log")
+	got := readZipEntry(t, out, "logs/entire.log")
 	if !strings.Contains(got, apiKey) {
 		t.Fatalf("--raw bundle should preserve raw secret, got: %q", got)
 	}

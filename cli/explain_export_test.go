@@ -51,9 +51,9 @@ func setupExportRepo(t *testing.T) *git.Repository {
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".trace"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".entire"), 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(tmpDir, ".trace", "settings.json"),
+		filepath.Join(tmpDir, ".entire", "settings.json"),
 		[]byte(`{"enabled": true}`),
 		0o600,
 	))
@@ -134,9 +134,9 @@ func TestRunExplainExport_JSONFetchesRemoteV1Metadata(t *testing.T) {
 	})
 	runGit(t, producerDir, "push", "origin", paths.MetadataBranchName+":"+paths.MetadataBranchName)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(localDir, ".trace"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(localDir, ".entire"), 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(localDir, ".trace", "settings.json"),
+		filepath.Join(localDir, ".entire", "settings.json"),
 		[]byte(`{"enabled": true}`),
 		0o600,
 	))
@@ -194,7 +194,7 @@ func TestRunExplainExport_JSONUsesMetadataOnlyReader(t *testing.T) {
 
 // TestRunExplainExport_CommitWithoutTrailerSurfacesTrailerError (issue #1814):
 // a positional target that resolves to a real commit without an
-// Trace-Checkpoint trailer must surface that fact — not be masked as
+// Entire-Checkpoint trailer must surface that fact — not be masked as
 // `checkpoint not found: <sha>`, which reads as a typo and hides that the
 // commit was found. Same conflation class PR #1812 fixes for the prose path.
 func TestRunExplainExport_CommitWithoutTrailerSurfacesTrailerError(t *testing.T) {
@@ -210,14 +210,14 @@ func TestRunExplainExport_CommitWithoutTrailerSurfacesTrailerError(t *testing.T)
 	})
 
 	require.Error(t, err)
-	require.ErrorContains(t, err, "has no Trace-Checkpoint trailer",
+	require.ErrorContains(t, err, "has no Entire-Checkpoint trailer",
 		"a trailer-less commit target must surface the trailer failure")
 	require.NotContains(t, err.Error(), "checkpoint not found",
 		"a resolved commit must not be masked as an unknown checkpoint")
 }
 
 // TestRunExplainExport_TrailerCheckpointUnavailableFailsWithCause: when a
-// commit's Trace-Checkpoint trailer references a checkpoint that is neither
+// commit's Entire-Checkpoint trailer references a checkpoint that is neither
 // local nor fetchable, the export path must fail naming the commit, the
 // checkpoint, and availability as the cause — not succeed and let a
 // downstream read die with a bare "checkpoint not found" that misdirects the
@@ -564,7 +564,7 @@ func TestRunExplainExport_RawTranscriptRequiresTarget(t *testing.T) {
 
 // TestRunExplainExport_PositionalCommitSHAFallback covers the codex finding:
 // a positional that doesn't match a checkpoint prefix should be re-resolved
-// as a commit ref (with Trace-Checkpoint trailer) before failing.
+// as a commit ref (with Entire-Checkpoint trailer) before failing.
 func TestRunExplainExport_PositionalCommitSHAFallback(t *testing.T) {
 	repo := setupExportRepo(t)
 
@@ -581,7 +581,7 @@ func TestRunExplainExport_PositionalCommitSHAFallback(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(cwd, "trailing.txt"), []byte("trailing"), 0o600))
 	_, err = wt.Add("trailing.txt")
 	require.NoError(t, err)
-	commitHash, err := wt.Commit("trailing\n\nTrace-Checkpoint: "+cpID.String()+"\n", &git.CommitOptions{
+	commitHash, err := wt.Commit("trailing\n\nEntire-Checkpoint: "+cpID.String()+"\n", &git.CommitOptions{
 		Author: &object.Signature{Name: exportTestAuthorName, Email: exportTestAuthorEmail, When: time.Now()},
 	})
 	require.NoError(t, err)
