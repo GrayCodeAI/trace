@@ -36,7 +36,6 @@ func handleStatelessConnect(ctx context.Context, t Transport, service string, st
 	}
 	defer refs.Close() //nolint:errcheck // best-effort close
 
-
 	advertisement, err := io.ReadAll(refs)
 	if err != nil {
 		return fmt.Errorf("reading v2 info/refs: %w", err)

@@ -53,12 +53,12 @@ func Run(ctx context.Context, t Transport, protocolVersion int, stdin io.Reader,
 		case line == "capabilities":
 			if protocolVersion >= 2 {
 				fmt.Fprintln(stdout, "stateless-connect") //nolint:errcheck // best-effort protocol output
-				fmt.Fprintln(stdout, "push") //nolint:errcheck // best-effort protocol output
+				fmt.Fprintln(stdout, "push")              //nolint:errcheck // best-effort protocol output
 			} else {
 				fmt.Fprintln(stdout, "connect") //nolint:errcheck // best-effort protocol output
 			}
 			fmt.Fprintln(stdout, "option") //nolint:errcheck // best-effort protocol output
-			fmt.Fprintln(stdout) //nolint:errcheck // best-effort protocol output
+			fmt.Fprintln(stdout)           //nolint:errcheck // best-effort protocol output
 
 		case line == "list" || line == "list for-push":
 			if err := handleList(ctx, t, adv, line == "list for-push", stdout); err != nil {
