@@ -12,6 +12,9 @@ bin/
 .claude/
 .codegraph/
 
+# Runtime artifacts
+.entire/
+
 # Local DB / cache
 codegraph.db
 
