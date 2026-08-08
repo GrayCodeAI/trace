@@ -1,0 +1,20 @@
+# Coverage ignore list (gocover.io format).
+#
+# These paths are excluded from the coverage threshold. They are either
+# generated code (the ogen OpenAPI client in internal/coreapi) or
+# upstream-ported infrastructure that is vendored as-is from entire-eco/cli
+# and intentionally has no unit tests here (internal/remotehelper,
+# internal/entireclient, cli/agentimport). Excluding them keeps the 58%
+# threshold meaningful for trace's own hand-written code.
+
+internal/coreapi/**
+internal/remotehelper/**
+internal/entireclient/**
+internal/procsignal/**
+internal/testdirs/**
+cli/agentimport/**
+cli/api/checkpoint/**
+cli/codesearch/**
+cli/runnerdefaults/**
+cli/integration_test/**
+cli/cmd/**
