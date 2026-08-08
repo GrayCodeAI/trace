@@ -25,7 +25,7 @@ func TestBuildTraceGraphExport(t *testing.T) {
 		StepCount:    1,
 		FilesTouched: []string{"cli/root.go"},
 	}}
-	checkpoints := []checkpoint.CommittedInfo{{
+	checkpoints := []checkpoint.CheckpointInfo{{
 		CheckpointID:     checkpointid.CheckpointID("abc123def456"),
 		SessionID:        "session-alpha",
 		SessionIDs:       []string{"session-alpha"},
@@ -69,7 +69,7 @@ func TestBuildTraceGraphExportCreatesCheckpointOnlySessionNode(t *testing.T) {
 	t.Parallel()
 
 	generatedAt := time.Date(2026, time.July, 25, 11, 0, 0, 0, time.UTC)
-	checkpoints := []checkpoint.CommittedInfo{{
+	checkpoints := []checkpoint.CheckpointInfo{{
 		CheckpointID: checkpointid.CheckpointID("abc123def456"),
 		SessionID:    "archived-session",
 		CreatedAt:    generatedAt.Add(-time.Hour),
@@ -100,7 +100,7 @@ func TestBuildTraceGraphExportFiltersSessionAndLimitsCheckpoints(t *testing.T) {
 		{SessionID: "alpha-one", StartedAt: generatedAt.Add(-3 * time.Hour)},
 		{SessionID: "beta-one", StartedAt: generatedAt.Add(-3 * time.Hour)},
 	}
-	checkpoints := []checkpoint.CommittedInfo{
+	checkpoints := []checkpoint.CheckpointInfo{
 		{
 			CheckpointID: checkpointid.CheckpointID("aaaaaaaaaaaa"),
 			SessionID:    "alpha-one",
@@ -157,7 +157,7 @@ func TestBuildTraceCorrelationExportUsesExactStoredIdentity(t *testing.T) {
 			Metadata:  map[string]string{hawkSessionMetadataKey: "hawk-session-10"},
 		},
 	}
-	checkpoints := []checkpoint.CommittedInfo{
+	checkpoints := []checkpoint.CheckpointInfo{
 		{
 			CheckpointID: checkpointid.CheckpointID("bbbbbbbbbbbb"),
 			SessionIDs:   []string{"trace-alpha"},

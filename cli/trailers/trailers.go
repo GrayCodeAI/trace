@@ -50,6 +50,77 @@ const (
 	AgentTrailerKey = "Trace-Agent"
 )
 
+// OPFAppliedTrailerKey marks a trace/checkpoints/v1 commit whose blobs
+// have been redacted by the OpenAI Privacy Filter (the opt-in 9th,
+// network-backed layer, applied on top of the 8 regex layers).
+// Format: literal "true"; the trailer is omitted entirely when OPF was
+// not applied. The pre-push rewrite path treats commits lacking this
+// trailer as candidates to OPF-redact before they reach the remote.
+const OPFAppliedTrailerKey = "Trace-OPF-Applied"
+
+// OPFAppliedTrailerValue is the only value that means "OPF ran." Any
+// other value (or trailer absence) is treated as "not applied" so a
+// future "false" / "skipped" value never accidentally enables OPF.
+// Pin the value to literal "true" — rather than just trailer presence —
+// to prevent a future "Trace-OPF-Applied: false" or "skipped" from
+// accidentally meaning "yes, applied."
+const OPFAppliedTrailerValue = "true"
+
+// HasOPFApplied reports whether the commit message carries the
+// Trace-OPF-Applied trailer with value "true".
+func HasOPFApplied(commitMessage string) bool {
+	for _, line := range finalTrailerBlock(commitMessage) {
+		line = strings.TrimSpace(line)
+		key, value, ok := strings.Cut(line, ":")
+		if !ok || key != OPFAppliedTrailerKey {
+			continue
+		}
+		if strings.TrimSpace(value) == OPFAppliedTrailerValue {
+			return true
+		}
+	}
+	return false
+}
+
+// finalTrailerBlock returns the contiguous block of trailer lines at the
+// end of a commit message, or nil when the message has no trailer block.
+func finalTrailerBlock(message string) []string {
+	trimmed := strings.TrimRight(message, "\n")
+	if trimmed == "" {
+		return nil
+	}
+	lines := strings.Split(trimmed, "\n")
+	i := len(lines) - 1
+	for i >= 0 && strings.TrimSpace(lines[i]) == "" {
+		i--
+	}
+	end := i + 1
+	for i >= 0 && IsTrailerLine(strings.TrimSpace(lines[i])) {
+		i--
+	}
+	start := i + 1
+	if start == end {
+		return nil
+	}
+	if i >= 0 && strings.TrimSpace(lines[i]) != "" {
+		return nil
+	}
+	return lines[start:end]
+}
+
+// AppendOPFAppliedTrailer appends `Trace-OPF-Applied: true` in
+// trailer-aware format. Idempotent: if the message already carries
+// the trailer with value "true", the original message is returned
+// unchanged so re-parenting an already-applied commit doesn't
+// duplicate the trailer.
+func AppendOPFAppliedTrailer(message string) string {
+	if HasOPFApplied(message) {
+		return message
+	}
+	trailer := fmt.Sprintf("%s: %s", OPFAppliedTrailerKey, OPFAppliedTrailerValue)
+	return appendTrailerLine(message, trailer)
+}
+
 // Pre-compiled regexes for trailer parsing.
 var (
 	// Trailer parsing regexes.

@@ -39,7 +39,7 @@ func maybePromptReviewSettingsMigration(
 
 	// Skip the prompt entirely if the user has already declined. Without this,
 	// teams who intentionally commit review prefs would be re-prompted on
-	// every invocation of `entire review`.
+	// every invocation of `trace review`.
 	prefs, prefsErr := settings.LoadClonePreferences(ctx)
 	if prefsErr != nil {
 		return fmt.Errorf("load review preferences for migration: %w", prefsErr)
@@ -65,7 +65,7 @@ func maybePromptReviewSettingsMigration(
 	} else if localHas {
 		fmt.Fprintln(errOut, "Cannot migrate review preferences: .trace/settings.local.json also has review keys.")
 		fmt.Fprintf(errOut, "Those override clone-local preferences and would mask the migration. Remove the\n")
-		fmt.Fprintf(errOut, "`review` / `review_fix_agent` keys from %s, then re-run `entire review`.\n", localPath)
+		fmt.Fprintf(errOut, "`review` / `review_fix_agent` keys from %s, then re-run `trace review`.\n", localPath)
 		return nil
 	}
 
@@ -79,7 +79,7 @@ func maybePromptReviewSettingsMigration(
 			slog.Bool("has_fix_agent", project.hasFixAgent))
 		fmt.Fprintln(errOut, "Review preferences are stored in project settings (.trace/settings.json).")
 		fmt.Fprintln(errOut, "These are typically committed and may be visible to teammates.")
-		fmt.Fprintln(errOut, "Run `entire review --edit` interactively to move them to clone-local preferences.")
+		fmt.Fprintln(errOut, "Run `trace review --edit` interactively to move them to clone-local preferences.")
 		return nil
 	}
 
@@ -174,7 +174,7 @@ func migrateProjectReviewSettings(ctx context.Context, project *projectReviewSet
 			if len(conflicts) > 0 {
 				return false, fmt.Errorf(
 					"review settings exist in both %s and clone-local preferences for agent(s) %v; "+
-						"reconcile manually by removing the redundant keys from %s, then re-run `entire review`",
+						"reconcile manually by removing the redundant keys from %s, then re-run `trace review`",
 					project.path, conflicts, project.path,
 				)
 			}
@@ -193,7 +193,7 @@ func migrateProjectReviewSettings(ctx context.Context, project *projectReviewSet
 			if prefs.ReviewFixAgent != "" && prefs.ReviewFixAgent != fixAgent {
 				return false, fmt.Errorf(
 					"review_fix_agent differs between %s (%q) and clone-local preferences (%q); "+
-						"reconcile manually by removing review_fix_agent from %s, then re-run `entire review`",
+						"reconcile manually by removing review_fix_agent from %s, then re-run `trace review`",
 					project.path, fixAgent, prefs.ReviewFixAgent, project.path,
 				)
 			}

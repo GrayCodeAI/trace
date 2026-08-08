@@ -602,7 +602,6 @@ func TestSummaryGenerationSettings_Validate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			err := tt.s.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
@@ -668,7 +667,7 @@ func TestMergeJSON_SummaryGeneration_SameProviderPreservesModel(t *testing.T) {
 func TestIsCheckpointsV2Enabled_DefaultsFalse(t *testing.T) {
 	t.Parallel()
 	s := &TraceSettings{Enabled: true}
-	if s.IsCheckpointsV2Enabled() {
+	if s.IsCheckpointsV2Enabled(context.Background()) {
 		t.Error("expected IsCheckpointsV2Enabled to default to false")
 	}
 }
@@ -676,30 +675,28 @@ func TestIsCheckpointsV2Enabled_DefaultsFalse(t *testing.T) {
 func TestIsCheckpointsV2Enabled_EmptyStrategyOptions(t *testing.T) {
 	t.Parallel()
 	s := &TraceSettings{Enabled: true, StrategyOptions: map[string]any{}}
-	if s.IsCheckpointsV2Enabled() {
+	if s.IsCheckpointsV2Enabled(context.Background()) {
 		t.Error("expected IsCheckpointsV2Enabled to be false with empty strategy_options")
 	}
 }
 
 func TestIsCheckpointsV2Enabled_True(t *testing.T) {
-	t.Parallel()
+	t.Setenv(EnvCheckpointsPrimary, "git-refs")
 	s := &TraceSettings{
-		Enabled:         true,
-		StrategyOptions: map[string]any{"checkpoints_v2": true},
+		Enabled: true,
 	}
-	if !s.IsCheckpointsV2Enabled() {
+	if !s.IsCheckpointsV2Enabled(context.Background()) {
 		t.Error("expected IsCheckpointsV2Enabled to be true")
 	}
 }
 
 func TestIsCheckpointsV2Enabled_CheckpointsVersion2(t *testing.T) {
-	t.Parallel()
+	t.Setenv(EnvCheckpointsPrimary, "git-refs")
 	s := &TraceSettings{
-		Enabled:         true,
-		StrategyOptions: map[string]any{"checkpoints_version": 2},
+		Enabled: true,
 	}
-	if !s.IsCheckpointsV2Enabled() {
-		t.Error("expected IsCheckpointsV2Enabled to be true when checkpoints_version is 2")
+	if !s.IsCheckpointsV2Enabled(context.Background()) {
+		t.Error("expected IsCheckpointsV2Enabled to be true when the git-refs backend is primary")
 	}
 }
 
@@ -709,7 +706,7 @@ func TestIsCheckpointsV2Enabled_ExplicitlyFalse(t *testing.T) {
 		Enabled:         true,
 		StrategyOptions: map[string]any{"checkpoints_v2": false},
 	}
-	if s.IsCheckpointsV2Enabled() {
+	if s.IsCheckpointsV2Enabled(context.Background()) {
 		t.Error("expected IsCheckpointsV2Enabled to be false when explicitly set to false")
 	}
 }
@@ -720,7 +717,7 @@ func TestIsCheckpointsV2Enabled_WrongType(t *testing.T) {
 		Enabled:         true,
 		StrategyOptions: map[string]any{"checkpoints_v2": "yes"},
 	}
-	if s.IsCheckpointsV2Enabled() {
+	if s.IsCheckpointsV2Enabled(context.Background()) {
 		t.Error("expected IsCheckpointsV2Enabled to be false for non-bool value")
 	}
 }
@@ -734,7 +731,7 @@ func TestIsCheckpointsV2Enabled_LoadFromFile(t *testing.T) {
 	}
 
 	settingsFile := filepath.Join(traceDir, "settings.json")
-	if err := os.WriteFile(settingsFile, []byte(`{"enabled": true, "strategy_options": {"checkpoints_v2": true}}`), 0o644); err != nil {
+	if err := os.WriteFile(settingsFile, []byte(`{"enabled": true, "checkpoints": {"primary": {"type": "git-refs"}}}`), 0o644); err != nil {
 		t.Fatalf("failed to write settings file: %v", err)
 	}
 
@@ -748,7 +745,7 @@ func TestIsCheckpointsV2Enabled_LoadFromFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !s.IsCheckpointsV2Enabled() {
+	if !s.IsCheckpointsV2Enabled(context.Background()) {
 		t.Error("expected IsCheckpointsV2Enabled to be true after loading from file")
 	}
 }
@@ -767,9 +764,9 @@ func TestIsCheckpointsV2Enabled_LocalOverride(t *testing.T) {
 		t.Fatalf("failed to write settings file: %v", err)
 	}
 
-	// Local override enables checkpoints_v2
+	// Local override enables the git-refs checkpoint backend
 	localFile := filepath.Join(traceDir, "settings.local.json")
-	if err := os.WriteFile(localFile, []byte(`{"strategy_options": {"checkpoints_v2": true}}`), 0o644); err != nil {
+	if err := os.WriteFile(localFile, []byte(`{"checkpoints": {"primary": {"type": "git-refs"}}}`), 0o644); err != nil {
 		t.Fatalf("failed to write local settings file: %v", err)
 	}
 
@@ -783,35 +780,29 @@ func TestIsCheckpointsV2Enabled_LocalOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !s.IsCheckpointsV2Enabled() {
+	if !s.IsCheckpointsV2Enabled(context.Background()) {
 		t.Error("expected IsCheckpointsV2Enabled to be true from local override")
 	}
 }
 
 func TestCheckpointsVersion(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
-		name string
-		opts map[string]any
-		want int
+		name    string
+		primary string
+		want    int
 	}{
-		{"unset defaults to one", nil, 1},
-		{"empty options defaults to one", map[string]any{}, 1},
-		{"integer 2", map[string]any{"checkpoints_version": 2}, 2},
-		{"float 2 from json", map[string]any{"checkpoints_version": float64(2)}, 2},
-		{"integer 3 falls back to default", map[string]any{"checkpoints_version": 3}, 1},
-		{"zero falls back to default", map[string]any{"checkpoints_version": 0}, 1},
-		{"negative falls back to default", map[string]any{"checkpoints_version": -1}, 1},
-		{"non-integer float falls back to default", map[string]any{"checkpoints_version": 2.5}, 1},
-		{"string 2", map[string]any{"checkpoints_version": "2"}, 2},
-		{"bool falls back to default", map[string]any{"checkpoints_version": true}, 1},
+		{"unset defaults to one", "", 1},
+		{"git-refs primary is two", "git-refs", 2},
+		{"git-branch primary is one", "git-branch", 1},
+		{"invalid primary defaults to one", "bogus", 1},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			s := &TraceSettings{StrategyOptions: tt.opts}
+			if tt.primary != "" {
+				t.Setenv(EnvCheckpointsPrimary, tt.primary)
+			}
+			s := &TraceSettings{}
 			if got := s.CheckpointsVersion(); got != tt.want {
 				t.Errorf("CheckpointsVersion() = %d, want %d", got, tt.want)
 			}
@@ -828,25 +819,24 @@ func TestIsPushV2RefsEnabled_DefaultsFalse(t *testing.T) {
 }
 
 func TestIsPushV2RefsEnabled_RequiresBothFlags(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name     string
+		primary  string
 		opts     map[string]any
 		expected bool
 	}{
-		{"checkpoints_version 2 supersedes both", map[string]any{"checkpoints_v2": false, "push_v2_refs": false, "checkpoints_version": 2}, true},
-		{"both true", map[string]any{"checkpoints_v2": true, "push_v2_refs": true}, true},
-		{"only checkpoints_v2", map[string]any{"checkpoints_v2": true}, false},
-		{"only push_v2_refs", map[string]any{"push_v2_refs": true}, false},
-		{"both false", map[string]any{"checkpoints_v2": false, "push_v2_refs": false}, false},
-		{"push_v2_refs wrong type", map[string]any{"checkpoints_v2": true, "push_v2_refs": "yes"}, false},
-		{"empty options", map[string]any{}, false},
+		{"git-refs primary with push flag", "git-refs", map[string]any{"push_v2_refs": true}, true},
+		{"git-refs primary without push flag", "git-refs", map[string]any{}, false},
+		{"git-branch primary with push flag", "git-branch", map[string]any{"push_v2_refs": true}, false},
+		{"push_v2_refs wrong type", "git-refs", map[string]any{"push_v2_refs": "yes"}, false},
+		{"empty options", "", map[string]any{}, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+			if tt.primary != "" {
+				t.Setenv(EnvCheckpointsPrimary, tt.primary)
+			}
 			s := &TraceSettings{
 				Enabled:         true,
 				StrategyOptions: tt.opts,
@@ -867,9 +857,9 @@ func TestGetFullTranscriptGenerationRetentionDays(t *testing.T) {
 		want int
 	}{
 		{
-			name: "defaults to fourteen when missing",
+			name: "defaults to thirty when missing",
 			opts: nil,
-			want: 14,
+			want: 30,
 		},
 		{
 			name: "returns configured integer",
@@ -884,29 +874,27 @@ func TestGetFullTranscriptGenerationRetentionDays(t *testing.T) {
 		{
 			name: "returns default for wrong type",
 			opts: map[string]any{"full_transcript_generation_retention_days": "30"},
-			want: 14,
+			want: 30,
 		},
 		{
 			name: "returns default for zero",
 			opts: map[string]any{"full_transcript_generation_retention_days": 0},
-			want: 14,
+			want: 30,
 		},
 		{
 			name: "returns default for negative",
 			opts: map[string]any{"full_transcript_generation_retention_days": -5},
-			want: 14,
+			want: 30,
 		},
 		{
-			name: "returns default for non integral float",
+			name: "truncates non integral float",
 			opts: map[string]any{"full_transcript_generation_retention_days": 1.5},
-			want: 14,
+			want: 1,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			s := &TraceSettings{StrategyOptions: tt.opts}
 			if got := s.GetFullTranscriptGenerationRetentionDays(); got != tt.want {
 				t.Fatalf("GetFullTranscriptGenerationRetentionDays() = %d, want %d", got, tt.want)

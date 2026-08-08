@@ -25,179 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHasCodeChanges_OnlyMetadataChanges(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	testutil.InitRepo(t, tmpDir)
-	repo, err := git.PlainOpen(tmpDir)
-	require.NoError(t, err)
-
-	w, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("failed to get worktree: %v", err)
-	}
-
-	// Create first commit
-	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("initial"), 0o644); err != nil {
-		t.Fatalf("failed to write test file: %v", err)
-	}
-	if _, err := w.Add("test.txt"); err != nil {
-		t.Fatalf("failed to add test file: %v", err)
-	}
-	_, err = w.Commit("first commit", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	if err != nil {
-		t.Fatalf("failed to create first commit: %v", err)
-	}
-
-	// Create second commit with only .trace/ metadata changes
-	metadataDir := filepath.Join(tmpDir, ".trace", "metadata", "session-123")
-	if err := os.MkdirAll(metadataDir, 0o755); err != nil {
-		t.Fatalf("failed to create metadata dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(metadataDir, "full.jsonl"), []byte(`{"test": true}`), 0o644); err != nil {
-		t.Fatalf("failed to write metadata file: %v", err)
-	}
-	if _, err := w.Add(".trace"); err != nil {
-		t.Fatalf("failed to add .trace: %v", err)
-	}
-	commitHash, err := w.Commit("metadata only commit", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	if err != nil {
-		t.Fatalf("failed to create second commit: %v", err)
-	}
-
-	commit, err := repo.CommitObject(commitHash)
-	if err != nil {
-		t.Fatalf("failed to get commit object: %v", err)
-	}
-
-	// Only .trace/ changes should return false
-	if hasCodeChanges(commit) {
-		t.Error("hasCodeChanges() should return false when only .trace/ files changed")
-	}
-}
-
-func TestHasCodeChanges_WithCodeChanges(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	testutil.InitRepo(t, tmpDir)
-	repo, err := git.PlainOpen(tmpDir)
-	require.NoError(t, err)
-
-	w, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("failed to get worktree: %v", err)
-	}
-
-	// Create first commit
-	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("initial"), 0o644); err != nil {
-		t.Fatalf("failed to write test file: %v", err)
-	}
-	if _, err := w.Add("test.txt"); err != nil {
-		t.Fatalf("failed to add test file: %v", err)
-	}
-	_, err = w.Commit("first commit", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	if err != nil {
-		t.Fatalf("failed to create first commit: %v", err)
-	}
-
-	// Create second commit with code changes
-	if err := os.WriteFile(testFile, []byte("modified"), 0o644); err != nil {
-		t.Fatalf("failed to modify test file: %v", err)
-	}
-	if _, err := w.Add("test.txt"); err != nil {
-		t.Fatalf("failed to add modified file: %v", err)
-	}
-	commitHash, err := w.Commit("code change commit", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	if err != nil {
-		t.Fatalf("failed to create second commit: %v", err)
-	}
-
-	commit, err := repo.CommitObject(commitHash)
-	if err != nil {
-		t.Fatalf("failed to get commit object: %v", err)
-	}
-
-	// Code changes should return true
-	if !hasCodeChanges(commit) {
-		t.Error("hasCodeChanges() should return true when code files changed")
-	}
-}
-
-func TestHasCodeChanges_MixedChanges(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	testutil.InitRepo(t, tmpDir)
-	repo, err := git.PlainOpen(tmpDir)
-	require.NoError(t, err)
-
-	w, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("failed to get worktree: %v", err)
-	}
-
-	// Create first commit
-	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("initial"), 0o644); err != nil {
-		t.Fatalf("failed to write test file: %v", err)
-	}
-	if _, err := w.Add("test.txt"); err != nil {
-		t.Fatalf("failed to add test file: %v", err)
-	}
-	_, err = w.Commit("first commit", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	if err != nil {
-		t.Fatalf("failed to create first commit: %v", err)
-	}
-
-	// Create second commit with BOTH code and metadata changes
-	if err := os.WriteFile(testFile, []byte("modified"), 0o644); err != nil {
-		t.Fatalf("failed to modify test file: %v", err)
-	}
-	metadataDir := filepath.Join(tmpDir, ".trace", "metadata", "session-123")
-	if err := os.MkdirAll(metadataDir, 0o755); err != nil {
-		t.Fatalf("failed to create metadata dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(metadataDir, "full.jsonl"), []byte(`{"test": true}`), 0o644); err != nil {
-		t.Fatalf("failed to write metadata file: %v", err)
-	}
-	if _, err := w.Add("test.txt"); err != nil {
-		t.Fatalf("failed to add test file: %v", err)
-	}
-	if _, err := w.Add(".trace"); err != nil {
-		t.Fatalf("failed to add .trace: %v", err)
-	}
-	commitHash, err := w.Commit("mixed changes commit", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	if err != nil {
-		t.Fatalf("failed to create second commit: %v", err)
-	}
-
-	commit, err := repo.CommitObject(commitHash)
-	if err != nil {
-		t.Fatalf("failed to get commit object: %v", err)
-	}
-
-	// Mixed changes should return true (code changes present)
-	if !hasCodeChanges(commit) {
-		t.Error("hasCodeChanges() should return true when commit has both code and metadata changes")
-	}
-}
-
 func TestGetBranchCheckpoints_FiltersMainCommits(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
@@ -259,7 +86,7 @@ func TestGetBranchCheckpoints_FiltersMainCommits(t *testing.T) {
 	// Get checkpoints - should only include feature branch commits, not main
 	// Note: Without actual checkpoint data in trace/checkpoints/v1, this returns empty
 	// but the important thing is it doesn't error and the filtering logic runs
-	points, err := getBranchCheckpoints(context.Background(), repo, 20)
+	points, _, err := getBranchCheckpoints(context.Background(), repo, 20)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -392,7 +219,7 @@ func TestFormatCheckpointOutput_UsesScopedPrompts(t *testing.T) {
 		FilesTouched: []string{"main.go"},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:              "abc123def456",
 			SessionID:                 "2026-01-30-test-session",
 			CreatedAt:                 time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
@@ -404,7 +231,7 @@ func TestFormatCheckpointOutput_UsesScopedPrompts(t *testing.T) {
 	}
 
 	// Verbose output should use scoped prompts
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
 
 	// Should show ONLY the second prompt (scoped)
 	if !strings.Contains(output, "Second prompt - SHOULD appear") {
@@ -424,7 +251,7 @@ func TestFormatCheckpointOutput_FallsBackToStoredPrompts(t *testing.T) {
 		FilesTouched: []string{"main.go"},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:              "abc123def456",
 			SessionID:                 "2026-01-30-test-session",
 			CreatedAt:                 time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
@@ -436,7 +263,7 @@ func TestFormatCheckpointOutput_FallsBackToStoredPrompts(t *testing.T) {
 	}
 
 	// Verbose output should fall back to stored prompts
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, true, false, &bytes.Buffer{})
 
 	// Intent should use stored prompt
 	if !strings.Contains(output, "Stored prompt from older checkpoint") {
@@ -457,7 +284,7 @@ func TestFormatCheckpointOutput_FullShowsTraceTranscript(t *testing.T) {
 		FilesTouched: []string{"main.go"},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:              "abc123def456",
 			SessionID:                 "2026-01-30-test-session",
 			CreatedAt:                 time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
@@ -468,7 +295,7 @@ func TestFormatCheckpointOutput_FullShowsTraceTranscript(t *testing.T) {
 	}
 
 	// Full mode should show the ENTIRE transcript (not scoped)
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, false, true, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), nil, checkpoint.Author{}, false, true, &bytes.Buffer{})
 
 	// Should show the full transcript including first prompt (even though scoped prompts exclude it)
 	if !strings.Contains(output, "First prompt") {
@@ -508,7 +335,7 @@ func TestRunExplainCommit_NoCheckpointTrailer(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err = runExplainCommit(context.Background(), &buf, &buf, hash.String()[:7], false, false, false, false, false, false, false)
+	err = runExplainCommit(context.Background(), &buf, &buf, hash.String()[:7], false, false, false, false, false, false, false, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -557,7 +384,7 @@ func TestRunExplainCommit_WithCheckpointTrailer(t *testing.T) {
 	var buf bytes.Buffer
 	// This should try to look up the checkpoint and fail (checkpoint doesn't exist in store)
 	// but it should still attempt the lookup rather than showing commit details
-	err = runExplainCommit(context.Background(), &buf, &buf, hash.String()[:7], false, false, false, false, false, false, false)
+	err = runExplainCommit(context.Background(), &buf, &buf, hash.String()[:7], false, false, false, false, false, false, false, 0)
 
 	// Should error because the checkpoint doesn't exist in the store
 	if err == nil {
@@ -686,7 +513,7 @@ func TestRunExplain_SessionFlagFiltersListView(t *testing.T) {
 	// When session is specified alone, it should NOT error for mutual exclusivity
 	// It should route to the list view with a filter (which may fail for other reasons
 	// like not being in a git repo, but not for mutual exclusivity)
-	err := runExplain(context.Background(), &buf, &errBuf, "some-session", "", "", "", false, false, false, false, false, false, false)
+	err := runExplain(context.Background(), &buf, &errBuf, "some-session", "", "", "", false, false, false, false, false, false, false, 0)
 
 	// Should NOT be a mutual exclusivity error
 	if err != nil && strings.Contains(err.Error(), "cannot specify multiple") {
@@ -698,7 +525,7 @@ func TestRunExplain_SessionWithCheckpointStillMutuallyExclusive(t *testing.T) {
 	// Test that --session with --checkpoint is still an error
 	var buf, errBuf bytes.Buffer
 
-	err := runExplain(context.Background(), &buf, &errBuf, "some-session", "", "some-checkpoint", "", false, false, false, false, false, false, false)
+	err := runExplain(context.Background(), &buf, &errBuf, "some-session", "", "some-checkpoint", "", false, false, false, false, false, false, false, 0)
 
 	if err == nil {
 		t.Error("expected error when --session and --checkpoint both specified")
@@ -712,7 +539,7 @@ func TestRunExplain_SessionWithCommitStillMutuallyExclusive(t *testing.T) {
 	// Test that --session with --commit is still an error
 	var buf, errBuf bytes.Buffer
 
-	err := runExplain(context.Background(), &buf, &errBuf, "some-session", "some-commit", "", "", false, false, false, false, false, false, false)
+	err := runExplain(context.Background(), &buf, &errBuf, "some-session", "some-commit", "", "", false, false, false, false, false, false, false, 0)
 
 	if err == nil {
 		t.Error("expected error when --session and --commit both specified")
@@ -728,7 +555,7 @@ func TestFormatCheckpointOutput_WithAuthor(t *testing.T) {
 		FilesTouched: []string{"main.go"},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:              "abc123def456",
 			SessionID:                 "2026-01-30-test-session",
 			CreatedAt:                 time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
@@ -745,7 +572,7 @@ func TestFormatCheckpointOutput_WithAuthor(t *testing.T) {
 	}
 
 	// With author, should show author line
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), nil, author, true, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), nil, author, true, false, &bytes.Buffer{})
 
 	if !strings.Contains(output, "  author   Alice Developer <alice@example.com>") {
 		t.Errorf("expected author line in output, got:\n%s", output)
@@ -759,7 +586,7 @@ func TestFormatCheckpointOutput_EmptyAuthor(t *testing.T) {
 		FilesTouched: []string{"main.go"},
 	}
 	content := &checkpoint.SessionContent{
-		Metadata: checkpoint.CommittedMetadata{
+		Metadata: checkpoint.Metadata{
 			CheckpointID:              "abc123def456",
 			SessionID:                 "2026-01-30-test-session",
 			CreatedAt:                 time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
@@ -773,7 +600,7 @@ func TestFormatCheckpointOutput_EmptyAuthor(t *testing.T) {
 	// Empty author - should not show author line
 	author := checkpoint.Author{}
 
-	output := formatCheckpointOutput(summary, content, id.MustCheckpointID("abc123def456"), nil, author, true, false, &bytes.Buffer{})
+	output := formatCheckpointOutput(context.Background(), summary, content, id.MustCheckpointID("abc123def456"), nil, author, true, false, &bytes.Buffer{})
 
 	if strings.Contains(output, "  author") {
 		t.Errorf("expected no author line for empty author, got:\n%s", output)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/paths"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +42,7 @@ func TestDoPushBranch_SharedBudget_BoundsTotalWallClock(t *testing.T) {
 	const target = "ssh://git@localhost/checkpoints.git"
 
 	start := time.Now()
-	err := doPushBranch(context.Background(), target, paths.MetadataBranchName)
+	err := doPushRef(context.Background(), target, plumbing.NewBranchReferenceName(paths.MetadataBranchName))
 	elapsed := time.Since(start)
 
 	require.NoError(t, err, "doPushBranch degrades gracefully on a stuck transport")

@@ -25,7 +25,7 @@ func TestWriteStandardCheckpointEntries_RefusesUnexpectedSessionZeroOverwrite(t 
 	if err != nil {
 		t.Fatalf("PlainInit() error = %v", err)
 	}
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 
 	if err := logging.Init(context.Background(), ""); err != nil {
 		t.Fatalf("logging.Init() error = %v", err)
@@ -38,7 +38,7 @@ func TestWriteStandardCheckpointEntries_RefusesUnexpectedSessionZeroOverwrite(t 
 	}
 	basePath := checkpointID.Path() + "/"
 
-	oldMetadata := CommittedMetadata{
+	oldMetadata := Metadata{
 		CheckpointID: checkpointID,
 		SessionID:    "session-old",
 		Strategy:     "manual-commit",
@@ -62,7 +62,7 @@ func TestWriteStandardCheckpointEntries_RefusesUnexpectedSessionZeroOverwrite(t 
 		},
 	}
 
-	opts := WriteCommittedOptions{
+	opts := WriteOptions{
 		CheckpointID: checkpointID,
 		SessionID:    "session-new",
 		Strategy:     "manual-commit",

@@ -29,7 +29,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-// BenchRepo is a fully initialized git repository with Trace configured,
+// BenchRepo is a fully initialized git repository with Entire configured,
 // ready for checkpoint benchmarks.
 type BenchRepo struct {
 	// Dir is the absolute path to the repository root.
@@ -38,8 +38,11 @@ type BenchRepo struct {
 	// Repo is the go-git repository handle.
 	Repo *git.Repository
 
-	// Store is the checkpoint GitStore for this repo.
+	// Store is the committed (persistent) checkpoint store for this repo.
 	Store *checkpoint.GitStore
+
+	// Ephemeral is the shadow-branch (temporary) checkpoint store for this repo.
+	Ephemeral checkpoint.EphemeralStore
 
 	// HeadHash is the current HEAD commit hash string.
 	HeadHash string
@@ -91,7 +94,7 @@ func (o *RepoOpts) withDefaults() RepoOpts {
 
 // NewBenchRepo creates an isolated git repository for benchmarks.
 // The repo has an initial commit with the configured number of files,
-// a .gitignore excluding .trace/, and Trace settings initialized.
+// a .gitignore excluding .trace/, and Entire settings initialized.
 //
 // Uses b.TempDir() so cleanup is automatic.
 func NewBenchRepo(b *testing.B, opts RepoOpts) *BenchRepo {
@@ -109,8 +112,9 @@ func NewBenchRepo(b *testing.B, opts RepoOpts) *BenchRepo {
 	if err != nil {
 		b.Fatalf("git init: %v", err)
 	}
+	b.Cleanup(func() { _ = repo.Close() })
 
-	// Create .gitignore and .trace settings
+	// Create .gitignore and .entire settings
 	writeFile(b, dir, ".gitignore", ".trace/\n")
 	initTraceSettings(b, dir, opts.Strategy)
 
@@ -169,11 +173,15 @@ func NewBenchRepo(b *testing.B, opts RepoOpts) *BenchRepo {
 	}
 
 	br := &BenchRepo{
-		Dir:      dir,
-		Repo:     repo,
-		Store:    checkpoint.NewGitStore(repo),
-		HeadHash: headHash.String(),
-		Strategy: opts.Strategy,
+		Dir:  dir,
+		Repo: repo,
+		// Benchmark fixture: construct the git store directly rather than via
+		// checkpoint.Open. Benchmarks pin the v1 topology and never exercise
+		// settings-driven backend selection, so they deliberately bypass Open.
+		Store:     checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs()),
+		Ephemeral: checkpoint.NewEphemeralStore(repo, checkpoint.DefaultV1Refs()),
+		HeadHash:  headHash.String(),
+		Strategy:  opts.Strategy,
 	}
 
 	// Determine worktree ID
@@ -189,33 +197,6 @@ func NewBenchRepo(b *testing.B, opts RepoOpts) *BenchRepo {
 func (br *BenchRepo) WriteFile(b *testing.B, relPath, content string) {
 	b.Helper()
 	writeFile(b, br.Dir, relPath, content)
-}
-
-// AddAndCommit stages the given files and creates a commit.
-// Returns the new HEAD hash.
-func (br *BenchRepo) AddAndCommit(b *testing.B, message string, files ...string) string {
-	b.Helper()
-	wt, err := br.Repo.Worktree()
-	if err != nil {
-		b.Fatalf("worktree: %v", err)
-	}
-	for _, f := range files {
-		if _, err := wt.Add(f); err != nil {
-			b.Fatalf("add %s: %v", f, err)
-		}
-	}
-	hash, err := wt.Commit(message, &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "Bench User",
-			Email: "bench@example.com",
-			When:  time.Now(),
-		},
-	})
-	if err != nil {
-		b.Fatalf("commit: %v", err)
-	}
-	br.HeadHash = hash.String()
-	return hash.String()
 }
 
 // SessionOpts configures how CreateSessionState creates a session state file.
@@ -239,7 +220,7 @@ type SessionOpts struct {
 	AgentType types.AgentType
 }
 
-// CreateSessionState writes a session state file to .git/trace-sessions/.
+// CreateSessionState writes a session state file to .git/entire-sessions/.
 // Returns the session ID used.
 func (br *BenchRepo) CreateSessionState(b *testing.B, opts SessionOpts) string {
 	b.Helper()
@@ -273,7 +254,7 @@ func (br *BenchRepo) CreateSessionState(b *testing.B, opts SessionOpts) string {
 		AgentType:      opts.AgentType,
 	}
 
-	// Write to .git/trace-sessions/<session-id>.json
+	// Write to .git/entire-sessions/<session-id>.json
 	gitDir := filepath.Join(br.Dir, ".git")
 	sessDir := filepath.Join(gitDir, session.SessionStateDirName)
 	if err := os.MkdirAll(sessDir, 0o750); err != nil {
@@ -335,7 +316,7 @@ func GenerateTranscript(opts TranscriptOpts) []byte {
 func (br *BenchRepo) WriteTranscriptFile(b *testing.B, sessionID string, data []byte) string {
 	b.Helper()
 	// Write to .trace/metadata/<session-id>/full.jsonl (matching real layout)
-	relDir := filepath.Join(".trace", "metadata", sessionID)
+	relDir := filepath.Join(".entire", "metadata", sessionID)
 	relPath := filepath.Join(relDir, "full.jsonl")
 	absDir := filepath.Join(br.Dir, relDir)
 	if err := os.MkdirAll(absDir, 0o750); err != nil {
@@ -384,7 +365,7 @@ func (br *BenchRepo) SeedShadowBranch(b *testing.B, sessionID string, checkpoint
 			b.Fatalf("write transcript: %v", err)
 		}
 
-		_, err := br.Store.WriteTemporary(context.Background(), checkpoint.WriteTemporaryOptions{
+		_, err := br.Ephemeral.Write(context.Background(), checkpoint.Step{
 			SessionID:         sessionID,
 			BaseCommit:        br.HeadHash,
 			WorktreeID:        br.WorktreeID,
@@ -425,7 +406,7 @@ func (br *BenchRepo) SeedMetadataBranch(b *testing.B, checkpointCount int) {
 			files = append(files, fmt.Sprintf("src/file_%03d.go", (i*5+j)%100))
 		}
 
-		err = br.Store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
+		err = br.Store.Write(context.Background(), checkpoint.Session{
 			CheckpointID:     cpID,
 			SessionID:        sessionID,
 			Strategy:         br.Strategy,
@@ -481,24 +462,24 @@ func GenerateFileContent(seed, sizeBytes int) string {
 	return buf.String()
 }
 
-// benchmark fixtures written to temp dirs with tightened permissions
+//nolint:gosec // G301/G306: benchmark fixtures use standard permissions in temp dirs
 func writeFile(b *testing.B, dir, relPath, content string) {
 	b.Helper()
 	abs := filepath.Join(dir, relPath)
-	if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		b.Fatalf("mkdir %s: %v", filepath.Dir(relPath), err)
 	}
-	if err := os.WriteFile(abs, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
 		b.Fatalf("write %s: %v", relPath, err)
 	}
 }
 
-// benchmark fixtures written to temp dirs with tightened permissions
+//nolint:gosec // G301/G306: benchmark fixtures use standard permissions in temp dirs
 func initTraceSettings(b *testing.B, dir, strategy string) {
 	b.Helper()
-	traceDir := filepath.Join(dir, ".trace")
-	if err := os.MkdirAll(filepath.Join(traceDir, "tmp"), 0o750); err != nil {
-		b.Fatalf("mkdir .trace: %v", err)
+	entireDir := filepath.Join(dir, ".entire")
+	if err := os.MkdirAll(filepath.Join(entireDir, "tmp"), 0o755); err != nil {
+		b.Fatalf("mkdir .entire: %v", err)
 	}
 
 	settings := map[string]any{
@@ -509,7 +490,7 @@ func initTraceSettings(b *testing.B, dir, strategy string) {
 	if err != nil {
 		b.Fatalf("marshal settings: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(traceDir, paths.SettingsFileName), data, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(entireDir, paths.SettingsFileName), data, 0o644); err != nil {
 		b.Fatalf("write settings: %v", err)
 	}
 }

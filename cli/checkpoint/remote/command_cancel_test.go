@@ -6,13 +6,12 @@ import (
 	"testing"
 )
 
-// Not parallel: uses t.Setenv. Clearing TRACE_CHECKPOINT_TOKEN keeps the test
+// Not parallel: uses t.Setenv. Clearing ENTIRE_CHECKPOINT_TOKEN keeps the test
 // hermetic — otherwise newCommand spawns git against the ambient repo.
 func TestNewCommand_TerminatesOnCancel(t *testing.T) {
 	t.Setenv(CheckpointTokenEnvVar, "")
 
-	cmd, cleanup := newCommand(context.Background(), "push", "origin", "main")
-	defer cleanup()
+	cmd := newCommand(context.Background(), "push", "origin", "main")
 
 	if cmd.WaitDelay != killWaitDelay {
 		t.Errorf("WaitDelay = %v; want %v", cmd.WaitDelay, killWaitDelay)

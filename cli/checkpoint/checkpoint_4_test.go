@@ -71,11 +71,11 @@ func TestWriteTemporary_SubsequentCheckpoint_ExcludesGitIgnoredNewFiles(t *testi
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
 	// First checkpoint
-	firstResult, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	firstResult, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		MetadataDir:       ".trace/metadata/test-session",
@@ -91,7 +91,7 @@ func TestWriteTemporary_SubsequentCheckpoint_ExcludesGitIgnoredNewFiles(t *testi
 	require.False(t, firstResult.Skipped)
 
 	// Subsequent checkpoint with .env reported as a new file
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{},
@@ -182,11 +182,11 @@ func TestWriteTemporary_SubsequentCheckpoint_ExcludesNestedGitIgnoredFiles(t *te
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
 	// First checkpoint
-	firstResult, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	firstResult, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		MetadataDir:       ".trace/metadata/test-session",
@@ -202,7 +202,7 @@ func TestWriteTemporary_SubsequentCheckpoint_ExcludesNestedGitIgnoredFiles(t *te
 	require.False(t, firstResult.Skipped)
 
 	// Subsequent checkpoint with node_modules file reported as modified
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{"index.js", "node_modules/pkg/index.js"},
@@ -305,10 +305,10 @@ func TestWriteTemporary_FirstCheckpoint_UserAndAgentChanges(t *testing.T) {
 	}
 
 	// Create checkpoint - agent reports main.go as modified (from transcript)
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{"main.go"}, // Only agent-modified file in list
@@ -419,10 +419,10 @@ func TestWriteTemporary_FirstCheckpoint_CapturesUserDeletedFiles(t *testing.T) {
 	}
 
 	// Create checkpoint store and write first checkpoint
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{},
@@ -517,10 +517,10 @@ func TestWriteTemporary_FirstCheckpoint_CapturesRenamedFiles(t *testing.T) {
 	}
 
 	// Create checkpoint store and write first checkpoint
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{},
@@ -613,10 +613,10 @@ func TestWriteTemporary_FirstCheckpoint_FilenamesWithSpaces(t *testing.T) {
 	}
 
 	// Create checkpoint store and write first checkpoint
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{},
@@ -660,11 +660,11 @@ func TestWriteTemporary_FirstCheckpoint_FilenamesWithSpaces(t *testing.T) {
 func TestWriteCommitted_DuplicateSessionIDUpdatesInPlace(t *testing.T) {
 	t.Parallel()
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("deda01234567")
 
 	// Write session "X" with initial data
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "session-X",
 		Strategy:         "manual-commit",
@@ -684,7 +684,7 @@ func TestWriteCommitted_DuplicateSessionIDUpdatesInPlace(t *testing.T) {
 	}
 
 	// Write session "Y"
-	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err = store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "session-Y",
 		Strategy:         "manual-commit",
@@ -704,7 +704,7 @@ func TestWriteCommitted_DuplicateSessionIDUpdatesInPlace(t *testing.T) {
 	}
 
 	// Write session "X" again with updated data (should replace, not append)
-	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err = store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "session-X",
 		Strategy:         "manual-commit",
@@ -724,7 +724,7 @@ func TestWriteCommitted_DuplicateSessionIDUpdatesInPlace(t *testing.T) {
 	}
 
 	// Read the checkpoint summary
-	summary, err := store.ReadCommitted(context.Background(), checkpointID)
+	summary, err := store.Read(context.Background(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadCommitted() error = %v", err)
 	}

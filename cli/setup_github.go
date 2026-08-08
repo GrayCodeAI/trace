@@ -41,6 +41,8 @@ type GitHubBootstrapOptions struct {
 	// user can commit themselves. The GitHub repo (if requested) is
 	// still created, but nothing is pushed.
 	SkipInitialCommit bool
+	// Push pushes the initial commit to the created GitHub remote.
+	Push bool
 	// Yes accepts all defaults without prompting: init repo, create GitHub
 	// repo under the user's account (private), default commit message.
 	// Explicit flags (--no-github, --repo-owner, etc.) take precedence.

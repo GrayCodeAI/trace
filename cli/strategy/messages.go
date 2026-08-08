@@ -127,26 +127,9 @@ func ExtractLastCompletedTodo(todosJSON []byte) string {
 	return lastCompleted
 }
 
-// CountTodos returns the number of todo items in the JSON array.
-// Returns 0 if the JSON is invalid or empty.
-func CountTodos(todosJSON []byte) int {
-	if len(todosJSON) == 0 {
-		return 0
-	}
-
-	var todos []todoItem
-	if err := json.Unmarshal(todosJSON, &todos); err != nil {
-		return 0
-	}
-
-	return len(todos)
-}
-
-// ExtractInProgressTodo extracts the content of the in-progress todo item from tool_input.
-// This is used for commit messages in incremental checkpoints.
-//
-// Priority order:
-//  1. in_progress item (current work)
+// ExtractInProgressTodo extracts the in-progress todo item from the TodoWrite
+// tool_input.todos array. Precedence:
+//  1. first item with status "in_progress" (the work currently being done)
 //  2. first pending item (next work - fallback)
 //  3. last completed item (final work just finished)
 //  4. first item with unknown status (edge case)
@@ -199,4 +182,19 @@ func ExtractInProgressTodo(todosJSON []byte) string {
 	}
 
 	return ""
+}
+
+// CountTodos returns the number of todo items in the JSON array.
+// Returns 0 if the JSON is invalid or empty.
+func CountTodos(todosJSON []byte) int {
+	if len(todosJSON) == 0 {
+		return 0
+	}
+
+	var todos []todoItem
+	if err := json.Unmarshal(todosJSON, &todos); err != nil {
+		return 0
+	}
+
+	return len(todos)
 }

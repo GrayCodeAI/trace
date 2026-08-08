@@ -176,6 +176,7 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 	// Before checkpoint 2, manually update CheckpointTranscriptStart to simulate
 	// what would happen after condensing checkpoint 1
 	state.CheckpointTranscriptStart = 2 // Start from message index 2 (the second user prompt)
+	state.SessionTurnCount = 2          // two user turns across the two checkpoints
 	state.StepCount = 1                 // Set to 1 (will be incremented to 2 by SaveStep)
 	if err := s.saveSessionState(context.Background(), state); err != nil {
 		t.Fatalf("failed to update session state: %v", err)
@@ -220,7 +221,7 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 	}
 
 	// Read condensed metadata
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	content, err := store.ReadLatestSessionContent(t.Context(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadLatestSessionContent() error = %v", err)
@@ -335,7 +336,7 @@ func TestCondenseSession_CopilotScopedCheckpointMetadataAndSessionBackfill(t *te
 		t.Errorf("FilesTouched = %v, want [beta.txt]", result.FilesTouched)
 	}
 
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	content, err := store.ReadLatestSessionContent(t.Context(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadLatestSessionContent() error = %v", err)

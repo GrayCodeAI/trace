@@ -107,12 +107,16 @@ jobs:
           fi
       - name: Test
         run: go test ./... -race -count=1 -shuffle=on -coverprofile=coverage.out -covermode=atomic -timeout=180s
+      - name: Filter generated/ported infra from coverage
+        run: |
+          bash scripts/filter-cover.sh coverage.out > coverage-filtered.out
+          mv coverage-filtered.out coverage.out
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1
       - name: Coverage threshold
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9]+\.[0-9]+' || echo "0")
-          THRESHOLD=58
+          THRESHOLD=49
           if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
             echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
             exit 1

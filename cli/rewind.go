@@ -739,7 +739,15 @@ func restoreSessionTranscript(ctx context.Context, w io.Writer, transcriptFile, 
 // Returns the session ID that was actually used (may differ from input if checkpoint provides one).
 func restoreSessionTranscriptFromStrategy(ctx context.Context, cpID id.CheckpointID, sessionID string, agent agentpkg.Agent) (string, error) {
 	// Get transcript content from checkpoint storage
-	content, returnedSessionID, err := checkpoint.LookupSessionLog(ctx, cpID)
+	repo, err := git.PlainOpenWithOptions(".", &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return "", fmt.Errorf("failed to open repository: %w", err)
+	}
+	stores, err := checkpoint.Open(ctx, repo, checkpoint.OpenOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to open checkpoint store: %w", err)
+	}
+	content, returnedSessionID, err := checkpoint.ReadRawSessionLogForCheckpoint(ctx, stores.Persistent, cpID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get session log: %w", err)
 	}
@@ -785,8 +793,11 @@ func restoreSessionTranscriptFromShadow(ctx context.Context, commitHash, metadat
 	}
 
 	// Get transcript from shadow branch commit tree
-	store := checkpoint.NewGitStore(repo)
-	content, err := store.GetTranscriptFromCommit(ctx, hash, metadataDir, agent.Type())
+	stores, err := checkpoint.Open(ctx, repo, checkpoint.OpenOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to open checkpoint store: %w", err)
+	}
+	content, err := stores.Ephemeral().GetTranscriptFromCommit(ctx, hash, metadataDir, agent.Type())
 	if err != nil {
 		return "", fmt.Errorf("failed to get transcript from shadow branch: %w", err)
 	}

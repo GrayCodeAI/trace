@@ -63,7 +63,7 @@ func TestReconcileDisconnected_NoRemote(t *testing.T) {
 	}
 
 	// Should be a no-op (no remote)
-	if err := ReconcileDisconnectedMetadataBranch(context.Background(), repo, metadataOriginRemoteRef(), io.Discard); err != nil {
+	if err := ReconcileDisconnectedMetadataRef(context.Background(), repo, plumbing.NewBranchReferenceName(paths.MetadataBranchName), metadataOriginRemoteRef(), io.Discard); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -81,7 +81,7 @@ func TestReconcileDisconnected_NoLocal(t *testing.T) {
 	}
 
 	// No local branch → no-op
-	if err := ReconcileDisconnectedMetadataBranch(context.Background(), repo, metadataOriginRemoteRef(), io.Discard); err != nil {
+	if err := ReconcileDisconnectedMetadataRef(context.Background(), repo, plumbing.NewBranchReferenceName(paths.MetadataBranchName), metadataOriginRemoteRef(), io.Discard); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -103,7 +103,7 @@ func TestReconcileDisconnected_SameHash(t *testing.T) {
 	}
 
 	// Same hash → no-op
-	if err := ReconcileDisconnectedMetadataBranch(context.Background(), repo, metadataOriginRemoteRef(), io.Discard); err != nil {
+	if err := ReconcileDisconnectedMetadataRef(context.Background(), repo, plumbing.NewBranchReferenceName(paths.MetadataBranchName), metadataOriginRemoteRef(), io.Discard); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -144,7 +144,7 @@ func TestReconcileDisconnected_SharedAncestry(t *testing.T) {
 	}
 
 	// Shared ancestry → no-op
-	if err := ReconcileDisconnectedMetadataBranch(context.Background(), repo, metadataOriginRemoteRef(), io.Discard); err != nil {
+	if err := ReconcileDisconnectedMetadataRef(context.Background(), repo, plumbing.NewBranchReferenceName(paths.MetadataBranchName), metadataOriginRemoteRef(), io.Discard); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -191,8 +191,8 @@ func TestReconcileDisconnected_Disconnected(t *testing.T) {
 	}
 
 	// Run reconciliation
-	if err := ReconcileDisconnectedMetadataBranch(context.Background(), repo, metadataOriginRemoteRef(), io.Discard); err != nil {
-		t.Fatalf("ReconcileDisconnectedMetadataBranch() failed: %v", err)
+	if err := ReconcileDisconnectedMetadataRef(context.Background(), repo, plumbing.NewBranchReferenceName(paths.MetadataBranchName), metadataOriginRemoteRef(), io.Discard); err != nil {
+		t.Fatalf("ReconcileDisconnectedMetadataRef() failed: %v", err)
 	}
 
 	// Verify result
@@ -302,8 +302,8 @@ func TestReconcileDisconnected_MultipleLocalCheckpoints(t *testing.T) {
 	}
 
 	// Run reconciliation
-	if err := ReconcileDisconnectedMetadataBranch(context.Background(), repo, metadataOriginRemoteRef(), io.Discard); err != nil {
-		t.Fatalf("ReconcileDisconnectedMetadataBranch() failed: %v", err)
+	if err := ReconcileDisconnectedMetadataRef(context.Background(), repo, plumbing.NewBranchReferenceName(paths.MetadataBranchName), metadataOriginRemoteRef(), io.Discard); err != nil {
+		t.Fatalf("ReconcileDisconnectedMetadataRef() failed: %v", err)
 	}
 
 	// Verify result
@@ -598,8 +598,8 @@ func TestReconcileDisconnected_ModifiedEntries(t *testing.T) {
 		t.Fatalf("failed to open repo: %v", err)
 	}
 
-	if err := ReconcileDisconnectedMetadataBranch(context.Background(), repo, metadataOriginRemoteRef(), io.Discard); err != nil {
-		t.Fatalf("ReconcileDisconnectedMetadataBranch() failed: %v", err)
+	if err := ReconcileDisconnectedMetadataRef(context.Background(), repo, plumbing.NewBranchReferenceName(paths.MetadataBranchName), metadataOriginRemoteRef(), io.Discard); err != nil {
+		t.Fatalf("ReconcileDisconnectedMetadataRef() failed: %v", err)
 	}
 
 	// Verify the MODIFIED metadata.json has session_count:2, not the original 1
@@ -666,7 +666,7 @@ func TestCollectCommitChain_DepthLimit(t *testing.T) {
 		tip = h
 	}
 
-	_, err = collectCommitChain(repo, tip)
+	_, err = collectCommitChain(repo, tip, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exceeded")
 	assert.Contains(t, err.Error(), "without reaching root")
@@ -698,7 +698,7 @@ func TestReconcileDisconnected_AllEmptyOrphans(t *testing.T) {
 	remoteRef, err := repo.Reference(remoteRefName, true)
 	require.NoError(t, err)
 
-	err = ReconcileDisconnectedMetadataBranch(context.Background(), repo, metadataOriginRemoteRef(), io.Discard)
+	err = ReconcileDisconnectedMetadataRef(context.Background(), repo, plumbing.NewBranchReferenceName(paths.MetadataBranchName), metadataOriginRemoteRef(), io.Discard)
 	require.NoError(t, err)
 
 	// Local branch should now point to the remote tip (reset, not cherry-picked)
@@ -748,7 +748,7 @@ func TestReconcileDisconnected_CherryPickDeletion(t *testing.T) {
 	repo, err := git.PlainOpen(cloneDir)
 	require.NoError(t, err)
 
-	err = ReconcileDisconnectedMetadataBranch(context.Background(), repo, metadataOriginRemoteRef(), io.Discard)
+	err = ReconcileDisconnectedMetadataRef(context.Background(), repo, plumbing.NewBranchReferenceName(paths.MetadataBranchName), metadataOriginRemoteRef(), io.Discard)
 	require.NoError(t, err)
 
 	// Verify merged tree: should have remote data + first local checkpoint,
@@ -819,4 +819,107 @@ func initBareWithV2MainRef(t *testing.T) string {
 	run(workDir, "push", "origin", paths.V2MainRefName+":"+paths.V2MainRefName)
 
 	return bareDir
+}
+
+// initBareWithMetadataBranch creates a bare repo with a main branch and an
+// trace/checkpoints/v1 branch containing checkpoint data via git CLI.
+func initBareWithMetadataBranch(t *testing.T) string {
+	t.Helper()
+	bareDir := t.TempDir()
+
+	// Init bare, create main branch with a commit
+	workDir := t.TempDir()
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(context.Background(), "git", args...)
+		cmd.Dir = dir
+		cmd.Env = testutil.GitIsolatedEnv()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	run(bareDir, "init", "--bare", "-b", "main")
+	run(workDir, "clone", bareDir, ".")
+	run(workDir, "config", "user.email", "test@test.com")
+	run(workDir, "config", "user.name", "Test User")
+	run(workDir, "config", "commit.gpgsign", "false")
+	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("# Test"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	run(workDir, "add", ".")
+	run(workDir, "commit", "-m", "init")
+	run(workDir, "push", "origin", "main")
+
+	// Create orphan trace/checkpoints/v1 with data
+	run(workDir, "checkout", "--orphan", paths.MetadataBranchName)
+	run(workDir, "rm", "-rf", ".")
+	if err := os.WriteFile(filepath.Join(workDir, "metadata.json"), []byte(`{"checkpoint_id":"test123"}`), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	run(workDir, "add", ".")
+	run(workDir, "commit", "-m", "Checkpoint: test123")
+	run(workDir, "push", "origin", paths.MetadataBranchName)
+
+	return bareDir
+}
+
+// cloneWithConfig clones a bare repo into a temp dir with git identity
+// configured, returning the clone dir and a run helper for git commands.
+func cloneWithConfig(t *testing.T, bareDir string) (string, func(args ...string)) {
+	t.Helper()
+	cloneDir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(context.Background(), "git", args...)
+		cmd.Dir = cloneDir
+		cmd.Env = testutil.GitIsolatedEnv()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	run("clone", bareDir, ".")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "Test User")
+	run("config", "commit.gpgsign", "false")
+	return cloneDir, run
+}
+
+// EnsureMetadataBranch creates the trace/checkpoints/v1 orphan branch if it
+// does not already exist.
+func EnsureMetadataBranch(repo *git.Repository) error {
+	branchName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
+	if _, err := repo.Reference(branchName, true); err == nil {
+		return nil
+	}
+	// Prefer adopting the remote-tracking ref so a fresh clone's local branch
+	// starts at the same hash as origin (no spurious divergence).
+	if remoteRef, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName), true); err == nil {
+		return repo.Storer.SetReference(plumbing.NewHashReference(branchName, remoteRef.Hash()))
+	}
+	treeHash, err := checkpoint.BuildTreeFromEntries(context.Background(), repo, map[string]object.TreeEntry{})
+	if err != nil {
+		return err
+	}
+	authorName, authorEmail := GetGitAuthorFromRepo(repo)
+	commitHash, err := checkpoint.CreateCommit(context.Background(), repo, treeHash, plumbing.ZeroHash, "Initialize sessions branch", authorName, authorEmail)
+	if err != nil {
+		return err
+	}
+	return repo.Storer.SetReference(plumbing.NewHashReference(branchName, commitHash))
+}
+
+// createTestBlob creates a git blob object with the given content and returns
+// its hash.
+func createTestBlob(t *testing.T, repo *git.Repository, content string) plumbing.Hash {
+	t.Helper()
+	obj := repo.Storer.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	w, err := obj.Writer()
+	require.NoError(t, err)
+	_, err = w.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	h, err := repo.Storer.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return h
 }

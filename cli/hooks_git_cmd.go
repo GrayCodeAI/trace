@@ -109,7 +109,7 @@ func newHooksGitCmd() *cobra.Command {
 			// during condensation (e.g. post-commit). Without this, external agents
 			// registered in the hook phase cannot be resolved here, causing token
 			// usage and other agent-specific data to be missing from metadata.json.
-			discoveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			discoveryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 			defer cancel()
 			external.DiscoverAndRegister(discoveryCtx)
 			hookLogCleanup = initHookLogging(ctx)

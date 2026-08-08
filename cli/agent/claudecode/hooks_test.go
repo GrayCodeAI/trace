@@ -479,7 +479,7 @@ func TestInstallHooks_PreservesUserHooksOnSameType(t *testing.T) {
 			t.Fatalf("failed to parse Stop hooks: %v", err)
 		}
 		assertHookExists(t, matchers, "", "echo user stop hook", "user Stop hook")
-		assertHookExists(t, matchers, "", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks claude-code stop"), "Trace Stop hook")
+		assertHookExists(t, matchers, "", agentpkg.WrapProductionSilentHookCommand("trace hooks claude-code stop"), "Trace Stop hook")
 	})
 
 	t.Run("SessionStart", func(t *testing.T) {
@@ -489,7 +489,7 @@ func TestInstallHooks_PreservesUserHooksOnSameType(t *testing.T) {
 			t.Fatalf("failed to parse SessionStart hooks: %v", err)
 		}
 		assertHookExists(t, matchers, "", "echo user session start", "user SessionStart hook")
-		assertHookExists(t, matchers, "", agentpkg.WrapProductionJSONWarningHookCommand("hawk trace hooks claude-code session-start", agentpkg.WarningFormatMultiLine), "Trace SessionStart hook")
+		assertHookExists(t, matchers, "", agentpkg.WrapProductionJSONWarningHookCommand("trace hooks claude-code session-start", agentpkg.WarningFormatMultiLine), "Trace SessionStart hook")
 	})
 
 	t.Run("PostToolUse", func(t *testing.T) {
@@ -499,8 +499,8 @@ func TestInstallHooks_PreservesUserHooksOnSameType(t *testing.T) {
 			t.Fatalf("failed to parse PostToolUse hooks: %v", err)
 		}
 		assertHookExists(t, matchers, "Write", "echo user wrote file", "user Write hook")
-		assertHookExists(t, matchers, "Task", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks claude-code post-task"), "Trace Task hook")
-		assertHookExists(t, matchers, "TodoWrite", agentpkg.WrapProductionSilentHookCommand("hawk trace hooks claude-code post-todo"), "Trace TodoWrite hook")
+		assertHookExists(t, matchers, subagentToolMatcher, agentpkg.WrapProductionSilentHookCommand("trace hooks claude-code post-task"), "Trace Agent hook")
+		assertHookExists(t, matchers, taskToolMatcher, agentpkg.WrapProductionSilentHookCommand("trace hooks claude-code post-todo"), "Trace task hook")
 	})
 }
 

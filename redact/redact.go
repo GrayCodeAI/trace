@@ -501,6 +501,33 @@ func JSONLBytes(b []byte) (RedactedBytes, error) {
 	return RedactedBytes{data: []byte(redacted)}, nil
 }
 
+// JSONLBytesWithPrivacyFilter augments JSONLBytes with the OpenAI Privacy
+// Filter. Use only at condensation/export boundaries; per-turn writes must
+// use JSONLBytes.
+func JSONLBytesWithPrivacyFilter(ctx context.Context, b []byte) (RedactedBytes, error) {
+	s := string(b)
+	redacted, err := JSONLContentWithPrivacyFilter(ctx, s)
+	if err != nil {
+		return RedactedBytes{}, err
+	}
+	if redacted == s {
+		return RedactedBytes{data: b}, nil
+	}
+	return RedactedBytes{data: []byte(redacted)}, nil
+}
+
+// BytesWithPrivacyFilter augments Bytes with the OpenAI Privacy Filter for
+// raw (non-JSONL) byte content. Used by checkpoint write paths that handle
+// metadata files which may or may not be JSONL.
+func BytesWithPrivacyFilter(ctx context.Context, b []byte) []byte {
+	s := string(b)
+	redacted := StringWithPrivacyFilter(ctx, s)
+	if redacted == s {
+		return b
+	}
+	return []byte(redacted)
+}
+
 // JSONLContent parses each line as JSON to determine which string values
 // need redaction, then performs targeted replacements on the raw JSON bytes.
 // Lines with no secrets are returned unchanged, preserving original formatting.

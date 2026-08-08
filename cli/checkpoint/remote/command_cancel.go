@@ -6,7 +6,7 @@ import (
 )
 
 // killWaitDelay bounds the wait after ctx-cancel: a transport-helper grandchild
-// (e.g. git-remote-trace) can keep the output pipe open after `git` is SIGKILLed,
+// (e.g. git-remote-entire) can keep the output pipe open after `git` is SIGKILLed,
 // otherwise blocking CombinedOutput indefinitely.
 const killWaitDelay = 10 * time.Second
 

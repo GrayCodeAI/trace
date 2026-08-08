@@ -83,6 +83,9 @@ type RunConfig struct {
 	// composed agent prompt.
 	AlwaysPrompt string
 
+	// Model is an optional model hint.
+	Model string
+
 	// PerRunPrompt is optional textarea input from a single invocation.
 	PerRunPrompt string
 

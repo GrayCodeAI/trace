@@ -16,10 +16,10 @@ type GitHubRelease struct {
 
 // githubAPIURL is the GitHub API endpoint for fetching the latest stable release.
 // This is a var (not const) to allow overriding in tests.
-var githubAPIURL = "https://api.github.com/repos/GrayCodeAI/cli/releases/latest"
+var githubAPIURL = "https://api.github.com/repos/entireio/cli/releases/latest"
 
 // githubReleasesURL is the GitHub API endpoint for listing releases (used for nightly checks).
-var githubReleasesURL = "https://api.github.com/repos/GrayCodeAI/cli/releases"
+var githubReleasesURL = "https://api.github.com/repos/entireio/cli/releases"
 
 const (
 	// checkInterval is the duration between version checks.
@@ -32,5 +32,5 @@ const (
 	cacheFileName = "version_check.json"
 
 	// globalConfigDirName is the name of the global config directory in the user's home.
-	globalConfigDirName = ".config/trace"
+	globalConfigDirName = ".config/entire"
 )

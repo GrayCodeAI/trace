@@ -19,8 +19,9 @@ const (
 // Client is an authenticated HTTP client for the Trace API.
 // It attaches the bearer token to all outgoing requests via the Authorization header.
 type Client struct {
-	httpClient *http.Client
-	baseURL    string
+	httpClient       *http.Client
+	baseURL          string
+	authSessionsPath string
 }
 
 // NewClient creates a new authenticated API client with an explicit bearer token.
@@ -33,6 +34,20 @@ func NewClient(token string) *Client {
 			},
 		},
 		baseURL: BaseURL(),
+	}
+}
+
+// NewClientWithBaseURL creates a new authenticated API client with an explicit
+// bearer token and a non-default base URL.
+func NewClientWithBaseURL(token, baseURL string) *Client {
+	return &Client{
+		httpClient: &http.Client{
+			Transport: &bearerTransport{
+				token: token,
+				base:  http.DefaultTransport,
+			},
+		},
+		baseURL: baseURL,
 	}
 }
 
@@ -173,13 +188,23 @@ func DecodeJSON(resp *http.Response, dest any) error {
 
 // ErrorResponse represents a standard API error response.
 type ErrorResponse struct {
-	Error json.RawMessage `json:"error"`
+	Error any `json:"error"`
 }
 
-// errorObjectEnvelope is used when the error field is a JSON object with a message subfield.
-type errorObjectEnvelope struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+// Message extracts the human-readable error message from either envelope shape.
+func (e ErrorResponse) Message() string {
+	switch v := e.Error.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case map[string]any:
+		if message, ok := v["message"].(string); ok && strings.TrimSpace(message) != "" {
+			return strings.TrimSpace(message)
+		}
+		if code, ok := v["code"].(string); ok && strings.TrimSpace(code) != "" {
+			return strings.TrimSpace(code)
+		}
+	}
+	return ""
 }
 
 // HTTPError is returned by CheckResponse for non-2xx responses. Callers can use
@@ -218,14 +243,8 @@ func CheckResponse(resp *http.Response) error {
 	}
 
 	var parsed ErrorResponse
-	if err := json.Unmarshal(body, &parsed); err == nil && len(parsed.Error) > 0 {
-		var envelope errorObjectEnvelope
-		if json.Unmarshal(parsed.Error, &envelope) == nil && envelope.Message != "" {
-			apiError.Message = envelope.Message
-			return apiError
-		}
-		var msg string
-		if json.Unmarshal(parsed.Error, &msg) == nil && strings.TrimSpace(msg) != "" {
+	if err := json.Unmarshal(body, &parsed); err == nil && parsed.Error != nil {
+		if msg := parsed.Message(); msg != "" {
 			apiError.Message = msg
 			return apiError
 		}
@@ -235,4 +254,22 @@ func CheckResponse(resp *http.Response) error {
 		apiError.Message = text
 	}
 	return apiError
+}
+
+func (c *Client) authSessionsPathFunc() string {
+	if c.authSessionsPath != "" {
+		return c.authSessionsPath
+	}
+	return c.baseURL + "/auth/sessions"
+}
+
+// WithAuthSessionsPath overrides the base path used by the auth-sessions
+// endpoints (list / revoke / current).
+func (c *Client) WithAuthSessionsPath(path string) *Client {
+	c.authSessionsPath = path
+	return c
+}
+
+func (c *Client) Request(ctx context.Context, method, path string, headers http.Header, body io.Reader) (*http.Response, error) {
+	return nil, nil
 }

@@ -8,15 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
-	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/oplog"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
-	"github.com/GrayCodeAI/trace/cli/settings"
 	"github.com/GrayCodeAI/trace/cli/strategy"
 	"github.com/GrayCodeAI/trace/cli/trailers"
 	"github.com/GrayCodeAI/trace/cli/versioninfo"
@@ -97,26 +94,25 @@ func runFork(ctx context.Context, w io.Writer, checkpointArg string) error {
 		return fmt.Errorf("not a git repository: %w", err)
 	}
 
-	v1Store, v2Store, preferV2 := newForkStores(ctx, repo)
+	store, err := openForkStore(ctx, repo)
+	if err != nil {
+		return fmt.Errorf("open checkpoint store: %w", err)
+	}
 
-	cpID, err := resolveForkCheckpointID(ctx, checkpointArg, v1Store, v2Store, preferV2)
+	cpID, err := resolveForkCheckpointID(ctx, checkpointArg, store)
 	if err != nil {
 		return err
 	}
 
-	reader, _, err := checkpoint.ResolveCommittedReaderForCheckpoint(ctx, cpID, v1Store, v2Store, preferV2)
+	content, err := store.ReadSessionContent(ctx, cpID, 0)
 	if err != nil {
 		if errors.Is(err, checkpoint.ErrCheckpointNotFound) {
 			return fmt.Errorf("checkpoint %s not found", cpID)
 		}
-		return fmt.Errorf("failed to read checkpoint %s: %w", cpID, err)
-	}
-
-	// Read the first session's content for the metadata we derive the fork from
-	// (transcript reference, token usage, agent/model, branch).
-	content, err := reader.ReadSessionContent(ctx, cpID, 0)
-	if err != nil {
 		return fmt.Errorf("failed to read checkpoint %s content: %w", cpID, err)
+	}
+	if content == nil {
+		return fmt.Errorf("checkpoint %s not found", cpID)
 	}
 
 	result, err := forkSession(ctx, repo, cpID, &content.Metadata)
@@ -128,22 +124,19 @@ func runFork(ctx context.Context, w io.Writer, checkpointArg string) error {
 	return nil
 }
 
-// newForkStores builds the v1/v2 checkpoint stores the same way the explain
-// path does, so fork resolves checkpoints identically (with on-demand blob
-// fetching for treeless clones).
-func newForkStores(ctx context.Context, repo *git.Repository) (*checkpoint.GitStore, *checkpoint.V2GitStore, bool) {
-	v2URL, err := remote.FetchURL(ctx)
+// openForkStore opens the persistent checkpoint store with on-demand blob
+// fetching (for treeless clones) the same way the explain path does, so fork
+// resolves checkpoints identically. Backend selection (git-branch vs
+// git-refs) is settings-driven inside checkpoint.Open.
+func openForkStore(ctx context.Context, repo *git.Repository) (checkpoint.PersistentStore, error) {
+	stores, err := checkpoint.Open(ctx, repo, checkpoint.OpenOptions{
+		BlobFetcher: FetchBlobsByHash,
+		RefFetcher:  FetchCheckpointRef,
+	})
 	if err != nil {
-		v2URL = ""
+		return nil, err
 	}
-
-	v1Store := checkpoint.NewGitStore(repo)
-	v1Store.SetBlobFetcher(FetchBlobsByHash)
-
-	v2Store := checkpoint.NewV2GitStore(repo, v2URL)
-	v2Store.SetBlobFetcher(FetchBlobsByHash)
-
-	return v1Store, v2Store, settings.IsCheckpointsV2Enabled(ctx)
+	return stores.Persistent, nil
 }
 
 // resolveForkCheckpointID accepts a full checkpoint ID or a hex prefix and
@@ -152,9 +145,7 @@ func newForkStores(ctx context.Context, repo *git.Repository) (*checkpoint.GitSt
 func resolveForkCheckpointID(
 	ctx context.Context,
 	arg string,
-	v1Store *checkpoint.GitStore,
-	v2Store *checkpoint.V2GitStore,
-	preferV2 bool,
+	store checkpoint.PersistentStore,
 ) (id.CheckpointID, error) {
 	arg = strings.TrimSpace(strings.ToLower(arg))
 
@@ -163,7 +154,7 @@ func resolveForkCheckpointID(
 		return cpID, nil
 	}
 
-	committed, err := listCommittedForExplain(ctx, v1Store, v2Store, preferV2)
+	committed, err := store.List(ctx)
 	if err != nil {
 		return id.EmptyCheckpointID, fmt.Errorf("failed to list checkpoints: %w", err)
 	}
@@ -199,7 +190,7 @@ func forkSession(
 	ctx context.Context,
 	repo *git.Repository,
 	cpID id.CheckpointID,
-	meta *checkpoint.CommittedMetadata,
+	meta *checkpoint.Metadata,
 ) (forkResult, error) {
 	newSessionID := generateForkSessionID()
 
@@ -216,12 +207,7 @@ func forkSession(
 	if !commitHash.IsZero() {
 		refName := plumbing.NewBranchReferenceName(branchName)
 		ref := plumbing.NewHashReference(refName, commitHash)
-		// Serialize against concurrent V2GitStore storer access (and any
-		// other StorerMu-guarded writer) — go-git's storer is not
-		// concurrency-safe. fork/undo already cooperate via the same mutex.
-		checkpoint.StorerMu.Lock()
 		if err := repo.Storer.SetReference(ref); err != nil {
-			checkpoint.StorerMu.Unlock()
 			return forkResult{}, fmt.Errorf("failed to create fork branch %s: %w", branchName, err)
 		}
 		result.ForkBranch = branchName
@@ -232,7 +218,6 @@ func forkSession(
 		logErr := strategy.RecordOplogEntry(
 			ctx, repo, oplog.OpFork, refName.String(), plumbing.ZeroHash, commitHash, cpID.String(),
 		)
-		checkpoint.StorerMu.Unlock()
 		if logErr != nil {
 			logging.Warn(ctx, "failed to record oplog entry for fork", "error", logErr.Error())
 		}
@@ -255,7 +240,7 @@ func forkCodeCommit(
 	ctx context.Context,
 	repo *git.Repository,
 	cpID id.CheckpointID,
-	meta *checkpoint.CommittedMetadata,
+	meta *checkpoint.Metadata,
 	newSessionID string,
 ) (plumbing.Hash, string) {
 	branchName := forkBranchPrefix + shortForkID(newSessionID)
@@ -276,7 +261,7 @@ func forkCodeCommit(
 // the branch recorded in the checkpoint metadata (if it resolves) followed by
 // HEAD. Order matters — the recorded branch is the most likely home of the
 // checkpoint commit.
-func forkSearchStarts(repo *git.Repository, meta *checkpoint.CommittedMetadata) []plumbing.Hash {
+func forkSearchStarts(repo *git.Repository, meta *checkpoint.Metadata) []plumbing.Hash {
 	var starts []plumbing.Hash
 	seen := make(map[plumbing.Hash]bool)
 
@@ -341,7 +326,7 @@ func writeForkSessionState(
 	ctx context.Context,
 	newSessionID string,
 	baseCommit string,
-	meta *checkpoint.CommittedMetadata,
+	meta *checkpoint.Metadata,
 ) error {
 	stateStore, err := session.NewStateStore(ctx)
 	if err != nil {
@@ -377,7 +362,7 @@ func writeForkSessionState(
 // forkMetadata builds the new session's metadata map: the source's user tags
 // are copied verbatim, then fork-provenance keys are layered on top so the
 // fork can always be traced back to its origin.
-func forkMetadata(meta *checkpoint.CommittedMetadata, newSessionID string) map[string]string {
+func forkMetadata(meta *checkpoint.Metadata, newSessionID string) map[string]string {
 	m := make(map[string]string, 4)
 	// Carry forward user-defined tags would require the source session state;
 	// the committed metadata does not store them, so we record provenance only.
@@ -389,24 +374,6 @@ func forkMetadata(meta *checkpoint.CommittedMetadata, newSessionID string) map[s
 	return m
 }
 
-// cloneTokenUsage returns a deep copy of the source token usage so the fork's
-// baseline cannot be mutated through the shared pointer. Returns nil when the
-// source has no usage data.
-func cloneTokenUsage(src *agent.TokenUsage) *agent.TokenUsage {
-	if src == nil {
-		return nil
-	}
-	cp := *src
-	if src.SubagentTokens != nil {
-		sub := *src.SubagentTokens
-		cp.SubagentTokens = &sub
-	}
-	return &cp
-}
-
-// generateForkSessionID allocates a fresh, path-safe session ID for the fork.
-// Distinct from agent-provided session IDs so a fork never collides with an
-// existing tracked session.
 func generateForkSessionID() string {
 	return "fork-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 }

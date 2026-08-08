@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/paths"
@@ -87,9 +86,9 @@ func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
 	require.NoError(t, err, "trace/checkpoints/v1 should exist after first condensation")
 
 	// Verify first condensation contains A.txt and B.txt
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	cpID1 := id.MustCheckpointID(checkpointID1)
-	summary1, err := store.ReadCommitted(context.Background(), cpID1)
+	summary1, err := store.Read(context.Background(), cpID1)
 	require.NoError(t, err)
 	require.NotNil(t, summary1)
 	assert.ElementsMatch(t, []string{"A.txt", "B.txt"}, summary1.FilesTouched,
@@ -152,7 +151,7 @@ func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
 
 	// Verify second condensation contains ONLY C.txt and D.txt
 	cpID2 := id.MustCheckpointID(checkpointID2)
-	summary2, err := store.ReadCommitted(context.Background(), cpID2)
+	summary2, err := store.Read(context.Background(), cpID2)
 	require.NoError(t, err)
 	require.NotNil(t, summary2, "Second condensation should exist")
 	assert.ElementsMatch(t, []string{"C.txt", "D.txt"}, summary2.FilesTouched,
@@ -672,7 +671,7 @@ func TestHandleTurnEnd_PartialFailure(t *testing.T) {
 		"TurnCheckpointIDs should be cleared after HandleTurnEnd, even with errors")
 
 	// Verify the 2 valid checkpoints were finalized with the full transcript
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	for _, cpIDStr := range []string{"a1b2c3d4e5f6", "b2c3d4e5f6a1"} {
 		cpID := id.MustCheckpointID(cpIDStr)
 		content, readErr := store.ReadSessionContent(context.Background(), cpID, 0)
@@ -683,88 +682,20 @@ func TestHandleTurnEnd_PartialFailure(t *testing.T) {
 	}
 }
 
-func TestHandleTurnEnd_V2FullCurrent_PreservesTaskMetadata(t *testing.T) {
-	dir := setupGitRepo(t)
-	t.Chdir(dir)
-
-	repo, err := git.PlainOpen(dir)
-	require.NoError(t, err)
-
-	// Enable checkpoints_v2 dual-write so PostCommit/HandleTurnEnd update v2 refs.
-	traceDir := filepath.Join(dir, ".trace")
-	require.NoError(t, os.MkdirAll(traceDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(traceDir, "settings.json"), []byte(testCheckpointsV2SettingsJSON), 0o644))
-
-	s := &ManualCommitStrategy{}
-	sessionID := "test-turn-end-v2-task-preserve"
-
-	metadataDir := ".trace/metadata/" + sessionID
-	metadataDirAbs := filepath.Join(dir, metadataDir)
-	require.NoError(t, os.MkdirAll(metadataDirAbs, 0o755))
-	transcriptPath := filepath.Join(metadataDirAbs, paths.TranscriptFileName)
-	require.NoError(t, os.WriteFile(transcriptPath, []byte(testTranscriptPromptResponse), 0o644))
-
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("agent modified content"), 0o644))
-	err = s.SaveStep(context.Background(), StepContext{
-		SessionID:      sessionID,
-		ModifiedFiles:  []string{"test.txt"},
-		MetadataDir:    metadataDir,
-		MetadataDirAbs: metadataDirAbs,
-		CommitMessage:  "Checkpoint 1",
-		AuthorName:     "Test",
-		AuthorEmail:    "test@test.com",
-	})
-	require.NoError(t, err)
-
-	subagentTranscriptPath := filepath.Join(metadataDirAbs, "subagent.jsonl")
-	require.NoError(t, os.WriteFile(subagentTranscriptPath, []byte("{\"type\":\"event\",\"message\":\"done\"}\n"), 0o644))
-	err = s.SaveTaskStep(context.Background(), TaskStepContext{
-		SessionID:              sessionID,
-		ToolUseID:              "toolu_01TASK",
-		AgentID:                "agent-01",
-		ModifiedFiles:          []string{"test.txt"},
-		TranscriptPath:         transcriptPath,
-		SubagentTranscriptPath: subagentTranscriptPath,
-		CheckpointUUID:         "uuid-task-001",
-		AuthorName:             "Test",
-		AuthorEmail:            "test@test.com",
-		SubagentType:           "general",
-		TaskDescription:        "Implement task",
-		AgentType:              agent.AgentTypeClaudeCode,
-	})
-	require.NoError(t, err)
-
-	state, err := s.loadSessionState(context.Background(), sessionID)
-	require.NoError(t, err)
-	state.Phase = session.PhaseActive
-	state.TurnCheckpointIDs = nil
-	require.NoError(t, s.saveSessionState(context.Background(), state))
-
-	cpID := "a1b2c3d4e5f6"
-	commitWithCheckpointTrailer(t, repo, dir, cpID)
-	require.NoError(t, s.PostCommit(context.Background()))
-
-	state, err = s.loadSessionState(context.Background(), sessionID)
-	require.NoError(t, err)
-	require.Equal(t, []string{cpID}, state.TurnCheckpointIDs)
-
-	fullTranscript := `{"type":"human","message":{"content":"final user prompt"}}
-{"type":"assistant","message":{"content":"final assistant response"}}
-`
-	require.NoError(t, os.WriteFile(transcriptPath, []byte(fullTranscript), 0o644))
-	state.TranscriptPath = transcriptPath
-	require.NoError(t, s.saveSessionState(context.Background(), state))
-
-	require.NoError(t, s.HandleTurnEnd(context.Background(), state))
-
-	v2FullRef, err := repo.Reference(plumbing.ReferenceName(paths.V2FullCurrentRefName), true)
-	require.NoError(t, err)
-	v2FullCommit, err := repo.CommitObject(v2FullRef.Hash())
-	require.NoError(t, err)
-	v2FullTree, err := v2FullCommit.Tree()
-	require.NoError(t, err)
-
-	checkpointID := id.MustCheckpointID(cpID)
-	_, err = v2FullTree.File(checkpointID.Path() + "/0/tasks/toolu_01TASK/checkpoint.json")
-	require.NoError(t, err, "task metadata should be preserved after HandleTurnEnd finalization")
+// subtractFiles removes any files present in exclude from files, preserving
+// order.
+func subtractFiles(files []string, exclude map[string]struct{}) []string {
+	if len(exclude) == 0 {
+		return files
+	}
+	result := make([]string, 0, len(files))
+	for _, f := range files {
+		if _, ok := exclude[f]; !ok {
+			result = append(result, f)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }

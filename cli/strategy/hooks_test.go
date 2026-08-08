@@ -304,7 +304,7 @@ func TestInstallGitHook_WorktreeInstallsInCommonHooks(t *testing.T) {
 		if readErr != nil {
 			t.Fatalf("expected common hook %s to exist: %v", hook, readErr)
 		}
-		if !strings.Contains(string(data), traceHookMarker) {
+		if !strings.Contains(string(data), entireHookMarker) {
 			t.Errorf("common hook %s should contain Trace marker", hook)
 		}
 	}
@@ -322,7 +322,7 @@ func TestInstallGitHook_WorktreeInstallsInCommonHooks(t *testing.T) {
 	}
 	for _, hook := range gitHookNames {
 		wtHookPath := filepath.Join(worktreeGitDir, "hooks", hook)
-		if data, readErr := os.ReadFile(wtHookPath); readErr == nil && strings.Contains(string(data), traceHookMarker) {
+		if data, readErr := os.ReadFile(wtHookPath); readErr == nil && strings.Contains(string(data), entireHookMarker) {
 			t.Errorf("worktree-local hook %s should not contain Trace marker (should install in common hooks dir)", hook)
 		}
 	}
@@ -563,7 +563,7 @@ func TestInstallGitHook_Idempotent(t *testing.T) {
 			t.Fatalf("hook %s should exist after install: %v", hook, err)
 		}
 		firstContents[hook] = string(data)
-		if !strings.Contains(string(data), traceHookMarker) {
+		if !strings.Contains(string(data), entireHookMarker) {
 			t.Errorf("hook %s should contain Trace marker", hook)
 		}
 	}
@@ -724,7 +724,7 @@ func TestInstallGitHook_CoreHooksPathRelative(t *testing.T) {
 		if readErr != nil {
 			t.Fatalf("expected hook %s in core.hooksPath dir: %v", hook, readErr)
 		}
-		if !strings.Contains(string(data), traceHookMarker) {
+		if !strings.Contains(string(data), entireHookMarker) {
 			t.Errorf("hook %s in core.hooksPath dir should contain Trace marker", hook)
 		}
 	}
@@ -733,7 +733,7 @@ func TestInstallGitHook_CoreHooksPathRelative(t *testing.T) {
 	defaultHooksDir := filepath.Join(tmpDir, ".git", "hooks")
 	for _, hook := range gitHookNames {
 		defaultHookPath := filepath.Join(defaultHooksDir, hook)
-		if data, readErr := os.ReadFile(defaultHookPath); readErr == nil && strings.Contains(string(data), traceHookMarker) {
+		if data, readErr := os.ReadFile(defaultHookPath); readErr == nil && strings.Contains(string(data), entireHookMarker) {
 			t.Errorf("default hook %s should not contain Trace marker when core.hooksPath is set", hook)
 		}
 	}

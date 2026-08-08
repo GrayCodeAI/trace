@@ -1,12 +1,10 @@
 package strategy
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -68,7 +66,7 @@ func TestShadowStrategy_PreviewRewind(t *testing.T) {
 
 	// Create metadata directory structure first
 	sessionID := "test-session-123"
-	metadataDir := filepath.Join(dir, traceDir, "metadata", sessionID)
+	metadataDir := filepath.Join(dir, paths.TraceDir, "metadata", sessionID)
 	if err := os.MkdirAll(metadataDir, 0o755); err != nil {
 		t.Fatalf("failed to create metadata dir: %v", err)
 	}
@@ -269,30 +267,6 @@ func TestResolveAgentForRewind(t *testing.T) {
 	})
 }
 
-func TestPromptOverwriteNewerLogs_NonInteractiveRequiresForce(t *testing.T) {
-	var errW bytes.Buffer
-	_, err := PromptOverwriteNewerLogs(&errW, []SessionRestoreInfo{
-		{
-			SessionID:      "test-session",
-			Status:         StatusLocalNewer,
-			LocalTime:      time.Now(),
-			CheckpointTime: time.Now().Add(-time.Minute),
-			Prompt:         "test prompt",
-		},
-	})
-	if err == nil {
-		t.Fatal("expected non-interactive prompt error")
-	}
-	if !strings.Contains(err.Error(), "--force") {
-		t.Fatalf("expected error to mention --force, got %v", err)
-	}
-}
-
-// TestShadowStrategy_Rewind_FromSubdirectory verifies that Rewind() writes files
-// to the correct repo-root-relative locations when CWD is a subdirectory.
-// This is a regression test for the bug where f.Name (repo-relative) was used
-// directly with os.WriteFile, causing files to be written relative to CWD instead
-// of the repo root.
 func TestShadowStrategy_Rewind_FromSubdirectory(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)

@@ -69,13 +69,13 @@ func TestShadowBranchNameForCommit(t *testing.T) {
 			name:       "main worktree",
 			baseCommit: "abc1234567890",
 			worktreeID: "",
-			want:       "trace/abc123456789-" + HashWorktreeID(""),
+			want:       "trace/abc1234-" + HashWorktreeID(""),
 		},
 		{
 			name:       "linked worktree",
 			baseCommit: "abc1234567890",
 			worktreeID: "test-123",
-			want:       "trace/abc123456789-" + HashWorktreeID("test-123"),
+			want:       "trace/abc1234-" + HashWorktreeID("test-123"),
 		},
 		{
 			name:       "short commit hash",

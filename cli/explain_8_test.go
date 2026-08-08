@@ -11,10 +11,8 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
-	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/testutil"
 	"github.com/GrayCodeAI/trace/cli/trailers"
-	"github.com/GrayCodeAI/trace/redact"
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -217,8 +215,8 @@ func TestGetBranchCheckpoints_DefaultBranchFindsMergedCheckpoints(t *testing.T) 
 	}
 
 	// Write committed checkpoint metadata so getBranchCheckpoints can find it
-	store := checkpoint.NewGitStore(repo)
-	if err := store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
+	if err := store.Write(context.Background(), checkpoint.Session{
 		CheckpointID: cpID,
 		SessionID:    "test-session",
 		Strategy:     "manual-commit",
@@ -229,7 +227,7 @@ func TestGetBranchCheckpoints_DefaultBranchFindsMergedCheckpoints(t *testing.T) 
 	}
 
 	// getBranchCheckpoints on master should find the checkpoint from the merged feature branch
-	points, err := getBranchCheckpoints(context.Background(), repo, 100)
+	points, _, err := getBranchCheckpoints(context.Background(), repo, 100)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints error: %v", err)
 	}
@@ -285,8 +283,8 @@ func TestGetBranchCheckpoints_ReadsPromptFromCommittedCheckpoint(t *testing.T) {
 	}
 
 	expectedPrompt := "Refactor the authentication module to use JWT tokens"
-	store := checkpoint.NewGitStore(repo)
-	if err := store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
+	if err := store.Write(context.Background(), checkpoint.Session{
 		CheckpointID: cpID,
 		SessionID:    "2026-02-27-test-session",
 		Strategy:     "manual-commit",
@@ -312,7 +310,7 @@ func TestGetBranchCheckpoints_ReadsPromptFromCommittedCheckpoint(t *testing.T) {
 	}
 
 	// Call getBranchCheckpoints and verify prompt is populated
-	points, err := getBranchCheckpoints(context.Background(), repo, 10)
+	points, _, err := getBranchCheckpoints(context.Background(), repo, 10)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -334,175 +332,6 @@ func TestGetBranchCheckpoints_ReadsPromptFromCommittedCheckpoint(t *testing.T) {
 	if !foundCommitted {
 		t.Errorf("expected to find committed checkpoint %s, got %d points", cpID, len(points))
 	}
-}
-
-func TestGetBranchCheckpoints_V2OnlyCheckpointDiscoverable(t *testing.T) {
-	// When the v1 metadata branch doesn't exist but v2 has the checkpoint,
-	// getBranchCheckpoints should still find committed checkpoints.
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	testutil.InitRepo(t, tmpDir)
-	repo, err := git.PlainOpen(tmpDir)
-	require.NoError(t, err)
-
-	wt, err := repo.Worktree()
-	require.NoError(t, err)
-
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("initial"), 0o644))
-	_, err = wt.Add("test.txt")
-	require.NoError(t, err)
-	_, err = wt.Commit("initial commit", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	require.NoError(t, err)
-
-	// Enable v2 via settings.
-	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".trace"), 0o755))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(tmpDir, ".trace", "settings.json"),
-		[]byte(`{"enabled": true, "strategy_options": {"checkpoints_v2": true}}`),
-		0o644,
-	))
-
-	cpID := id.MustCheckpointID("dd11ee22ff33")
-	expectedPrompt := "Create the v2-only checkpoint test file"
-
-	// Write checkpoint ONLY to v2 store.
-	v2Store := checkpoint.NewV2GitStore(repo, "origin")
-	require.NoError(t, v2Store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
-		CheckpointID: cpID,
-		SessionID:    "session-v2-only",
-		Strategy:     "manual-commit",
-		Transcript:   redact.AlreadyRedacted([]byte(`{"type":"user","message":{"content":[{"type":"text","text":"hello"}]}}` + "\n")),
-		Prompts:      []string{expectedPrompt},
-		AuthorName:   "Test",
-		AuthorEmail:  "test@example.com",
-	}))
-
-	// Create a user commit with the Trace-Checkpoint trailer.
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("updated"), 0o644))
-	_, err = wt.Add("test.txt")
-	require.NoError(t, err)
-	commitMsg := trailers.FormatCheckpoint("Create v2 test file", cpID)
-	_, err = wt.Commit(commitMsg, &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	require.NoError(t, err)
-
-	// Verify no v1 metadata branch exists.
-	_, v1Err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
-	require.Error(t, v1Err, "v1 metadata branch should not exist")
-
-	// getBranchCheckpoints should find the v2-only checkpoint.
-	points, err := getBranchCheckpoints(context.Background(), repo, 10)
-	require.NoError(t, err)
-
-	var found bool
-	for _, p := range points {
-		if p.CheckpointID == cpID {
-			found = true
-			require.Equal(t, expectedPrompt, p.SessionPrompt,
-				"prompt should be read from v2 /main when v1 is absent")
-			break
-		}
-	}
-	require.True(t, found, "v2-only checkpoint should be discoverable in branch listing")
-}
-
-func TestGetBranchCheckpoints_V2PromptFallbackWhenV1Deleted(t *testing.T) {
-	// When v2 is preferred and v1 metadata branch is deleted after dual-write,
-	// prompts should still be readable from v2 /main.
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	testutil.InitRepo(t, tmpDir)
-	repo, err := git.PlainOpen(tmpDir)
-	require.NoError(t, err)
-
-	wt, err := repo.Worktree()
-	require.NoError(t, err)
-
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("initial"), 0o644))
-	_, err = wt.Add("test.txt")
-	require.NoError(t, err)
-	_, err = wt.Commit("initial commit", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	require.NoError(t, err)
-
-	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".trace"), 0o755))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(tmpDir, ".trace", "settings.json"),
-		[]byte(`{"enabled": true, "strategy_options": {"checkpoints_v2": true}}`),
-		0o644,
-	))
-
-	cpID := id.MustCheckpointID("aa11bb22cc33")
-	expectedPrompt := "Dual-write prompt visible after v1 deletion"
-
-	// Dual-write: checkpoint in both v1 and v2.
-	v1Store := checkpoint.NewGitStore(repo)
-	v2Store := checkpoint.NewV2GitStore(repo, "origin")
-	require.NoError(t, v1Store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
-		CheckpointID: cpID,
-		SessionID:    "session-dual",
-		Strategy:     "manual-commit",
-		Transcript:   redact.AlreadyRedacted([]byte(`{"type":"user","message":{"content":[{"type":"text","text":"hello"}]}}` + "\n")),
-		Prompts:      []string{expectedPrompt},
-		AuthorName:   "Test",
-		AuthorEmail:  "test@example.com",
-	}))
-	require.NoError(t, v2Store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
-		CheckpointID: cpID,
-		SessionID:    "session-dual",
-		Strategy:     "manual-commit",
-		Transcript:   redact.AlreadyRedacted([]byte(`{"type":"user","message":{"content":[{"type":"text","text":"hello"}]}}` + "\n")),
-		Prompts:      []string{expectedPrompt},
-		AuthorName:   "Test",
-		AuthorEmail:  "test@example.com",
-	}))
-
-	// Create user commit with checkpoint trailer.
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("updated"), 0o644))
-	_, err = wt.Add("test.txt")
-	require.NoError(t, err)
-	commitMsg := trailers.FormatCheckpoint("Dual-write commit", cpID)
-	_, err = wt.Commit(commitMsg, &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	require.NoError(t, err)
-
-	// Delete the v1 metadata branch to simulate it being unavailable.
-	require.NoError(t, repo.Storer.RemoveReference(plumbing.NewBranchReferenceName(paths.MetadataBranchName)))
-
-	// getBranchCheckpoints should still find the checkpoint and read prompt from v2.
-	points, err := getBranchCheckpoints(context.Background(), repo, 10)
-	require.NoError(t, err)
-
-	var found bool
-	for _, p := range points {
-		if p.CheckpointID == cpID {
-			found = true
-			require.Equal(t, expectedPrompt, p.SessionPrompt,
-				"prompt should be read from v2 /main after v1 deletion")
-			break
-		}
-	}
-	require.True(t, found, "checkpoint should be discoverable after v1 branch deletion")
-}
-
-func TestResolvePromptTree_PrefersV2WhenEnabled(t *testing.T) {
-	t.Parallel()
-
-	v1 := &object.Tree{}
-	v2 := &object.Tree{}
-
-	require.Same(t, v2, resolvePromptTree(v1, v2, true), "should prefer v2 when enabled")
-	require.Same(t, v1, resolvePromptTree(v1, v2, false), "should prefer v1 when v2 disabled")
-	require.Same(t, v1, resolvePromptTree(v1, nil, true), "should fall back to v1 when v2 is nil")
-	require.Same(t, v2, resolvePromptTree(nil, v2, false), "should use v2 as last resort when v1 is nil")
-	require.Nil(t, resolvePromptTree(nil, nil, true), "should return nil when both are nil")
 }
 
 func TestHasAnyChanges_FirstCommitReturnsTrue(t *testing.T) {

@@ -39,9 +39,9 @@ func New(groups ...*huh.Group) *huh.Form {
 }
 
 // PromptYN renders a Confirm form with the standard theme/accessibility
-// behavior and returns the user's answer. On user cancellation (Ctrl+C or
-// context.Canceled) returns (false, nil) so callers treat it as a "no";
-// on real form errors the error is returned wrapped.
+// behavior and returns the user's answer. On user cancellation (Ctrl+C,
+// context.Canceled, or a huh timeout) returns (false, nil) so callers treat
+// it as a "no"; on real form errors the error is returned wrapped.
 func PromptYN(ctx context.Context, question string, def bool) (bool, error) {
 	answer := def
 	form := New(huh.NewGroup(
@@ -50,7 +50,7 @@ func PromptYN(ctx context.Context, question string, def bool) (bool, error) {
 			Value(&answer),
 	))
 	if err := form.RunWithContext(ctx); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, context.Canceled) {
+		if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, context.Canceled) || errors.Is(err, huh.ErrTimeout) {
 			return false, nil
 		}
 		return false, fmt.Errorf("confirm form: %w", err)

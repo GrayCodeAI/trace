@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -58,7 +59,7 @@ func TestHasUnpushedSessionsCommon(t *testing.T) {
 	t.Run("no remote tracking ref exists", func(t *testing.T) {
 		t.Parallel()
 		repo, headHash := setupRepo(t)
-		assert.True(t, hasUnpushedSessionsCommon(repo, "origin", headHash, branchName))
+		assert.True(t, hasUnpushedBranchRef(repo, "origin", headHash, branchName))
 	})
 
 	t.Run("local and remote same hash", func(t *testing.T) {
@@ -71,7 +72,7 @@ func TestHasUnpushedSessionsCommon(t *testing.T) {
 		)
 		require.NoError(t, repo.Storer.SetReference(remoteRef))
 
-		assert.False(t, hasUnpushedSessionsCommon(repo, "origin", headHash, branchName))
+		assert.False(t, hasUnpushedBranchRef(repo, "origin", headHash, branchName))
 	})
 
 	t.Run("local differs from remote", func(t *testing.T) {
@@ -79,7 +80,7 @@ func TestHasUnpushedSessionsCommon(t *testing.T) {
 		repo, _ := setupRepo(t)
 
 		differentHash := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-		assert.True(t, hasUnpushedSessionsCommon(repo, "origin", differentHash, branchName))
+		assert.True(t, hasUnpushedBranchRef(repo, "origin", differentHash, branchName))
 	})
 }
 
@@ -124,7 +125,7 @@ func TestDoPushBranch_UnreachableTarget_ReturnsNil(t *testing.T) {
 	// 2. Try to fetch+merge (fails — can't fetch from non-existent path)
 	// 3. Log warning and return nil (graceful degradation)
 	nonExistentPath := filepath.Join(t.TempDir(), "does-not-exist")
-	err := doPushBranch(ctx, nonExistentPath, paths.MetadataBranchName)
+	err := doPushRef(ctx, nonExistentPath, plumbing.NewBranchReferenceName(paths.MetadataBranchName))
 	assert.NoError(t, err, "doPushBranch should return nil when target is unreachable (graceful degradation)")
 }
 
@@ -143,11 +144,11 @@ func TestPushBranchIfNeeded_UnreachableTarget_ReturnsNil(t *testing.T) {
 	// Push to a non-existent path. pushBranchIfNeeded will:
 	// 1. Open repository (CWD-based)
 	// 2. Verify branch exists locally
-	// 3. Since target is not a URL (no :// or @), check hasUnpushedSessionsCommon
+	// 3. Since target is not a URL (no :// or @), check hasUnpushedBranchRef
 	//    which finds no remote tracking ref -> returns true (has unpushed)
 	// 4. Call doPushBranch which fails gracefully
 	nonExistentPath := filepath.Join(t.TempDir(), "does-not-exist")
-	err := pushBranchIfNeeded(ctx, nonExistentPath, paths.MetadataBranchName)
+	err := pushRefIfNeeded(ctx, nonExistentPath, plumbing.NewBranchReferenceName(paths.MetadataBranchName))
 	assert.NoError(t, err, "pushBranchIfNeeded should return nil when target is unreachable")
 }
 
@@ -175,7 +176,7 @@ func TestPushBranchIfNeeded_LocalBareRepo_PushesSuccessfully(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	// Push using pushBranchIfNeeded with the bare repo path as target.
-	err := pushBranchIfNeeded(ctx, bareDir, paths.MetadataBranchName)
+	err := pushRefIfNeeded(ctx, bareDir, plumbing.NewBranchReferenceName(paths.MetadataBranchName))
 	require.NoError(t, err, "pushBranchIfNeeded should succeed with a local bare repo target")
 
 	// Verify the branch arrived on the bare repo.
@@ -276,7 +277,7 @@ func TestFetchAndRebase_DivergedBranches(t *testing.T) {
 	// 5. Run fetchAndRebaseSessionsCommon on clone A (diverged: local has bb, remote has cc)
 	t.Chdir(cloneA)
 
-	err := fetchAndRebaseSessionsCommon(ctx, "origin", branchName)
+	err := fetchAndRebaseRefCommon(ctx, "origin", plumbing.NewBranchReferenceName(branchName))
 	require.NoError(t, err)
 
 	// 6. Verify results
@@ -377,7 +378,7 @@ func TestFetchAndRebase_LocalBehind(t *testing.T) {
 	// Clone is now behind — fetchAndRebase should fast-forward
 	t.Chdir(cloneDir)
 
-	err := fetchAndRebaseSessionsCommon(ctx, "origin", branchName)
+	err := fetchAndRebaseRefCommon(ctx, "origin", plumbing.NewBranchReferenceName(branchName))
 	require.NoError(t, err)
 
 	// Verify local now matches remote
@@ -489,7 +490,7 @@ func TestFetchAndRebase_MergeBaseOnSecondParent_DoesNotReplayAncestors(t *testin
 	// Rebase local metadata branch onto the updated remote tip.
 	t.Chdir(cloneLocal)
 
-	err := fetchAndRebaseSessionsCommon(ctx, "origin", branchName)
+	err := fetchAndRebaseRefCommon(ctx, "origin", plumbing.NewBranchReferenceName(branchName))
 	require.NoError(t, err)
 
 	repo, err := git.PlainOpen(cloneLocal)
@@ -616,7 +617,7 @@ func TestFetchAndRebase_DoesNotResurrectRemoteOnlyCheckpointFromMerge(t *testing
 
 	t.Chdir(cloneLocal)
 
-	err := fetchAndRebaseSessionsCommon(ctx, "origin", branchName)
+	err := fetchAndRebaseRefCommon(ctx, "origin", plumbing.NewBranchReferenceName(branchName))
 	require.NoError(t, err)
 
 	repo, err := git.PlainOpen(cloneLocal)
@@ -715,7 +716,7 @@ func TestFetchAndRebase_NonOriginRemote_ReconcilesFetchedRef(t *testing.T) {
 
 	t.Chdir(cloneDir)
 
-	err = fetchAndRebaseSessionsCommon(ctx, "backup", branchName)
+	err = fetchAndRebaseRefCommon(ctx, "backup", plumbing.NewBranchReferenceName(branchName))
 	require.NoError(t, err)
 
 	repo, err = git.PlainOpen(cloneDir)
@@ -738,4 +739,51 @@ func TestFetchAndRebase_NonOriginRemote_ReconcilesFetchedRef(t *testing.T) {
 	require.NoError(t, checkpoint.FlattenTree(repo, tree, "", entries))
 	assert.Contains(t, entries, "aa/aaaaaaaaaa/metadata.json", "remote checkpoint should be preserved")
 	assert.Contains(t, entries, "cc/cccccccccc/metadata.json", "local checkpoint should be preserved")
+}
+
+func setupBareRemoteWithCheckpointBranch(t *testing.T) (string, string) {
+	t.Helper()
+	ctx := context.Background()
+
+	workDir := setupRepoWithCheckpointBranch(t)
+
+	bareDir := t.TempDir()
+	initCmd := exec.CommandContext(ctx, "git", "init", "--bare")
+	initCmd.Dir = bareDir
+	initCmd.Env = testutil.GitIsolatedEnv()
+	out, err := initCmd.CombinedOutput()
+	require.NoError(t, err, "git init --bare failed: %s", out)
+
+	// Push the checkpoint branch to the bare remote
+	pushCmd := exec.CommandContext(ctx, "git", "push", bareDir, paths.MetadataBranchName)
+	pushCmd.Dir = workDir
+	pushCmd.Env = testutil.GitIsolatedEnv()
+	out, err = pushCmd.CombinedOutput()
+	require.NoError(t, err, "initial push failed: %s", out)
+
+	return workDir, bareDir
+}
+
+func captureStderr(t *testing.T) func() string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+
+	t.Cleanup(func() {
+		os.Stderr = old
+		_ = w.Close()
+		_ = r.Close()
+	})
+
+	return func() string {
+		_ = w.Close()
+		var buf bytes.Buffer
+		_, readErr := buf.ReadFrom(r)
+		require.NoError(t, readErr)
+		_ = r.Close()
+		os.Stderr = old
+		return buf.String()
+	}
 }

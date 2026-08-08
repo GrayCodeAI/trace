@@ -139,7 +139,7 @@ func TestInstallGitHook_BacksUpCustomHook(t *testing.T) {
 		t.Fatalf("hook file should exist: %v", err)
 	}
 	hookContent := string(hookData)
-	if !strings.Contains(hookContent, traceHookMarker) {
+	if !strings.Contains(hookContent, entireHookMarker) {
 		t.Error("installed hook should contain Trace marker")
 	}
 	if !strings.Contains(hookContent, chainComment) {
@@ -177,10 +177,10 @@ func TestInstallGitHook_InstallsPostRewrite(t *testing.T) {
 	}
 
 	hookContent := string(hookData)
-	if !strings.Contains(hookContent, traceHookMarker) {
+	if !strings.Contains(hookContent, entireHookMarker) {
 		t.Error("installed post-rewrite hook should contain Trace marker")
 	}
-	if !strings.Contains(hookContent, `trace hooks git post-rewrite "$1" 2>>".git/trace-hooks.log" || true`) {
+	if !strings.Contains(hookContent, `trace hooks git post-rewrite "$1" 2>/dev/null || true`) {
 		t.Errorf("installed post-rewrite hook content missing expected command:\n%s", hookContent)
 	}
 }
@@ -221,7 +221,7 @@ func TestInstallGitHook_DoesNotOverwriteExistingBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hook should exist: %v", err)
 	}
-	if !strings.Contains(string(hookData), traceHookMarker) {
+	if !strings.Contains(string(hookData), entireHookMarker) {
 		t.Error("hook should contain Trace marker")
 	}
 	if !strings.Contains(string(hookData), chainComment) {
@@ -524,7 +524,7 @@ func TestInstallGitHook_InstallRemoveReinstall(t *testing.T) {
 	if err != nil {
 		t.Fatal("hook should exist after reinstall")
 	}
-	if !strings.Contains(string(data), traceHookMarker) {
+	if !strings.Contains(string(data), entireHookMarker) {
 		t.Error("reinstalled hook should contain Trace marker")
 	}
 	if !strings.Contains(string(data), chainComment) {

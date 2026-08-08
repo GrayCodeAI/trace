@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,22 +88,6 @@ func writeManagedSearchSubagent(targetPath, relPath string, content []byte) (sea
 		Status:  searchSubagentCreated,
 		RelPath: relPath,
 	}, nil
-}
-
-func reportSearchSubagentScaffold(w io.Writer, ag agent.Agent, result searchSubagentScaffoldResult) {
-	switch result.Status {
-	case searchSubagentCreated:
-		fmt.Fprintf(w, "  ✓ Installed %s search subagent\n", ag.Type())
-		fmt.Fprintf(w, "    %s\n", result.RelPath)
-	case searchSubagentUpdated:
-		fmt.Fprintf(w, "  ✓ Updated %s search subagent\n", ag.Type())
-		fmt.Fprintf(w, "    %s\n", result.RelPath)
-	case searchSubagentSkippedConflict:
-		fmt.Fprintf(w, "  Skipped %s search subagent (unmanaged file exists)\n", ag.Type())
-		fmt.Fprintf(w, "    %s\n", result.RelPath)
-	case searchSubagentUnsupported, searchSubagentUnchanged:
-		// Nothing to report.
-	}
 }
 
 func searchSubagentTemplate(agentName types.AgentName) (string, []byte, bool) {

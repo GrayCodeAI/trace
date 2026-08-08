@@ -11,13 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/strategy"
+	"github.com/GrayCodeAI/trace/redact"
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/spf13/cobra"
 )
@@ -106,9 +107,7 @@ func setupResumeTestRepo(t *testing.T, tmpDir string, createFeatureBranch bool) 
 	}
 
 	// Ensure trace/checkpoints/v1 branch exists
-	if err := strategy.EnsureMetadataBranch(repo); err != nil {
-		t.Fatalf("Failed to create metadata branch: %v", err)
-	}
+	ensureMetadataBranch(t, repo)
 
 	return repo, w, commit
 }
@@ -294,166 +293,27 @@ func createCheckpointOnMetadataBranch(t *testing.T, repo *git.Repository, sessio
 func createCheckpointOnMetadataBranchFull(t *testing.T, repo *git.Repository, sessionID string, checkpointID id.CheckpointID, createdAt time.Time) id.CheckpointID {
 	t.Helper()
 
-	// Get existing metadata branch or create it
-	if err := strategy.EnsureMetadataBranch(repo); err != nil {
-		t.Fatalf("Failed to ensure metadata branch: %v", err)
-	}
+	ensureMetadataBranch(t, repo)
 
-	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-	ref, err := repo.Reference(refName, true)
-	if err != nil {
-		t.Fatalf("Failed to get metadata branch ref: %v", err)
-	}
-
-	parentCommit, err := repo.CommitObject(ref.Hash())
-	if err != nil {
-		t.Fatalf("Failed to get parent commit: %v", err)
-	}
-
-	// Create metadata content
-	metadataJSON := fmt.Sprintf(`{
-  "checkpoint_id": %q,
-  "session_id": %q,
-  "created_at": %q
-}`, checkpointID.String(), sessionID, createdAt.Format(time.RFC3339))
-
-	// Create blob for metadata
-	blob := repo.Storer.NewEncodedObject()
-	blob.SetType(plumbing.BlobObject)
-	writer, err := blob.Writer()
-	if err != nil {
-		t.Fatalf("Failed to create blob writer: %v", err)
-	}
-	if _, err := writer.Write([]byte(metadataJSON)); err != nil {
-		t.Fatalf("Failed to write blob: %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("Failed to close writer: %v", err)
-	}
-	metadataBlobHash, err := repo.Storer.SetEncodedObject(blob)
-	if err != nil {
-		t.Fatalf("Failed to store blob: %v", err)
-	}
-
-	// Create session log blob
-	logBlob := repo.Storer.NewEncodedObject()
-	logBlob.SetType(plumbing.BlobObject)
-	logWriter, err := logBlob.Writer()
-	if err != nil {
-		t.Fatalf("Failed to create log blob writer: %v", err)
-	}
-	if _, err := logWriter.Write([]byte(`{"type":"test"}`)); err != nil {
-		t.Fatalf("Failed to write log blob: %v", err)
-	}
-	if err := logWriter.Close(); err != nil {
-		t.Fatalf("Failed to close log writer: %v", err)
-	}
-	logBlobHash, err := repo.Storer.SetEncodedObject(logBlob)
-	if err != nil {
-		t.Fatalf("Failed to store log blob: %v", err)
-	}
-
-	// Build tree structure: <id[:2]>/<id[2:]>/metadata.json
-	shardedPath := checkpointID.Path()
-	checkpointIDStr := checkpointID.String()
-
-	// Create checkpoint tree with metadata and transcript files
-	// Entries must be sorted alphabetically
-	checkpointTree := object.Tree{
-		Entries: []object.TreeEntry{
-			{Name: paths.TranscriptFileName, Mode: filemode.Regular, Hash: logBlobHash},
-			{Name: paths.MetadataFileName, Mode: filemode.Regular, Hash: metadataBlobHash},
-		},
-	}
-	checkpointTreeObj := repo.Storer.NewEncodedObject()
-	if err := checkpointTree.Encode(checkpointTreeObj); err != nil {
-		t.Fatalf("Failed to encode checkpoint tree: %v", err)
-	}
-	checkpointTreeHash, err := repo.Storer.SetEncodedObject(checkpointTreeObj)
-	if err != nil {
-		t.Fatalf("Failed to store checkpoint tree: %v", err)
-	}
-
-	// Create inner shard tree (id[2:])
-	innerTree := object.Tree{
-		Entries: []object.TreeEntry{
-			{Name: checkpointIDStr[2:], Mode: filemode.Dir, Hash: checkpointTreeHash},
-		},
-	}
-	innerTreeObj := repo.Storer.NewEncodedObject()
-	if err := innerTree.Encode(innerTreeObj); err != nil {
-		t.Fatalf("Failed to encode inner tree: %v", err)
-	}
-	innerTreeHash, err := repo.Storer.SetEncodedObject(innerTreeObj)
-	if err != nil {
-		t.Fatalf("Failed to store inner tree: %v", err)
-	}
-
-	// Get existing tree entries from parent
-	parentTree, err := parentCommit.Tree()
-	if err != nil {
-		t.Fatalf("Failed to get parent tree: %v", err)
-	}
-
-	// Build new root tree with shard bucket
-	var rootEntries []object.TreeEntry
-	for _, entry := range parentTree.Entries {
-		if entry.Name != shardedPath[:2] {
-			rootEntries = append(rootEntries, entry)
-		}
-	}
-	rootEntries = append(rootEntries, object.TreeEntry{
-		Name: checkpointIDStr[:2],
-		Mode: filemode.Dir,
-		Hash: innerTreeHash,
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
+	err := store.Write(context.Background(), checkpoint.Session{
+		CheckpointID:     checkpointID,
+		SessionID:        sessionID,
+		Strategy:         "manual-commit",
+		CreatedAt:        createdAt,
+		Transcript:       redact.AlreadyRedacted([]byte(`{"type":"user","message":{"content":[{"type":"text","text":"hi"}]}}` + "\n")),
+		Prompts:          []string{"hi"},
+		FilesTouched:     []string{},
+		CheckpointsCount: 1,
+		AuthorName:       "Test",
+		AuthorEmail:      "test@test.com",
 	})
-
-	rootTree := object.Tree{Entries: rootEntries}
-	rootTreeObj := repo.Storer.NewEncodedObject()
-	if err := rootTree.Encode(rootTreeObj); err != nil {
-		t.Fatalf("Failed to encode root tree: %v", err)
-	}
-	rootTreeHash, err := repo.Storer.SetEncodedObject(rootTreeObj)
 	if err != nil {
-		t.Fatalf("Failed to store root tree: %v", err)
+		t.Fatalf("create checkpoint via store: %v", err)
 	}
-
-	// Create commit on metadata branch
-	commit := &object.Commit{
-		Author: object.Signature{
-			Name:  "Test",
-			Email: "test@example.com",
-			When:  parentCommit.Author.When,
-		},
-		Committer: object.Signature{
-			Name:  "Test",
-			Email: "test@example.com",
-			When:  parentCommit.Author.When,
-		},
-		Message:      "Add checkpoint metadata",
-		TreeHash:     rootTreeHash,
-		ParentHashes: []plumbing.Hash{parentCommit.Hash},
-	}
-	commitObj := repo.Storer.NewEncodedObject()
-	if err := commit.Encode(commitObj); err != nil {
-		t.Fatalf("Failed to encode commit: %v", err)
-	}
-	commitHash, err := repo.Storer.SetEncodedObject(commitObj)
-	if err != nil {
-		t.Fatalf("Failed to store commit: %v", err)
-	}
-
-	// Update metadata branch ref
-	newRef := plumbing.NewHashReference(refName, commitHash)
-	if err := repo.Storer.SetReference(newRef); err != nil {
-		t.Fatalf("Failed to update metadata branch: %v", err)
-	}
-
 	return checkpointID
 }
 
-// TestResolveLatestCheckpoint verifies that resolveLatestCheckpoint returns the
-// checkpoint with the newest CreatedAt, regardless of trailer order.
 func TestResolveLatestCheckpoint(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
@@ -473,29 +333,25 @@ func TestResolveLatestCheckpoint(t *testing.T) {
 	// Pass checkpoint IDs in reverse chronological order (newest first),
 	// simulating git CLI squash merge trailer order.
 	reverseOrderIDs := []id.CheckpointID{cpID3, cpID2, cpID1}
-	latest, tree, _, err := resolveLatestCheckpoint(context.Background(), reverseOrderIDs)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
+	latest, _, err := resolveLatestCheckpoint(context.Background(), store, reverseOrderIDs)
 	if err != nil {
 		t.Fatalf("resolveLatestCheckpoint() error = %v", err)
 	}
 
 	// Should return the newest checkpoint regardless of input order
-	if latest.String() != cpID3.String() {
-		t.Errorf("resolveLatestCheckpoint() = %s, want newest %s", latest, cpID3)
-	}
-
-	// Should return a non-nil tree for reuse
-	if tree == nil {
-		t.Error("resolveLatestCheckpoint() returned nil tree")
+	if latest.CheckpointID.String() != cpID3.String() {
+		t.Errorf("resolveLatestCheckpoint() = %s, want newest %s", latest.CheckpointID, cpID3)
 	}
 
 	// Also verify with chronological order
 	chronologicalIDs := []id.CheckpointID{cpID1, cpID2, cpID3}
-	latest2, _, _, err := resolveLatestCheckpoint(context.Background(), chronologicalIDs)
+	latest2, _, err := resolveLatestCheckpoint(context.Background(), store, chronologicalIDs)
 	if err != nil {
 		t.Fatalf("resolveLatestCheckpoint() error = %v", err)
 	}
-	if latest2.String() != cpID3.String() {
-		t.Errorf("resolveLatestCheckpoint() = %s, want newest %s", latest2, cpID3)
+	if latest2.CheckpointID.String() != cpID3.String() {
+		t.Errorf("resolveLatestCheckpoint() = %s, want newest %s", latest2.CheckpointID, cpID3)
 	}
 }
 
@@ -630,7 +486,7 @@ func TestCheckRemoteMetadata_MetadataExistsOnRemote(t *testing.T) {
 
 	// Call checkRemoteMetadata - should find metadata on the remote tree and
 	// attempt to resume, but fail because the test checkpoint has no agent field.
-	err = checkRemoteMetadata(context.Background(), os.Stdout, os.Stderr, checkpointID)
+	_, err = checkRemoteMetadata(context.Background(), os.Stdout, os.Stderr, checkpointID, checkpoint.DefaultV1Refs())
 	if err == nil {
 		t.Error("checkRemoteMetadata() should return error when agent is missing from metadata")
 	} else if !strings.Contains(err.Error(), "failed to resolve agent") {
@@ -652,7 +508,7 @@ func TestCheckRemoteMetadata_NoRemoteMetadataBranch(t *testing.T) {
 	// Don't create any remote ref - simulating no remote trace/checkpoints/v1
 
 	// Call checkRemoteMetadata - should handle gracefully (no remote branch)
-	err := checkRemoteMetadata(context.Background(), os.Stdout, os.Stderr, id.MustCheckpointID("aaa111bbb222"))
+	_, err := checkRemoteMetadata(context.Background(), os.Stdout, os.Stderr, id.MustCheckpointID("aaa111bbb222"), checkpoint.DefaultV1Refs())
 	if err != nil {
 		t.Errorf("checkRemoteMetadata() returned error when no remote branch: %v", err)
 	}
@@ -687,7 +543,7 @@ func TestCheckRemoteMetadata_CheckpointNotOnRemote(t *testing.T) {
 	}
 
 	// Call checkRemoteMetadata with a DIFFERENT checkpoint ID (not on remote)
-	err = checkRemoteMetadata(context.Background(), os.Stdout, os.Stderr, id.MustCheckpointID("abcd12345678"))
+	_, err = checkRemoteMetadata(context.Background(), os.Stdout, os.Stderr, id.MustCheckpointID("abcd12345678"), checkpoint.DefaultV1Refs())
 	if err != nil {
 		t.Errorf("checkRemoteMetadata() returned error for missing checkpoint: %v", err)
 	}
@@ -909,5 +765,27 @@ func TestGetMetadataTree_SucceedsWithLocalBranch(t *testing.T) {
 	}
 	if freshRepo == nil {
 		t.Fatal("getMetadataTree() returned nil repo")
+	}
+}
+
+// ensureMetadataBranch creates the trace/checkpoints/v1 orphan branch if it
+// does not exist yet, mirroring the old strategy.EnsureMetadataBranch helper.
+func ensureMetadataBranch(t *testing.T, repo *git.Repository) {
+	t.Helper()
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true); err == nil {
+		return
+	}
+	ctx := context.Background()
+	treeHash, err := checkpoint.BuildTreeFromEntries(ctx, repo, make(map[string]object.TreeEntry))
+	if err != nil {
+		t.Fatalf("build empty tree for metadata branch: %v", err)
+	}
+	authorName, authorEmail := checkpoint.GetGitAuthorFromRepo(repo)
+	commitHash, err := checkpoint.CreateCommit(ctx, repo, treeHash, plumbing.ZeroHash, "Initialize sessions branch", authorName, authorEmail)
+	if err != nil {
+		t.Fatalf("create metadata branch commit: %v", err)
+	}
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), commitHash)); err != nil {
+		t.Fatalf("set metadata branch ref: %v", err)
 	}
 }

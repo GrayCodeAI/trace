@@ -14,10 +14,10 @@ import (
 	"charm.land/huh/v2"
 	"github.com/GrayCodeAI/trace/cli/api"
 	dispatchpkg "github.com/GrayCodeAI/trace/cli/dispatch"
+	"github.com/GrayCodeAI/trace/cli/gitrepo"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	searchpkg "github.com/GrayCodeAI/trace/cli/search"
-	"github.com/go-git/go-git/v6"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ var (
 )
 
 func defaultListDispatchWizardRepoResources(ctx context.Context) ([]api.Repository, error) {
-	client, err := NewAuthenticatedAPIClient(false)
+	client, err := NewAuthenticatedAPIClient(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -527,10 +527,12 @@ func discoverAuthenticatedDispatchWizardRepos(ctx context.Context) ([]string, er
 }
 
 func discoverRepoSlug(repoRoot string) string {
-	repo, err := git.PlainOpenWithOptions(repoRoot, &git.PlainOpenOptions{DetectDotGit: true})
+	repo, err := gitrepo.OpenPath(repoRoot)
 	if err != nil {
 		return ""
 	}
+	defer repo.Close()
+
 	remote, err := repo.Remote("origin")
 	if err != nil || len(remote.Config().URLs) == 0 {
 		return ""

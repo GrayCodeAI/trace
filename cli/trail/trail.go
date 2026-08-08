@@ -119,12 +119,40 @@ const (
 type Type string
 
 const (
-	TypeBug      Type = "bug"
-	TypeFeature  Type = "feature"
-	TypeChore    Type = "chore"
-	TypeDocs     Type = "docs"
-	TypeRefactor Type = "refactor"
+	TypeBug     Type = "bug"
+	TypeFeature Type = "feature"
+	TypeTask    Type = "task"
 )
+
+// ValidTypes returns all valid trail types.
+func ValidTypes() []Type {
+	return []Type{TypeBug, TypeFeature, TypeTask}
+}
+
+// IsValid reports whether t is a recognized trail type.
+func (t Type) IsValid() bool {
+	for _, vt := range ValidTypes() {
+		if t == vt {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidPriorities returns all valid priorities in descending urgency order.
+func ValidPriorities() []Priority {
+	return []Priority{PriorityUrgent, PriorityHigh, PriorityMedium, PriorityLow, PriorityNone}
+}
+
+// IsValid reports whether p is a recognized priority.
+func (p Priority) IsValid() bool {
+	for _, vp := range ValidPriorities() {
+		if p == vp {
+			return true
+		}
+	}
+	return false
+}
 
 // ReviewerStatus represents the review status for a reviewer.
 type ReviewerStatus string
@@ -154,11 +182,13 @@ type Author struct {
 type Metadata struct {
 	Number    int        `json:"number,omitempty"`
 	TrailID   ID         `json:"trail_id"`
+	URL       string     `json:"url,omitempty"`
 	Branch    string     `json:"branch"`
 	Base      string     `json:"base"`
 	Title     string     `json:"title"`
 	Body      string     `json:"body"`
 	Status    Status     `json:"status"`
+	Phase     string     `json:"phase,omitempty"`
 	Author    *Author    `json:"author"`
 	Assignees []string   `json:"assignees"`
 	Labels    []string   `json:"labels"`

@@ -44,7 +44,11 @@ pre-commit:
           echo "lefthook: golangci-lint not installed — skipping (install: https://golangci-lint.run/usage/install/)"
           exit 0
         fi
-        golangci-lint run --new-from-rev=HEAD~1 --fix {staged_files}
+        # Run on the whole module, not {staged_files}: golangci-lint rejects
+        # "named files" that span multiple directories (e.g. cli/ + cli/agent/),
+        # which blocked every cross-directory commit. --new-from-rev=HEAD still
+        # scopes the report to issues introduced by this commit.
+        golangci-lint run --new-from-rev=HEAD --fix ./...
       stage_fixed: true
 
     yaml-lint:
@@ -71,15 +75,18 @@ pre-commit:
 
 # ---------------------------------------------------------------------------
 # pre-push — heavier checks, runs only on push (not every commit).
+# Run sequentially: the full test suite needs the CPU; parallel govulncheck +
+# vet starved packages past their per-package -timeout and flaked pushes.
 # ---------------------------------------------------------------------------
 pre-push:
+  parallel: false
   commands:
 
     boundaries:
       run: bash ./scripts/check-ecosystem-boundaries.sh
 
     test:
-      run: go test ./... -count=1 -timeout=60s
+      run: go test ./... -count=1 -timeout=120s
 
     vet:
       run: go vet ./...

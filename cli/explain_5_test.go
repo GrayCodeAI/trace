@@ -380,9 +380,9 @@ func TestGetBranchCheckpoints_ReadsPromptFromShadowBranch(t *testing.T) {
 	}
 
 	// Create first checkpoint (baseline copy) - this one gets filtered out
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewEphemeralStore(repo, checkpoint.DefaultV1Refs())
 	baseCommit := initialCommit.String()[:7]
-	_, err = store.WriteTemporary(context.Background(), checkpoint.WriteTemporaryOptions{
+	_, err = store.Write(context.Background(), checkpoint.Step{
 		SessionID:         sessionID,
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{"test.txt"},
@@ -403,7 +403,7 @@ func TestGetBranchCheckpoints_ReadsPromptFromShadowBranch(t *testing.T) {
 	}
 
 	// Create second checkpoint (has code changes, won't be filtered)
-	_, err = store.WriteTemporary(context.Background(), checkpoint.WriteTemporaryOptions{
+	_, err = store.Write(context.Background(), checkpoint.Step{
 		SessionID:         sessionID,
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{"test.txt"},
@@ -419,7 +419,7 @@ func TestGetBranchCheckpoints_ReadsPromptFromShadowBranch(t *testing.T) {
 	}
 
 	// Now call getBranchCheckpoints and verify the prompt is read
-	points, err := getBranchCheckpoints(context.Background(), repo, 10)
+	points, _, err := getBranchCheckpoints(context.Background(), repo, 10)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -503,14 +503,14 @@ func TestGetReachableTemporaryCheckpoints_FiltersByWorktree(t *testing.T) {
 		}
 	}
 
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewEphemeralStore(repo, checkpoint.DefaultV1Refs())
 	baseCommit := initialCommit.String()[:7]
 
 	writeCheckpoints := func(sessionID, worktreeID string) {
 		t.Helper()
 		metaDirAbs := filepath.Join(tmpDir, ".trace", "metadata", sessionID)
 		// Baseline
-		if _, err := store.WriteTemporary(context.Background(), checkpoint.WriteTemporaryOptions{
+		if _, err := store.Write(context.Background(), checkpoint.Step{
 			SessionID: sessionID, BaseCommit: baseCommit, WorktreeID: worktreeID,
 			ModifiedFiles: []string{"test.txt"}, MetadataDir: ".trace/metadata/" + sessionID,
 			MetadataDirAbs: metaDirAbs, CommitMessage: "baseline", AuthorName: "Test",
@@ -522,7 +522,7 @@ func TestGetReachableTemporaryCheckpoints_FiltersByWorktree(t *testing.T) {
 		if err := os.WriteFile(testFile, []byte(sessionID+" changes"), 0o644); err != nil {
 			t.Fatalf("failed to modify test file: %v", err)
 		}
-		if _, err := store.WriteTemporary(context.Background(), checkpoint.WriteTemporaryOptions{
+		if _, err := store.Write(context.Background(), checkpoint.Step{
 			SessionID: sessionID, BaseCommit: baseCommit, WorktreeID: worktreeID,
 			ModifiedFiles: []string{"test.txt"}, MetadataDir: ".trace/metadata/" + sessionID,
 			MetadataDirAbs: metaDirAbs, CommitMessage: "code changes", AuthorName: "Test",
@@ -536,7 +536,7 @@ func TestGetReachableTemporaryCheckpoints_FiltersByWorktree(t *testing.T) {
 	writeCheckpoints(sessionIDOther, "other-worktree") // Different worktree
 
 	// getBranchCheckpoints should only include local worktree's checkpoints
-	points, err := getBranchCheckpoints(context.Background(), repo, 20)
+	points, _, err := getBranchCheckpoints(context.Background(), repo, 20)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints error: %v", err)
 	}
@@ -601,7 +601,7 @@ func TestRunExplainBranchDefault_DetachedHead(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err = runExplainBranchDefault(context.Background(), &stdout, true)
+	err = runExplainBranchWithFilter(context.Background(), &stdout, &stdout, true, "")
 	// Should NOT error
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
@@ -660,21 +660,37 @@ func TestIsAncestorOf(t *testing.T) {
 
 	t.Run("commit is ancestor of later commit", func(t *testing.T) {
 		// commit1 should be an ancestor of commit2
-		if !strategy.IsAncestorOf(context.Background(), repo, commit1, commit2) {
+		c1, err := repo.CommitObject(commit1)
+		require.NoError(t, err)
+		c2, err := repo.CommitObject(commit2)
+		require.NoError(t, err)
+		anc, err := c1.IsAncestor(c2)
+		require.NoError(t, err)
+		if !anc {
 			t.Error("expected commit1 to be ancestor of commit2")
 		}
 	})
 
 	t.Run("commit is not ancestor of earlier commit", func(t *testing.T) {
 		// commit2 should NOT be an ancestor of commit1
-		if strategy.IsAncestorOf(context.Background(), repo, commit2, commit1) {
+		c1, err := repo.CommitObject(commit1)
+		require.NoError(t, err)
+		c2, err := repo.CommitObject(commit2)
+		require.NoError(t, err)
+		anc, err := c2.IsAncestor(c1)
+		require.NoError(t, err)
+		if anc {
 			t.Error("expected commit2 to NOT be ancestor of commit1")
 		}
 	})
 
 	t.Run("commit is ancestor of itself", func(t *testing.T) {
 		// A commit should be considered an ancestor of itself
-		if !strategy.IsAncestorOf(context.Background(), repo, commit1, commit1) {
+		c1, err := repo.CommitObject(commit1)
+		require.NoError(t, err)
+		anc, err := c1.IsAncestor(c1)
+		require.NoError(t, err)
+		if !anc {
 			t.Error("expected commit to be ancestor of itself")
 		}
 	})
@@ -715,7 +731,7 @@ func TestGetBranchCheckpoints_OnFeatureBranch(t *testing.T) {
 	}
 
 	// Get checkpoints (should be empty, but shouldn't error)
-	points, err := getBranchCheckpoints(context.Background(), repo, 20)
+	points, _, err := getBranchCheckpoints(context.Background(), repo, 20)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -723,46 +739,5 @@ func TestGetBranchCheckpoints_OnFeatureBranch(t *testing.T) {
 	// Should return empty list (no checkpoints yet)
 	if len(points) != 0 {
 		t.Errorf("expected 0 checkpoints, got %d", len(points))
-	}
-}
-
-func TestHasCodeChanges_FirstCommitReturnsTrue(t *testing.T) {
-	// First commit on a shadow branch (no parent) should return true
-	// since it captures the working copy state - real uncommitted work
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	testutil.InitRepo(t, tmpDir)
-	repo, err := git.PlainOpen(tmpDir)
-	require.NoError(t, err)
-
-	w, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("failed to get worktree: %v", err)
-	}
-
-	// Create first commit (has no parent)
-	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("initial"), 0o644); err != nil {
-		t.Fatalf("failed to write test file: %v", err)
-	}
-	if _, err := w.Add("test.txt"); err != nil {
-		t.Fatalf("failed to add test file: %v", err)
-	}
-	commitHash, err := w.Commit("first commit", &git.CommitOptions{
-		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
-	})
-	if err != nil {
-		t.Fatalf("failed to create commit: %v", err)
-	}
-
-	commit, err := repo.CommitObject(commitHash)
-	if err != nil {
-		t.Fatalf("failed to get commit object: %v", err)
-	}
-
-	// First commit (no parent) captures working copy state - should return true
-	if !hasCodeChanges(commit) {
-		t.Error("hasCodeChanges() should return true for first commit (captures working copy)")
 	}
 }

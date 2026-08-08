@@ -24,14 +24,14 @@ import (
 
 func TestCheckpointType_Values(t *testing.T) {
 	// Verify the enum values are distinct
-	if Temporary == Committed {
-		t.Error("Temporary and Committed should have different values")
+	if Ephemeral == Persistent {
+		t.Error("Ephemeral and Persistent should have different values")
 	}
 
-	// Verify Temporary is the zero value (default for Type)
+	// Verify Ephemeral is the zero value (default for Type)
 	var defaultType Type
-	if defaultType != Temporary {
-		t.Errorf("expected zero value of Type to be Temporary, got %d", defaultType)
+	if defaultType != Ephemeral {
+		t.Errorf("expected zero value of Type to be Ephemeral, got %d", defaultType)
 	}
 }
 
@@ -70,10 +70,10 @@ func TestCopyMetadataDir_SkipsSymlinks(t *testing.T) {
 	}
 
 	// Create GitStore and call copyMetadataDir
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	entries := make(map[string]object.TreeEntry)
 
-	err = store.copyMetadataDir(metadataDir, "checkpoint/", entries)
+	err = store.copyMetadataDir(context.Background(), metadataDir, "checkpoint/", entries)
 	if err != nil {
 		t.Fatalf("copyMetadataDir failed: %v", err)
 	}
@@ -125,14 +125,14 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 	}
 
 	// Create checkpoint store
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 
 	// Write a committed checkpoint with Agent field
 	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
 	sessionID := "test-session-123"
 	agentType := agent.AgentTypeClaudeCode
 
-	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err = store.Write(context.Background(), Session{
 		CheckpointID: checkpointID,
 		SessionID:    sessionID,
 		Strategy:     "manual-commit",
@@ -199,7 +199,7 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to read session metadata.json: %v", err)
 		}
-		var sessionMetadata CommittedMetadata
+		var sessionMetadata Metadata
 		if err := json.Unmarshal([]byte(sessionContent), &sessionMetadata); err != nil {
 			t.Fatalf("failed to parse session metadata.json: %v", err)
 		}
@@ -217,7 +217,7 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 
 // readLatestSessionMetadata reads the session-specific metadata from the latest session subdirectory.
 // This is where session-specific fields like Summary are stored.
-func readLatestSessionMetadata(t *testing.T, repo *git.Repository, checkpointID id.CheckpointID) CommittedMetadata {
+func readLatestSessionMetadata(t *testing.T, repo *git.Repository, checkpointID id.CheckpointID) Metadata {
 	t.Helper()
 
 	ref, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
@@ -274,7 +274,7 @@ func readLatestSessionMetadata(t *testing.T, repo *git.Repository, checkpointID 
 		t.Fatalf("failed to read session metadata.json: %v", err)
 	}
 
-	var metadata CommittedMetadata
+	var metadata Metadata
 	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
 		t.Fatalf("failed to parse session metadata.json: %v", err)
 	}
@@ -283,7 +283,7 @@ func readLatestSessionMetadata(t *testing.T, repo *git.Repository, checkpointID 
 }
 
 // Note: Tests for Agents array and SessionCount fields have been removed
-// as those fields were removed from CommittedMetadata in the simplification.
+// as those fields were removed from Metadata in the simplification.
 
 // TestWriteTemporary_Deduplication verifies that WriteTemporary skips creating
 // a new commit when the tree hash matches the previous checkpoint.
@@ -335,11 +335,11 @@ func TestWriteTemporary_Deduplication(t *testing.T) {
 	}
 
 	// Create checkpoint store
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 
 	// First checkpoint should be created
 	baseCommit := initialCommit.String()
-	result1, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result1, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{"test.go"},
@@ -361,7 +361,7 @@ func TestWriteTemporary_Deduplication(t *testing.T) {
 	}
 
 	// Second checkpoint with identical content should be skipped
-	result2, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result2, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{"test.go"},
@@ -388,7 +388,7 @@ func TestWriteTemporary_Deduplication(t *testing.T) {
 		t.Fatalf("failed to modify test file: %v", err)
 	}
 
-	result3, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result3, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{"test.go"},
@@ -461,7 +461,7 @@ func TestEnsureSessionsBranch_WritesVercelConfigWhenEnabled(t *testing.T) {
 		t.Fatalf("write settings.json: %v", err)
 	}
 
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	if err := store.ensureSessionsBranch(context.Background()); err != nil {
 		t.Fatalf("ensureSessionsBranch() error = %v", err)
 	}
@@ -536,8 +536,8 @@ func TestWriteCommitted_MergesVercelConfigOnMetadataBranch(t *testing.T) {
 		t.Fatalf("BuildTreeFromEntries() error = %v", err)
 	}
 
-	store := NewGitStore(repo)
-	commitHash, err := store.createCommit(context.Background(), treeHash, plumbing.ZeroHash, "Initialize metadata branch", "Test", "test@test.com")
+	store := NewGitStore(repo, DefaultV1Refs())
+	commitHash, err := CreateCommit(context.Background(), repo, treeHash, plumbing.ZeroHash, "Initialize metadata branch", "Test", "test@test.com")
 	if err != nil {
 		t.Fatalf("createCommit() error = %v", err)
 	}
@@ -546,7 +546,7 @@ func TestWriteCommitted_MergesVercelConfigOnMetadataBranch(t *testing.T) {
 	}
 
 	cpID := id.MustCheckpointID("abcdef123456")
-	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err = store.Write(context.Background(), Session{
 		CheckpointID: cpID,
 		SessionID:    "test-session-id",
 		Strategy:     "manual-commit",
@@ -633,7 +633,7 @@ func verifyBranchInMetadata(t *testing.T, repo *git.Repository, checkpointID id.
 		t.Fatalf("failed to read metadata.json: %v", err)
 	}
 
-	var metadata CommittedMetadata
+	var metadata Metadata
 	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
 		t.Fatalf("failed to parse metadata.json: %v", err)
 	}
@@ -678,8 +678,8 @@ func TestWriteCommitted_BranchField(t *testing.T) {
 
 		// Write a committed checkpoint with branch information
 		checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
-		store := NewGitStore(repo)
-		err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		store := NewGitStore(repo, DefaultV1Refs())
+		err = store.Write(context.Background(), Session{
 			CheckpointID: checkpointID,
 			SessionID:    "test-session-123",
 			Strategy:     "manual-commit",
@@ -718,8 +718,8 @@ func TestWriteCommitted_BranchField(t *testing.T) {
 
 		// Write a committed checkpoint (branch should be empty in detached HEAD)
 		checkpointID := id.MustCheckpointID("b2c3d4e5f6a7")
-		store := NewGitStore(repo)
-		err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		store := NewGitStore(repo, DefaultV1Refs())
+		err = store.Write(context.Background(), Session{
 			CheckpointID: checkpointID,
 			SessionID:    "test-session-456",
 			Strategy:     "manual-commit",
@@ -740,11 +740,11 @@ func TestWriteCommitted_BranchField(t *testing.T) {
 // field in an existing checkpoint's metadata.
 func TestUpdateSummary(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("f1e2d3c4b5a6")
 
 	// First, create a checkpoint without a summary
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID: checkpointID,
 		SessionID:    "test-session-summary",
 		Strategy:     "manual-commit",
@@ -776,7 +776,7 @@ func TestUpdateSummary(t *testing.T) {
 		OpenItems: []string{"Open item 1"},
 	}
 
-	err = store.UpdateSummary(context.Background(), checkpointID, summary)
+	err = store.Write(context.Background(), SessionSummary{CheckpointID: checkpointID, Summary: summary})
 	if err != nil {
 		t.Fatalf("UpdateSummary() error = %v", err)
 	}

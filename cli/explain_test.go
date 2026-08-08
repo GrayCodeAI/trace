@@ -11,13 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/agent/claudecode"
-	"github.com/GrayCodeAI/trace/cli/agent/types"
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/paths"
-	"github.com/GrayCodeAI/trace/cli/summarize"
 	"github.com/GrayCodeAI/trace/cli/testutil"
 	"github.com/GrayCodeAI/trace/cli/trailers"
 	"github.com/GrayCodeAI/trace/redact"
@@ -85,7 +82,7 @@ func rowsHaveValue(rows []explainRow, want string) bool {
 
 func TestFormatCheckpointSummaryError_Auth(t *testing.T) {
 	t.Parallel()
-	label, rows, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: claudecode.ClaudeErrorAuth, Message: "Invalid API key"}, 0)
+	label, rows, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: claudecode.ClaudeErrorAuth, Message: "Invalid API key"}, newSummaryAttempt("claude-code", 0))
 	if !strings.Contains(strings.ToLower(label), "authentication failed") {
 		t.Errorf("missing 'authentication failed' in label %q", label)
 	}
@@ -99,7 +96,7 @@ func TestFormatCheckpointSummaryError_Auth(t *testing.T) {
 
 func TestFormatCheckpointSummaryError_RateLimit(t *testing.T) {
 	t.Parallel()
-	label, _, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: claudecode.ClaudeErrorRateLimit, Message: "429"}, 0)
+	label, _, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: claudecode.ClaudeErrorRateLimit, Message: "429"}, newSummaryAttempt("claude-code", 0))
 	if !strings.Contains(label, "rate limit") {
 		t.Errorf("missing rate-limit phrasing in label: %q", label)
 	}
@@ -110,7 +107,7 @@ func TestFormatCheckpointSummaryError_RateLimit(t *testing.T) {
 
 func TestFormatCheckpointSummaryError_Config(t *testing.T) {
 	t.Parallel()
-	_, rows, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: claudecode.ClaudeErrorConfig, Message: "model not found"}, 0)
+	_, rows, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: claudecode.ClaudeErrorConfig, Message: "model not found"}, newSummaryAttempt("claude-code", 0))
 	if !rowsHaveValue(rows, "model not found") {
 		t.Errorf("envelope message not surfaced in rows: %+v", rows)
 	}
@@ -121,7 +118,7 @@ func TestFormatCheckpointSummaryError_Config(t *testing.T) {
 
 func TestFormatCheckpointSummaryError_CLIMissing(t *testing.T) {
 	t.Parallel()
-	label, _, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: claudecode.ClaudeErrorCLIMissing}, 0)
+	label, _, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: claudecode.ClaudeErrorCLIMissing}, newSummaryAttempt("claude-code", 0))
 	if !strings.Contains(label, "not installed") {
 		t.Errorf("missing cli-missing phrasing in label: %q", label)
 	}
@@ -144,7 +141,7 @@ func TestFormatCheckpointSummaryError_TypedBranchesHandleEmptyMessage(t *testing
 	for _, kind := range kinds {
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
-			label, rows, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: kind}, 0)
+			label, rows, err := formatCheckpointSummaryError(&claudecode.ClaudeError{Kind: kind}, newSummaryAttempt("claude-code", 0))
 			if err == nil {
 				t.Fatal("expected structured error")
 			}
@@ -164,8 +161,8 @@ func TestFormatCheckpointSummaryError_TypedBranchesHandleEmptyMessage(t *testing
 
 func TestFormatCheckpointSummaryError_DeadlineExceeded(t *testing.T) {
 	t.Parallel()
-	label, rows, err := formatCheckpointSummaryError(fmt.Errorf("wrapped: %w", context.DeadlineExceeded), 5*time.Minute)
-	if !strings.Contains(label, "timed out") {
+	label, rows, err := formatCheckpointSummaryError(fmt.Errorf("wrapped: %w", context.DeadlineExceeded), newSummaryAttempt("claude-code", 5*time.Minute))
+	if !strings.Contains(strings.ToLower(label), "timed out") {
 		t.Errorf("expected 'timed out' in label, got %q", label)
 	}
 	if !strings.Contains(label, "5m") {
@@ -198,7 +195,7 @@ func TestFormatCheckpointSummaryError_DeadlineExceeded(t *testing.T) {
 
 func TestFormatCheckpointSummaryError_Canceled(t *testing.T) {
 	t.Parallel()
-	label, _, err := formatCheckpointSummaryError(fmt.Errorf("wrapped: %w", context.Canceled), 0)
+	label, _, err := formatCheckpointSummaryError(fmt.Errorf("wrapped: %w", context.Canceled), newSummaryAttempt("claude-code", 0))
 	if !strings.Contains(label, "canceled") {
 		t.Errorf("missing canceled in label: %q", label)
 	}
@@ -209,7 +206,7 @@ func TestFormatCheckpointSummaryError_Canceled(t *testing.T) {
 
 func TestFormatCheckpointSummaryError_Passthrough(t *testing.T) {
 	t.Parallel()
-	_, rows, err := formatCheckpointSummaryError(errors.New("something else"), 0)
+	_, rows, err := formatCheckpointSummaryError(errors.New("something else"), newSummaryAttempt("claude-code", 0))
 	if err == nil {
 		t.Fatal("expected structured error")
 	}
@@ -244,7 +241,7 @@ func TestFormatCheckpointSummaryError_Unknown(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			label, rows, err := formatCheckpointSummaryError(tc.err, 0)
+			label, rows, err := formatCheckpointSummaryError(tc.err, newSummaryAttempt("claude-code", 0))
 			if err == nil {
 				t.Fatal("expected structured error")
 			}
@@ -327,8 +324,7 @@ func TestRunExplainAuto_NoMatchReturnsCompositeError(t *testing.T) {
 	runExplainAutoTestRepo(t)
 
 	var out, errOut bytes.Buffer
-	err := runExplainAuto(context.Background(), &out, &errOut, "abababababab", false, false, false, false, false, false, false)
-
+	err := runExplainAuto(context.Background(), &out, &errOut, "abababababab", false, false, false, false, false, false, false, 0)
 	require.Error(t, err)
 	require.ErrorContains(t, err, `no checkpoint or commit found matching "abababababab"`)
 }
@@ -341,7 +337,7 @@ func TestRunExplainAuto_CommitRefWithCheckpointTrailer(t *testing.T) {
 	ctx := context.Background()
 
 	cpID := id.MustCheckpointID("deadbeefcafe")
-	require.NoError(t, checkpoint.NewGitStore(repo).WriteCommitted(ctx, checkpoint.WriteCommittedOptions{
+	require.NoError(t, checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs()).Write(ctx, checkpoint.Session{
 		CheckpointID: cpID,
 		SessionID:    "session-auto",
 		Strategy:     "manual-commit",
@@ -362,7 +358,7 @@ func TestRunExplainAuto_CommitRefWithCheckpointTrailer(t *testing.T) {
 	require.NoError(t, err)
 
 	var out, errOut bytes.Buffer
-	err = runExplainAuto(ctx, &out, &errOut, commitHash.String(), true, false, false, false, false, false, false)
+	err = runExplainAuto(ctx, &out, &errOut, commitHash.String(), true, false, false, false, false, false, false, 0)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), cpID.String(), "expected checkpoint header resolved via trailer")
 }
@@ -389,7 +385,7 @@ func TestRunExplainAuto_CommitWithoutTrailer(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, errOut bytes.Buffer
-			err := runExplainAuto(context.Background(), &out, &errOut, initial.String(), true, false, false, tc.rawTrans, tc.generate, false, false)
+			err := runExplainAuto(context.Background(), &out, &errOut, initial.String(), true, false, false, tc.rawTrans, tc.generate, false, false, 0)
 			if tc.wantErr {
 				require.Error(t, err)
 				require.ErrorContains(t, err, tc.wantContain)
@@ -414,8 +410,7 @@ func TestRunExplainCheckpoint_NotFoundSentinels(t *testing.T) {
 	for _, generate := range []bool{false, true} {
 		t.Run(fmt.Sprintf("generate=%v", generate), func(t *testing.T) {
 			var out, errOut bytes.Buffer
-			err := runExplainCheckpoint(context.Background(), &out, &errOut, "abababababab", false, false, false, false, generate, false, false)
-
+			err := runExplainCheckpoint(context.Background(), &out, &errOut, "abababababab", false, false, false, false, generate, false, false, 0)
 			require.Error(t, err)
 			require.ErrorIs(t, err, checkpoint.ErrCheckpointNotFound)
 			require.NotErrorIs(t, err, errCannotGenerateTemporaryCheckpoint,
@@ -454,7 +449,7 @@ func writeTemporaryCheckpointForExplainTest(t *testing.T) string {
 
 	require.NoError(t, os.WriteFile(testFile, []byte("updated content"), 0o644))
 
-	result, err := checkpoint.NewGitStore(repo).WriteTemporary(context.Background(), checkpoint.WriteTemporaryOptions{
+	result, err := checkpoint.NewEphemeralStore(repo, checkpoint.DefaultV1Refs()).Write(context.Background(), checkpoint.Step{
 		SessionID:         sessionID,
 		BaseCommit:        initialCommit.String()[:7],
 		ModifiedFiles:     []string{"temp.txt"},
@@ -475,8 +470,7 @@ func TestRunExplainAuto_GenerateTemporaryCheckpointDoesNotFallBackToCommit(t *te
 	tempCheckpointSHA := writeTemporaryCheckpointForExplainTest(t)
 
 	var out, errOut bytes.Buffer
-	err := runExplainAuto(context.Background(), &out, &errOut, tempCheckpointSHA, true, false, false, false, true, false, false)
-
+	err := runExplainAuto(context.Background(), &out, &errOut, tempCheckpointSHA, true, false, false, false, true, false, false, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, errCannotGenerateTemporaryCheckpoint)
 	require.NotErrorIs(t, err, checkpoint.ErrCheckpointNotFound)
@@ -493,7 +487,7 @@ func TestRunExplainAuto_TemporaryCheckpointRendersIdentityBullet(t *testing.T) {
 	var out, errOut bytes.Buffer
 	// noPager=true to suppress the pager's terminal-only path so output lands
 	// in the buffer; generate=false so we read (and don't try to summarize).
-	err := runExplainAuto(context.Background(), &out, &errOut, tempCheckpointSHA, true, false, false, false, false, false, false)
+	err := runExplainAuto(context.Background(), &out, &errOut, tempCheckpointSHA, true, false, false, false, false, false, false, 0)
 	require.NoError(t, err)
 
 	output := out.String()
@@ -569,8 +563,7 @@ func TestRunExplainCommit_AmbiguousPrintsToErrWAndReturnsSilent(t *testing.T) {
 	prefix := collidingShaPrefix(t, repo, tmpDir)
 
 	var out, errOut bytes.Buffer
-	err = runExplainCommit(context.Background(), &out, &errOut, prefix, true, false, false, false, false, false, false)
-
+	err = runExplainCommit(context.Background(), &out, &errOut, prefix, true, false, false, false, false, false, false, 0)
 	var silent *SilentError
 	if !errors.As(err, &silent) {
 		t.Fatalf("expected *SilentError, got %T: %v", err, err)
@@ -596,13 +589,13 @@ func TestRunExplainCheckpoint_AmbiguousCommittedPrefixPrintsToErrWAndReturnsSile
 	ctx := context.Background()
 
 	// Seed two committed checkpoints sharing a hex prefix.
-	store := checkpoint.NewGitStore(repo)
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
 	transcriptBytes := redact.AlreadyRedacted([]byte(`{"type":"user","message":{"content":[{"type":"text","text":"hello"}]}}` + "\n"))
 	for _, cpID := range []id.CheckpointID{
 		id.MustCheckpointID("e7aaaaaaaaaa"),
 		id.MustCheckpointID("e7bbbbbbbbbb"),
 	} {
-		require.NoError(t, store.WriteCommitted(ctx, checkpoint.WriteCommittedOptions{
+		require.NoError(t, store.Write(ctx, checkpoint.Session{
 			CheckpointID: cpID,
 			SessionID:    "session-" + cpID.String(),
 			Strategy:     "manual-commit",
@@ -613,8 +606,7 @@ func TestRunExplainCheckpoint_AmbiguousCommittedPrefixPrintsToErrWAndReturnsSile
 	}
 
 	var out, errOut bytes.Buffer
-	err := runExplainCheckpoint(ctx, &out, &errOut, "e7", true, false, false, false, false, false, false)
-
+	err := runExplainCheckpoint(ctx, &out, &errOut, "e7", true, false, false, false, false, false, false, 0)
 	var silent *SilentError
 	if !errors.As(err, &silent) {
 		t.Fatalf("expected *SilentError, got %T: %v", err, err)
@@ -695,7 +687,7 @@ func TestRunExplainAuto_GenerateAmbiguousPrefixRefused(t *testing.T) {
 	commitPrefix := head.Hash().String()[:7]
 	collisionID := id.MustCheckpointID(commitPrefix + "aaaaa")
 
-	require.NoError(t, checkpoint.NewGitStore(repo).WriteCommitted(ctx, checkpoint.WriteCommittedOptions{
+	require.NoError(t, checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs()).Write(ctx, checkpoint.Session{
 		CheckpointID: collisionID,
 		SessionID:    "session-collision",
 		Strategy:     "manual-commit",
@@ -705,8 +697,7 @@ func TestRunExplainAuto_GenerateAmbiguousPrefixRefused(t *testing.T) {
 	}))
 
 	var out, errOut bytes.Buffer
-	err = runExplainAuto(ctx, &out, &errOut, commitPrefix, true, false, false, false, true, false, false)
-
+	err = runExplainAuto(ctx, &out, &errOut, commitPrefix, true, false, false, false, true, false, false, 0)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "ambiguous target")
 	require.ErrorContains(t, err, "--commit")
@@ -734,47 +725,5 @@ func TestExplainCmd_CommitFlagWithGenerateValidates(t *testing.T) {
 	// not fail at flag validation.
 	if err := cmd.Execute(); err != nil {
 		require.NotContains(t, err.Error(), "--generate requires")
-	}
-}
-
-func TestGenerateCheckpointAISummary_AddsDefaultTimeoutWithoutParentDeadline(t *testing.T) {
-	tmpTimeout := checkpointSummaryTimeout
-	tmpGenerator := generateTranscriptSummary
-	t.Cleanup(func() {
-		checkpointSummaryTimeout = tmpTimeout
-		generateTranscriptSummary = tmpGenerator
-	})
-
-	checkpointSummaryTimeout = 50 * time.Millisecond
-
-	var gotDeadline time.Time
-	generateTranscriptSummary = func(
-		ctx context.Context,
-		_ redact.RedactedBytes,
-		_ []string,
-		_ types.AgentType,
-		_ summarize.Generator,
-	) (*checkpoint.Summary, error) {
-		deadline, ok := ctx.Deadline()
-		if !ok {
-			return nil, errors.New("expected deadline on summary context")
-		}
-		gotDeadline = deadline
-		return &checkpoint.Summary{Intent: "intent", Outcome: "outcome"}, nil
-	}
-
-	start := time.Now()
-	summary, _, err := generateCheckpointAISummary(context.Background(), []byte("transcript"), nil, agent.AgentTypeClaudeCode, nil)
-	if err != nil {
-		t.Fatalf("generateCheckpointAISummary() error = %v", err)
-	}
-	if summary == nil {
-		t.Fatal("expected summary")
-	}
-	if gotDeadline.IsZero() {
-		t.Fatal("expected deadline to be set")
-	}
-	if remaining := gotDeadline.Sub(start); remaining < 30*time.Millisecond || remaining > 200*time.Millisecond {
-		t.Fatalf("deadline offset = %s, want around %s", remaining, checkpointSummaryTimeout)
 	}
 }

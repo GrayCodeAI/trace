@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 
+	"github.com/GrayCodeAI/trace/cli/agent"
 	"github.com/GrayCodeAI/trace/cli/agent/geminicli"
 	"github.com/GrayCodeAI/trace/cli/transcript"
 )
@@ -50,6 +51,29 @@ func extractTranscriptMetadata(data []byte) transcriptMetadata {
 	if prompts, gemErr := geminicli.ExtractAllUserPrompts(data); gemErr == nil && len(prompts) > 0 {
 		meta.FirstPrompt = prompts[0]
 		meta.TurnCount = len(prompts)
+	}
+
+	return meta
+}
+
+// extractTranscriptMetadataForAgent extracts transcript metadata with
+// agent-native prompt and model extraction when available. Native extractors
+// are authoritative because they understand format-specific nesting and
+// conversation branches (Pi, Codex, Droid, etc.); failures remain best-effort
+// and preserve whatever the generic parser found.
+func extractTranscriptMetadataForAgent(ag agent.Agent, sessionRef string, data []byte) transcriptMetadata {
+	meta := extractTranscriptMetadata(data)
+
+	if extractor, ok := agent.AsPromptExtractor(ag); ok {
+		if prompts, err := extractor.ExtractPrompts(sessionRef, 0); err == nil && len(prompts) > 0 {
+			meta.FirstPrompt = prompts[0]
+			meta.TurnCount = len(prompts)
+		}
+	}
+	if extractor, ok := agent.AsModelExtractor(ag); ok {
+		if model, err := extractor.ExtractModel(data); err == nil && model != "" {
+			meta.Model = model
+		}
 	}
 
 	return meta

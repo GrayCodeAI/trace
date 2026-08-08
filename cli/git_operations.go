@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
@@ -108,7 +109,12 @@ func IsOnDefaultBranch(ctx context.Context) (bool, string, error) {
 	if err != nil {
 		return false, "", fmt.Errorf("failed to open git repository: %w", err)
 	}
+	return isOnDefaultBranchRepo(repo)
+}
 
+// isOnDefaultBranchRepo reports whether the repository's HEAD is on its
+// default branch, returning the branch name.
+func isOnDefaultBranchRepo(repo *git.Repository) (bool, string, error) {
 	// Get current branch
 	head, err := repo.Head()
 	if err != nil {
@@ -464,72 +470,84 @@ func fetchMetadataFromOrigin(ctx context.Context, shallow, noFilter bool) error 
 	return nil
 }
 
-// FetchV2MainTreeOnly fetches the tip of the v2 /main ref from origin with
-// --depth=1, downloading only the latest commit and its tree objects.
-// Uses explicit refspec since v2 refs are under refs/trace/, not refs/heads/.
-func FetchV2MainTreeOnly(ctx context.Context) error {
-	return fetchV2MainFromOrigin(ctx, true /* shallow */, false /* noFilter */)
+// FetchCheckpointRef fetches a single per-checkpoint ref from the checkpoint
+// remote. Thin alias for remote.FetchCheckpointRef, kept so existing cli-side
+// call sites and OpenOptions wiring stay unchanged; see that function for the
+// absence-vs-failure contract (remote-lacks-ref wraps
+// plumbing.ErrReferenceNotFound; transport failures surface as-is).
+func FetchCheckpointRef(ctx context.Context, ref plumbing.ReferenceName) error {
+	return remote.FetchCheckpointRef(ctx, ref) //nolint:wrapcheck // thin alias; the remote error carries full context
 }
 
-// FetchV2MainRef fetches the v2 /main ref from origin with full blob content.
-// The fetch is unfiltered so resume/explain can read metadata JSON blobs.
-// Uses explicit refspec since v2 refs are under refs/trace/, not refs/heads/.
-func FetchV2MainRef(ctx context.Context) error {
-	return fetchV2MainFromOrigin(ctx, false /* shallow */, true /* noFilter */)
-}
+// checkpointRefListTimeout bounds the names-only ls-remote used by user-facing
+// `trace checkpoint list` / branch explain. Kept short (not a full fetch
+// budget): discovery is best-effort and additive — on timeout or unreachable
+// remote the store falls back to local refs rather than stalling a previously
+// instant command for tens of seconds.
+const checkpointRefListTimeout = 5 * time.Second
 
-// fetchV2MainFromOrigin fetches the v2 /main ref from origin into the shared
-// staging ref, then promotes it via strategy.PromoteTmpRefSafely. When
-// shallow is true, --depth=1 is added so only the tip is downloaded.
-// When noFilter is true, --filter=blob:none is suppressed.
-func fetchV2MainFromOrigin(ctx context.Context, shallow, noFilter bool) error {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+// ListCheckpointRefsOnRemote enumerates the per-checkpoint refs
+// (refs/entire/checkpoints/<shard>/<id>) present on the checkpoint remote, names
+// only, via a single `git ls-remote refs/entire/checkpoints/*` — no object
+// transfer. The git-refs store's List uses it to discover checkpoints written
+// on another machine that have no local ref yet, then hydrates each lazily on
+// read through FetchCheckpointRef.
+//
+// Scope (deliberately stricter than the on-demand read fetch):
+//   - no checkpoint_remote configured → (nil, nil), List stays local-only
+//     (unlike FetchCheckpointRef / remote.FetchURL, which fall back to origin);
+//   - with checkpoint_remote configured → queries the resolved checkpoint URL
+//     via remote.FetchURL (which can still fall through to origin in edge cases
+//     such as settings-load failure or an underivable checkpoint URL).
+//
+// Resolution and ls-remote are pinned to the worktree root (not process cwd) so
+// repo-local git config (url.*.insteadOf, credential helpers, remotes) applies.
+func ListCheckpointRefsOnRemote(ctx context.Context) ([]plumbing.ReferenceName, error) {
+	if !remote.Configured(ctx) {
+		return nil, nil
+	}
+
+	worktreeRoot, err := paths.WorktreeRoot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve worktree root: %w", err)
+	}
+
+	url, err := remote.FetchURL(ctx, remote.FetchURLOptions{WorktreeRoot: worktreeRoot})
+	if err != nil {
+		return nil, fmt.Errorf("resolve checkpoint remote URL: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, checkpointRefListTimeout)
 	defer cancel()
 
-	fetchTarget, err := remote.ResolveFetchTarget(ctx, "origin")
+	output, err := remote.LsRemoteInDir(ctx, worktreeRoot, url, checkpoint.CheckpointRefPrefix+"*")
 	if err != nil {
-		return fmt.Errorf("failed to resolve fetch target: %w", err)
+		return nil, fmt.Errorf("ls-remote checkpoint refs from %s: %w", remote.RedactURL(url), err)
 	}
-
-	refSpec := fmt.Sprintf("+%s:%s", paths.V2MainRefName, strategy.V2MainFetchTmpRef)
-
-	output, fetchErr := remote.Fetch(ctx, remote.FetchOptions{
-		Remote:   fetchTarget,
-		RefSpecs: []string{refSpec},
-		NoTags:   true,
-		Shallow:  shallow,
-		NoFilter: noFilter,
-	})
-	if fetchErr != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return errors.New("v2 fetch timed out after 2 minutes")
-		}
-		return formatFilteredFetchError("failed to fetch v2 /main", fetchTarget, output, fetchErr)
-	}
-
-	if err := strategy.PromoteTmpRefSafely(ctx, strategy.V2MainFetchTmpRef, paths.V2MainRefName, "v2 /main"); err != nil {
-		return fmt.Errorf("origin v2 /main fetch: %w", err)
-	}
-	return nil
+	return parseCheckpointRefNames(output), nil
 }
 
-// FetchV2MetadataFromCheckpointRemote fetches the v2 /main ref from the
-// configured checkpoint_remote URL.
-// Returns an error if the fetch fails or no checkpoint_remote is configured.
-func FetchV2MetadataFromCheckpointRemote(ctx context.Context) error {
-	configured := remote.Configured(ctx)
-	if !configured {
-		return errors.New("no checkpoint_remote configured")
+// parseCheckpointRefNames extracts the checkpoint ref names from `git ls-remote`
+// output. Each line is "<hash>\t<refname>"; only refs under CheckpointRefPrefix
+// are kept (the store re-validates each via ParseRef). Checkpoint refs point at
+// commits so no peeled (`^{}`) lines appear for them; refs/tags peeled lines
+// lack the checkpoint prefix and drop out here; any anomalous
+// refs/entire/checkpoints/...^{} name is rejected by ParseRef downstream (the
+// "{}" shard never matches ShardFor).
+func parseCheckpointRefNames(output []byte) []plumbing.ReferenceName {
+	var names []plumbing.ReferenceName
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := fields[1]
+		if !strings.HasPrefix(name, checkpoint.CheckpointRefPrefix) {
+			continue
+		}
+		names = append(names, plumbing.ReferenceName(name))
 	}
-	checkpointURL, err := remote.FetchURL(ctx)
-	if err != nil {
-		return fmt.Errorf("checkpoint_remote configured but could not resolve URL: %w", err)
-	}
-
-	if err := strategy.FetchV2MainFromURL(ctx, checkpointURL); err != nil {
-		return fmt.Errorf("failed to fetch v2 /main from checkpoint remote: %w", err)
-	}
-	return nil
+	return names
 }
 
 // FetchMetadataFromCheckpointRemote fetches the trace/checkpoints/v1 branch from the

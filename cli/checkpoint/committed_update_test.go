@@ -46,10 +46,10 @@ func setupRepoForUpdate(t *testing.T) (*git.Repository, *GitStore, id.Checkpoint
 		t.Fatalf("failed to commit: %v", err)
 	}
 
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	cpID := id.MustCheckpointID("a1b2c3d4e5f6")
 
-	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err = store.Write(context.Background(), Session{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Strategy:     "manual-commit",
@@ -71,7 +71,7 @@ func TestUpdateCommitted_ReplacesTranscript(t *testing.T) {
 
 	// Update with full transcript (replace semantics)
 	fullTranscript := []byte("full transcript line 1\nfull transcript line 2\nfull transcript line 3\n")
-	err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Transcript:   redact.AlreadyRedacted(fullTranscript),
@@ -95,7 +95,7 @@ func TestUpdateCommitted_ReplacesPrompts(t *testing.T) {
 	t.Parallel()
 	_, store, cpID := setupRepoForUpdate(t)
 
-	err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Prompts:      []string{"prompt 1", "prompt 2", "prompt 3"},
@@ -120,7 +120,7 @@ func TestUpdateCommitted_ReplacesAllFieldsTogether(t *testing.T) {
 	_, store, cpID := setupRepoForUpdate(t)
 
 	fullTranscript := []byte("complete transcript\n")
-	err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Transcript:   redact.AlreadyRedacted(fullTranscript),
@@ -147,7 +147,7 @@ func TestUpdateCommitted_NonexistentCheckpoint(t *testing.T) {
 	t.Parallel()
 	_, store, _ := setupRepoForUpdate(t)
 
-	err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: id.MustCheckpointID("deadbeef1234"),
 		SessionID:    "session-001",
 		Transcript:   redact.AlreadyRedacted([]byte("should fail")),
@@ -168,7 +168,7 @@ func TestUpdateCommitted_PreservesMetadata(t *testing.T) {
 	}
 
 	// Update only transcript
-	err = store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	err = store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Transcript:   redact.AlreadyRedacted([]byte("updated transcript\n")),
@@ -197,7 +197,7 @@ func TestUpdateCommitted_MultipleCheckpoints(t *testing.T) {
 
 	// Write a second checkpoint
 	cpID2 := id.MustCheckpointID("b2c3d4e5f6a1")
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID: cpID2,
 		SessionID:    "session-001",
 		Strategy:     "manual-commit",
@@ -214,7 +214,7 @@ func TestUpdateCommitted_MultipleCheckpoints(t *testing.T) {
 
 	// Update both checkpoints with the same full transcript
 	for _, cpID := range []id.CheckpointID{cpID1, cpID2} {
-		err = store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+		err = store.Write(context.Background(), SessionTranscript{
 			CheckpointID: cpID,
 			SessionID:    "session-001",
 			Transcript:   redact.AlreadyRedacted(fullTranscript),
@@ -242,7 +242,7 @@ func TestUpdateCommitted_UpdatesContentHash(t *testing.T) {
 	repo, store, cpID := setupRepoForUpdate(t)
 
 	// Update transcript
-	err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Transcript:   redact.AlreadyRedacted([]byte("new full transcript content\n")),
@@ -285,7 +285,7 @@ func TestUpdateCommitted_EmptyCheckpointID(t *testing.T) {
 	t.Parallel()
 	_, store, _ := setupRepoForUpdate(t)
 
-	err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	err := store.Write(context.Background(), SessionTranscript{
 		SessionID:  "session-001",
 		Transcript: redact.AlreadyRedacted([]byte("should fail")),
 	})
@@ -300,7 +300,7 @@ func TestUpdateCommitted_FallsBackToLatestSession(t *testing.T) {
 
 	// Update with wrong session ID — should fall back to latest (index 0)
 	fullTranscript := []byte("updated via fallback\n")
-	err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "nonexistent-session",
 		Transcript:   redact.AlreadyRedacted(fullTranscript),
@@ -324,12 +324,12 @@ func TestUpdateCommitted_SummaryPreserved(t *testing.T) {
 	_, store, cpID := setupRepoForUpdate(t)
 
 	// Verify the root-level CheckpointSummary is preserved after update
-	summaryBefore, err := store.ReadCommitted(context.Background(), cpID)
+	summaryBefore, err := store.Read(context.Background(), cpID)
 	if err != nil {
 		t.Fatalf("ReadCommitted() before error = %v", err)
 	}
 
-	err = store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	err = store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Transcript:   redact.AlreadyRedacted([]byte("updated\n")),
@@ -338,7 +338,7 @@ func TestUpdateCommitted_SummaryPreserved(t *testing.T) {
 		t.Fatalf("UpdateCommitted() error = %v", err)
 	}
 
-	summaryAfter, err := store.ReadCommitted(context.Background(), cpID)
+	summaryAfter, err := store.Read(context.Background(), cpID)
 	if err != nil {
 		t.Fatalf("ReadCommitted() after error = %v", err)
 	}
@@ -486,9 +486,9 @@ func TestUpdateCommitted_UsesCorrectAuthor(t *testing.T) {
 			}
 
 			// Write initial checkpoint
-			store := NewGitStore(repo)
+			store := NewGitStore(repo, DefaultV1Refs())
 			cpID := id.MustCheckpointID("a1b2c3d4e5f6")
-			err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+			err = store.Write(context.Background(), Session{
 				CheckpointID: cpID,
 				SessionID:    "session-001",
 				Strategy:     "manual-commit",
@@ -501,7 +501,7 @@ func TestUpdateCommitted_UsesCorrectAuthor(t *testing.T) {
 			}
 
 			// Call UpdateCommitted — this is the operation under test
-			err = store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+			err = store.Write(context.Background(), SessionTranscript{
 				CheckpointID: cpID,
 				SessionID:    "session-001",
 				Transcript:   redact.AlreadyRedacted([]byte("full transcript\n")),
@@ -608,7 +608,7 @@ func TestUpdateCommitted_PrecomputedBlobs_Roundtrip(t *testing.T) {
 		t.Fatal("precompute returned zero content-hash blob")
 	}
 
-	if err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	if err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID:     cpID,
 		SessionID:        "session-001",
 		Transcript:       transcript,
@@ -636,7 +636,7 @@ func TestUpdateCommitted_ContentHashShortCircuit(t *testing.T) {
 
 	transcript := redact.AlreadyRedacted([]byte("stable transcript content\n"))
 
-	if err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	if err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Transcript:   transcript,
@@ -648,7 +648,7 @@ func TestUpdateCommitted_ContentHashShortCircuit(t *testing.T) {
 	// should never touch the chunking function.
 	calls := installChunkCounter(t)
 
-	if err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	if err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Transcript:   transcript,
@@ -685,7 +685,7 @@ func TestUpdateCommitted_ContentChangedRewrites(t *testing.T) {
 	first := redact.AlreadyRedacted([]byte("first version\n"))
 	second := redact.AlreadyRedacted([]byte("second version with more content\n"))
 
-	if err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	if err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Transcript:   first,
@@ -694,7 +694,7 @@ func TestUpdateCommitted_ContentChangedRewrites(t *testing.T) {
 	}
 	hashBefore := readTranscriptBlobHash(t, repo, cpID)
 
-	if err := store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+	if err := store.Write(context.Background(), SessionTranscript{
 		CheckpointID: cpID,
 		SessionID:    "session-001",
 		Transcript:   second,

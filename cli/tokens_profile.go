@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/GrayCodeAI/trace/cli/agent"
+	"github.com/GrayCodeAI/trace/cli/checkpoint"
+	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +34,18 @@ type tokensProfileSignal struct {
 	CheckpointIDs []string `json:"checkpoint_ids,omitempty"`
 }
 
+type tokensProfileSignalDefinition struct {
+	id    string
+	label string
+}
+
+var tokensProfileSignalDefinitions = []tokensProfileSignalDefinition{
+	{id: "context-replay-hotspot", label: "Cache/context replay hotspot"},
+	{id: "api-call-amplification", label: "API call amplification"},
+	{id: "subagent-heavy", label: "Subagent-heavy sessions"},
+	{id: "missing-token-data", label: "Missing token data"},
+}
+
 const tokensProfileUsageScopeCheckpointObserved = "checkpoint_observed"
 
 func newTokensGroupCmd() *cobra.Command {
@@ -41,7 +56,11 @@ func newTokensGroupCmd() *cobra.Command {
 		Long: `Analyze token usage across sessions and checkpoints.
 
 Commands:
-  profile  Aggregate token usage across committed checkpoints`,
+  profile  Aggregate token usage across committed checkpoints
+
+Examples:
+  trace tokens profile
+  trace tokens profile --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -80,133 +99,305 @@ checkpoints; use --limit or --all to change the scope.`,
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
 	cmd.Flags().IntVar(&limitFlag, "limit", 50, "Maximum committed checkpoints to analyze")
 	cmd.Flags().BoolVar(&allFlag, "all", false, "Analyze all committed checkpoints")
+	cmd.MarkFlagsMutuallyExclusive("limit", "all")
 	return cmd
 }
 
-func runTokensProfile(ctx context.Context, cmd *cobra.Command, jsonFlag bool, limit int) error {
-	lookup, err := newExplainCheckpointLookup(ctx)
+func runTokensProfile(ctx context.Context, cmd *cobra.Command, jsonOutput bool, limit int) error {
+	repo, err := openRepository(ctx)
+	if err != nil {
+		cmd.SilenceUsage = true
+		fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository.")
+		return NewSilentError(err)
+	}
+	defer repo.Close()
+
+	stores, err := checkpoint.Open(ctx, repo, checkpoint.OpenOptions{BlobFetcher: FetchBlobsByHash, RefFetcher: FetchCheckpointRef})
+	if err != nil {
+		return fmt.Errorf("failed to open checkpoint stores: %w", err)
+	}
+	store := stores.Persistent
+	infos, err := store.List(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list checkpoints: %w", err)
+	}
+
+	report, err := buildTokensProfileReport(ctx, store, infos, limit)
 	if err != nil {
 		return err
 	}
-	report, err := buildTokensProfileReport(ctx, lookup, limit)
-	if err != nil {
-		return err
+
+	if jsonOutput {
+		return printJSON(cmd.OutOrStdout(), report)
 	}
-	if jsonFlag {
-		return writeJSONPretty(cmd.OutOrStdout(), report)
-	}
-	renderTokensProfileText(cmd.OutOrStdout(), report)
+	writeTokensProfileText(cmd.OutOrStdout(), report)
 	return nil
 }
 
-func buildTokensProfileReport(ctx context.Context, lookup *explainCheckpointLookup, limit int) (*tokensProfileReport, error) {
-	infos, err := lookup.v1Store.ListCommitted(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing committed checkpoints: %w", err)
-	}
-
-	available := len(infos)
-	scanCount := available
-	if limit > 0 && limit < scanCount {
-		scanCount = limit
-	}
-
-	report := &tokensProfileReport{
-		Source:               "trace checkpoint metadata",
+func buildTokensProfileReport(ctx context.Context, store checkpoint.PersistentStore, infos []checkpoint.CheckpointInfo, limit int) (tokensProfileReport, error) {
+	checkpointsAvailable := len(infos)
+	infos = limitTokensProfileCheckpoints(infos, limit)
+	report := tokensProfileReport{
+		Source:               "committed_checkpoints",
 		UsageScope:           tokensProfileUsageScopeCheckpointObserved,
-		CheckpointsAvailable: available,
-		CheckpointsAnalyzed:  scanCount,
-		Limitations: []string{
-			"Token counts reflect observed checkpoint metadata only.",
-			"Transcripts without token metadata contribute 0 tokens.",
-		},
+		CheckpointsAvailable: checkpointsAvailable,
+		CheckpointsAnalyzed:  len(infos),
 	}
+	signals := make(map[string]*tokensProfileSignal, len(tokensProfileSignalDefinitions))
+	var aggregate *agent.TokenUsage
 
-	var combined sessionTokensUsage
-	var missingCount int
-	var warningsCount int
-	var hotspotIDs []string
+	for _, info := range infos {
+		if err := ctx.Err(); err != nil {
+			return tokensProfileReport{}, err //nolint:wrapcheck // Propagating context cancellation.
+		}
 
-	for i := 0; i < scanCount; i++ {
-		c := infos[i]
-		meta, err := lookup.v1Store.ReadSessionMetadata(ctx, c.CheckpointID, 0)
+		summary, err := store.Read(ctx, info.CheckpointID)
 		if err != nil {
-			warningsCount++
+			return tokensProfileReport{}, fmt.Errorf("failed to read checkpoint %s: %w", info.CheckpointID, err)
+		}
+		if summary == nil {
+			report.MissingTokenData++
+			addTokensProfileSignal(signals, "missing-token-data", info.CheckpointID, report.CheckpointsAnalyzed)
 			continue
 		}
-		if meta == nil || meta.TokenUsage == nil {
-			missingCount++
+
+		usage, metadataReadWarning, err := tokensProfileCheckpointUsage(ctx, store, info.CheckpointID, summary)
+		if err != nil {
+			return tokensProfileReport{}, err
+		}
+		if metadataReadWarning {
+			report.MetadataReadWarnings++
+		}
+		tokens := buildSessionTokensUsage(usage)
+		if tokens == nil {
+			report.MissingTokenData++
+			addTokensProfileSignal(signals, "missing-token-data", info.CheckpointID, report.CheckpointsAnalyzed)
 			continue
 		}
 
 		report.CheckpointsWithTokenData++
-		t := meta.TokenUsage
-		combined.Input += t.InputTokens
-		combined.Output += t.OutputTokens
-		combined.CacheWrite += t.CacheCreationTokens
-		combined.CacheRead += t.CacheReadTokens
-		combined.Total += t.InputTokens + t.OutputTokens + t.CacheCreationTokens + t.CacheReadTokens
-
-		if t.CacheCreationTokens > 0 && t.CacheCreationTokens >= t.InputTokens/2 {
-			idStr := string(c.CheckpointID)
-			if len(idStr) > 12 {
-				idStr = idStr[:12]
-			}
-			hotspotIDs = append(hotspotIDs, idStr)
-		}
+		aggregate = addCheckpointTokenUsage(aggregate, usage)
+		addTokensProfileTokenSignals(signals, info.CheckpointID, tokens, report.CheckpointsAnalyzed)
 	}
 
-	report.MissingTokenData = missingCount
-	report.MetadataReadWarnings = warningsCount
-	if report.CheckpointsWithTokenData > 0 {
-		report.Tokens = &combined
-	}
-
-	var signals []tokensProfileSignal
-	if len(hotspotIDs) > 0 {
-		percent := (len(hotspotIDs) * 100) / scanCount
-		signals = append(signals, tokensProfileSignal{
-			ID:            "context-replay-hotspot",
-			Label:         "Cache/context replay hotspot",
-			Count:         len(hotspotIDs),
-			Percent:       percent,
-			CheckpointIDs: hotspotIDs,
-		})
-	}
-	if missingCount > 0 {
-		percent := (missingCount * 100) / scanCount
-		signals = append(signals, tokensProfileSignal{
-			ID:      "missing-token-data",
-			Label:   "Missing token data",
-			Count:   missingCount,
-			Percent: percent,
-		})
-	}
-	report.Signals = signals
-
+	report.Tokens = buildSessionTokensUsage(aggregate)
+	report.Signals = orderedTokensProfileSignals(signals)
+	report.Recommendations = tokensProfileRecommendations(report)
+	report.Limitations = tokensProfileLimitations(report)
 	return report, nil
 }
 
-func renderTokensProfileText(w io.Writer, report *tokensProfileReport) {
-	fmt.Fprintf(w, "Token Profile (%s)\n", report.Source)
-	fmt.Fprintf(w, "Checkpoints Analyzed: %d / %d available\n\n", report.CheckpointsAnalyzed, report.CheckpointsAvailable)
+func limitTokensProfileCheckpoints(infos []checkpoint.CheckpointInfo, limit int) []checkpoint.CheckpointInfo {
+	if limit <= 0 || len(infos) <= limit {
+		return infos
+	}
+	return infos[:limit]
+}
 
-	if report.Tokens != nil {
-		fmt.Fprintf(w, "Total Tokens: %d\n", report.Tokens.Total)
-		fmt.Fprintf(w, "  Input Tokens: %d\n", report.Tokens.Input)
-		fmt.Fprintf(w, "  Output Tokens: %d\n", report.Tokens.Output)
-		if report.Tokens.CacheRead > 0 || report.Tokens.CacheWrite > 0 {
-			fmt.Fprintf(w, "  Cache Read Tokens: %d\n", report.Tokens.CacheRead)
-			fmt.Fprintf(w, "  Cache Creation Tokens: %d\n", report.Tokens.CacheWrite)
-		}
-	} else {
-		fmt.Fprintln(w, "No token usage recorded in analyzed checkpoints.")
+func tokensProfileCheckpointUsage(ctx context.Context, store checkpoint.PersistentStore, checkpointID id.CheckpointID, summary *checkpoint.CheckpointSummary) (*agent.TokenUsage, bool, error) {
+	if summary == nil {
+		return nil, false, nil
 	}
 
-	if len(report.Signals) > 0 {
-		fmt.Fprintln(w, "\nSignals:")
-		for _, sig := range report.Signals {
-			fmt.Fprintf(w, "  - %s: %d checkpoints (%d%%)\n", sig.Label, sig.Count, sig.Percent)
+	metas := make([]*checkpoint.Metadata, 0, len(summary.Sessions))
+	metadataReadWarning := false
+	for i := range len(summary.Sessions) {
+		meta, err := store.ReadSessionMetadata(ctx, checkpointID, i)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, false, ctxErr //nolint:wrapcheck // Propagating context cancellation.
+			}
+			metadataReadWarning = true
+			continue
 		}
+		metas = append(metas, meta)
+	}
+	return checkpointTokenUsage(summary, metas, metadataReadWarning), metadataReadWarning, nil
+}
+
+func addTokensProfileTokenSignals(signals map[string]*tokensProfileSignal, checkpointID id.CheckpointID, tokens *sessionTokensUsage, denominator int) {
+	if tokens == nil {
+		return
+	}
+	topLevelTotal := topLevelSessionTokenTotal(tokens)
+	if topLevelTotal > 0 && tokenPercent(tokens.CacheRead, topLevelTotal) >= recommendationHighCacheReadPercent {
+		addTokensProfileSignal(signals, "context-replay-hotspot", checkpointID, denominator)
+	}
+	if tokens.APICalls >= 20 {
+		addTokensProfileSignal(signals, "api-call-amplification", checkpointID, denominator)
+	}
+	if tokenShareAtLeastOneTenth(tokens.SubagentTotal, tokens.Total) {
+		addTokensProfileSignal(signals, "subagent-heavy", checkpointID, denominator)
+	}
+}
+
+func addTokensProfileSignal(signals map[string]*tokensProfileSignal, signalID string, checkpointID id.CheckpointID, denominator int) {
+	signal := signals[signalID]
+	if signal == nil {
+		definition := tokensProfileSignalDefinitionFor(signalID)
+		signal = &tokensProfileSignal{
+			ID:    definition.id,
+			Label: definition.label,
+		}
+		signals[signalID] = signal
+	}
+	signal.Count++
+	if denominator > 0 {
+		signal.Percent = roundedPercent(signal.Count, denominator)
+	}
+	if checkpointID != "" {
+		signal.CheckpointIDs = append(signal.CheckpointIDs, checkpointID.String())
+	}
+}
+
+func tokensProfileSignalDefinitionFor(signalID string) tokensProfileSignalDefinition {
+	for _, definition := range tokensProfileSignalDefinitions {
+		if definition.id == signalID {
+			return definition
+		}
+	}
+	return tokensProfileSignalDefinition{id: signalID, label: signalID}
+}
+
+func orderedTokensProfileSignals(signals map[string]*tokensProfileSignal) []tokensProfileSignal {
+	ordered := make([]tokensProfileSignal, 0, len(signals))
+	for _, definition := range tokensProfileSignalDefinitions {
+		if signal := signals[definition.id]; signal != nil {
+			ordered = append(ordered, *signal)
+		}
+	}
+	return ordered
+}
+
+func tokensProfileRecommendations(report tokensProfileReport) []sessionTokensRecommendation {
+	var recs []sessionTokensRecommendation
+
+	if report.CheckpointsAnalyzed == 0 {
+		return []sessionTokensRecommendation{{
+			ID:       "no-checkpoints",
+			Severity: "low",
+			Message:  "Create checkpoints first; token profiling needs committed checkpoint metadata to identify patterns.",
+			Signals:  []string{"empty_checkpoint_history"},
+		}}
+	}
+
+	if tokensProfileSignalCount(report.Signals, "context-replay-hotspot") > 0 ||
+		tokensProfileSignalCount(report.Signals, "api-call-amplification") > 0 {
+		recs = append(recs, sessionTokensRecommendation{
+			ID:       "search-before-reinvestigation",
+			Severity: "high",
+			Message:  "Use `trace search` for prior decisions/checkpoints before broad re-investigation.",
+			Signals:  []string{"cache_read_tokens", "api_call_count"},
+		})
+	}
+	if tokensProfileSignalCount(report.Signals, "api-call-amplification") > 0 {
+		recs = append(recs, sessionTokensRecommendation{
+			ID:       "batch-diagnostics",
+			Severity: "medium",
+			Message:  "Batch diagnostic reads around one narrowed hypothesis when API call amplification repeats.",
+			Signals:  []string{"api_call_count"},
+		})
+	}
+	if tokensProfileSignalCount(report.Signals, "context-replay-hotspot") > 0 {
+		recs = append(recs, sessionTokensRecommendation{
+			ID:       "preserve-then-compact",
+			Severity: "medium",
+			Message:  "Summarize useful findings before continuing large-context work; compact or restart only after preserving relevant context.",
+			Signals:  []string{"cache_read_tokens"},
+		})
+	}
+	if tokensProfileSignalCount(report.Signals, "subagent-heavy") > 0 {
+		recs = append(recs, sessionTokensRecommendation{
+			ID:       "scope-subagents",
+			Severity: "medium",
+			Message:  "Scope subagent tasks tightly with a narrow objective and expected output.",
+			Signals:  []string{"subagent_tokens"},
+		})
+	}
+	if report.MissingTokenData > 0 {
+		recs = append(recs, sessionTokensRecommendation{
+			ID:       "improve-token-coverage",
+			Severity: "low",
+			Message:  "Increase token coverage by using agents and checkpoints that report token usage.",
+			Signals:  []string{"missing_token_usage"},
+		})
+	}
+
+	if len(recs) == 0 {
+		recs = append(recs, sessionTokensRecommendation{
+			ID:       "no-repeated-hotspots",
+			Severity: "low",
+			Message:  "No repeated token hotspots were visible in committed checkpoint metadata.",
+			Signals:  []string{"checkpoint_token_metadata"},
+		})
+	}
+	return recs
+}
+
+func tokensProfileSignalCount(signals []tokensProfileSignal, signalID string) int {
+	for _, signal := range signals {
+		if signal.ID == signalID {
+			return signal.Count
+		}
+	}
+	return 0
+}
+
+func tokensProfileLimitations(report tokensProfileReport) []string {
+	var limitations []string
+	if report.CheckpointsAvailable > report.CheckpointsAnalyzed {
+		limitations = append(limitations, fmt.Sprintf("Limited to latest %d of %d committed checkpoints; use --limit or --all to change scope.", report.CheckpointsAnalyzed, report.CheckpointsAvailable))
+	}
+	if report.CheckpointsAnalyzed == 0 {
+		limitations = append(limitations, "No committed checkpoints found.")
+	}
+	if report.MissingTokenData > 0 {
+		limitations = append(limitations, fmt.Sprintf("%d checkpoint%s did not include token usage.", report.MissingTokenData, tokenPluralSuffix(report.MissingTokenData)))
+	}
+	if report.MetadataReadWarnings > 0 {
+		limitations = append(limitations, fmt.Sprintf("%d checkpoint%s had incomplete session metadata; profile used root token summaries or readable sessions where available.", report.MetadataReadWarnings, tokenPluralSuffix(report.MetadataReadWarnings)))
+	}
+	if report.Tokens != nil {
+		limitations = append(limitations, "Token totals are summed from analyzed checkpoints and may include overlapping checkpoint history; treat them as checkpoint-observed volume, not guaranteed unique session spend.")
+	}
+	if report.CheckpointsAnalyzed > 0 {
+		limitations = append(limitations, "Tool-level search/read spend is not captured yet; this profile infers patterns from token totals, cache/context replay, API call counts, and subagent totals.")
+	}
+	return limitations
+}
+
+func writeTokensProfileText(w io.Writer, report tokensProfileReport) {
+	fmt.Fprintln(w, "Token profile")
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "Source:               %s\n", report.Source)
+	fmt.Fprintf(w, "Checkpoints available: %d\n", report.CheckpointsAvailable)
+	fmt.Fprintf(w, "Checkpoints analyzed: %d\n", report.CheckpointsAnalyzed)
+	fmt.Fprintf(w, "With token data:      %d\n", report.CheckpointsWithTokenData)
+	fmt.Fprintf(w, "Missing token data:   %d\n", report.MissingTokenData)
+	if report.MetadataReadWarnings > 0 {
+		fmt.Fprintf(w, "Metadata warnings:    %d\n", report.MetadataReadWarnings)
+	}
+
+	writeTokenUsageSectionWithTitle(w, "Checkpoint-observed token usage", report.Tokens)
+	writeTokensProfileSignals(w, report.Signals)
+	if len(report.Recommendations) > 0 {
+		writeTokenRecommendations(w, report.Recommendations)
+	}
+	writeTokenLimitations(w, report.Limitations)
+}
+
+func writeTokensProfileSignals(w io.Writer, signals []tokensProfileSignal) {
+	if len(signals) == 0 {
+		return
+	}
+
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Repeated signals")
+	for _, signal := range signals {
+		fmt.Fprintf(w, "- %s: %d checkpoint%s", signal.Label, signal.Count, tokenPluralSuffix(signal.Count))
+		if signal.Percent > 0 {
+			fmt.Fprintf(w, " (%d%%)", signal.Percent)
+		}
+		fmt.Fprintln(w)
 	}
 }

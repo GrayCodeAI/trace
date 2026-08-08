@@ -13,10 +13,11 @@ import (
 
 	"github.com/GrayCodeAI/trace/cli/interactive"
 	"github.com/GrayCodeAI/trace/cli/logging"
+	"github.com/GrayCodeAI/trace/cli/uiform"
 )
 
 // envKillSwitch disables the interactive update prompt regardless of TTY.
-const envKillSwitch = "TRACE_NO_AUTO_UPDATE"
+const envKillSwitch = "ENTIRE_NO_AUTO_UPDATE"
 
 // AutoUpdateAction describes the result of an update prompt.
 type AutoUpdateAction string
@@ -88,7 +89,7 @@ func MaybeAutoUpdate(ctx context.Context, w io.Writer, currentVersion, latestVer
 			fmt.Fprintf(w, "Update failed: %v\nTry again later running:\n  %s\n", err, cmdStr)
 			return autoUpdateActionUpdate
 		}
-		fmt.Fprintln(w, "Update complete. Re-run trace to use the new version.")
+		fmt.Fprintln(w, "Update complete. Re-run entire to use the new version.")
 		return autoUpdateActionUpdate
 	case autoUpdateActionSkipUntilNextVersion:
 		return autoUpdateActionSkipUntilNextVersion
@@ -114,10 +115,7 @@ func realChooseUpdate(ctx context.Context, currentVersion, latestVersion, cmdStr
 			huh.NewOption("Skip until next version", autoUpdateActionSkipUntilNextVersion),
 		).
 		Value(&action)
-	form := huh.NewForm(huh.NewGroup(sel)).WithTheme(huh.ThemeFunc(huh.ThemeDracula))
-	if os.Getenv("ACCESSIBLE") != "" {
-		form = form.WithAccessible(true)
-	}
+	form := uiform.New(huh.NewGroup(sel))
 	if err := form.RunWithContext(ctx); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) || errors.Is(err, huh.ErrTimeout) {
 			return autoUpdateActionSkip, nil

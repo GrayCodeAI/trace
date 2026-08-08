@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/GrayCodeAI/trace/cli/interactive"
@@ -22,19 +22,49 @@ const (
 )
 
 // startSpinner prints msg followed by an animated spinner to w when the
-// operation takes longer than spinnerInitialDelay. Returns a stop function
-// that clears the spinner line and prints suffix (with a newline) if
-// non-empty. Fast operations that call stop before the initial delay
-// elapses produce no output at all.
+// operation takes longer than spinnerInitialDelay. stop(true) leaves
+// "✓ msg" on the line; stop(false) erases the line and writes nothing.
+// On non-terminal writers the animation is omitted but stop(true) still
+// prints the completion line.
+func startSpinner(w io.Writer, msg string) func(success bool) {
+	_, stop := startUpdatableSpinner(w, msg)
+	return stop
+}
+
+// startUpdatableSpinner is startSpinner's variant for an operation whose
+// status text changes while it runs (e.g. "session 2/5 · turn 3/10"). update
+// replaces the message the next frame draws — or, on the non-animated path,
+// the message stop's completion line uses. update is safe to call at any
+// point, including before the spinner's first frame draws and after stop
+// returns. stop behaves exactly like startSpinner's, rendering whichever
+// message update last set (or msg, if update was never called).
 //
-// When w is not a terminal (CI, redirected output, agent subprocess), the
-// spinner and the suppression message are both omitted — non-interactive
-// callers get clean output without progress chatter.
-func startSpinner(w io.Writer, msg string) func(suffix string) {
-	if !interactive.IsTerminalWriter(w) {
-		return func(suffix string) {
-			if suffix != "" {
-				fmt.Fprintln(w, suffix)
+// The live animation is emitted only when w both is a terminal and can render
+// ANSI (interactive.ShouldStyle) — the frames use cursor-control escapes
+// (\r\033[K), which a legacy console that can't handle ANSI (e.g.
+// TERM=cygwin) renders as literal "←[K" garbage, and which NO_COLOR asks us
+// to suppress. When styling is off we fall back to the completion-line-only
+// path, so no escape byte is ever written to such a writer.
+func startUpdatableSpinner(w io.Writer, msg string) (update func(string), stop func(success bool)) {
+	var mu sync.Mutex
+	current := msg
+	setMsg := func(m string) {
+		mu.Lock()
+		current = m
+		mu.Unlock()
+	}
+	getMsg := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return current
+	}
+
+	// ShouldStyle already returns false for a non-terminal writer, so this
+	// single gate also covers the plain non-TTY case.
+	if !interactive.ShouldStyle(w) {
+		return setMsg, func(success bool) {
+			if success {
+				fmt.Fprintf(w, "✓ %s\n", getMsg())
 			}
 		}
 	}
@@ -51,89 +81,29 @@ func startSpinner(w io.Writer, msg string) func(suffix string) {
 		ticker := time.NewTicker(spinnerInterval)
 		defer ticker.Stop()
 		frame := 0
-		fmt.Fprintf(w, "\r%s %s", spinnerFrames[frame], msg)
-		frame = (frame + 1) % len(spinnerFrames)
+		draw := func() {
+			// \033[K clears the rest of the line so a shorter message
+			// (update shrank it) doesn't leave stale trailing characters.
+			fmt.Fprintf(w, "\r\033[K%s %s", spinnerFrames[frame], getMsg())
+			frame = (frame + 1) % len(spinnerFrames)
+		}
+		draw()
 		for {
 			select {
 			case <-done:
 				return
 			case <-ticker.C:
-				fmt.Fprintf(w, "\r%s %s", spinnerFrames[frame], msg)
-				frame = (frame + 1) % len(spinnerFrames)
+				draw()
 			}
 		}
 	}()
-	return func(suffix string) {
+	return setMsg, func(success bool) {
 		close(done)
 		<-stopped
-		// \r\033[K is a no-op on a line that was never drawn; on a drawn
-		// line it returns the cursor and clears it.
-		fmt.Fprint(w, "\r\033[K")
-		if suffix != "" {
-			fmt.Fprintln(w, suffix)
+		if success {
+			fmt.Fprintf(w, "\r\033[K✓ %s\n", getMsg())
+			return
 		}
+		fmt.Fprint(w, "\r\033[K")
 	}
-}
-
-type progressBar struct {
-	w       io.Writer
-	label   string
-	total   int
-	current int
-	width   int
-	enabled bool
-}
-
-func startProgressBar(w io.Writer, label string, total int) *progressBar {
-	p := &progressBar{
-		w:       w,
-		label:   label,
-		total:   total,
-		width:   24,
-		enabled: total > 0 && interactive.IsTerminalWriter(w),
-	}
-	if !p.enabled {
-		return p
-	}
-
-	counter := fmt.Sprintf(" %d/%d (100%%)", total, total)
-	available := getTerminalWidth(w) - len(label) - len(counter) - len(" []")
-	p.width = min(max(available, 10), 32)
-	p.render()
-	return p
-}
-
-func (p *progressBar) Increment() {
-	p.current++
-	if p.current > p.total {
-		p.current = p.total
-	}
-	p.render()
-}
-
-func (p *progressBar) Finish() {
-	if !p.enabled {
-		return
-	}
-	fmt.Fprint(p.w, "\r\033[K")
-}
-
-func (p *progressBar) render() {
-	if !p.enabled {
-		return
-	}
-
-	filled := 0
-	percent := 0
-	if p.total > 0 {
-		filled = p.current * p.width / p.total
-		percent = p.current * 100 / p.total
-	}
-	if p.current >= p.total {
-		filled = p.width
-		percent = 100
-	}
-
-	bar := strings.Repeat("#", filled) + strings.Repeat("-", p.width-filled)
-	fmt.Fprintf(p.w, "\r%s [%s] %d/%d (%d%%)", p.label, bar, p.current, p.total, percent)
 }

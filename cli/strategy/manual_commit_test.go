@@ -469,12 +469,12 @@ func TestShadowStrategy_ListSessions_Empty(t *testing.T) {
 
 	t.Chdir(dir)
 
-	sessions, err := ListSessions(context.Background())
+	sessions, err := ListSessionStates(context.Background())
 	if err != nil {
-		t.Errorf("ListSessions(context.Background()) error = %v", err)
+		t.Errorf("ListSessionStates(context.Background()) error = %v", err)
 	}
 	if len(sessions) != 0 {
-		t.Errorf("ListSessions(context.Background()) returned %d sessions, want 0", len(sessions))
+		t.Errorf("ListSessionStates(context.Background()) returned %d sessions, want 0", len(sessions))
 	}
 }
 
@@ -487,9 +487,12 @@ func TestShadowStrategy_GetSession_NotFound(t *testing.T) {
 
 	t.Chdir(dir)
 
-	_, err = GetSession(context.Background(), "nonexistent")
-	if !errors.Is(err, ErrNoSession) {
-		t.Errorf("GetSession() error = %v, want ErrNoSession", err)
+	state, err := LoadSessionState(context.Background(), "nonexistent")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if state != nil {
+		t.Errorf("LoadSessionState() = %+v, want nil for missing session", state)
 	}
 }
 
@@ -690,7 +693,7 @@ func TestShadowStrategy_GetTaskCheckpointTranscript_NotTaskCheckpoint(t *testing
 
 func TestGetShadowBranchNameForCommit(t *testing.T) {
 	// Hash of empty worktreeID (main worktree) is "e3b0c44298"
-	mainWorktreeHash := "e3b0c44298"
+	mainWorktreeHash := "e3b0c4"
 
 	tests := []struct {
 		name       string
@@ -714,7 +717,7 @@ func TestGetShadowBranchNameForCommit(t *testing.T) {
 			name:       "long commit main worktree",
 			baseCommit: "abc1234567890",
 			worktreeID: "",
-			want:       "trace/abc123456789-" + mainWorktreeHash,
+			want:       "trace/abc1234-" + mainWorktreeHash,
 		},
 		{
 			name:       "with linked worktree",

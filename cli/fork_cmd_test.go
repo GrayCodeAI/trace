@@ -57,8 +57,8 @@ func setupForkRepo(t *testing.T) (string, *git.Repository) {
 func seedForkCheckpoint(t *testing.T, repo *git.Repository, cpID id.CheckpointID, sessionID string) {
 	t.Helper()
 
-	store := checkpoint.NewGitStore(repo)
-	require.NoError(t, store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
+	store := checkpoint.NewGitStore(repo, checkpoint.DefaultV1Refs())
+	require.NoError(t, store.Write(context.Background(), checkpoint.Session{
 		CheckpointID: cpID,
 		SessionID:    sessionID,
 		Strategy:     "manual-commit",

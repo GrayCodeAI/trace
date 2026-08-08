@@ -23,7 +23,7 @@ import (
 // Regression test for ENT-243 where Summary was omitted from the struct literal.
 func TestWriteCommitted_SessionWithSummary(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("aabbccddeeff")
 
 	summary := &Summary{
@@ -31,7 +31,7 @@ func TestWriteCommitted_SessionWithSummary(t *testing.T) {
 		Outcome: "Bug was fixed",
 	}
 
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+	err := store.Write(context.Background(), Session{
 		CheckpointID:     checkpointID,
 		SessionID:        "summary-session",
 		Strategy:         "manual-commit",
@@ -65,12 +65,12 @@ func TestWriteCommitted_SessionWithSummary(t *testing.T) {
 // to ensure the 0-based indexing works correctly throughout.
 func TestWriteCommitted_ThreeSessions(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 	checkpointID := id.MustCheckpointID("515253545556")
 
 	// Write three sessions
 	for i := range 3 {
-		err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		err := store.Write(context.Background(), Session{
 			CheckpointID:     checkpointID,
 			SessionID:        fmt.Sprintf("three-session-%d", i),
 			Strategy:         "manual-commit",
@@ -89,7 +89,7 @@ func TestWriteCommitted_ThreeSessions(t *testing.T) {
 	}
 
 	// Read summary
-	summary, err := store.ReadCommitted(context.Background(), checkpointID)
+	summary, err := store.Read(context.Background(), checkpointID)
 	if err != nil {
 		t.Fatalf("ReadCommitted() error = %v", err)
 	}
@@ -136,7 +136,7 @@ func TestWriteCommitted_ThreeSessions(t *testing.T) {
 // nil (not an error) when the checkpoint doesn't exist.
 func TestReadCommitted_NonexistentCheckpoint(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 
 	// Ensure sessions branch exists
 	err := store.ensureSessionsBranch(context.Background())
@@ -146,7 +146,7 @@ func TestReadCommitted_NonexistentCheckpoint(t *testing.T) {
 
 	// Try to read non-existent checkpoint
 	checkpointID := id.MustCheckpointID("ffffffffffff")
-	summary, err := store.ReadCommitted(context.Background(), checkpointID)
+	summary, err := store.Read(context.Background(), checkpointID)
 	if err != nil {
 		t.Errorf("ReadCommitted() error = %v, want nil", err)
 	}
@@ -159,7 +159,7 @@ func TestReadCommitted_NonexistentCheckpoint(t *testing.T) {
 // returns ErrCheckpointNotFound when the checkpoint doesn't exist.
 func TestReadSessionContent_NonexistentCheckpoint(t *testing.T) {
 	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
+	store := NewGitStore(repo, DefaultV1Refs())
 
 	// Ensure sessions branch exists
 	err := store.ensureSessionsBranch(context.Background())
@@ -229,10 +229,10 @@ func TestWriteTemporary_FirstCheckpoint_CapturesModifiedTrackedFiles(t *testing.
 	// Create checkpoint store and write first checkpoint
 	// Note: ModifiedFiles is empty because agent hasn't touched anything yet
 	// The first checkpoint should still capture README.md because it's modified in working dir
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{}, // Agent hasn't modified anything
@@ -358,8 +358,8 @@ func TestWriteTemporary_PathNormalizationAndSkipping(t *testing.T) {
 				t.Fatalf("failed to write transcript: %v", err)
 			}
 
-			store := NewGitStore(repo)
-			result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+			store := newEphemeralStore(repo, DefaultV1Refs())
+			result, err := store.Write(context.Background(), Step{
 				SessionID:      "test-session",
 				BaseCommit:     initialCommit.String(),
 				ModifiedFiles:  tt.modifiedFiles(tempDir, mainFile),
@@ -457,10 +457,10 @@ func TestWriteTemporary_FirstCheckpoint_CapturesUntrackedFiles(t *testing.T) {
 	}
 
 	// Create checkpoint store and write first checkpoint
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{},
@@ -566,10 +566,10 @@ func TestWriteTemporary_FirstCheckpoint_ExcludesGitIgnoredFiles(t *testing.T) {
 	}
 
 	// Create checkpoint store and write first checkpoint
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{},
@@ -666,11 +666,11 @@ func TestWriteTemporary_SubsequentCheckpoint_ExcludesGitIgnoredModifiedFiles(t *
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	store := NewGitStore(repo)
+	store := newEphemeralStore(repo, DefaultV1Refs())
 	baseCommit := initialCommit.String()
 
 	// Write first checkpoint to establish the shadow branch
-	firstResult, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	firstResult, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{},
@@ -689,7 +689,7 @@ func TestWriteTemporary_SubsequentCheckpoint_ExcludesGitIgnoredModifiedFiles(t *
 	// Now write a subsequent checkpoint where the agent reports .env and db.secret
 	// as modified files (e.g., agent touched them during its turn).
 	// These gitignored files must NOT appear in the checkpoint tree.
-	result, err := store.WriteTemporary(context.Background(), WriteTemporaryOptions{
+	result, err := store.Write(context.Background(), Step{
 		SessionID:         "test-session",
 		BaseCommit:        baseCommit,
 		ModifiedFiles:     []string{"main.go", ".env", "db.secret"}, // Agent reports these

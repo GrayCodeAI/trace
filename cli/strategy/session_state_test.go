@@ -995,3 +995,12 @@ func TestClearSessionState_RemovesOrphanedHintFile(t *testing.T) {
 		t.Errorf("expected no files for session after clear, found: %v", matches)
 	}
 }
+
+// sessionStateFile returns the on-disk path of a session's state file.
+func sessionStateFile(ctx context.Context, sessionID string) (string, error) {
+	dir, err := getSessionStateDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, sessionID+".json"), nil
+}

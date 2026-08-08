@@ -12,13 +12,12 @@ import (
 	"time"
 )
 
-// Not parallel: uses t.Setenv. Clearing TRACE_CHECKPOINT_TOKEN keeps the test
+// Not parallel: uses t.Setenv. Clearing ENTIRE_CHECKPOINT_TOKEN keeps the test
 // hermetic — otherwise newCommand spawns git against the ambient repo.
 func TestKillProcessGroupOnCancel_SetsSetpgidAndCancel(t *testing.T) {
 	t.Setenv(CheckpointTokenEnvVar, "")
 
-	cmd, cleanup := newCommand(context.Background(), "push", "origin", "main")
-	defer cleanup()
+	cmd := newCommand(context.Background(), "push", "origin", "main")
 
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
 		t.Error("Setpgid = false; want true so the whole process group can be killed")

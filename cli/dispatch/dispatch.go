@@ -33,6 +33,10 @@ type Options struct {
 	ImplicitCurrentBranch bool
 	Voice                 string
 	InsecureHTTPAuth      bool
+
+	// localPreflight caches resolved local-mode inputs (window, repo roots)
+	// between PrepareLocal and Run.
+	localPreflight *localPreflight
 }
 
 // CloudRepoLimit caps how many repos the cloud mode may query in one request.

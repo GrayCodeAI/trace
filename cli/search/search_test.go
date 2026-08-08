@@ -7,18 +7,27 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/GrayCodeAI/trace/cli/api"
 )
 
 const (
-	testOwner = "GrayCodeAI"
-	testRepo  = "trace.io"
+	testOwner = "entirehq"
+	testRepo  = "entire.io"
+	testCPID  = "cp1"
 )
+
+// writeTestJSON writes raw JSON to a response writer, ignoring write errors (test helper).
+func writeTestJSON(w http.ResponseWriter, jsonStr string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(jsonStr)) //nolint:errcheck // test helper
+}
 
 // -- ParseGitHubRemote tests --
 
 func TestParseGitHubRemote_SSH(t *testing.T) {
 	t.Parallel()
-	owner, repo, err := ParseGitHubRemote("git@github.com:GrayCodeAI/trace.io.git")
+	owner, repo, err := ParseGitHubRemote("git@github.com:entirehq/entire.io.git")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +38,7 @@ func TestParseGitHubRemote_SSH(t *testing.T) {
 
 func TestParseGitHubRemote_HTTPS(t *testing.T) {
 	t.Parallel()
-	owner, repo, err := ParseGitHubRemote("https://github.com/GrayCodeAI/trace.io.git")
+	owner, repo, err := ParseGitHubRemote("https://github.com/entirehq/entire.io.git")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +49,7 @@ func TestParseGitHubRemote_HTTPS(t *testing.T) {
 
 func TestParseGitHubRemote_HTTPSNoGit(t *testing.T) {
 	t.Parallel()
-	owner, repo, err := ParseGitHubRemote("https://github.com/GrayCodeAI/trace.io")
+	owner, repo, err := ParseGitHubRemote("https://github.com/entirehq/entire.io")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,9 +60,9 @@ func TestParseGitHubRemote_HTTPSNoGit(t *testing.T) {
 
 func TestParseGitHubRemote_Invalid(t *testing.T) {
 	t.Parallel()
-	_, _, err := ParseGitHubRemote("")
-	if err == nil {
-		t.Error("expected error for empty URL")
+	_, _, err := ParseGitHubRemote("   ")
+	if err == nil || err.Error() != "empty remote URL" {
+		t.Errorf("expected 'empty remote URL' for blank input, got %v", err)
 	}
 
 	_, _, err = ParseGitHubRemote("not-a-url")
@@ -64,7 +73,7 @@ func TestParseGitHubRemote_Invalid(t *testing.T) {
 
 func TestParseGitHubRemote_SSHProtocol(t *testing.T) {
 	t.Parallel()
-	owner, repo, err := ParseGitHubRemote("ssh://git@github.com/GrayCodeAI/trace.io.git")
+	owner, repo, err := ParseGitHubRemote("ssh://git@github.com/entirehq/entire.io.git")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +84,7 @@ func TestParseGitHubRemote_SSHProtocol(t *testing.T) {
 
 func TestParseGitHubRemote_SSHProtocolNoGit(t *testing.T) {
 	t.Parallel()
-	owner, repo, err := ParseGitHubRemote("ssh://git@github.com/GrayCodeAI/trace.io")
+	owner, repo, err := ParseGitHubRemote("ssh://git@github.com/entirehq/entire.io")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +95,7 @@ func TestParseGitHubRemote_SSHProtocolNoGit(t *testing.T) {
 
 func TestParseGitHubRemote_NonGitHubSSH(t *testing.T) {
 	t.Parallel()
-	_, _, err := ParseGitHubRemote("git@gitlab.com:GrayCodeAI/trace.io.git")
+	_, _, err := ParseGitHubRemote("git@gitlab.com:entirehq/entire.io.git")
 	if err == nil {
 		t.Error("expected error for non-GitHub SSH remote")
 	}
@@ -94,90 +103,38 @@ func TestParseGitHubRemote_NonGitHubSSH(t *testing.T) {
 
 func TestParseGitHubRemote_NonGitHubHTTPS(t *testing.T) {
 	t.Parallel()
-	_, _, err := ParseGitHubRemote("https://gitlab.com/GrayCodeAI/trace.io.git")
+	_, _, err := ParseGitHubRemote("https://gitlab.com/entirehq/entire.io.git")
 	if err == nil {
 		t.Error("expected error for non-GitHub HTTPS remote")
 	}
 }
 
+func TestParseGitHubRemote_RejectsExtraPathSegments(t *testing.T) {
+	t.Parallel()
+	for _, remoteURL := range []string{
+		"https://github.com/entirehq/entire.io/extra.git",
+		"entire://aws-us-east-2.entire.io/gh/entirehq/entire.io/extra",
+	} {
+		if _, _, err := ParseGitHubRemote(remoteURL); err == nil {
+			t.Errorf("expected error for malformed remote %q, got none", remoteURL)
+		}
+	}
+}
+
+func TestParseGitHubRemote_EntireMirror(t *testing.T) {
+	t.Parallel()
+	owner, repo, err := ParseGitHubRemote("entire://aws-us-east-2.entire.io/gh/entirehq/entire.io")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner != testOwner || repo != testRepo {
+		t.Errorf("got %s/%s, want %s/%s", owner, repo, testOwner, testRepo)
+	}
+}
+
 // -- Search() tests --
 
-func TestSearch_URLConstruction(t *testing.T) {
-	t.Parallel()
-
-	var capturedReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedReq = r
-		resp := Response{Results: []Result{}, Total: 0, Page: 1}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
-	}))
-	defer srv.Close()
-
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "ghp_test123",
-		Owner:       "myowner",
-		Repo:        "myrepo",
-		Query:       "find bugs",
-		Limit:       10,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if capturedReq.URL.Path != "/search/v1/search" {
-		t.Errorf("path = %s, want /search/v1/search", capturedReq.URL.Path)
-	}
-	if capturedReq.URL.Query().Get("q") != "find bugs" {
-		t.Errorf("q = %s, want 'find bugs'", capturedReq.URL.Query().Get("q"))
-	}
-	if capturedReq.URL.Query().Get("repo") != "myowner/myrepo" {
-		t.Errorf("repo = %s, want 'myowner/myrepo'", capturedReq.URL.Query().Get("repo"))
-	}
-	if capturedReq.URL.Query().Get("types") != "checkpoints" {
-		t.Errorf("types = %s, want 'checkpoints'", capturedReq.URL.Query().Get("types"))
-	}
-	if capturedReq.URL.Query().Get("limit") != "10" {
-		t.Errorf("limit = %s, want '10'", capturedReq.URL.Query().Get("limit"))
-	}
-	if capturedReq.Header.Get("Authorization") != "Bearer ghp_test123" {
-		t.Errorf("auth header = %s, want 'Bearer ghp_test123'", capturedReq.Header.Get("Authorization"))
-	}
-	if capturedReq.Header.Get("User-Agent") != "trace-cli" {
-		t.Errorf("user-agent = %s, want 'trace-cli'", capturedReq.Header.Get("User-Agent"))
-	}
-}
-
-func TestSearch_ZeroLimitOmitsParam(t *testing.T) {
-	t.Parallel()
-
-	var capturedReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedReq = r
-		resp := Response{Results: []Result{}, Total: 0, Page: 1}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
-	}))
-	defer srv.Close()
-
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if capturedReq.URL.Query().Has("limit") {
-		t.Error("limit param should be omitted when zero")
-	}
-}
-
-func TestSearch_ErrorJSON(t *testing.T) {
+func TestCellV4_ErrorJSON(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -187,13 +144,7 @@ func TestSearch_ErrorJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "bad",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-	})
+	_, err := CellV4(context.Background(), api.NewClientWithBaseURL("tok", srv.URL), Config{Query: "q"}, nil)
 	if err == nil {
 		t.Fatal("expected error for 401")
 	}
@@ -202,7 +153,7 @@ func TestSearch_ErrorJSON(t *testing.T) {
 	}
 }
 
-func TestSearch_ErrorRawBody(t *testing.T) {
+func TestCellV4_ErrorRawBody(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -211,13 +162,7 @@ func TestSearch_ErrorRawBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-	})
+	_, err := CellV4(context.Background(), api.NewClientWithBaseURL("tok", srv.URL), Config{Query: "q"}, nil)
 	if err == nil {
 		t.Fatal("expected error for 502")
 	}
@@ -226,7 +171,7 @@ func TestSearch_ErrorRawBody(t *testing.T) {
 	}
 }
 
-func TestSearch_HTMLResponseNon200(t *testing.T) {
+func TestCellV4_HTMLResponseNon200(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -235,13 +180,7 @@ func TestSearch_HTMLResponseNon200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-	})
+	_, err := CellV4(context.Background(), api.NewClientWithBaseURL("tok", srv.URL), Config{Query: "q"}, nil)
 	if err == nil {
 		t.Fatal("expected error for HTML response")
 	}
@@ -251,7 +190,7 @@ func TestSearch_HTMLResponseNon200(t *testing.T) {
 	}
 }
 
-func TestSearch_HTMLResponseOn200(t *testing.T) {
+func TestCellV4_HTMLResponseOn200(t *testing.T) {
 	t.Parallel()
 
 	htmlBody := "<!DOCTYPE html><html><body>Website</body></html>"
@@ -260,13 +199,7 @@ func TestSearch_HTMLResponseOn200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-	})
+	_, err := CellV4(context.Background(), api.NewClientWithBaseURL("tok", srv.URL), Config{Query: "q"}, nil)
 	if err == nil {
 		t.Fatal("expected error for HTML response on 200")
 	}
@@ -275,22 +208,16 @@ func TestSearch_HTMLResponseOn200(t *testing.T) {
 	}
 }
 
-func TestSearch_ErrorFieldOn200(t *testing.T) {
+func TestCellV4_ErrorFieldOn200(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Response{Error: "user not found in Trace"}) //nolint:errcheck // test helper response
+		json.NewEncoder(w).Encode(Response{Error: "user not found in Entire"}) //nolint:errcheck // test helper response
 	}))
 	defer srv.Close()
 
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-	})
+	_, err := CellV4(context.Background(), api.NewClientWithBaseURL("tok", srv.URL), Config{Query: "q"}, nil)
 	if err == nil {
 		t.Fatal("expected error when server returns 200 with error field")
 	}
@@ -299,279 +226,237 @@ func TestSearch_ErrorFieldOn200(t *testing.T) {
 	}
 }
 
-func TestSearch_SuccessWithResults(t *testing.T) {
+func TestCellV4_SuccessWithResults(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		resp := Response{
-			Results: []Result{
-				{
-					Type: "checkpoint",
-					Data: CheckpointResult{
-						ID:        "abc123def456",
-						Branch:    "main",
-						Prompt:    "add auth middleware",
-						Author:    "alice",
-						CreatedAt: "2026-01-13T12:00:00Z",
-					},
-					Meta: Meta{
-						Score:     0.042,
-						MatchType: "both",
-					},
-				},
-			},
-			Total: 1,
-			Page:  1,
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
+		writeTestJSON(w, `{"results":[{"type":"checkpoint","data":{"id":"abc123def456","branch":"main","prompt":"add auth middleware","author":"alice","createdAt":"2026-01-13T12:00:00Z","org":"","repo":"","filesTouched":[]},"searchMeta":{"score":0.042,"matchType":"both"}}],"total":1,"page":1}`)
 	}))
 	defer srv.Close()
 
-	resp, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "test",
-	})
+	resp, err := CellV4(context.Background(), api.NewClientWithBaseURL("tok", srv.URL), Config{Query: "test"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(resp.Results) != 1 {
 		t.Fatalf("got %d results, want 1", len(resp.Results))
 	}
-	if resp.Results[0].Data.ID != "abc123def456" {
-		t.Errorf("checkpoint id = %s, want abc123def456", resp.Results[0].Data.ID)
+	r := resp.Results[0]
+	if r.Type != TypeCheckpoint {
+		t.Errorf("type = %s, want checkpoint", r.Type)
 	}
-	if resp.Results[0].Meta.MatchType != "both" {
-		t.Errorf("matchType = %s, want both", resp.Results[0].Meta.MatchType)
+	if r.Checkpoint == nil {
+		t.Fatal("checkpoint data is nil")
+	}
+	if r.Checkpoint.ID != "abc123def456" {
+		t.Errorf("checkpoint id = %s, want abc123def456", r.Checkpoint.ID)
+	}
+	if r.Meta.MatchType != "both" {
+		t.Errorf("matchType = %s, want both", r.Meta.MatchType)
 	}
 }
 
-func TestSearch_FilterParams(t *testing.T) {
+func TestCellV4_SuccessWithMultipleTypes(t *testing.T) {
 	t.Parallel()
 
-	var capturedReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedReq = r
-		resp := Response{Results: []Result{}, Total: 0, Page: 1}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeTestJSON(w, `{"results":[{"type":"checkpoint","data":{"id":"cp1","prompt":"fix bug","branch":"main","org":"o","repo":"r","author":"alice","createdAt":"2026-01-13T12:00:00Z","filesTouched":[]},"searchMeta":{"matchType":"keyword","score":0.5}},{"type":"commit","data":{"id":"cm1","commitSha":"abc1234567890","commitMessage":"fix: auth bug","commitSubject":"fix: auth bug","branch":"main","org":"o","repo":"r","author":"bob","createdAt":"2026-01-14T12:00:00Z","additions":10,"deletions":5,"filesChanged":3},"searchMeta":{"matchType":"semantic","score":0.3}},{"type":"session","data":{"sessionId":"ss1","displayName":"Debug auth","org":"o","repo":"r","createdAt":"2026-01-15T12:00:00Z","stepCount":5},"searchMeta":{"matchType":"both","score":0.4}}],"total":3,"page":1,"counts":{"repos":0,"checkpoints":1,"commits":1,"prs":0,"sessions":1}}`)
 	}))
 	defer srv.Close()
 
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-		Author:      testAuthor,
-		Date:        testDateWeek,
-	})
+	resp, err := CellV4(context.Background(), api.NewClientWithBaseURL("tok", srv.URL), Config{Query: "auth"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Results) != 3 {
+		t.Fatalf("got %d results, want 3", len(resp.Results))
+	}
+
+	// Checkpoint
+	if resp.Results[0].Checkpoint == nil {
+		t.Fatal("result[0] checkpoint is nil")
+	}
+	if resp.Results[0].Checkpoint.ID != testCPID {
+		t.Errorf("checkpoint ID = %q", resp.Results[0].Checkpoint.ID)
+	}
+
+	// Commit
+	if resp.Results[1].Commit == nil {
+		t.Fatal("result[1] commit is nil")
+	}
+	if resp.Results[1].Commit.CommitSHA != "abc1234567890" {
+		t.Errorf("commit SHA = %q", resp.Results[1].Commit.CommitSHA)
+	}
+	if resp.Results[1].Commit.Additions != 10 {
+		t.Errorf("commit additions = %d", resp.Results[1].Commit.Additions)
+	}
+
+	// Session
+	if resp.Results[2].Session == nil {
+		t.Fatal("result[2] session is nil")
+	}
+	if resp.Results[2].Session.SessionID != "ss1" {
+		t.Errorf("session ID = %q", resp.Results[2].Session.SessionID)
+	}
+	if resp.Results[2].Session.StepCount != 5 {
+		t.Errorf("session steps = %d", resp.Results[2].Session.StepCount)
+	}
+
+	// Counts
+	if resp.Counts == nil {
+		t.Fatal("counts is nil")
+	}
+	if resp.Counts.Checkpoints != 1 || resp.Counts.Commits != 1 || resp.Counts.Sessions != 1 {
+		t.Errorf("counts = %+v", resp.Counts)
+	}
+}
+
+func TestSearch_ResultAccessors(t *testing.T) {
+	t.Parallel()
+
+	cp := Result{
+		Type:       TypeCheckpoint,
+		Checkpoint: &CheckpointResult{ID: testCPID, Org: "o", Repo: "r", Branch: "main", Author: "alice", CreatedAt: "2026-01-01T00:00:00Z", Prompt: "fix bug"},
+	}
+	if cp.ResultOrg() != "o" {
+		t.Errorf("ResultOrg = %q", cp.ResultOrg())
+	}
+	if cp.ResultRepo() != "r" {
+		t.Errorf("ResultRepo = %q", cp.ResultRepo())
+	}
+	if cp.ResultBranch() != "main" {
+		t.Errorf("ResultBranch = %q", cp.ResultBranch())
+	}
+	if cp.ResultCreatedAt() != "2026-01-01T00:00:00Z" {
+		t.Errorf("ResultCreatedAt = %q", cp.ResultCreatedAt())
+	}
+	if cp.ResultAuthor() != "alice" {
+		t.Errorf("ResultAuthor = %q", cp.ResultAuthor())
+	}
+	if cp.ResultTitle() != "fix bug" {
+		t.Errorf("ResultTitle = %q", cp.ResultTitle())
+	}
+	if cp.ResultID() != testCPID {
+		t.Errorf("ResultID = %q", cp.ResultID())
+	}
+
+	// AuthorUsername, when set and non-empty, wins over Author; a commit
+	// subject wins over the prompt.
+	const usernameOverride = "alice-gh"
+	username := usernameOverride
+	subject := "fix: the bug"
+	cp.Checkpoint.AuthorUsername = &username
+	cp.Checkpoint.CommitSubject = &subject
+	if cp.ResultAuthor() != usernameOverride {
+		t.Errorf("ResultAuthor with username = %q", cp.ResultAuthor())
+	}
+	if cp.ResultTitle() != "fix: the bug" {
+		t.Errorf("ResultTitle with subject = %q", cp.ResultTitle())
+	}
+
+	cm := Result{
+		Type:   TypeCommit,
+		Commit: &CommitResult{CommitSHA: "abc123", CommitSubject: "fix: bug", Org: "o", Repo: "r", Branch: "dev", Author: "bob", CreatedAt: "2026-02-02T00:00:00Z"},
+	}
+	if cm.ResultTitle() != "fix: bug" {
+		t.Errorf("commit ResultTitle = %q", cm.ResultTitle())
+	}
+	if cm.ResultID() != "abc123" {
+		t.Errorf("commit ResultID = %q", cm.ResultID())
+	}
+	if cm.ResultRepo() != "r" {
+		t.Errorf("commit ResultRepo = %q", cm.ResultRepo())
+	}
+	if cm.ResultBranch() != "dev" {
+		t.Errorf("commit ResultBranch = %q", cm.ResultBranch())
+	}
+	if cm.ResultCreatedAt() != "2026-02-02T00:00:00Z" {
+		t.Errorf("commit ResultCreatedAt = %q", cm.ResultCreatedAt())
+	}
+	if cm.ResultAuthor() != "bob" {
+		t.Errorf("commit ResultAuthor = %q", cm.ResultAuthor())
+	}
+
+	branch := "feature"
+	ss := Result{
+		Type:    TypeSession,
+		Session: &SessionResult{SessionID: "ss1", DisplayName: "Debug session", Org: "o", Repo: "r", Branch: &branch, CreatedAt: "2026-03-03T00:00:00Z"},
+	}
+	if ss.ResultTitle() != "Debug session" {
+		t.Errorf("session ResultTitle = %q", ss.ResultTitle())
+	}
+	if ss.ResultID() != "ss1" {
+		t.Errorf("session ResultID = %q", ss.ResultID())
+	}
+	if ss.ResultBranch() != "feature" {
+		t.Errorf("session ResultBranch = %q", ss.ResultBranch())
+	}
+	if ss.ResultCreatedAt() != "2026-03-03T00:00:00Z" {
+		t.Errorf("session ResultCreatedAt = %q", ss.ResultCreatedAt())
+	}
+	// Session author comes only from AuthorUsername.
+	if ss.ResultAuthor() != "" {
+		t.Errorf("session ResultAuthor without username = %q", ss.ResultAuthor())
+	}
+	ss.Session.AuthorUsername = &username
+	if ss.ResultAuthor() != usernameOverride {
+		t.Errorf("session ResultAuthor = %q", ss.ResultAuthor())
+	}
+
+	// Nil payloads and unknown types resolve to "" on every accessor.
+	for _, r := range []Result{{Type: TypeCheckpoint}, {Type: TypeCommit}, {Type: TypeSession}, {Type: "repo"}} {
+		if got := r.ResultOrg() + r.ResultRepo() + r.ResultBranch() + r.ResultCreatedAt() + r.ResultAuthor() + r.ResultID() + r.ResultTitle(); got != "" {
+			t.Errorf("accessors on %q with nil payload = %q, want all empty", r.Type, got)
+		}
+	}
+}
+
+func TestSearch_ResultJSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := Result{
+		Type: TypeCheckpoint,
+		Checkpoint: &CheckpointResult{
+			ID:        testCPID,
+			Prompt:    "fix bug",
+			Branch:    "main",
+			Org:       "o",
+			Repo:      "r",
+			Author:    "alice",
+			CreatedAt: "2026-01-01T00:00:00Z",
+		},
+		Meta: Meta{MatchType: "keyword", Score: 0.5},
+	}
+
+	data, err := json.Marshal(&original)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if capturedReq.URL.Query().Get("author") != testAuthor {
-		t.Errorf("author = %s, want %q", capturedReq.URL.Query().Get("author"), testAuthor)
+	// Verify wire format has "type", "data", "searchMeta" keys
+	if !strings.Contains(string(data), `"type":"checkpoint"`) {
+		t.Errorf("JSON missing type: %s", data)
 	}
-	if capturedReq.URL.Query().Get("date") != testDateWeek {
-		t.Errorf("date = %s, want 'week'", capturedReq.URL.Query().Get("date"))
+	if !strings.Contains(string(data), `"data":{`) {
+		t.Errorf("JSON missing data: %s", data)
 	}
-}
+	if !strings.Contains(string(data), `"searchMeta":{`) {
+		t.Errorf("JSON missing searchMeta: %s", data)
+	}
 
-func TestSearch_ExplicitRepoParam(t *testing.T) {
-	t.Parallel()
-
-	var capturedReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedReq = r
-		resp := Response{Results: []Result{}, Total: 0, Page: 1}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
-	}))
-	defer srv.Close()
-
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "default-owner",
-		Repo:        "default-repo",
-		Query:       "q",
-		Repos:       []string{"owner-one/repo-a"},
-	})
-	if err != nil {
+	// Round-trip
+	var decoded Result
+	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatal(err)
 	}
-
-	if got := capturedReq.URL.Query()["repo"]; len(got) != 1 || got[0] != "owner-one/repo-a" {
-		t.Errorf("repo params = %v, want %v", got, []string{"owner-one/repo-a"})
+	if decoded.Type != TypeCheckpoint {
+		t.Errorf("decoded type = %q", decoded.Type)
 	}
-}
-
-func TestSearch_DefaultRepoParam(t *testing.T) {
-	t.Parallel()
-
-	var capturedReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedReq = r
-		resp := Response{Results: []Result{}, Total: 0, Page: 1}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
-	}))
-	defer srv.Close()
-
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "default-owner",
-		Repo:        "default-repo",
-		Query:       "q",
-	})
-	if err != nil {
-		t.Fatal(err)
+	if decoded.Checkpoint == nil || decoded.Checkpoint.ID != testCPID {
+		t.Errorf("decoded checkpoint = %+v", decoded.Checkpoint)
 	}
-
-	if got := capturedReq.URL.Query()["repo"]; len(got) != 1 || got[0] != "default-owner/default-repo" {
-		t.Errorf("repo params = %v, want %v", got, []string{"default-owner/default-repo"})
-	}
-}
-
-func TestSearch_AllReposFilterOmitsRepoParam(t *testing.T) {
-	t.Parallel()
-
-	var capturedReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedReq = r
-		resp := Response{Results: []Result{}, Total: 0, Page: 1}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
-	}))
-	defer srv.Close()
-
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "default-owner",
-		Repo:        "default-repo",
-		Query:       "q",
-		Repos:       []string{AllReposFilter},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got := capturedReq.URL.Query()["repo"]; len(got) != 0 {
-		t.Errorf("repo params = %v, want omitted for all-repos search", got)
-	}
-}
-
-func TestSearch_MultipleExplicitReposRejected(t *testing.T) {
-	t.Parallel()
-
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  "http://example.com",
-		GitHubToken: "tok",
-		Owner:       "default-owner",
-		Repo:        "default-repo",
-		Query:       "q",
-		Repos:       []string{"owner-one/repo-a", "owner-two/repo-b"},
-	})
-	if err == nil {
-		t.Fatal("expected error for multiple explicit repo filters")
-	}
-	if got := err.Error(); got != "only one explicit repo filter is currently supported" {
-		t.Errorf("error = %q", got)
-	}
-}
-
-func TestSearch_PageParam(t *testing.T) {
-	t.Parallel()
-
-	var capturedReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedReq = r
-		resp := Response{Results: []Result{}, Total: 0, Page: 2}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
-	}))
-	defer srv.Close()
-
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-		Page:        2,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if capturedReq.URL.Query().Get("page") != "2" {
-		t.Errorf("page = %s, want '2'", capturedReq.URL.Query().Get("page"))
-	}
-}
-
-func TestSearch_ZeroPageOmitsParam(t *testing.T) {
-	t.Parallel()
-
-	var capturedReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedReq = r
-		resp := Response{Results: []Result{}, Total: 0, Page: 1}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
-	}))
-	defer srv.Close()
-
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if capturedReq.URL.Query().Has("page") {
-		t.Error("page param should be omitted when zero")
-	}
-}
-
-func TestSearch_EmptyFiltersOmitParams(t *testing.T) {
-	t.Parallel()
-
-	var capturedReq *http.Request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedReq = r
-		resp := Response{Results: []Result{}, Total: 0, Page: 1}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck // test helper response
-	}))
-	defer srv.Close()
-
-	_, err := Search(context.Background(), Config{
-		ServiceURL:  srv.URL,
-		GitHubToken: "tok",
-		Owner:       "o",
-		Repo:        "r",
-		Query:       "q",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if capturedReq.URL.Query().Has("author") {
-		t.Error("author param should be omitted when empty")
-	}
-	if capturedReq.URL.Query().Has("date") {
-		t.Error("date param should be omitted when empty")
+	if decoded.Meta.Score != 0.5 {
+		t.Errorf("decoded score = %f", decoded.Meta.Score)
 	}
 }
 
@@ -589,8 +474,11 @@ func TestConfig_HasFilters(t *testing.T) {
 	if !(Config{Date: testDateWeek}).HasFilters() {
 		t.Error("config with Date should have filters")
 	}
-	if !(Config{Repos: []string{"GrayCodeAI/trace.io"}}).HasFilters() {
+	if !(Config{Repos: []string{"entirehq/entire.io"}}).HasFilters() {
 		t.Error("config with Repos should have filters")
+	}
+	if !(Config{AllRepos: true}).HasFilters() {
+		t.Error("config with AllRepos should have filters")
 	}
 	if !(Config{Author: "alice", Date: testDateWeek}).HasFilters() {
 		t.Error("config with both should have filters")
@@ -655,24 +543,24 @@ func TestParseSearchInput_BothFilters(t *testing.T) {
 func TestParseSearchInput_RepoFilter(t *testing.T) {
 	t.Parallel()
 
-	p := ParseSearchInput("fix auth repo:GrayCodeAI/trace.io")
+	p := ParseSearchInput("fix auth repo:entirehq/entire.io")
 	if p.Query != "fix auth" {
 		t.Errorf("query = %q, want %q", p.Query, "fix auth")
 	}
-	if got := p.Repos; len(got) != 1 || got[0] != "GrayCodeAI/trace.io" {
-		t.Errorf("repos = %v, want %v", got, []string{"GrayCodeAI/trace.io"})
+	if got := p.Repos; len(got) != 1 || got[0] != "entirehq/entire.io" {
+		t.Errorf("repos = %v, want %v", got, []string{"entirehq/entire.io"})
 	}
 }
 
 func TestParseSearchInput_RepoOnly(t *testing.T) {
 	t.Parallel()
 
-	p := ParseSearchInput("repo:GrayCodeAI/trace.io")
+	p := ParseSearchInput("repo:entirehq/entire.io")
 	if p.Query != "" {
 		t.Errorf("query = %q, want empty", p.Query)
 	}
-	if got := p.Repos; len(got) != 1 || got[0] != "GrayCodeAI/trace.io" {
-		t.Errorf("repos = %v, want %v", got, []string{"GrayCodeAI/trace.io"})
+	if got := p.Repos; len(got) != 1 || got[0] != "entirehq/entire.io" {
+		t.Errorf("repos = %v, want %v", got, []string{"entirehq/entire.io"})
 	}
 }
 
@@ -688,15 +576,23 @@ func TestParseSearchInput_AllReposFilter(t *testing.T) {
 	}
 }
 
-func TestValidateRepoFilters_RejectsMultipleRepos(t *testing.T) {
+func TestValidateRepoFilters_AllowsMultipleRepos(t *testing.T) {
 	t.Parallel()
 
-	err := ValidateRepoFilters([]string{"GrayCodeAI/trace.io", "GrayCodeAI/cli"})
-	if err == nil {
-		t.Fatal("expected validation error")
+	if err := ValidateRepoFilters([]string{"entirehq/entire.io", "entireio/cli"}); err != nil {
+		t.Errorf("expected multiple valid repo filters to be accepted, got: %v", err)
 	}
-	if got := err.Error(); got != "only one explicit repo filter is currently supported" {
-		t.Errorf("error = %q", got)
+}
+
+func TestValidateRepoFilters_RejectsInvalidAmongMultiple(t *testing.T) {
+	t.Parallel()
+
+	err := ValidateRepoFilters([]string{"entireio/cli", "AGENTS.md"})
+	if err == nil {
+		t.Fatal("expected validation error for an invalid repo among valid ones")
+	}
+	if got := err.Error(); !strings.Contains(got, `invalid repo filter "AGENTS.md"`) {
+		t.Errorf("error = %q, want it to name the invalid repo", got)
 	}
 }
 
@@ -707,9 +603,49 @@ func TestValidateRepoFilters_RejectsInvalidRepoValue(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	want := "invalid repo filter \"AGENTS.md\": expected owner/name or *; if you meant all repos, quote the asterisk: --repo '*'"
+	want := "invalid repo filter \"AGENTS.md\": expected owner/name, gh/owner/repo, a repo ULID, or *; if you meant all repos, quote the asterisk: --repo '*'"
 	if got := err.Error(); got != want {
 		t.Errorf("error = %q, want %q", got, want)
+	}
+}
+
+// The CLI --repo help advertises gh/owner/repo, et/proj/repo, and raw ULIDs,
+// and the semantic v4 lookup + code-search resolver both handle them. Validation
+// must accept the same set so it never rejects a filter that would resolve
+// downstream (ENT-1047 review finding).
+func TestValidateRepoFilters_AcceptsAdvertisedFormats(t *testing.T) {
+	t.Parallel()
+
+	valid := []string{
+		"entireio/cli",               // bare owner/name slug
+		"gh/entireio/cli",            // GitHub prefixed path
+		"et/proj/repo",               // Entire project prefixed path
+		"git/owner/repo",             // generic git prefixed path
+		"01ARZ3NDEKTSV4RRFFQ69G5FAV", // raw repo ULID (canonical)
+		"*",                          // all-repos wildcard
+	}
+	for _, repo := range valid {
+		if err := ValidateRepoFilters([]string{repo}); err != nil {
+			t.Errorf("ValidateRepoFilters(%q) = %v, want nil", repo, err)
+		}
+	}
+}
+
+func TestValidateRepoFilters_RejectsMalformed(t *testing.T) {
+	t.Parallel()
+
+	invalid := []string{
+		"AGENTS.md",  // bare filename, not a ULID or slug
+		"owner/",     // empty name segment
+		"/repo",      // empty owner segment
+		"a/b/c/d",    // too many path segments
+		"owner name", // contains a space
+		"gh//repo",   // empty middle segment in a prefixed path
+	}
+	for _, repo := range invalid {
+		if err := ValidateRepoFilters([]string{repo}); err == nil {
+			t.Errorf("ValidateRepoFilters(%q) = nil, want validation error", repo)
+		}
 	}
 }
 

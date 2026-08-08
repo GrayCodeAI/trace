@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +19,9 @@ import (
 	"github.com/GrayCodeAI/trace/cli/agent/types"
 	"github.com/GrayCodeAI/trace/cli/checkpoint"
 	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
+	"github.com/GrayCodeAI/trace/cli/checkpoint/remote"
+	"github.com/GrayCodeAI/trace/cli/gitrepo"
+	"github.com/GrayCodeAI/trace/cli/interactive"
 	"github.com/GrayCodeAI/trace/cli/logging"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/settings"
@@ -24,7 +30,6 @@ import (
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
@@ -32,8 +37,6 @@ import (
 const (
 	branchMain   = "main"
 	branchMaster = "master"
-	// originRemote is the default git remote name used for fetch/push fallbacks.
-	originRemote = "origin"
 	// Strategy name constants
 	StrategyNameManualCommit = "manual-commit"
 )
@@ -48,6 +51,33 @@ const MaxCommitTraversalDepth = 1000
 // Each package needs its own package-scoped sentinel for git log iteration patterns.
 var errStop = errors.New("stop iteration")
 
+var errNoMergeBase = errors.New("no merge base")
+
+// checkpointRemoteBootstrapContextKey gates whether EnsurePrimaryRef is
+// allowed to perform a network fetch against a configured checkpoint_remote
+// (see bootstrapPrimaryFromCheckpointRemote). Unset/false in ctx means "no".
+type checkpointRemoteBootstrapContextKey struct{}
+
+// WithCheckpointRemoteBootstrap marks ctx as permitting EnsurePrimaryRef to
+// fetch a missing primary metadata ref from a configured checkpoint_remote.
+// This must only be set on explicit, user-initiated setup flows (`entire
+// enable`, agent add/setup) — never on the per-turn hook hot path. EnsureSetup
+// runs synchronously on every TurnStart hook and hook execution has a hard
+// timeout; without this guard a slow/unreachable checkpoint remote would
+// repeat an expensive fetch on every turn instead of self-healing once via
+// the empty-orphan fallback.
+func WithCheckpointRemoteBootstrap(ctx context.Context) context.Context {
+	return context.WithValue(ctx, checkpointRemoteBootstrapContextKey{}, true)
+}
+
+// checkpointRemoteBootstrapAllowed reports whether ctx was marked via
+// WithCheckpointRemoteBootstrap.
+func checkpointRemoteBootstrapAllowed(ctx context.Context) bool {
+	v := ctx.Value(checkpointRemoteBootstrapContextKey{})
+	allowed, ok := v.(bool)
+	return ok && allowed
+}
+
 // IsEmptyRepository returns true if the repository has no commits yet.
 // After git-init, HEAD points to an unborn branch (e.g., refs/heads/main)
 // whose target does not yet exist. repo.Head() returns ErrReferenceNotFound
@@ -59,7 +89,7 @@ func IsEmptyRepository(repo *git.Repository) bool {
 
 // EnsureSetup ensures the strategy is properly set up.
 func EnsureSetup(ctx context.Context) error {
-	if err := EnsureTraceGitignore(ctx); err != nil {
+	if err := EnsureEntireGitignore(ctx); err != nil {
 		return err
 	}
 
@@ -68,11 +98,12 @@ func EnsureSetup(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 	if err := vercelconfig.InitSettings(ctx); err != nil {
 		return fmt.Errorf("failed to initialize vercel settings: %w", err)
 	}
-	if err := EnsureMetadataBranch(repo); err != nil {
-		return fmt.Errorf("failed to ensure metadata branch: %w", err)
+	if err := EnsurePrimaryRef(ctx, repo); err != nil {
+		return fmt.Errorf("failed to ensure primary metadata ref: %w", err)
 	}
 
 	// Install generic hooks (they delegate to strategy at runtime)
@@ -88,30 +119,24 @@ func EnsureSetup(ctx context.Context) error {
 // FetchTmpRefPrefix is the namespace for temporary refs used by fetch helpers
 // to land a fetched hash before safely promoting it to a final ref (via
 // PromoteTmpRefSafely). Prefer using the named constants below when possible.
-const FetchTmpRefPrefix = "refs/trace-fetch-tmp/"
-
-// V2MainFetchTmpRef is the staging ref for fetches that target V2MainRefName.
-// Shared between the cli package's origin-based fetches and the strategy
-// package's checkpoint_remote URL-based fetch — those code paths never run
-// concurrently (they are sequenced in explain and resume), so reusing one
-// staging ref is safe and avoids divergent conventions.
-const V2MainFetchTmpRef = FetchTmpRefPrefix + "v2-main"
+const FetchTmpRefPrefix = "refs/entire-fetch-tmp/"
 
 // PromoteTmpRefSafely reads tmpRefName (the ref a fetch just landed into),
 // advances destRefName to its hash via SafelyAdvanceLocalRef, then removes
 // the tmp ref. The cleanup is deferred so the tmp ref is reaped even when
 // the advance fails.
 //
-// label is a short human-readable name used in error messages (e.g.
-// "v2 /main", "trace/checkpoints/v1"). Typical use:
+// label is a short human-readable name used in error messages. Typical use:
 //
-//	// fetch with refspec "+<src>:<V2MainFetchTmpRef>"
-//	return PromoteTmpRefSafely(ctx, V2MainFetchTmpRef, paths.V2MainRefName, "v2 /main")
+//	// fetch with refspec "+<src>:<tmpRefName>"
+//	refs := checkpoint.ResolveRefs(ctx)
+//	return PromoteTmpRefSafely(ctx, tmpRefName, refs.Primary, refs.Primary.Short())
 func PromoteTmpRefSafely(ctx context.Context, tmpRefName, destRefName plumbing.ReferenceName, label string) error {
 	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open repository for %s promote: %w", label, err)
 	}
+	defer repo.Close()
 	defer func() { _ = repo.Storer.RemoveReference(tmpRefName) }() //nolint:errcheck // cleanup is best-effort
 
 	tmpRef, err := repo.Reference(tmpRefName, true)
@@ -124,191 +149,202 @@ func PromoteTmpRefSafely(ctx context.Context, tmpRefName, destRefName plumbing.R
 	return nil
 }
 
-// SafelyAdvanceLocalRef updates localRefName to point at targetHash, except
-// when the existing local ref is already at or ahead of targetHash. In that
-// case it leaves the local ref unchanged to avoid rewinding locally-ahead
-// work. Otherwise (local missing, behind, or diverged) it updates the ref to
-// targetHash.
-//
-// The ancestry check walks from the local ref (which has full history), so
-// callers that fetched with --depth=1 do not break the check.
+// SafelyAdvanceLocalRef updates localRefName to include targetHash without
+// dropping local-only commits. Missing and behind refs advance to targetHash;
+// already-current or locally-ahead refs are left unchanged; diverged refs replay
+// commits after the merge-base onto targetHash and move localRefName to the
+// replayed tip. If there is no merge-base and the reachable histories are
+// complete, the full local chain is replayed.
 func SafelyAdvanceLocalRef(ctx context.Context, repo *git.Repository, localRefName plumbing.ReferenceName, targetHash plumbing.Hash) error {
 	currentLocal, localErr := repo.Reference(localRefName, true)
-	if localErr == nil {
-		if currentLocal.Hash() == targetHash {
-			return nil
+	if localErr != nil {
+		if !errors.Is(localErr, plumbing.ErrReferenceNotFound) {
+			return fmt.Errorf("failed to read local ref %s: %w", localRefName, localErr)
 		}
-		if IsAncestorOf(ctx, repo, targetHash, currentLocal.Hash()) {
-			return nil
-		}
+		return setRefHash(repo, localRefName, targetHash)
 	}
 
-	newRef := plumbing.NewHashReference(localRefName, targetHash)
+	localHash := currentLocal.Hash()
+	if localHash == targetHash {
+		return nil
+	}
+
+	repoPath, err := getRepoPath(repo)
+	if err != nil {
+		return fmt.Errorf("failed to get repo path: %w", err)
+	}
+
+	mergeBase, err := getMergeBase(ctx, repoPath, localHash.String(), targetHash.String())
+	if errors.Is(err, errNoMergeBase) {
+		shallow, shallowErr := hasReachableShallowBoundary(ctx, repo, repoPath, localHash.String(), targetHash.String())
+		if shallowErr != nil {
+			return fmt.Errorf("failed to check shallow history for %s: %w", localRefName, shallowErr)
+		}
+		if shallow {
+			return fmt.Errorf("no merge base for %s, and reachable shallow history prevents proving refs are disconnected; run 'trace doctor' or 'git fetch --unshallow' and try again", localRefName)
+		}
+		return replayDisconnectedLocalRef(ctx, repo, repoPath, localRefName, localHash, targetHash)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to find merge base for %s: %w", localRefName, err)
+	}
+	if mergeBase == targetHash {
+		return nil
+	}
+	if mergeBase == localHash {
+		return setRefHash(repo, localRefName, targetHash)
+	}
+
+	return replayLocalRefFromBase(ctx, repo, repoPath, localRefName, localHash, targetHash, mergeBase)
+}
+
+func replayLocalRefFromBase(ctx context.Context, repo *git.Repository, repoPath string, localRefName plumbing.ReferenceName, localHash, targetHash, baseHash plumbing.Hash) error {
+	localCommits, err := collectCommitsSince(ctx, repo, repoPath, localHash, baseHash)
+	if err != nil {
+		return fmt.Errorf("failed to collect local replay commits for %s: %w", localRefName, err)
+	}
+	shallow, err := loadShallowHashes(ctx, repoPath)
+	if err != nil {
+		return fmt.Errorf("failed to load shallow boundaries for %s: %w", localRefName, err)
+	}
+	return replayLocalCommits(ctx, repo, localRefName, targetHash, localCommits, shallow)
+}
+
+func replayDisconnectedLocalRef(ctx context.Context, repo *git.Repository, repoPath string, localRefName plumbing.ReferenceName, localHash, targetHash plumbing.Hash) error {
+	shallow, err := loadShallowHashes(ctx, repoPath)
+	if err != nil {
+		return fmt.Errorf("failed to load shallow boundaries for %s: %w", localRefName, err)
+	}
+	localCommits, err := collectCommitChain(repo, localHash, shallow)
+	if err != nil {
+		return fmt.Errorf("failed to collect disconnected local commits for %s: %w", localRefName, err)
+	}
+	return replayLocalCommits(ctx, repo, localRefName, targetHash, localCommits, shallow)
+}
+
+func replayLocalCommits(ctx context.Context, repo *git.Repository, localRefName plumbing.ReferenceName, targetHash plumbing.Hash, localCommits []*object.Commit, shallow map[plumbing.Hash]bool) error {
+	if len(localCommits) == 0 {
+		return setRefHash(repo, localRefName, targetHash)
+	}
+
+	newTip, err := cherryPickOnto(ctx, repo, targetHash, localCommits, shallow)
+	if err != nil {
+		return fmt.Errorf("failed to replay local commits for %s: %w", localRefName, err)
+	}
+
+	return setRefHash(repo, localRefName, newTip)
+}
+
+func hasReachableShallowBoundary(ctx context.Context, repo *git.Repository, repoPath string, hashes ...string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	shallowHashes, err := repo.Storer.Shallow()
+	if err != nil {
+		return false, fmt.Errorf("read shallow commits: %w", err)
+	}
+	if len(shallowHashes) == 0 {
+		return false, nil
+	}
+
+	shallowCommits := make(map[string]struct{}, len(shallowHashes))
+	for _, hash := range shallowHashes {
+		shallowCommits[hash.String()] = struct{}{}
+	}
+	for _, hash := range hashes {
+		reachesBoundary, err := historyReachesShallowBoundary(ctx, repoPath, hash, shallowCommits)
+		if err != nil {
+			return false, err
+		}
+		if reachesBoundary {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func historyReachesShallowBoundary(ctx context.Context, repoPath, hash string, shallowCommits map[string]struct{}) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "rev-list", hash)
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("git rev-list %s failed: %w", hash, err)
+	}
+	for _, commitHash := range strings.Fields(string(output)) {
+		if _, ok := shallowCommits[commitHash]; ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func setRefHash(repo *git.Repository, refName plumbing.ReferenceName, hash plumbing.Hash) error {
+	newRef := plumbing.NewHashReference(refName, hash)
 	if err := repo.Storer.SetReference(newRef); err != nil {
-		return fmt.Errorf("failed to update local ref %s: %w", localRefName, err)
+		return fmt.Errorf("failed to update local ref %s: %w", refName, err)
 	}
 	return nil
 }
 
-// IsAncestorOf checks if commit is an ancestor of (or equal to) target.
-// Returns true if target can reach commit by following parent links.
-// Limits search to MaxCommitTraversalDepth commits to avoid excessive traversal.
-func IsAncestorOf(ctx context.Context, repo *git.Repository, commit, target plumbing.Hash) bool {
-	if commit == target {
-		return true
-	}
-
-	iter, err := repo.Log(&git.LogOptions{From: target})
-	if err != nil {
-		return false
-	}
-	defer iter.Close()
-
-	found := false
-	count := 0
-	_ = iter.ForEach(func(c *object.Commit) error { //nolint:errcheck // Best-effort search, errors are non-fatal
-		if err := ctx.Err(); err != nil {
-			return err //nolint:wrapcheck // Propagating context cancellation
-		}
-		count++
-		if count > MaxCommitTraversalDepth {
-			return errStop
-		}
-		if c.Hash == commit {
-			found = true
-			return errStop
-		}
-		return nil
-	})
-
-	return found
-}
-
-// ListCheckpoints returns all checkpoints from the trace/checkpoints/v1 branch.
-// Scans sharded paths: <id[:2]>/<id[2:]>/ directories containing metadata.json.
+// ListCheckpoints returns all checkpoints from committed checkpoint storage.
 func ListCheckpoints(ctx context.Context) ([]CheckpointInfo, error) {
 	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
+	defer repo.Close()
 
 	// Warn (once per process) if metadata branches are disconnected
 	WarnIfMetadataDisconnected()
 
-	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-	ref, err := repo.Reference(refName, true)
+	stores, err := checkpoint.Open(ctx, repo, checkpoint.OpenOptions{})
 	if err != nil {
-		//nolint:nilerr // No sessions branch yet is expected, return empty list
-		return []CheckpointInfo{}, nil
+		return nil, fmt.Errorf("open checkpoint store: %w", err)
 	}
-
-	commit, err := repo.CommitObject(ref.Hash())
+	committed, err := stores.Persistent.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get commit object: %w", err)
+		return nil, fmt.Errorf("failed to list committed checkpoints: %w", err)
 	}
+	return checkpointInfosFromCommitted(committed), nil
+}
 
-	tree, err := commit.Tree()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get commit tree: %w", err)
+func checkpointInfosFromCommitted(committed []checkpoint.CheckpointInfo) []CheckpointInfo {
+	result := make([]CheckpointInfo, 0, len(committed))
+	for _, c := range committed {
+		result = append(result, CheckpointInfo{
+			CheckpointID:     c.CheckpointID,
+			SessionID:        c.SessionID,
+			CreatedAt:        c.CreatedAt,
+			CheckpointsCount: c.CheckpointsCount,
+			FilesTouched:     c.FilesTouched,
+			Agent:            c.Agent,
+			IsTask:           c.IsTask,
+			ToolUseID:        c.ToolUseID,
+			SessionCount:     c.SessionCount,
+			SessionIDs:       c.SessionIDs,
+			Imported:         c.Imported,
+		})
 	}
-
-	var checkpoints []CheckpointInfo
-
-	// Scan sharded structure: <2-char-prefix>/<remaining-id>/metadata.json
-	// The tree has 2-character directories (hex buckets)
-	for _, bucketEntry := range tree.Entries {
-		if bucketEntry.Mode != filemode.Dir {
-			continue
-		}
-		// Bucket should be 2 hex chars
-		if len(bucketEntry.Name) != 2 {
-			continue
-		}
-
-		bucketTree, treeErr := repo.TreeObject(bucketEntry.Hash)
-		if treeErr != nil {
-			continue
-		}
-
-		// Each entry in the bucket is the remaining part of the checkpoint ID
-		for _, checkpointEntry := range bucketTree.Entries {
-			if checkpointEntry.Mode != filemode.Dir {
-				continue
-			}
-
-			checkpointTree, cpTreeErr := repo.TreeObject(checkpointEntry.Hash)
-			if cpTreeErr != nil {
-				continue
-			}
-
-			// Reconstruct checkpoint ID: <bucket><remaining>
-			checkpointIDStr := bucketEntry.Name + checkpointEntry.Name
-			checkpointID, cpErr := id.NewCheckpointID(checkpointIDStr)
-			if cpErr != nil {
-				// Skip invalid checkpoint IDs
-				continue
-			}
-
-			info := CheckpointInfo{
-				CheckpointID: checkpointID,
-			}
-
-			// Get details from metadata file (CheckpointSummary format)
-			if summary, ok := decodeSummaryLiteFromTree(checkpointTree); ok {
-				info.CheckpointsCount = summary.CheckpointsCount
-				info.FilesTouched = summary.FilesTouched
-				info.SessionCount = len(summary.Sessions)
-
-				// Read session-level metadata for Agent, SessionID, CreatedAt, SessionIDs
-				for i, sessionPaths := range summary.Sessions {
-					if sessionPaths.Metadata == "" {
-						continue
-					}
-					// SessionFilePaths contains absolute paths with leading "/"
-					// Strip the leading "/" for tree.File() which expects paths without leading slash
-					sessionMetadataPath := strings.TrimPrefix(sessionPaths.Metadata, "/")
-					sessionMeta, sErr := decodeSessionMetadataLite(tree, sessionMetadataPath)
-					if sErr != nil {
-						continue
-					}
-					info.SessionIDs = append(info.SessionIDs, sessionMeta.SessionID)
-					// Use first session's metadata for Agent, SessionID, CreatedAt
-					if i == 0 {
-						info.Agent = sessionMeta.Agent
-						info.SessionID = sessionMeta.SessionID
-						info.CreatedAt = sessionMeta.CreatedAt
-						info.IsTask = sessionMeta.IsTask
-						info.ToolUseID = sessionMeta.ToolUseID
-					}
-				}
-			}
-
-			checkpoints = append(checkpoints, info)
-		}
-	}
-
-	// Sort by time (most recent first)
-	sort.Slice(checkpoints, func(i, j int) bool {
-		return checkpoints[i].CreatedAt.After(checkpoints[j].CreatedAt)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
 	})
-
-	return checkpoints, nil
+	return result
 }
 
 const (
-	traceGitignore     = ".trace/.gitignore"
-	traceDir           = ".trace"
+	entireGitignore    = ".trace/.gitignore"
+	entireDir          = ".trace"
 	gitDir             = ".git"
-	shadowBranchPrefix = "trace/"
+	shadowBranchPrefix = "entire/"
 )
 
 // isProtectedPath returns true if relPath is inside a directory that should
 // never be modified or deleted during rewind or other destructive operations.
-// Protected directories include git internals, trace metadata, and all
+// Protected directories include git internals, entire metadata, and all
 // registered agent config directories.
 func isProtectedPath(relPath string) bool {
 	for _, dir := range protectedDirs() {
-		if paths.IsSubpath(dir, relPath) {
+		if paths.IsProtectedSubpath(dir, relPath) {
 			return true
 		}
 	}
@@ -327,7 +363,7 @@ func isProtectedPath(relPath string) bool {
 //   - call resetProtectedDirsForTest() to clear the cache.
 func protectedDirs() []string {
 	protectedDirsOnce.Do(func() {
-		protectedDirsCache = append([]string{gitDir, traceDir}, agent.AllProtectedDirs()...)
+		protectedDirsCache = append([]string{gitDir, entireDir}, agent.AllProtectedDirs()...)
 	})
 	return protectedDirsCache
 }
@@ -339,33 +375,75 @@ var (
 
 var initRedactionOnce sync.Once
 
-// EnsureRedactionConfigured loads PII redaction settings and configures the
-// redact package. No-op if PII is not enabled in settings.
-// Must be called at each process entry point before checkpoint writes
-// (e.g., hook PersistentPreRunE, doctor PreRun).
+// EnsureRedactionConfigured loads redaction settings and configures the
+// redact package: PII detection (opt-in), inline custom_redactions, and rule
+// packs auto-discovered from .trace/redactors/.
+//
+// Must be called at each process entry point before checkpoint writes.
 func EnsureRedactionConfigured() {
 	initRedactionOnce.Do(func() {
 		ctx := context.Background()
 		s, err := settings.Load(ctx)
 		if err != nil {
 			logCtx := logging.WithComponent(ctx, "redaction")
-			logging.Warn(logCtx, "failed to load settings for PII redaction", slog.String("error", err.Error()))
+			logging.Warn(logCtx, "failed to load settings for redaction", slog.String("error", err.Error()))
 			return
 		}
-		if s.Redaction == nil || s.Redaction.PII == nil || !s.Redaction.PII.Enabled {
-			return
+
+		// PII detection (opt-in).
+		if s.Redaction != nil && s.Redaction.PII != nil && s.Redaction.PII.Enabled {
+			pii := s.Redaction.PII
+			cfg := redact.PIIConfig{
+				Enabled:        true,
+				Categories:     make(map[redact.PIICategory]bool),
+				CustomPatterns: pii.CustomPatterns,
+			}
+			cfg.Categories[redact.PIIEmail] = pii.Email == nil || *pii.Email
+			cfg.Categories[redact.PIIPhone] = pii.Phone == nil || *pii.Phone
+			cfg.Categories[redact.PIIAddress] = pii.Address != nil && *pii.Address
+			redact.ConfigurePII(cfg)
 		}
-		pii := s.Redaction.PII
-		cfg := redact.PIIConfig{
-			Enabled:        true,
-			Categories:     make(map[redact.PIICategory]bool),
-			CustomPatterns: pii.CustomPatterns,
+
+		// Custom rules: inline + packs.
+		var inline map[string]string
+		if s.Redaction != nil {
+			inline = s.Redaction.CustomRedactions
 		}
-		// Email and phone default to true when PII is enabled; address defaults to false.
-		cfg.Categories[redact.PIIEmail] = pii.Email == nil || *pii.Email
-		cfg.Categories[redact.PIIPhone] = pii.Phone == nil || *pii.Phone
-		cfg.Categories[redact.PIIAddress] = pii.Address != nil && *pii.Address
-		redact.ConfigurePII(cfg)
+		packsRelPath := filepath.Join(paths.TraceDir, redact.RedactorsDirName)
+		packsDir, perr := paths.AbsPath(ctx, packsRelPath)
+		if perr != nil {
+			logCtx := logging.WithComponent(ctx, "redaction")
+			logging.Warn(logCtx, "failed to resolve redactors path", slog.String("error", perr.Error()))
+			packsDir = packsRelPath
+		}
+		packs, lerr := redact.LoadPacks(packsDir)
+		if lerr != nil {
+			logCtx := logging.WithComponent(ctx, "redaction")
+			logging.Warn(logCtx, "failed to load redactor packs", slog.String("error", lerr.Error()))
+			// Hooks log to .trace/logs/trace.log, where most users never
+			// look. Surface a one-line breadcrumb on stderr when we have a
+			// real terminal so the user can find the detail.
+			if interactive.IsTerminalWriter(os.Stderr) {
+				fmt.Fprintf(os.Stderr, "[trace] redactor packs failed to load (%v); see .trace/logs/trace.log or run `trace doctor`.\n", lerr)
+			}
+		}
+		if len(inline) > 0 || len(packs) > 0 {
+			redact.ConfigureCustomRules(redact.CustomRulesConfig{
+				Inline: inline,
+				Packs:  packs,
+			})
+		}
+
+		// OpenAI Privacy Filter (opt-in 9th layer).
+		if s.Redaction != nil && s.Redaction.OpenAIPrivacyFilter != nil {
+			opf := s.Redaction.OpenAIPrivacyFilter
+			redact.ConfigurePrivacyFilter(redact.OPFConfig{
+				Enabled:    opf.Enabled,
+				Categories: opf.Categories,
+				Command:    opf.Command,
+				Timeout:    opf.TimeoutSeconds,
+			})
+		}
 	})
 }
 
@@ -378,42 +456,123 @@ func resolveAgentType(ctxAgentType types.AgentType, state *SessionState) types.A
 	return ctxAgentType
 }
 
-// EnsureMetadataBranch creates or updates the local trace/checkpoints/v1 branch.
-// If the remote-tracking branch (origin/trace/checkpoints/v1) exists and the local
-// branch is missing or empty, creates/updates the local branch from it.
-// Otherwise creates an empty orphan.
-func EnsureMetadataBranch(repo *git.Repository) error {
-	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
+// EnsurePrimaryRef creates or updates the local primary metadata ref.
+//
+// A configured checkpoint_remote is the authoritative checkpoint store: when one
+// is set the local ref is only ever sourced from it, never from origin's
+// (possibly stale) tracking ref (issue #1374). Without a checkpoint_remote,
+// origin holds the store — when Primary is in Push and the local ref is missing
+// or un-initialized, the local ref is created/updated from origin's
+// remote-tracking ref. Otherwise an empty orphan is created.
+// primaryIsGitRefs reports whether the configured primary checkpoint backend is
+// git-refs. Resolution is fail-soft: any config-load error is treated as the
+// default git-branch backend (returns false), preserving legacy behavior.
+func primaryIsGitRefs(ctx context.Context) bool {
+	cfg, err := settings.LoadCheckpointsConfig(ctx)
+	if err != nil {
+		return false
+	}
+	return checkpoint.PrimaryIsRefs(cfg)
+}
 
-	// Check if remote-tracking branch exists (e.g., after clone/fetch)
-	remoteRefName := plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName)
-	remoteRef, remoteErr := repo.Reference(remoteRefName, true)
-	if remoteErr != nil && !errors.Is(remoteErr, plumbing.ErrReferenceNotFound) {
-		return fmt.Errorf("failed to check remote metadata branch: %w", remoteErr)
+func EnsurePrimaryRef(ctx context.Context, repo *git.Repository) error {
+	// Rebind settings/remote resolution to the repository being modified rather
+	// than the ambient working directory, so the "is a checkpoint_remote
+	// configured" decision (and any fetch below) targets repo even when a caller
+	// passes a handle for a repo that is not CWD. EnsureSetup opens repo from CWD
+	// and tests t.Chdir into it, so in normal use this is a no-op.
+	if root, rootErr := getRepoPath(repo); rootErr == nil {
+		ctx = settings.WithWorktreeRoot(ctx, root)
 	}
 
-	// Check if local branch already exists
-	localRef, err := repo.Reference(refName, true)
-	if err == nil {
-		if remoteErr == nil && localRef.Hash() != remoteRef.Hash() {
-			// Local and remote exist but differ — determine relationship
-			isEmpty, checkErr := isEmptyMetadataBranch(repo, localRef)
-			if checkErr != nil {
-				return fmt.Errorf("failed to check metadata branch contents: %w", checkErr)
+	refs := checkpoint.ResolveRefs(ctx)
+	primaryName := refs.Primary.Short()
+
+	// Under the git-refs primary backend, checkpoints are written to
+	// per-checkpoint refs and nothing is ever written to the v1 metadata
+	// branch. Seeding an empty orphan v1 here would leave a vestigial,
+	// never-written branch — the surprise a user hit when `trace enable`
+	// selected git-refs yet still created trace/checkpoints/v1. We still adopt
+	// real v1 data that already exists on origin or a checkpoint_remote below
+	// (so legacy checkpoints stay readable); we only suppress the empty-orphan
+	// fallback. Resolution is fail-soft: an unreadable config keeps the legacy
+	// git-branch seeding behavior.
+	skipEmptyOrphan := primaryIsGitRefs(ctx)
+
+	localRef, localErr := repo.Reference(refs.Primary, true)
+	if localErr != nil && !errors.Is(localErr, plumbing.ErrReferenceNotFound) {
+		return fmt.Errorf("failed to check metadata ref: %w", localErr)
+	}
+	localExists := localErr == nil
+
+	// A configured checkpoint_remote is the authoritative checkpoint store and
+	// takes precedence over origin's (possibly stale) primary tracking ref. When
+	// it is configured we never seed from origin: a machine migrated from
+	// origin-hosted checkpoints to a dedicated checkpoint_remote must not replay
+	// origin's stale checkpoints into it (issue #1374). The network fetch is
+	// additionally gated on an explicit enable flow (WithCheckpointRemoteBootstrap):
+	// the per-turn hook hot path stays network-free and self-heals via the
+	// empty-orphan fallback.
+	if remote.Configured(ctx) {
+		if localExists {
+			// Heal an un-initialized orphan (empty, or vercel.json-only on a
+			// vercel-enabled repo) from the checkpoint remote. Whatever the
+			// outcome, never fall through to origin.
+			healed, err := healPrimaryFromCheckpointRemote(ctx, repo, localRef, refs.Primary)
+			if err != nil {
+				return err
 			}
-			if isEmpty {
-				// Empty orphan — just point to remote
-				ref := plumbing.NewHashReference(refName, remoteRef.Hash())
-				if setErr := repo.Storer.SetReference(ref); setErr != nil {
-					return fmt.Errorf("failed to update metadata branch from remote: %w", setErr)
+			if healed {
+				fmt.Fprintf(os.Stderr, "✓ Updated local ref '%s' from checkpoint remote\n", primaryName)
+			}
+			return nil
+		}
+		// Local ref missing — fetch the real branch before creating a fresh
+		// orphan: an orphan would diverge from it, hide existing checkpoints, and
+		// be rejected non-fast-forward on later syncs.
+		if bootstrapPrimaryFromCheckpointRemote(ctx, repo, refs.Primary) {
+			fmt.Fprintf(os.Stderr, "✓ Created local ref '%s' from checkpoint remote\n", primaryName)
+			return nil
+		}
+		// Nothing usable on the checkpoint remote (fetch skipped/failed or the
+		// remote has no data) — create a fresh orphan that future pushes publish
+		// there. Still never origin.
+		if skipEmptyOrphan {
+			return nil
+		}
+		return createOrphanMetadataRef(ctx, repo, refs)
+	}
+
+	// No checkpoint_remote configured — origin holds the checkpoint store. Origin
+	// only tracks Primary when Primary is in Push.
+	var remoteRef *plumbing.Reference
+	if refs.PrimaryFetchableFromOrigin() {
+		var remoteErr error
+		remoteRef, remoteErr = repo.Reference(plumbing.NewRemoteReferenceName("origin", primaryName), true)
+		if remoteErr != nil && !errors.Is(remoteErr, plumbing.ErrReferenceNotFound) {
+			return fmt.Errorf("failed to check remote metadata ref: %w", remoteErr)
+		}
+	}
+
+	if localExists {
+		if remoteRef != nil && localRef.Hash() != remoteRef.Hash() {
+			// Local and remote exist but differ — determine relationship
+			hasData, checkErr := metadataBranchHasData(repo, localRef)
+			if checkErr != nil {
+				return fmt.Errorf("failed to check metadata ref contents: %w", checkErr)
+			}
+			if !hasData {
+				// Un-initialized orphan — just point to remote
+				if setErr := setRefHash(repo, refs.Primary, remoteRef.Hash()); setErr != nil {
+					return fmt.Errorf("failed to update metadata ref from remote: %w", setErr)
 				}
-				fmt.Fprintf(os.Stderr, "[trace] Updated local branch '%s' from origin\n", paths.MetadataBranchName)
+				fmt.Fprintf(os.Stderr, "[trace] Updated local ref '%s' from origin\n", primaryName)
 			} else {
 				// Local has real data and differs from remote — if disconnected
 				// (no common ancestor), reconciliation happens at pre-push time
 				// or via 'trace doctor'. Read paths warn but do not auto-fix.
 				logging.Debug(
-					context.Background(), "metadata branch differs from remote, reconciliation deferred to read/write time",
+					ctx, "metadata ref differs from remote, reconciliation deferred to read/write time",
 					"local_hash", localRef.Hash().String()[:7],
 					"remote_hash", remoteRef.Hash().String()[:7],
 				)
@@ -421,21 +580,27 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 		}
 		return nil
 	}
-	if !errors.Is(err, plumbing.ErrReferenceNotFound) {
-		return fmt.Errorf("failed to check metadata branch: %w", err)
-	}
 
-	// Local branch doesn't exist — create from remote if available
-	if remoteErr == nil {
-		ref := plumbing.NewHashReference(refName, remoteRef.Hash())
-		if err := repo.Storer.SetReference(ref); err != nil {
-			return fmt.Errorf("failed to create metadata branch from remote: %w", err)
+	// Local ref doesn't exist — create from origin if available.
+	if remoteRef != nil {
+		if err := setRefHash(repo, refs.Primary, remoteRef.Hash()); err != nil {
+			return fmt.Errorf("failed to create metadata ref from remote: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "✓ Created local branch '%s' from origin\n", paths.MetadataBranchName)
+		fmt.Fprintf(os.Stderr, "✓ Created local ref '%s' from origin\n", primaryName)
 		return nil
 	}
 
-	// No local or remote branch — create empty orphan
+	// No local or origin ref — create an empty orphan.
+	if skipEmptyOrphan {
+		return nil
+	}
+	return createOrphanMetadataRef(ctx, repo, refs)
+}
+
+// createOrphanMetadataRef creates the local primary metadata ref as a fresh empty
+// orphan commit (plus any merged vercel config). Used when no metadata ref can be
+// sourced from origin or a checkpoint_remote.
+func createOrphanMetadataRef(ctx context.Context, repo *git.Repository, refs checkpoint.PersistentRefs) error {
 	emptyTree := &object.Tree{Entries: []object.TreeEntry{}}
 	obj := repo.Storer.NewEncodedObject()
 	if err := emptyTree.Encode(obj); err != nil {
@@ -447,7 +612,7 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 	}
 	emptyTreeHash, err = vercelconfig.MaybeMergeMetadataBranchConfig(repo, emptyTreeHash)
 	if err != nil {
-		return fmt.Errorf("failed to initialize metadata branch vercel config: %w", err)
+		return fmt.Errorf("failed to initialize metadata ref vercel config: %w", err)
 	}
 
 	// Create orphan commit (no parent)
@@ -463,9 +628,17 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 		TreeHash:  emptyTreeHash,
 		Author:    sig,
 		Committer: sig,
-		Message:   "Initialize metadata branch\n\nThis branch stores session metadata.\n",
+		Message:   "Initialize metadata ref\n\nThis ref stores session metadata.\n",
 	}
 	// Note: No ParentHashes - this is an orphan commit
+
+	// Sign the orphan commit when signing is enabled, matching the path used
+	// for every other metadata commit (see metadata_reconcile.go and
+	// push_common.go). Without this, repos that enforce a "verified
+	// signatures" ruleset on entire/* refs reject the very first push of
+	// the metadata ref with GH013, even though every later commit on it
+	// is correctly signed.
+	checkpoint.SignCommitBestEffort(ctx, commit)
 
 	commitObj := repo.Storer.NewEncodedObject()
 	if err := commit.Encode(commitObj); err != nil {
@@ -476,20 +649,200 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 		return fmt.Errorf("failed to store orphan commit: %w", err)
 	}
 
-	// Create branch reference
-	ref := plumbing.NewHashReference(refName, commitHash)
-	if err := repo.Storer.SetReference(ref); err != nil {
-		return fmt.Errorf("failed to create metadata branch: %w", err)
+	if err := setRefHash(repo, refs.Primary, commitHash); err != nil {
+		return fmt.Errorf("failed to create metadata ref: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "  ✓ Created orphan branch %s for session metadata\n", paths.MetadataBranchName)
+	fmt.Fprintf(os.Stderr, "  ✓ Created orphan ref %s for session metadata\n", refs.Primary.Short())
 	return nil
 }
 
-// isEmptyMetadataBranch returns true if the branch ref points to a commit with an empty tree.
-// Only checks the tip commit — if a data commit sits on top of an empty orphan, this returns
-// false, which is correct: the bug this detects creates a single empty orphan as the tip.
-func isEmptyMetadataBranch(repo *git.Repository, ref *plumbing.Reference) (bool, error) {
+// bootstrapPrimaryFromCheckpointRemote tries to populate a missing local primary
+// metadata ref from a configured checkpoint_remote before the caller falls back
+// to creating an empty orphan. When a separate checkpoint_remote already holds
+// the real trace/checkpoints/v1 branch (the common second-device case), a fresh
+// local orphan would diverge from it — hiding existing checkpoints and causing
+// non-fast-forward rejections on the next fetch.
+//
+// All resolution is pinned to repo's worktree (settings, origin URL, fetch
+// working directory, ref promotion) so the decision depends on the repository
+// being ensured rather than the ambient working directory.
+//
+// It returns true only when the fetch succeeds and the local primary ref now
+// points at the remote branch. Every failure is non-fatal and returns false so
+// the caller creates the empty orphan: `trace enable` must never break on a
+// missing checkpoint remote, an unresolvable URL, or a network/auth error.
+func bootstrapPrimaryFromCheckpointRemote(ctx context.Context, repo *git.Repository, primary plumbing.ReferenceName) bool {
+	if !checkpointRemoteBootstrapAllowed(ctx) {
+		// Not an explicit setup flow (e.g. the per-turn hook hot path via
+		// EnsureSetup). Never fetch here: hook execution has a hard timeout,
+		// and a slow/unreachable checkpoint remote must not stall every turn.
+		// Fall back to the empty orphan, which self-heals immediately.
+		logging.Debug(ctx, "checkpoint-remote: skipping bootstrap fetch outside explicit enable flow")
+		return false
+	}
+
+	worktreeRoot, err := getRepoPath(repo)
+	if err != nil {
+		logging.Debug(
+			ctx, "checkpoint-remote: cannot resolve worktree root for enable bootstrap",
+			slog.String("error", err.Error()),
+		)
+		return false
+	}
+	// Pin settings/remote resolution to this repo's worktree.
+	ctx = settings.WithWorktreeRoot(ctx, worktreeRoot)
+
+	// Resolve and verify the checkpoint fetch URL. resolveCheckpointFetchURL
+	// rejects remote.FetchURL's silent origin fallback, so bootstrap never adopts
+	// origin's data when the derived URL doesn't actually target the configured
+	// checkpoint repo (issue #1374).
+	url, ok := resolveCheckpointFetchURL(ctx, worktreeRoot)
+	if !ok {
+		return false
+	}
+
+	branchName := primary.Short()
+	tmpRefName := plumbing.ReferenceName(FetchTmpRefPrefix + branchName)
+	if err := fetchURLIntoTmpRef(ctx, worktreeRoot, url, primary.String(), tmpRefName.String(), "metadata branch", true); err != nil {
+		logging.Debug(
+			ctx, "checkpoint-remote: enable bootstrap fetch failed; creating empty orphan",
+			slog.String("url", remote.RedactURL(url)),
+			slog.String("error", err.Error()),
+		)
+		return false
+	}
+	defer func() { _ = repo.Storer.RemoveReference(tmpRefName) }() //nolint:errcheck // cleanup is best-effort
+
+	tmpRef, err := repo.Reference(tmpRefName, true)
+	if err != nil {
+		logging.Debug(
+			ctx, "checkpoint-remote: fetched metadata ref missing after enable bootstrap",
+			slog.String("error", err.Error()),
+		)
+		return false
+	}
+	if err := SafelyAdvanceLocalRef(ctx, repo, primary, tmpRef.Hash()); err != nil {
+		logging.Debug(
+			ctx, "checkpoint-remote: could not advance local metadata ref on enable bootstrap",
+			slog.String("error", err.Error()),
+		)
+		return false
+	}
+	logging.Info(
+		ctx, "checkpoint-remote: bootstrapped metadata branch on enable",
+		slog.String("ref", primary.String()),
+	)
+	return true
+}
+
+// healPrimaryFromCheckpointRemote replaces a local primary metadata ref that holds
+// no checkpoint data — an empty orphan, or a vercel.json-only orphan on a
+// vercel-enabled repo — with the real branch fetched from a configured
+// checkpoint_remote. It repairs second-device repos left with an un-initialized
+// orphan disjoint from the remote history (issue #1374).
+//
+// The network fetch is gated on an explicit enable flow
+// (WithCheckpointRemoteBootstrap); the per-turn hook hot path stays network-free.
+// Returns true only when the local ref was replaced with real remote data. A
+// local branch that already carries checkpoints, a non-enable context, an
+// unresolvable URL, or a fetch that yields no usable data all return (false, nil)
+// so the caller keeps the local ref as-is.
+func healPrimaryFromCheckpointRemote(ctx context.Context, repo *git.Repository, localRef *plumbing.Reference, primary plumbing.ReferenceName) (bool, error) {
+	hasData, err := metadataBranchHasData(repo, localRef)
+	if err != nil {
+		return false, fmt.Errorf("failed to check metadata branch contents: %w", err)
+	}
+	if hasData {
+		return false, nil
+	}
+	if !checkpointRemoteBootstrapAllowed(ctx) {
+		// Not an explicit setup flow (e.g. the per-turn hook hot path). Never
+		// fetch here: the local orphan self-heals on the next explicit enable.
+		logging.Debug(ctx, "checkpoint-remote: skipping empty-orphan heal outside explicit enable flow")
+		return false, nil
+	}
+	return healEmptyOrphanFromCheckpointRemote(ctx, repo, primary)
+}
+
+// healEmptyOrphanFromCheckpointRemote fetches the metadata branch from the
+// configured checkpoint_remote and force-sets the local ref to the fetched tip.
+// It deliberately bypasses SafelyAdvanceLocalRef: the local orphan is disconnected
+// from the real branch, so a safe advance would cherry-pick the orphan commit onto
+// the fetched tip and leave a stray empty commit. Discarding the data-free orphan
+// is always correct here. Fetch failures and a data-free fetched branch are
+// non-fatal and return (false, nil) so the caller keeps the local orphan.
+func healEmptyOrphanFromCheckpointRemote(ctx context.Context, repo *git.Repository, primary plumbing.ReferenceName) (bool, error) {
+	if !primary.IsBranch() {
+		return false, nil
+	}
+	worktreeRoot, err := getRepoPath(repo)
+	if err != nil {
+		logging.Debug(
+			ctx, "checkpoint-remote: cannot resolve worktree root for empty-orphan heal",
+			slog.String("error", err.Error()),
+		)
+		return false, nil
+	}
+	// Pin settings/remote resolution to this repo's worktree.
+	ctx = settings.WithWorktreeRoot(ctx, worktreeRoot)
+
+	url, ok := resolveCheckpointFetchURL(ctx, worktreeRoot)
+	if !ok {
+		return false, nil
+	}
+
+	tmpRefName := plumbing.ReferenceName(FetchTmpRefPrefix + primary.Short())
+	defer func() { _ = repo.Storer.RemoveReference(tmpRefName) }() //nolint:errcheck // cleanup is best-effort
+
+	if err := fetchURLIntoTmpRef(ctx, worktreeRoot, url, primary.String(), tmpRefName.String(), "metadata branch", true); err != nil {
+		logging.Debug(
+			ctx, "checkpoint-remote: empty-orphan heal fetch failed; keeping local orphan",
+			slog.String("url", remote.RedactURL(url)),
+			slog.String("error", err.Error()),
+		)
+		return false, nil
+	}
+
+	fetchedRef, err := repo.Reference(tmpRefName, true)
+	if err != nil {
+		return false, nil
+	}
+	fetchedHasData, err := metadataBranchHasData(repo, fetchedRef)
+	if err != nil || !fetchedHasData {
+		return false, nil
+	}
+
+	// Force-set the local ref to the fetched tip, discarding the data-free orphan.
+	if err := setRefHash(repo, primary, fetchedRef.Hash()); err != nil {
+		return false, fmt.Errorf("failed to replace empty orphan metadata ref: %w", err)
+	}
+	logging.Info(
+		ctx, "checkpoint-remote: healed empty orphan metadata branch from checkpoint remote",
+		slog.String("ref", primary.String()),
+	)
+	return true, nil
+}
+
+// metadataBranchInitFiles are the root-level files that orphan initialization may
+// write into an otherwise-empty metadata branch (currently only the Vercel
+// config). A branch containing nothing but these holds no checkpoint data.
+var metadataBranchInitFiles = map[string]bool{
+	vercelconfig.FileName: true, // "vercel.json"
+}
+
+// metadataBranchHasData reports whether the branch tip tree contains anything
+// beyond orphan-initialization artifacts. It returns false for an empty tree, or
+// a tree holding only init files such as vercel.json — the un-initialized-orphan
+// state that is safe to adopt from the authoritative remote — and true for any
+// other content (checkpoint shards or pre-existing files).
+//
+// A literal empty-tree check missed vercel.json-only orphans on vercel-enabled
+// second devices, leaving them unhealed (issue #1374). Ignoring only the known
+// init files (rather than treating "no shards" as empty) avoids clobbering a
+// branch that carries other real content. Only the tip commit is inspected — the
+// bug this detects creates a single un-initialized orphan as the tip.
+func metadataBranchHasData(repo *git.Repository, ref *plumbing.Reference) (bool, error) {
 	commit, err := repo.CommitObject(ref.Hash())
 	if err != nil {
 		return false, fmt.Errorf("failed to get commit: %w", err)
@@ -498,226 +851,27 @@ func isEmptyMetadataBranch(repo *git.Repository, ref *plumbing.Reference) (bool,
 	if err != nil {
 		return false, fmt.Errorf("failed to get tree: %w", err)
 	}
-	return len(tree.Entries) == 0, nil
-}
-
-// sessionMetadataLite contains only the fields needed from session-level metadata.json.
-// Using a minimal struct avoids allocating large nested objects (Summary, InitialAttribution,
-// TokenUsage, etc.) that CommittedMetadata carries but callers never need here.
-type sessionMetadataLite struct {
-	SessionID string          `json:"session_id"`
-	Agent     types.AgentType `json:"agent,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
-	IsTask    bool            `json:"is_task,omitempty"`
-	ToolUseID string          `json:"tool_use_id,omitempty"`
-}
-
-// checkpointSummaryLite contains only the fields needed from the root metadata.json.
-// Avoids allocating TokenUsage and other heavy fields from CheckpointSummary.
-type checkpointSummaryLite struct {
-	CheckpointID     id.CheckpointID               `json:"checkpoint_id"`
-	CheckpointsCount int                           `json:"checkpoints_count"`
-	FilesTouched     []string                      `json:"files_touched"`
-	Sessions         []checkpoint.SessionFilePaths `json:"sessions"`
-}
-
-// decodeSessionMetadataLite reads a session metadata.json from the tree using a streaming
-// json.Decoder and a minimal struct to avoid allocating large unused fields.
-func decodeSessionMetadataLite(tree checkpoint.FileReader, metadataPath string) (*sessionMetadataLite, error) {
-	file, err := tree.File(metadataPath)
-	if err != nil {
-		return nil, fmt.Errorf("session metadata file %s: %w", metadataPath, err)
-	}
-	reader, err := file.Reader()
-	if err != nil {
-		return nil, fmt.Errorf("session metadata reader %s: %w", metadataPath, err)
-	}
-	defer reader.Close()
-
-	var meta sessionMetadataLite
-	if err := json.NewDecoder(reader).Decode(&meta); err != nil {
-		return nil, fmt.Errorf("decode session metadata %s: %w", metadataPath, err)
-	}
-	return &meta, nil
-}
-
-// decodeSummaryLiteFromTree reads and decodes metadata.json from a checkpoint tree
-// using a streaming decoder and minimal struct. Returns the decoded summary and true
-// if successful with at least one session, or zero value and false otherwise.
-func decodeSummaryLiteFromTree(checkpointTree checkpoint.FileReader) (checkpointSummaryLite, bool) {
-	metadataFile, fileErr := checkpointTree.File(paths.MetadataFileName)
-	if fileErr != nil {
-		return checkpointSummaryLite{}, false
-	}
-	reader, readerErr := metadataFile.Reader()
-	if readerErr != nil {
-		return checkpointSummaryLite{}, false
-	}
-	defer reader.Close()
-
-	var summary checkpointSummaryLite
-	if err := json.NewDecoder(reader).Decode(&summary); err != nil || len(summary.Sessions) == 0 {
-		return checkpointSummaryLite{}, false
-	}
-	return summary, true
-}
-
-// ReadCheckpointMetadata reads metadata.json from a checkpoint path on trace/checkpoints/v1.
-// With the new format, root metadata.json is a CheckpointSummary with Agents array.
-// This function reads the summary and extracts relevant fields into CheckpointInfo,
-// also reading session-level metadata for IsTask/ToolUseID fields.
-//
-// Uses streaming json.Decoder and minimal structs to avoid loading large nested
-// objects (Summary, InitialAttribution, TokenUsage) into memory.
-func ReadCheckpointMetadata(tree checkpoint.FileReader, checkpointPath string) (*CheckpointInfo, error) {
-	metadataPath := checkpointPath + "/metadata.json"
-	file, err := tree.File(metadataPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find metadata at %s: %w", metadataPath, err)
-	}
-
-	// Session metadata paths in the summary are absolute (e.g., "/ca/b75de47439/0/metadata.json").
-	// For a full tree, strip the leading "/" to get tree-relative paths.
-	normalizePath := func(raw string) string {
-		return strings.TrimPrefix(raw, "/")
-	}
-	return decodeCheckpointInfo(file, tree, checkpointPath, normalizePath)
-}
-
-// ReadCheckpointMetadataFromSubtree reads checkpoint metadata from a tree that is
-// already rooted at the checkpoint directory (e.g., after tree.Tree(checkpointID.Path())).
-// checkpointPath is the original sharded path (e.g., "ca/b75de47439") and is used
-// to strip the prefix from absolute session metadata paths stored in the summary.
-func ReadCheckpointMetadataFromSubtree(tree checkpoint.FileReader, checkpointPath string) (*CheckpointInfo, error) {
-	file, err := tree.File(paths.MetadataFileName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find %s in checkpoint subtree: %w", paths.MetadataFileName, err)
-	}
-
-	// Session metadata paths are absolute from the tree root (e.g., "/ca/b75de47439/0/metadata.json").
-	// Strip the checkpoint prefix to get paths relative to the subtree (e.g., "0/metadata.json").
-	prefix := "/" + checkpointPath + "/"
-	normalizePath := func(raw string) string {
-		return strings.TrimPrefix(raw, prefix)
-	}
-	return decodeCheckpointInfo(file, tree, checkpointPath, normalizePath)
-}
-
-// decodeCheckpointInfo is the shared implementation for ReadCheckpointMetadata and
-// ReadCheckpointMetadataFromSubtree. It decodes the root metadata.json, reads
-// per-session metadata, and populates a CheckpointInfo.
-//
-// normalizePath transforms absolute session metadata paths from the summary into
-// paths that are valid for tree.File() lookups (the transform differs depending on
-// whether tree is a full metadata branch tree or a checkpoint subtree).
-func decodeCheckpointInfo(
-	file checkpoint.FileOpener,
-	tree checkpoint.FileReader,
-	checkpointPath string,
-	normalizePath func(string) string,
-) (*CheckpointInfo, error) {
-	reader, err := file.Reader()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read metadata: %w", err)
-	}
-	defer reader.Close()
-
-	// Try to parse as CheckpointSummary first (new format) using lite struct
-	var summary checkpointSummaryLite
-	if decodeErr := json.NewDecoder(reader).Decode(&summary); decodeErr == nil {
-		if len(summary.Sessions) > 0 {
-			info := &CheckpointInfo{
-				CheckpointID:     summary.CheckpointID,
-				CheckpointsCount: summary.CheckpointsCount,
-				FilesTouched:     summary.FilesTouched,
-				SessionCount:     len(summary.Sessions),
-			}
-
-			// Read all sessions' metadata to populate SessionIDs and get other fields from first session
-			var sessionIDs []string
-			for i, sessionPaths := range summary.Sessions {
-				if sessionPaths.Metadata == "" {
-					continue
-				}
-				sessionMetadataPath := normalizePath(sessionPaths.Metadata)
-				sessionMeta, sErr := decodeSessionMetadataLite(tree, sessionMetadataPath)
-				if sErr != nil {
-					logging.Debug(
-						context.Background(), "decodeCheckpointInfo: session metadata decode failed",
-						slog.Int("session_index", i),
-						slog.String("metadata_path", sessionMetadataPath),
-						slog.String("checkpoint_path", checkpointPath),
-						slog.String("error", sErr.Error()),
-					)
-					continue
-				}
-				sessionIDs = append(sessionIDs, sessionMeta.SessionID)
-				if i == 0 {
-					info.Agent = sessionMeta.Agent
-					info.SessionID = sessionMeta.SessionID
-					info.CreatedAt = sessionMeta.CreatedAt
-					info.IsTask = sessionMeta.IsTask
-					info.ToolUseID = sessionMeta.ToolUseID
-				}
-			}
-			info.SessionIDs = sessionIDs
-			return info, nil
+	for _, entry := range tree.Entries {
+		if !metadataBranchInitFiles[entry.Name] {
+			return true, nil
 		}
 	}
-
-	// Fall back to parsing as CheckpointInfo (old format or direct info).
-	// Re-read the file since the decoder consumed the reader.
-	fallbackReader, err := file.Reader()
-	if err != nil {
-		return nil, fmt.Errorf("failed to re-read metadata: %w", err)
-	}
-	defer fallbackReader.Close()
-
-	var metadata CheckpointInfo
-	if err := json.NewDecoder(fallbackReader).Decode(&metadata); err != nil {
-		return nil, fmt.Errorf("failed to parse metadata: %w", err)
-	}
-	return &metadata, nil
+	return false, nil
 }
 
-// GetMetadataBranchTree returns the tree object for the trace/checkpoints/v1 branch.
-func GetMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
-	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-	ref, err := repo.Reference(refName, true)
+// GetMetadataRefTree returns the tree object at the given committed-metadata ref.
+func GetMetadataRefTree(repo *git.Repository, ref plumbing.ReferenceName) (*object.Tree, error) {
+	resolvedRef, err := repo.Reference(ref, true)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata branch reference: %w", err)
+		return nil, fmt.Errorf("read ref %s: %w", ref, err)
 	}
-
-	commit, err := repo.CommitObject(ref.Hash())
+	commit, err := repo.CommitObject(resolvedRef.Hash())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata branch commit: %w", err)
+		return nil, fmt.Errorf("read commit at %s: %w", ref, err)
 	}
-
 	tree, err := commit.Tree()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata branch tree: %w", err)
-	}
-	return tree, nil
-}
-
-// GetV2MetadataBranchTree returns the tree object at the tip of the v2 /main ref.
-// The v2 /main ref uses the same sharded checkpoint layout as v1, so
-// ReadLatestSessionPromptFromCommittedTree works with either tree.
-func GetV2MetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
-	refName := plumbing.ReferenceName(paths.V2MainRefName)
-	ref, err := repo.Reference(refName, true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get v2 /main reference: %w", err)
-	}
-
-	commit, err := repo.CommitObject(ref.Hash())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get v2 /main commit: %w", err)
-	}
-
-	tree, err := commit.Tree()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get v2 /main tree: %w", err)
+		return nil, fmt.Errorf("read tree at %s: %w", ref, err)
 	}
 	return tree, nil
 }
@@ -777,7 +931,7 @@ func ReadAgentTypeFromTree(tree *object.Tree, checkpointPath string) types.Agent
 	metadataPath := checkpointPath + "/" + paths.MetadataFileName
 	if file, err := tree.File(metadataPath); err == nil {
 		if content, err := file.Contents(); err == nil {
-			var metadata checkpoint.CommittedMetadata
+			var metadata checkpoint.Metadata
 			if err := json.Unmarshal([]byte(content), &metadata); err == nil && metadata.Agent != "" {
 				return metadata.Agent
 			}
@@ -824,4 +978,807 @@ func ReadAgentTypeFromTree(tree *object.Tree, checkpointPath string) types.Agent
 		return detected
 	}
 	return agent.AgentTypeUnknown
+}
+
+// isOnlySeparators checks if a string contains only dashes, spaces, and newlines.
+func isOnlySeparators(s string) bool {
+	for _, r := range s {
+		if r != '-' && r != ' ' && r != '\n' && r != '\r' && r != '\t' {
+			return false
+		}
+	}
+	return true
+}
+
+// ReadLatestSessionPromptFromCommittedTree reads the first prompt from a committed checkpoint's
+// latest session on the metadata branch tree. This navigates the sharded directory layout:
+// <cpID.Path()>/<latestSessionIndex>/prompt.txt
+//
+// Falls back through earlier sessions when the latest has no prompt.
+// Avoids reading full transcripts — only reads prompt.txt files.
+// sessionCount is the number of sessions in the checkpoint (from CheckpointInfo.SessionCount).
+func ReadLatestSessionPromptFromCommittedTree(tree *object.Tree, cpID id.CheckpointID, sessionCount int) string {
+	cpPath := cpID.Path()
+	cpTree, err := tree.Tree(cpPath)
+	if err != nil {
+		return ""
+	}
+
+	// Find the latest session subdirectory with a prompt.
+	// Sessions use 0-based indexing: 0/, 1/, 2/, etc.
+	// Start from the latest and fall back through earlier sessions
+	// when the latest has no prompt (e.g. a test or empty session was
+	// condensed alongside a real one).
+	latestIndex := max(sessionCount-1, 0)
+
+	for i := latestIndex; i >= 0; i-- {
+		sessionPath := strconv.Itoa(i)
+		sessionTree, err := cpTree.Tree(sessionPath)
+		if err != nil {
+			continue
+		}
+
+		file, err := sessionTree.File(paths.PromptFileName)
+		if err != nil {
+			continue
+		}
+
+		content, err := file.Contents()
+		if err != nil {
+			continue
+		}
+
+		if prompt := ExtractFirstPrompt(content); prompt != "" {
+			return prompt
+		}
+	}
+
+	return ""
+}
+
+// ReadAllSessionPromptsFromTree reads the first prompt for all sessions in a multi-session checkpoint.
+// Returns a slice of prompts parallel to sessionIDs (oldest to newest).
+// For single-session checkpoints, returns a slice with just the session prompt.
+func ReadAllSessionPromptsFromTree(tree *object.Tree, checkpointPath string, sessionCount int, sessionIDs []string) []string {
+	if sessionCount <= 1 || len(sessionIDs) <= 1 {
+		prompt := ReadSessionPromptFromTree(tree, checkpointPath+"/0")
+		if prompt == "" {
+			prompt = ReadSessionPromptFromTree(tree, checkpointPath)
+		}
+		if prompt != "" {
+			return []string{prompt}
+		}
+		return nil
+	}
+
+	prompts := make([]string, len(sessionIDs))
+
+	sessionLimit := min(sessionCount, len(prompts))
+	for i := range sessionLimit {
+		sessionPath := fmt.Sprintf("%s/%d", checkpointPath, i)
+		prompts[i] = ReadSessionPromptFromTree(tree, sessionPath)
+	}
+
+	// Older committed metadata stored the latest prompt at the checkpoint root.
+	latestIndex := sessionLimit - 1
+	if latestIndex >= 0 && prompts[latestIndex] == "" {
+		prompts[latestIndex] = ReadSessionPromptFromTree(tree, checkpointPath)
+	}
+
+	return prompts
+}
+
+// GetRemotePrimaryTree returns the tree at origin's remote-tracking ref for
+// the configured Primary. Errors when Primary isn't in Push (no origin shadow).
+func GetRemotePrimaryTree(ctx context.Context, repo *git.Repository) (*object.Tree, error) {
+	refs := checkpoint.ResolveRefs(ctx)
+	if !refs.PrimaryFetchableFromOrigin() {
+		return nil, fmt.Errorf("primary metadata ref %s is not pushed to origin", refs.Primary)
+	}
+	refName := plumbing.NewRemoteReferenceName("origin", refs.Primary.Short())
+	ref, err := repo.Reference(refName, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remote metadata reference %s: %w", refName, err)
+	}
+
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remote metadata commit: %w", err)
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remote metadata tree: %w", err)
+	}
+	return tree, nil
+}
+
+// OpenRepository opens the git repository from the repo root.
+// It uses 'git rev-parse --show-toplevel' to find the repository root,
+// which works correctly even when called from a subdirectory or a linked worktree.
+func OpenRepository(ctx context.Context) (*git.Repository, error) {
+	repo, err := gitrepo.OpenCurrent(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open repository: %w", err)
+	}
+	return repo, nil
+}
+
+// GetGitCommonDir returns the path to the shared git directory.
+// In a regular checkout, this is .git/
+// In a worktree, this is the main repo's .git/ (not .git/worktrees/<name>/)
+// Uses git rev-parse --git-common-dir for reliable handling of worktrees.
+func GetGitCommonDir(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-common-dir")
+	cmd.Dir = "."
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git common dir: %w", err)
+	}
+
+	commonDir := strings.TrimSpace(string(output))
+
+	// git rev-parse --git-common-dir returns relative paths from the working directory,
+	// so we need to make it absolute if it isn't already
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(".", commonDir)
+	}
+
+	return filepath.Clean(commonDir), nil
+}
+
+// EnsureEntireGitignore ensures all required entries are in .trace/.gitignore
+// Works correctly from any subdirectory within the repository.
+func EnsureEntireGitignore(ctx context.Context) error {
+	// Get absolute path for the gitignore file
+	gitignoreAbs, err := paths.AbsPath(ctx, entireGitignore)
+	if err != nil {
+		gitignoreAbs = entireGitignore // Fallback to relative
+	}
+
+	// Read existing content
+	var content string
+	if data, err := os.ReadFile(gitignoreAbs); err == nil { //nolint:gosec // path is from AbsPath or constant
+		content = string(data)
+	}
+
+	// All entries that should be in .trace/.gitignore
+	requiredEntries := []string{
+		"tmp/",
+		"settings.local.json",
+		"metadata/",
+		"logs/",
+		redact.RedactorsDirName + "/local/",
+	}
+
+	// Track what needs to be added
+	var toAdd []string
+	for _, entry := range requiredEntries {
+		if !strings.Contains(content, entry) {
+			toAdd = append(toAdd, entry)
+		}
+	}
+
+	// Nothing to add
+	if len(toAdd) == 0 {
+		return nil
+	}
+
+	// Ensure .entire directory exists
+	if err := os.MkdirAll(filepath.Dir(gitignoreAbs), 0o750); err != nil {
+		return fmt.Errorf("failed to create .entire directory: %w", err)
+	}
+
+	// Append missing entries to gitignore
+	var sb strings.Builder
+	for _, entry := range toAdd {
+		sb.WriteString(entry + "\n")
+	}
+	content += sb.String()
+
+	if err := os.WriteFile(gitignoreAbs, []byte(content), 0o644); err != nil { //nolint:gosec // path is from AbsPath or constant
+		return fmt.Errorf("failed to write gitignore: %w", err)
+	}
+	return nil
+}
+
+// checkCanRewindWithWarning checks working directory and returns a warning with diff stats.
+// Always returns canRewind=true but includes a warning message with +/- line stats for
+// uncommitted changes. Used by manual-commit strategy.
+func checkCanRewindWithWarning(ctx context.Context) (bool, string, error) {
+	repo, err := OpenRepository(ctx)
+	if err != nil {
+		// Can't open repo - still allow rewind but without stats
+		return true, "", nil
+	}
+	defer repo.Close()
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return true, "", nil
+	}
+
+	status, err := worktree.Status()
+	if err != nil {
+		return true, "", nil
+	}
+
+	if status.IsClean() {
+		return true, "", nil
+	}
+
+	// Get HEAD commit tree for comparison - if we can't get it, just return without stats
+	head, err := repo.Head()
+	if err != nil {
+		return true, "", nil
+	}
+
+	headCommit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return true, "", nil
+	}
+
+	headTree, err := headCommit.Tree()
+	if err != nil {
+		return true, "", nil
+	}
+
+	type fileChange struct {
+		status   string // "modified", "added", "deleted"
+		added    int
+		removed  int
+		filename string
+	}
+
+	var changes []fileChange
+	// Use repo root, not cwd - git status returns paths relative to repo root
+	repoRoot, err := paths.WorktreeRoot(ctx)
+	if err != nil {
+		return true, "", nil
+	}
+
+	for file, st := range status {
+		// Skip .entire directory
+		if paths.IsInfrastructurePath(file) {
+			continue
+		}
+
+		// Skip untracked files
+		if st.Worktree == git.Untracked {
+			continue
+		}
+
+		var change fileChange
+		change.filename = file
+
+		switch {
+		case st.Staging == git.Added || st.Worktree == git.Added:
+			change.status = "added"
+			// New file - count all lines as added
+			absPath := filepath.Join(repoRoot, file)
+			if content, err := os.ReadFile(absPath); err == nil { //nolint:gosec // absPath is repo root + relative path from git status
+				change.added = countLines(content)
+			}
+		case st.Staging == git.Deleted || st.Worktree == git.Deleted:
+			change.status = "deleted"
+			// Deleted file - count lines from HEAD as removed
+			if entry, err := headTree.File(file); err == nil {
+				if content, err := entry.Contents(); err == nil {
+					change.removed = countLines([]byte(content))
+				}
+			}
+		case st.Staging == git.Modified || st.Worktree == git.Modified:
+			change.status = "modified"
+			// Modified file - compute diff stats
+			var headContent, workContent []byte
+			if entry, err := headTree.File(file); err == nil {
+				if content, err := entry.Contents(); err == nil {
+					headContent = []byte(content)
+				}
+			}
+			absPath := filepath.Join(repoRoot, file)
+			if content, err := os.ReadFile(absPath); err == nil { //nolint:gosec // absPath is repo root + relative path from git status
+				workContent = content
+			}
+			if headContent != nil && workContent != nil {
+				change.added, change.removed = computeDiffStats(headContent, workContent)
+			}
+		default:
+			continue
+		}
+
+		changes = append(changes, change)
+	}
+
+	if len(changes) == 0 {
+		return true, "", nil
+	}
+
+	// Sort changes by filename for consistent output
+	sort.Slice(changes, func(i, j int) bool {
+		return changes[i].filename < changes[j].filename
+	})
+
+	var msg strings.Builder
+	msg.WriteString("The following uncommitted changes will be reverted:\n")
+
+	totalAdded, totalRemoved := 0, 0
+	for _, c := range changes {
+		totalAdded += c.added
+		totalRemoved += c.removed
+
+		var stats string
+		switch {
+		case c.added > 0 && c.removed > 0:
+			stats = fmt.Sprintf("+%d/-%d", c.added, c.removed)
+		case c.added > 0:
+			stats = fmt.Sprintf("+%d", c.added)
+		case c.removed > 0:
+			stats = fmt.Sprintf("-%d", c.removed)
+		}
+
+		fmt.Fprintf(&msg, "  %-10s %s", c.status+":", c.filename)
+		if stats != "" {
+			fmt.Fprintf(&msg, " (%s)", stats)
+		}
+		msg.WriteString("\n")
+	}
+
+	if totalAdded > 0 || totalRemoved > 0 {
+		fmt.Fprintf(&msg, "\nTotal: +%d/-%d lines\n", totalAdded, totalRemoved)
+	}
+
+	return true, msg.String(), nil
+}
+
+// countLines counts the number of lines in content.
+func countLines(content []byte) int {
+	if len(content) == 0 {
+		return 0
+	}
+	count := 1
+	for _, b := range content {
+		if b == '\n' {
+			count++
+		}
+	}
+	// Don't count trailing newline as extra line
+	if len(content) > 0 && content[len(content)-1] == '\n' {
+		count--
+	}
+	return count
+}
+
+// computeDiffStats computes added and removed line counts between old and new content.
+// Uses a simple line-based diff algorithm.
+func computeDiffStats(oldContent, newContent []byte) (added, removed int) {
+	oldLines := splitLines(oldContent)
+	newLines := splitLines(newContent)
+
+	// Build a set of old lines with counts
+	oldSet := make(map[string]int)
+	for _, line := range oldLines {
+		oldSet[line]++
+	}
+
+	// Check which new lines are truly new
+	for _, line := range newLines {
+		if oldSet[line] > 0 {
+			oldSet[line]--
+		} else {
+			added++
+		}
+	}
+
+	// Remaining old lines are removed
+	for _, count := range oldSet {
+		removed += count
+	}
+
+	return added, removed
+}
+
+// splitLines splits content into lines, preserving empty lines.
+// Handles both Unix (\n) and Windows (\r\n) line endings.
+func splitLines(content []byte) []string {
+	if len(content) == 0 {
+		return nil
+	}
+	s := string(content)
+	// Normalize Windows line endings to Unix
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	// Remove trailing newline to avoid empty last element
+	s = strings.TrimSuffix(s, "\n")
+	return strings.Split(s, "\n")
+}
+
+// fileExists checks if a file exists at the given path.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// getTaskCheckpointFromTree retrieves a task checkpoint from a commit tree.
+// Shared implementation for shadow and linear-shadow strategies.
+func getTaskCheckpointFromTree(ctx context.Context, point RewindPoint) (*TaskCheckpoint, error) {
+	if !point.IsTaskCheckpoint {
+		return nil, ErrNotTaskCheckpoint
+	}
+
+	repo, err := OpenRepository(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open repository: %w", err)
+	}
+	defer repo.Close()
+
+	commitHash := plumbing.NewHash(point.ID)
+	commit, err := repo.CommitObject(commitHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit: %w", err)
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tree: %w", err)
+	}
+
+	// Read checkpoint.json from the tree
+	checkpointPath := point.MetadataDir + "/checkpoint.json"
+	file, err := tree.File(checkpointPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find checkpoint at %s: %w", checkpointPath, err)
+	}
+
+	content, err := file.Contents()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read checkpoint: %w", err)
+	}
+
+	var checkpoint TaskCheckpoint
+	if err := json.Unmarshal([]byte(content), &checkpoint); err != nil {
+		return nil, fmt.Errorf("failed to parse checkpoint: %w", err)
+	}
+
+	return &checkpoint, nil
+}
+
+// getTaskTranscriptFromTree retrieves a task transcript from a commit tree.
+// Shared implementation for shadow and linear-shadow strategies.
+func getTaskTranscriptFromTree(ctx context.Context, point RewindPoint) ([]byte, error) {
+	if !point.IsTaskCheckpoint {
+		return nil, ErrNotTaskCheckpoint
+	}
+
+	repo, err := OpenRepository(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open repository: %w", err)
+	}
+	defer repo.Close()
+
+	commitHash := plumbing.NewHash(point.ID)
+	commit, err := repo.CommitObject(commitHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit: %w", err)
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tree: %w", err)
+	}
+
+	// MetadataDir format: .trace/metadata/<session>/tasks/<toolUseID>
+	// Session transcript is at: .trace/metadata/<session>/<TranscriptFileName>
+	sessionDir := filepath.Dir(filepath.Dir(point.MetadataDir))
+
+	// Try current format first, then legacy
+	transcriptPath := sessionDir + "/" + paths.TranscriptFileName
+	file, err := tree.File(transcriptPath)
+	if err != nil {
+		transcriptPath = sessionDir + "/" + paths.TranscriptFileNameLegacy
+		file, err = tree.File(transcriptPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find transcript: %w", err)
+		}
+	}
+
+	content, err := file.Contents()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read transcript: %w", err)
+	}
+
+	return []byte(content), nil
+}
+
+// ErrBranchNotFound is returned by DeleteBranchCLI when the branch does not exist.
+var ErrBranchNotFound = errors.New("branch not found")
+
+// DeleteBranchCLI deletes a git branch using the git CLI.
+// Uses `git branch -D` instead of go-git's RemoveReference because go-git v5
+// doesn't properly persist deletions when refs are packed (.git/packed-refs)
+// or in a worktree context. This is the same class of go-git v5 bug that
+// affects checkout and reset --hard (see HardResetWithProtection).
+//
+// Returns ErrBranchNotFound if the branch does not exist, allowing callers
+// to use errors.Is for idempotent deletion patterns.
+func DeleteBranchCLI(ctx context.Context, branchName string) error {
+	// Pre-check: verify the branch exists so callers get a structured error
+	// instead of parsing git's output string (which varies across locales).
+	// git show-ref exits 1 for "not found" and 128+ for fatal errors (corrupt
+	// repo, permissions, not a git directory). Only map exit code 1 to
+	// ErrBranchNotFound; propagate other failures as-is.
+	check := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName)
+	if err := check.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return fmt.Errorf("%w: %s", ErrBranchNotFound, branchName)
+		}
+		return fmt.Errorf("failed to check branch %s: %w", branchName, err)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "branch", "-D", "--", branchName)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to delete branch %s: %s: %w", branchName, strings.TrimSpace(string(output)), err)
+	}
+	return nil
+}
+
+// branchExistsCLI checks if a branch exists using git CLI.
+// Returns nil if the branch exists, or an error if it does not.
+func branchExistsCLI(ctx context.Context, branchName string) error {
+	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("branch %s not found: %w", branchName, err)
+	}
+	return nil
+}
+
+// collectUntrackedFiles collects untracked files in the working directory that are
+// NOT ignored by .gitignore. This is used to capture the initial state when starting
+// a session, ensuring untracked files present at session start are preserved during rewind.
+// Uses "git ls-files --others --exclude-standard -z" to respect .gitignore rules,
+// avoiding bloated session state from large ignored directories like node_modules/.
+// Returns paths relative to the repository root.
+func collectUntrackedFiles(ctx context.Context) ([]string, error) {
+	repoRoot, err := paths.WorktreeRoot(ctx)
+	if err != nil {
+		repoRoot = "."
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "ls-files", "--others", "--exclude-standard", "-z")
+	cmd.Dir = repoRoot
+	output, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, fmt.Errorf("git ls-files failed: %s: %w", strings.TrimSpace(string(exitErr.Stderr)), err)
+		}
+		return nil, fmt.Errorf("git ls-files failed: %w", err)
+	}
+
+	raw := string(output)
+	if raw == "" {
+		return nil, nil
+	}
+
+	var files []string
+	for _, f := range strings.Split(raw, "\x00") {
+		// Defense-in-depth: filter protected paths even though --exclude-standard should already handle them
+		if f != "" && !isProtectedPath(f) {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
+// CollectUntrackedFiles collects untracked, non-ignored paths relative to the
+// repository root.
+func CollectUntrackedFiles(ctx context.Context) ([]string, error) {
+	return collectUntrackedFiles(ctx)
+}
+
+// NOTE: The following git tree helper functions have been moved to checkpoint/ package:
+// - FlattenTree -> checkpoint.FlattenTree
+// - CreateBlobFromContent -> checkpoint.CreateBlobFromContent
+// - BuildTreeFromEntries -> checkpoint.BuildTreeFromEntries
+// - sortTreeEntries (internal to checkpoint package)
+// - treeNode, insertIntoTree, buildTreeObject (internal to checkpoint package)
+//
+// See push_common.go and session_test.go for usage examples.
+
+// GetGitAuthorFromRepo retrieves the git user.name and user.email,
+// checking both the repository-local config and the global ~/.gitconfig.
+// Delegates to checkpoint.GetGitAuthorFromRepo — this wrapper exists so
+// callers within the strategy package don't need a qualified import.
+func GetGitAuthorFromRepo(repo *git.Repository) (name, email string) {
+	return checkpoint.GetGitAuthorFromRepo(repo)
+}
+
+// GetCurrentBranchName returns the short name of the current branch if HEAD points to a branch.
+// Returns an empty string if in detached HEAD state or if there's an error reading HEAD.
+// This is used to capture branch metadata for checkpoints.
+func GetCurrentBranchName(repo *git.Repository) string {
+	head, err := repo.Head()
+	if err != nil || !head.Name().IsBranch() {
+		return ""
+	}
+	return head.Name().Short()
+}
+
+// getMainBranchHash returns the hash of the main branch (main or master).
+// Returns ZeroHash if no main branch is found.
+func GetMainBranchHash(repo *git.Repository) plumbing.Hash {
+	// Try common main branch names
+	for _, branchName := range []string{branchMain, branchMaster} {
+		// Try local branch first
+		ref, err := repo.Reference(plumbing.NewBranchReferenceName(branchName), true)
+		if err == nil {
+			return ref.Hash()
+		}
+		// Try remote tracking branch
+		ref, err = repo.Reference(plumbing.NewRemoteReferenceName("origin", branchName), true)
+		if err == nil {
+			return ref.Hash()
+		}
+	}
+	return plumbing.ZeroHash
+}
+
+// GetDefaultBranchName returns the name of the default branch.
+// First checks origin/HEAD, then falls back to checking if main/master exists.
+// Returns empty string if unable to determine.
+// NOTE: Duplicated from cli/git_operations.go - see ENT-129 for consolidation.
+func GetDefaultBranchName(repo *git.Repository) string {
+	// Try to get the symbolic reference for origin/HEAD
+	// Use resolved=false to get the symbolic ref itself, then extract its target
+	ref, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "HEAD"), false)
+	if err == nil && ref != nil && ref.Type() == plumbing.SymbolicReference {
+		target := ref.Target().String()
+		if branchName, found := strings.CutPrefix(target, "refs/remotes/origin/"); found {
+			return branchName
+		}
+	}
+
+	// Fallback: check if origin/main or origin/master exists
+	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", branchMain), true); err == nil {
+		return branchMain
+	}
+	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", branchMaster), true); err == nil {
+		return branchMaster
+	}
+
+	// Final fallback: check local branches
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName(branchMain), true); err == nil {
+		return branchMain
+	}
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName(branchMaster), true); err == nil {
+		return branchMaster
+	}
+
+	return ""
+}
+
+// IsOnDefaultBranch checks if the repository HEAD is on the default branch.
+// Returns (isOnDefault, currentBranchName).
+// NOTE: Duplicated from cli/git_operations.go - see ENT-129 for consolidation.
+func IsOnDefaultBranch(repo *git.Repository) (bool, string) {
+	currentBranch := GetCurrentBranchName(repo)
+	if currentBranch == "" {
+		return false, ""
+	}
+
+	defaultBranch := GetDefaultBranchName(repo)
+	if defaultBranch == "" {
+		// Can't determine default, check common names
+		if currentBranch == branchMain || currentBranch == branchMaster {
+			return true, currentBranch
+		}
+		return false, currentBranch
+	}
+
+	return currentBranch == defaultBranch, currentBranch
+}
+
+// prepareTranscriptForState ensures the transcript is up-to-date for the given session.
+// Only prepares for ACTIVE sessions — IDLE/ENDED sessions are already flushed.
+// Resolves the agent from state.AgentType internally. Multiple calls are safe but
+// not free — callers should avoid redundant calls for performance.
+func prepareTranscriptForState(ctx context.Context, state *SessionState) {
+	if !state.Phase.IsActive() || state.TranscriptPath == "" || state.AgentType == "" {
+		return
+	}
+	ag, err := agent.GetByAgentType(state.AgentType)
+	if err != nil {
+		logging.Debug(
+			ctx, "prepareTranscriptForState: unknown agent type",
+			slog.String("session_id", state.SessionID),
+			slog.String("agent_type", string(state.AgentType)),
+			slog.Any("error", err),
+		)
+		return
+	}
+	prepareTranscriptIfNeeded(ctx, ag, state.TranscriptPath)
+}
+
+// prepareTranscriptIfNeeded calls PrepareTranscript for agents that implement
+// the TranscriptPreparer interface. This ensures transcript files exist before
+// they are read (e.g., OpenCode creates its transcript lazily via `opencode export`).
+// Errors are silently ignored — this is best-effort for hook paths.
+func prepareTranscriptIfNeeded(ctx context.Context, ag agent.Agent, transcriptPath string) {
+	if ag == nil || transcriptPath == "" {
+		return
+	}
+	if preparer, ok := agent.AsTranscriptPreparer(ag); ok {
+		// Best-effort: callers handle missing files gracefully.
+		// Transcript may not be available yet (e.g., agent not installed).
+		_ = preparer.PrepareTranscript(ctx, transcriptPath) //nolint:errcheck // Best-effort in hook path
+	}
+}
+
+// IsInsideWorktree reports whether the current working directory is inside a
+// git linked worktree. Linked worktrees are marked by a `.git` *file* (which
+// points back at the main repo's worktree metadata); a main repository has a
+// `.git` directory instead. Returns false outside any git repository.
+func IsInsideWorktree(_ context.Context) bool {
+	dir, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	for {
+		gitPath := filepath.Join(dir, ".git")
+		if info, statErr := os.Stat(gitPath); statErr == nil {
+			return !info.IsDir()
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+// GetMainRepoRoot returns the root of the main repository when the current
+// working directory is inside a git repository. In a linked worktree the
+// main repository root is the directory that owns the repository's .git
+// directory; otherwise it is the current worktree root.
+func GetMainRepoRoot(ctx context.Context) (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for {
+		gitPath := filepath.Join(dir, ".git")
+		info, statErr := os.Stat(gitPath)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				parent := filepath.Dir(dir)
+				if parent == dir {
+					break
+				}
+				dir = parent
+				continue
+			}
+			return "", statErr
+		}
+		if info.IsDir() {
+			return dir, nil
+		}
+		// Linked worktree: .git is a file containing "gitdir: <path>".
+		gitdirBytes, readErr := os.ReadFile(gitPath)
+		if readErr != nil {
+			return "", readErr
+		}
+		gitdir := strings.TrimSpace(strings.TrimPrefix(string(gitdirBytes), "gitdir:"))
+		// gitdir points at <main>/.git/worktrees/<name>; main root is the
+		// parent of the <main>/.git directory.
+		worktreesDir := filepath.Dir(gitdir) // <main>/.git/worktrees
+		gitDir := filepath.Dir(worktreesDir) // <main>/.git
+		mainRoot := filepath.Dir(gitDir)     // <main>
+		return mainRoot, nil
+	}
+	// Not a repository; fall back to the worktree root error path.
+	root, err := paths.WorktreeRoot(ctx)
+	if err != nil {
+		return "", err
+	}
+	return root, nil
 }

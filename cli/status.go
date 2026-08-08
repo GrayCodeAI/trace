@@ -25,6 +25,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// agentHelpCommand is the invocation a coding agent runs to get machine-readable
+// usage for the installed CLI.
+const agentHelpCommand = "trace agent-help"
+
 type headLinkage struct {
 	commitHash    string
 	checkpointIDs []string

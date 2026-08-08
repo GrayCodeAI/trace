@@ -94,7 +94,7 @@ infers identity from branches, commits, timestamps, or prompt content.`,
 			if err != nil {
 				return fmt.Errorf("list sessions: %w", err)
 			}
-			committed := []checkpoint.CommittedInfo(nil)
+			committed := []checkpoint.CheckpointInfo(nil)
 			checkpointLookupComplete := true
 			lookup, lookupErr := newExplainCheckpointLookup(ctx)
 			if lookupErr != nil {
@@ -120,7 +120,7 @@ infers identity from branches, commits, timestamps, or prompt content.`,
 
 func buildTraceCorrelationExport(
 	states []*strategy.SessionState,
-	committed []checkpoint.CommittedInfo,
+	committed []checkpoint.CheckpointInfo,
 	hawkSessionID string,
 ) traceCorrelationExport {
 	hawkSessionID = strings.TrimSpace(hawkSessionID)
@@ -233,7 +233,7 @@ func newGraphExportCmd() *cobra.Command {
 
 func buildTraceGraphExport(
 	states []*strategy.SessionState,
-	committed []checkpoint.CommittedInfo,
+	committed []checkpoint.CheckpointInfo,
 	generatedAt time.Time,
 	repositoryID string,
 	sessionPrefix string,
@@ -407,7 +407,7 @@ func sessionGraphFacts(
 }
 
 func checkpointGraphFacts(
-	info checkpoint.CommittedInfo,
+	info checkpoint.CheckpointInfo,
 	generatedAt time.Time,
 	scope graphcontracts.Scope,
 ) (graphcontracts.Node, graphcontracts.Event, error) {
@@ -462,7 +462,7 @@ func checkpointGraphFacts(
 
 func checkpointOnlySessionNode(
 	sessionID string,
-	info checkpoint.CommittedInfo,
+	info checkpoint.CheckpointInfo,
 	generatedAt time.Time,
 	scope graphcontracts.Scope,
 ) (graphcontracts.Node, error) {
@@ -488,11 +488,11 @@ func checkpointOnlySessionNode(
 }
 
 func filterGraphCheckpoints(
-	committed []checkpoint.CommittedInfo,
+	committed []checkpoint.CheckpointInfo,
 	sessionPrefix string,
 	limit int,
-) []checkpoint.CommittedInfo {
-	filtered := make([]checkpoint.CommittedInfo, 0, len(committed))
+) []checkpoint.CheckpointInfo {
+	filtered := make([]checkpoint.CheckpointInfo, 0, len(committed))
 	for _, info := range committed {
 		if sessionPrefix != "" && len(graphCheckpointSessionIDs(info, sessionPrefix)) == 0 {
 			continue
@@ -511,7 +511,7 @@ func filterGraphCheckpoints(
 	return filtered
 }
 
-func graphCheckpointSessionIDs(info checkpoint.CommittedInfo, sessionPrefix string) []string {
+func graphCheckpointSessionIDs(info checkpoint.CheckpointInfo, sessionPrefix string) []string {
 	candidates := info.SessionIDs
 	if len(candidates) == 0 && info.SessionID != "" {
 		candidates = []string{info.SessionID}

@@ -1,7 +1,6 @@
 package checkpoint
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -36,49 +35,47 @@ func init() {
 	// package init. This runs afterwards because this package imports x/plugin,
 	// and before any plugin.Get call (which only happens at command runtime).
 	//nolint:errcheck,gosec // Best-effort: Register only fails after a plugin.Get, which cannot precede init; go-git's default loader remains as fallback.
-	registerSymlinkConfigLoader() // #nosec G104 -- best-effort: Register only fails after a plugin.Get, which cannot precede init; go-git default loader remains as fallback
+	registerSymlinkConfigLoader()
 }
 
 // registerSymlinkConfigLoader registers the symlink-following config loader as
 // the ConfigLoader plugin. Exposed for tests that reset the registry.
 func registerSymlinkConfigLoader() error {
-	return plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource { //nolint:wrapcheck
+	return plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
 		return xconfig.NewAuto(xconfig.WithFilesystem(osSymlinkFS{}))
 	})
 }
 
-func (osSymlinkFS) Open(name string) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
-	// #nosec G304 -- name comes from git's own config-path resolution, not user input
+func (osSymlinkFS) Open(name string) (billy.File, error) {
 	f, err := os.Open(name) //nolint:gosec // G304: name comes from git's own config-path resolution, not user input.
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", name, err)
+		return nil, err
 	}
 	return f, nil
 }
 
 func (osSymlinkFS) Stat(name string) (fs.FileInfo, error) {
-	return os.Stat(name) //nolint:wrapcheck
+	return os.Stat(name)
 }
 
-func (osSymlinkFS) OpenFile(name string, flag int, perm fs.FileMode) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
-	// #nosec G304 -- name comes from git's own config-path resolution, not user input
+func (osSymlinkFS) OpenFile(name string, flag int, perm fs.FileMode) (billy.File, error) {
 	f, err := os.OpenFile(name, flag, perm) //nolint:gosec // G304: name comes from git's own config-path resolution, not user input.
 	if err != nil {
-		return nil, fmt.Errorf("openfile %s: %w", name, err)
+		return nil, err
 	}
 	return f, nil
 }
 
-func (o osSymlinkFS) Create(name string) (billy.File, error) { //nolint:ireturn // implements billy.Filesystem interface
+func (o osSymlinkFS) Create(name string) (billy.File, error) {
 	return o.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o666)
 }
 
 func (osSymlinkFS) Rename(oldpath, newpath string) error {
-	return os.Rename(oldpath, newpath) //nolint:wrapcheck
+	return os.Rename(oldpath, newpath)
 }
 
 func (osSymlinkFS) Remove(name string) error {
-	return os.Remove(name) //nolint:wrapcheck
+	return os.Remove(name)
 }
 
 func (osSymlinkFS) Join(elem ...string) string {

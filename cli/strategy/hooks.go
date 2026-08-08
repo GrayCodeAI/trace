@@ -7,19 +7,29 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/GrayCodeAI/trace/cli/settings"
 )
 
 // Hook marker used to identify Trace CLI hooks
-const traceHookMarker = "Trace CLI hooks"
+const entireHookMarker = "Trace CLI hooks"
 
 const (
-	backupSuffix = ".pre-trace"
-	chainComment = "# Chain: run pre-existing hook"
+	backupSuffix                = ".pre-entire"
+	chainComment                = "# Chain: run pre-existing hook"
+	missingEntireGitHookWarning = "[trace] Trace CLI is enabled but not installed or not on PATH. Skipping Entire Git hook; continuing. Installation guide: https://docs.trace.io/cli/installation#installation-methods"
 )
+
+// localDevHookCmdPrefix is the command prefix used for git hooks in local
+// development mode. It points at scripts/entire-dev, which compiles the CLI on
+// demand and falls back to the entire binary on PATH when the tree does not
+// build. The path is relative to the repository root, which is git's working
+// directory when it runs hooks.
+const localDevHookCmdPrefix = "go run ./cmd/hawk trace"
 
 // gitHookNames are the git hooks managed by Trace CLI
 var gitHookNames = []string{"prepare-commit-msg", "commit-msg", "post-commit", "post-rewrite", "pre-push"}
@@ -155,12 +165,11 @@ func IsGitHookInstalledInDir(ctx context.Context, repoDir string) bool {
 func isGitHookInstalledInHooksDir(hooksDir string) bool {
 	for _, hook := range gitHookNames {
 		hookPath := filepath.Join(hooksDir, hook)
-		// #nosec G304 -- hookPath is constructed from constants (hooksDir + known hook name), not external input
 		data, err := os.ReadFile(hookPath) //nolint:gosec // Path is constructed from constants
 		if err != nil {
 			return false
 		}
-		if !strings.Contains(string(data), traceHookMarker) {
+		if !strings.Contains(string(data), entireHookMarker) {
 			return false
 		}
 	}
@@ -169,37 +178,61 @@ func isGitHookInstalledInHooksDir(hooksDir string) bool {
 
 // buildHookSpecs returns the hook specifications for all managed hooks.
 func buildHookSpecs(cmdPrefix string) []hookSpec {
+	prepareCommitMsgCmd := gitHookCommand(cmdPrefix, `prepare-commit-msg "$1" "$2" 2>/dev/null || true`, false)
+	commitMsgCmd := gitHookCommand(cmdPrefix, `commit-msg "$1" || true`, true)
+	postCommitCmd := gitHookCommand(cmdPrefix, `post-commit 2>/dev/null || true`, false)
+	postRewriteCmd := gitHookCommand(cmdPrefix, `post-rewrite "$1" 2>/dev/null || true`, false)
+	// pre-push intentionally does NOT swallow exit codes — the OPF
+	// rewrite returns errors when it detects a privacy-critical
+	// condition (diverged remote, oversized bootstrap, CAS conflict,
+	// OPF runtime failure) and the user's git push must abort.
+	// Transient checkpoint-push failures (e.g. the
+	// trace/checkpoints/v1 push itself failing) are NOT returned
+	// from PrePush — they're logged and swallowed at the CLI level
+	// so they never reach this point as non-zero exits.
+	//
+	// Trade-off: an unrelated `entire` crash (segfault, panic in
+	// non-OPF code) ALSO aborts the user's push. This is the safer
+	// failure mode — we cannot distinguish from the shell's point of
+	// view whether a non-zero exit means "OPF declined to redact" or
+	// "entire crashed mid-rewrite", and silently letting potentially-
+	// unredacted content reach the remote would violate the contract
+	// the user opted into by enabling OPF. Users hit by unrelated
+	// bugs can `ENTIRE_OPF=no git push` for a one-off bypass while
+	// the bug is fixed.
+	prePushCmd := gitHookCommand(cmdPrefix, `pre-push "$1"`, false)
+
 	return []hookSpec{
 		{
 			name: "prepare-commit-msg",
 			content: fmt.Sprintf(`#!/bin/sh
 # %s
-%s hooks git prepare-commit-msg "$1" "$2" 2>>".git/trace-hooks.log" || true
-`, traceHookMarker, cmdPrefix),
+%s
+`, entireHookMarker, prepareCommitMsgCmd),
 		},
 		{
 			name: "commit-msg",
 			content: fmt.Sprintf(`#!/bin/sh
 # %s
 # Commit-msg hook: strip trailer if no user content (allows aborting empty commits)
-%s hooks git commit-msg "$1" || exit 1
-`, traceHookMarker, cmdPrefix),
+%s
+`, entireHookMarker, commitMsgCmd),
 		},
 		{
 			name: "post-commit",
 			content: fmt.Sprintf(`#!/bin/sh
 # %s
 # Post-commit hook: condense session data if commit has Trace-Checkpoint trailer
-%s hooks git post-commit 2>>".git/trace-hooks.log" || true
-`, traceHookMarker, cmdPrefix),
+%s
+`, entireHookMarker, postCommitCmd),
 		},
 		{
 			name: "post-rewrite",
 			content: fmt.Sprintf(`#!/bin/sh
 # %s
 # Post-rewrite hook: remap session linkage after amend/rebase rewrites
-%s hooks git post-rewrite "$1" 2>>".git/trace-hooks.log" || true
-`, traceHookMarker, cmdPrefix),
+%s
+`, entireHookMarker, postRewriteCmd),
 		},
 		{
 			name: "pre-push",
@@ -207,16 +240,55 @@ func buildHookSpecs(cmdPrefix string) []hookSpec {
 # %s
 # Pre-push hook: push session logs alongside user's push
 # $1 is the remote name (e.g., "origin")
-%s hooks git pre-push "$1" || true
-`, traceHookMarker, cmdPrefix),
+%s
+`, entireHookMarker, prePushCmd),
 		},
 	}
+}
+
+func gitHookCommand(cmdPrefix, args string, warnMissing bool) string {
+	invocation := fmt.Sprintf("%s hooks git %s", cmdPrefix, args)
+	availableTest, ok := gitHookCommandAvailableTest(cmdPrefix)
+	if !ok {
+		return invocation
+	}
+
+	missingAction := ":"
+	if warnMissing {
+		missingAction = fmt.Sprintf("printf '%%s\\n' %s >&2 || :", shellQuote(missingEntireGitHookWarning))
+	}
+	return fmt.Sprintf("if %s; then %s; else %s; fi", availableTest, invocation, missingAction)
+}
+
+func gitHookCommandAvailableTest(cmdPrefix string) (string, bool) {
+	if cmdPrefix == "trace" {
+		return "command -v trace >/dev/null 2>&1", true
+	}
+	if isWindowsAbsoluteHookCommand(cmdPrefix) {
+		return fmt.Sprintf("[ -f %s ]", cmdPrefix), true
+	}
+	if strings.HasPrefix(cmdPrefix, "/") || strings.HasPrefix(cmdPrefix, "'/") {
+		return fmt.Sprintf("[ -x %s ]", cmdPrefix), true
+	}
+	return "", false
+}
+
+func isWindowsAbsoluteHookCommand(cmdPrefix string) bool {
+	path := strings.TrimPrefix(cmdPrefix, "'")
+	if len(path) < len("C:\\") || path[1] != ':' {
+		return false
+	}
+	driveLetter := path[0]
+	if (driveLetter < 'A' || driveLetter > 'Z') && (driveLetter < 'a' || driveLetter > 'z') {
+		return false
+	}
+	return path[2] == '\\' || path[2] == '/'
 }
 
 // InstallGitHook installs generic git hooks that delegate to `trace hook` commands.
 // These hooks work with any strategy - the strategy is determined at runtime.
 // If silent is true, no output is printed (except backup notifications, which always print).
-// localDev controls whether hooks use "go run" (true) or the "trace" binary (false).
+// localDev controls whether hooks use "go run" (true) or the "entire" binary (false).
 // absolutePath embeds the full binary path in hooks for GUI git clients.
 // Returns the number of hooks that were installed (0 if all already up to date).
 func InstallGitHook(ctx context.Context, silent, localDev, absolutePath bool) (int, error) {
@@ -225,7 +297,17 @@ func InstallGitHook(ctx context.Context, silent, localDev, absolutePath bool) (i
 		return 0, err
 	}
 
-	// #nosec G301 -- git hooks directory must be traversable/executable (standard git hooks dir mode), not private data
+	info, statErr := os.Stat(hooksDir)
+	notDir := statErr == nil && !info.IsDir()
+	// ENOTDIR: a path component of hooksDir is itself a non-directory
+	// (e.g. core.hooksPath=/dev/null/hooks) — same misconfiguration.
+	if notDir || errors.Is(statErr, syscall.ENOTDIR) {
+		return 0, fmt.Errorf("git resolves the hooks directory to %s, which is not a directory — core.hooksPath is likely set to disable git hooks\n"+
+			"Entire requires git hooks to capture sessions. See where it is set with:\n"+
+			"  git config --show-origin --get-all core.hooksPath\n"+
+			"then unset it (git config --global --unset core.hooksPath) or override for this repo (git config core.hooksPath .git/hooks) and re-run 'trace enable'", hooksDir)
+	}
+
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil { //nolint:gosec // Git hooks require executable permissions
 		return 0, fmt.Errorf("failed to create hooks directory: %w", err)
 	}
@@ -242,10 +324,9 @@ func InstallGitHook(ctx context.Context, silent, localDev, absolutePath bool) (i
 		backupPath := hookPath + backupSuffix
 		backupExists := fileExists(backupPath)
 
-		// Back up existing non-Trace hooks
-		// #nosec G304 -- hookPath is constructed from constants (hooksDir + known hook name), not external input
+		// Back up existing non-Entire hooks
 		existing, existingErr := os.ReadFile(hookPath) //nolint:gosec // path is controlled
-		if existingErr == nil && !strings.Contains(string(existing), traceHookMarker) {
+		if existingErr == nil && !strings.Contains(string(existing), entireHookMarker) {
 			if !backupExists {
 				if err := os.Rename(hookPath, backupPath); err != nil {
 					return installedCount, fmt.Errorf("failed to back up %s: %w", spec.name, err)
@@ -284,14 +365,12 @@ func InstallGitHook(ctx context.Context, silent, localDev, absolutePath bool) (i
 // Returns true if the file was written, false if it already had the same content.
 func writeHookFile(path, content string) (bool, error) {
 	// Check if file already exists with same content
-	// #nosec G304 -- path is constructed from constants (hooksDir + known hook name), not external input
 	existing, err := os.ReadFile(path) //nolint:gosec // path is controlled
 	if err == nil && string(existing) == content {
 		return false, nil // Already up to date
 	}
 
 	// Git hooks must be executable (0o755)
-	// #nosec G306 -- git hooks must be executable (0755) to run as shell scripts, not private data
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil { //nolint:gosec // Git hooks require executable permissions
 		return false, fmt.Errorf("failed to write hook file %s: %w", path, err)
 	}
@@ -299,7 +378,7 @@ func writeHookFile(path, content string) (bool, error) {
 }
 
 // RemoveGitHook removes all Trace CLI git hooks from the repository.
-// If a .pre-trace backup exists, it is restored.
+// If a .pre-entire backup exists, it is restored.
 // Returns the number of hooks removed.
 func RemoveGitHook(ctx context.Context) (int, error) {
 	hooksDir, err := GetHooksDir(ctx)
@@ -315,9 +394,8 @@ func RemoveGitHook(ctx context.Context) (int, error) {
 		backupPath := hookPath + backupSuffix
 
 		// Remove the hook if it contains our marker
-		// #nosec G304 -- hookPath is constructed from constants (hooksDir + known hook name), not external input
 		data, err := os.ReadFile(hookPath) //nolint:gosec // path is controlled
-		hookIsOurs := err == nil && strings.Contains(string(data), traceHookMarker)
+		hookIsOurs := err == nil && strings.Contains(string(data), entireHookMarker)
 		hookExists := err == nil
 
 		if hookIsOurs {
@@ -328,10 +406,10 @@ func RemoveGitHook(ctx context.Context) (int, error) {
 			removed++
 		}
 
-		// Restore .pre-trace backup if it exists
+		// Restore .pre-entire backup if it exists
 		if fileExists(backupPath) {
 			if hookExists && !hookIsOurs {
-				// A non-Trace hook is present — don't overwrite it with the backup
+				// A non-Entire hook is present — don't overwrite it with the backup
 				fmt.Fprintf(os.Stderr, "[trace] Warning: %s was modified since install; backup %s%s left in place\n", hook, hook, backupSuffix)
 			} else {
 				if err := os.Rename(backupPath, hookPath); err != nil {
@@ -348,7 +426,7 @@ func RemoveGitHook(ctx context.Context) (int, error) {
 }
 
 // generateChainedContent appends a chain call to the base hook content,
-// so the pre-existing hook (backed up to .pre-trace) is called after our hook.
+// so the pre-existing hook (backed up to .pre-entire) is called after our hook.
 func generateChainedContent(baseContent, hookName string) string {
 	if hookName == "post-rewrite" {
 		return generatePostRewriteChainedContent(baseContent)
@@ -363,15 +441,19 @@ fi
 }
 
 func generatePostRewriteChainedContent(baseContent string) string {
-	const original = `trace hooks git post-rewrite "$1" 2>/dev/null || true`
-	const replacement = `trace hooks git post-rewrite "$1" < "$_trace_stdin" 2>/dev/null || true`
+	const original = `hooks git post-rewrite "$1" 2>/dev/null || true`
+	const replacement = `hooks git post-rewrite "$1" < "$_trace_stdin" 2>/dev/null || true`
 
-	replayPrefix := `_trace_stdin="$(mktemp "${TMPDIR:-/tmp}/trace-post-rewrite.XXXXXX")"
+	replayPrefix := `#!/bin/sh
+_trace_stdin="$(mktemp "${TMPDIR:-/tmp}/trace-post-rewrite.XXXXXX")"
 cat > "$_trace_stdin"
 trap 'rm -f "$_trace_stdin"' EXIT
-` + replacement
+`
 
-	return strings.Replace(baseContent, original, replayPrefix, 1) + fmt.Sprintf(`
+	body := strings.TrimPrefix(baseContent, "#!/bin/sh\n")
+	body = strings.Replace(body, original, replacement, 1)
+
+	return replayPrefix + body + fmt.Sprintf(`
 %s
 _trace_hook_dir="$(dirname "$0")"
 if [ -x "$_trace_hook_dir/post-rewrite%s" ]; then
@@ -381,33 +463,52 @@ fi
 }
 
 // hookCmdPrefix returns the command prefix for hook scripts and warning messages.
-// trace ships inside the hawk binary, so the command surface is "hawk trace ...".
-// Returns "go run ./cmd/hawk trace" when local_dev is enabled (runs hawk from source).
+// Returns the scripts/entire-dev launcher when local_dev is enabled.
 // When absolutePath is true, resolves the full binary path via os.Executable()
-// (the running hawk binary) and appends " trace"; returns an error if resolution
-// fails. This is needed for GUI git clients (Xcode, Tower, etc.) that don't source
-// shell profiles.
+// and returns an error if resolution fails. This is needed for GUI git clients
+// (Xcode, Tower, etc.) that don't source shell profiles.
 func hookCmdPrefix(localDev, absolutePath bool) (string, error) {
 	if localDev {
-		return "go run ./cmd/hawk trace", nil
+		return localDevHookCmdPrefix, nil
 	}
 	if absolutePath {
 		exe, err := os.Executable()
 		if err != nil {
 			return "", fmt.Errorf("--absolute-git-hook-path: failed to resolve binary path: %w", err)
 		}
-		resolved, err := filepath.EvalSymlinks(exe)
+		resolved, err := resolveHookExePath(exe, filepath.EvalSymlinks, runtime.GOOS)
 		if err != nil {
-			return "", fmt.Errorf("--absolute-git-hook-path: failed to resolve symlinks for %s: %w", exe, err)
+			return "", err
 		}
-		return shellQuote(resolved) + " trace", nil
+		return shellQuote(resolved), nil
 	}
 	return "hawk trace", nil
 }
 
+// resolveHookExePath resolves exe through symlinks for embedding as an absolute
+// path in a git hook. On Windows, filepath.EvalSymlinks can fail when a path
+// component is an NTFS directory junction rather than a plain symlink — notably
+// Scoop's `…\scoop\apps\<app>\current\` junction, which yields "The system
+// cannot find the path specified" (issue #1424). The unresolved os.Executable()
+// path is itself a valid, launchable absolute path (and on Scoop the stable
+// `current\` junction path is actually preferable, since it survives version
+// updates that repoint the junction), so on Windows we fall back to it rather
+// than failing the hook install outright. Off Windows, an EvalSymlinks failure
+// is unexpected and still surfaced as an error.
+func resolveHookExePath(exe string, evalSymlinks func(string) (string, error), goos string) (string, error) {
+	resolved, err := evalSymlinks(exe)
+	if err != nil {
+		if goos == "windows" {
+			return exe, nil
+		}
+		return "", fmt.Errorf("--absolute-git-hook-path: failed to resolve symlinks for %s: %w", exe, err)
+	}
+	return resolved, nil
+}
+
 // shellQuote wraps a string in single quotes for safe use in #!/bin/sh scripts.
 // Handles paths containing spaces, apostrophes, or other shell metacharacters
-// (e.g., /Users/John O'Brien/bin/trace).
+// (e.g., /Users/John O'Brien/bin/entire).
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

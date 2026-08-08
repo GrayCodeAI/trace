@@ -7,11 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GrayCodeAI/trace/cli/checkpoint/id"
 	"github.com/GrayCodeAI/trace/cli/paths"
 	"github.com/GrayCodeAI/trace/cli/session"
+	"github.com/GrayCodeAI/trace/cli/trailers"
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -704,4 +707,120 @@ func TestTurnEnd_Active_NoActions(t *testing.T) {
 	_, err = repo.Reference(refName, true)
 	assert.NoError(t, err,
 		"shadow branch should still exist after no-op turn end")
+}
+
+func setupSessionWithCheckpoint(t *testing.T, s *ManualCommitStrategy, _ *git.Repository, dir, sessionID string) {
+	t.Helper()
+
+	// Modify test.txt with agent content (same content that commitFilesWithTrailer will commit)
+	testFile := filepath.Join(dir, "test.txt")
+	require.NoError(t, os.WriteFile(testFile, []byte("agent modified content"), 0o644))
+
+	// Create metadata directory with a transcript file
+	metadataDir := ".trace/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	require.NoError(t, os.MkdirAll(metadataDirAbs, 0o755))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
+		[]byte(testTranscriptPromptResponse), 0o644,
+	))
+
+	// SaveStep creates the shadow branch and checkpoint
+	// Include test.txt as a modified file so it's saved to the shadow branch
+	err := s.SaveStep(context.Background(), StepContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"test.txt"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	require.NoError(t, err, "SaveStep should succeed to create shadow branch content")
+}
+
+func setupSessionWithCheckpointAndFile(t *testing.T, s *ManualCommitStrategy, dir, sessionID, fileName string) {
+	t.Helper()
+
+	filePath := filepath.Join(dir, fileName)
+	fileContent := "agent content for " + fileName
+	require.NoError(t, os.WriteFile(filePath, []byte(fileContent), 0o644))
+
+	metadataDir := ".trace/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	require.NoError(t, os.MkdirAll(metadataDirAbs, 0o755))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
+		[]byte(testTranscript), 0o644,
+	))
+
+	err := s.SaveStep(context.Background(), StepContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{},
+		NewFiles:       []string{fileName},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	require.NoError(t, err, "SaveStep should succeed to create shadow branch content")
+}
+
+func shadowTranscriptSize(t *testing.T, repo *git.Repository, state *SessionState) int64 {
+	t.Helper()
+	shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	ref, err := repo.Reference(plumbing.NewBranchReferenceName(shadowBranch), true)
+	require.NoError(t, err)
+	commit, err := repo.CommitObject(ref.Hash())
+	require.NoError(t, err)
+	tree, err := commit.Tree()
+	require.NoError(t, err)
+	metadataDir := paths.EntireMetadataDir + "/" + state.SessionID
+	size, err := tree.Size(metadataDir + "/" + paths.TranscriptFileName)
+	require.NoError(t, err)
+	return size
+}
+
+func commitWithCheckpointTrailer(t *testing.T, repo *git.Repository, dir, checkpointIDStr string) {
+	t.Helper()
+	commitFilesWithTrailer(t, repo, dir, checkpointIDStr, "test.txt")
+}
+
+// commitFilesWithTrailer stages the given files and commits with a checkpoint trailer.
+// Files must already exist on disk. The test.txt file is modified to ensure there's always something to commit.
+func commitFilesWithTrailer(t *testing.T, repo *git.Repository, dir, checkpointIDStr string, files ...string) {
+	t.Helper()
+
+	cpID := id.MustCheckpointID(checkpointIDStr)
+
+	// Modify test.txt with agent-like content that matches what setupSessionWithCheckpointAndFile saves
+	testFile := filepath.Join(dir, "test.txt")
+	content := "agent modified content"
+	require.NoError(t, os.WriteFile(testFile, []byte(content), 0o644))
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+
+	_, err = wt.Add("test.txt")
+	require.NoError(t, err)
+	for _, f := range files {
+		_, err = wt.Add(f)
+		require.NoError(t, err)
+	}
+
+	commitMsg := "test commit\n\n" + trailers.CheckpointTrailerKey + ": " + cpID.String() + "\n"
+	_, err = wt.Commit(commitMsg, &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@test.com",
+			When:  time.Now(),
+		},
+	})
+	require.NoError(t, err, "commit with checkpoint trailer should succeed")
 }
