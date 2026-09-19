@@ -28,14 +28,14 @@ var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$`)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "meshgit:", err)
+		fmt.Fprintln(os.Stderr, "refweave:", err)
 		os.Exit(1)
 	}
 }
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: meshgit <init|serve|repo|mirror> (try -help after a command)")
+		return errors.New("usage: refweave <init|serve|repo|mirror> (try -help after a command)")
 	}
 	switch args[0] {
 	case "init":
@@ -61,7 +61,7 @@ func run(args []string) error {
 		return serve(*data, *addr)
 	case "repo":
 		if len(args) < 2 || args[1] != "create" {
-			return errors.New("usage: meshgit repo create [-data DIR] [-mirror] OWNER/NAME")
+			return errors.New("usage: refweave repo create [-data DIR] [-mirror] OWNER/NAME")
 		}
 		fs := flag.NewFlagSet("repo create", flag.ContinueOnError)
 		data := fs.String("data", "./data", "data directory")
@@ -70,7 +70,7 @@ func run(args []string) error {
 			return err
 		}
 		if fs.NArg() != 1 {
-			return errors.New("usage: meshgit repo create [-data DIR] [-mirror] OWNER/NAME")
+			return errors.New("usage: refweave repo create [-data DIR] [-mirror] OWNER/NAME")
 		}
 		store, err := openStore(*data)
 		if err != nil {
@@ -83,7 +83,7 @@ func run(args []string) error {
 		return nil
 	case "mirror":
 		if len(args) < 2 || args[1] != "sync" {
-			return errors.New("usage: meshgit mirror sync [-data DIR] -from URL -token-file FILE OWNER/NAME")
+			return errors.New("usage: refweave mirror sync [-data DIR] -from URL -token-file FILE OWNER/NAME")
 		}
 		fs := flag.NewFlagSet("mirror sync", flag.ContinueOnError)
 		data := fs.String("data", "./data", "data directory")
@@ -93,7 +93,7 @@ func run(args []string) error {
 			return err
 		}
 		if fs.NArg() != 1 || *from == "" || *tokenFile == "" {
-			return errors.New("usage: meshgit mirror sync [-data DIR] -from URL -token-file FILE OWNER/NAME")
+			return errors.New("usage: refweave mirror sync [-data DIR] -from URL -token-file FILE OWNER/NAME")
 		}
 		store, err := openStore(*data)
 		if err != nil {
@@ -117,7 +117,7 @@ func openStore(data string) (*store, error) {
 	}
 	info, err := os.Stat(root)
 	if err != nil {
-		return nil, fmt.Errorf("open data directory: %w (run meshgit init first)", err)
+		return nil, fmt.Errorf("open data directory: %w (run refweave init first)", err)
 	}
 	if !info.IsDir() {
 		return nil, errors.New("data path is not a directory")
@@ -186,7 +186,7 @@ func (s *store) createRepo(name string, mirror bool) error {
 		}
 	}
 	if mirror {
-		if out, err := exec.Command("git", "-C", path, "config", "meshgit.mirror", "true").CombinedOutput(); err != nil {
+		if out, err := exec.Command("git", "-C", path, "config", "refweave.mirror", "true").CombinedOutput(); err != nil {
 			return fmt.Errorf("mark mirror: %w: %s", err, strings.TrimSpace(string(out)))
 		}
 		if out, err := exec.Command("git", "-C", path, "config", "http.receivepack", "false").CombinedOutput(); err != nil {
@@ -215,7 +215,7 @@ func (s *store) syncMirror(name, source, tokenPath string) error {
 	} else if err != nil {
 		return err
 	}
-	cmd := exec.Command("git", "-C", path, "config", "--get", "meshgit.mirror")
+	cmd := exec.Command("git", "-C", path, "config", "--get", "refweave.mirror")
 	out, err := cmd.Output()
 	if err != nil || strings.TrimSpace(string(out)) != "true" {
 		return errors.New("refusing to overwrite a writable repository; create it with -mirror")
@@ -284,7 +284,7 @@ func serve(data, addr string) error {
 		return err
 	}
 	srv := &http.Server{Addr: addr, Handler: a, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
-	log.Printf("meshgit listening on %s", addr)
+	log.Printf("refweave listening on %s", addr)
 	return srv.ListenAndServe()
 }
 
@@ -292,7 +292,7 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	user, pass, ok := r.BasicAuth()
 	valid := ok && subtle.ConstantTimeCompare([]byte(user), []byte("git")) == 1 && subtle.ConstantTimeCompare([]byte(pass), []byte(a.token)) == 1
 	if !valid {
-		w.Header().Set("WWW-Authenticate", `Basic realm="MeshGit"`)
+		w.Header().Set("WWW-Authenticate", `Basic realm="Refweave"`)
 		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return
 	}
@@ -308,7 +308,7 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MeshGit</title><style>body{font:16px system-ui;max-width:720px;margin:4rem auto;padding:0 1rem;color:#17202a}h1{font-size:2rem}li{margin:.7rem 0}code{background:#f3f4f6;padding:.2rem .4rem;border-radius:4px}input,button{font:inherit;padding:.5rem}input{width:17rem}button{cursor:pointer}</style><h1>MeshGit</h1><p>Your repositories on this node.</p><form action="/repos" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>New repository <input name="name" placeholder="owner/project" required></label><button>Create</button></form><h2>Repositories</h2><ul>{{range .Names}}<li><strong>{{.}}</strong> &nbsp; <code>/git/{{.}}.git</code></li>{{else}}<li>No repositories yet.</li>{{end}}</ul><p>Clone using <code>https://YOUR_DOMAIN/git/owner/project.git</code> with username <code>git</code> and your admin token.</p></html>`))
+var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Refweave</title><style>body{font:16px system-ui;max-width:720px;margin:4rem auto;padding:0 1rem;color:#17202a}h1{font-size:2rem}li{margin:.7rem 0}code{background:#f3f4f6;padding:.2rem .4rem;border-radius:4px}input,button{font:inherit;padding:.5rem}input{width:17rem}button{cursor:pointer}</style><h1>Refweave</h1><p>Your repositories on this node.</p><form action="/repos" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>New repository <input name="name" placeholder="owner/project" required></label><button>Create</button></form><h2>Repositories</h2><ul>{{range .Names}}<li><strong>{{.}}</strong> &nbsp; <code>/git/{{.}}.git</code></li>{{else}}<li>No repositories yet.</li>{{end}}</ul><p>Clone using <code>https://YOUR_DOMAIN/git/owner/project.git</code> with username <code>git</code> and your admin token.</p></html>`))
 
 func (a *app) index(w http.ResponseWriter) {
 	owners, err := os.ReadDir(a.store.repos)

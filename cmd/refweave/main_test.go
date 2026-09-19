@@ -42,7 +42,7 @@ func TestGitPushCloneAndMirror(t *testing.T) {
 	gitTest(t, client, "init", "--initial-branch=main")
 	gitTest(t, client, "config", "user.name", "Test")
 	gitTest(t, client, "config", "user.email", "test@example.invalid")
-	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("hello meshgit\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("hello refweave\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	gitTest(t, client, "add", "README.md")
@@ -53,7 +53,7 @@ func TestGitPushCloneAndMirror(t *testing.T) {
 	clone := filepath.Join(t.TempDir(), "clone")
 	gitTest(t, t.TempDir(), "clone", cloneURL, clone)
 	b, err := os.ReadFile(filepath.Join(clone, "README.md"))
-	if err != nil || string(b) != "hello meshgit\n" {
+	if err != nil || string(b) != "hello refweave\n" {
 		t.Fatalf("clone content: %q, %v", b, err)
 	}
 
@@ -78,7 +78,7 @@ func TestGitPushCloneAndMirror(t *testing.T) {
 	mirrorClone := filepath.Join(t.TempDir(), "mirror-clone")
 	gitTest(t, t.TempDir(), "clone", mirrorURL, mirrorClone)
 	b, err = os.ReadFile(filepath.Join(mirrorClone, "README.md"))
-	if err != nil || string(b) != "hello meshgit\n" {
+	if err != nil || string(b) != "hello refweave\n" {
 		t.Fatalf("mirror content: %q, %v", b, err)
 	}
 	gitTest(t, mirrorClone, "config", "user.name", "Test")

@@ -1,3 +1,3 @@
-module meshgit
+module refweave
 
 go 1.26
