@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c1110">
+  <link rel="icon" href="/assets/trace-mark.svg?v=4" type="image/svg+xml">
+  <title>Workspace · Trace</title>
+  <style>
+    @font-face { font-family:Inter; src:url("/assets/inter.woff2") format("woff2"); font-style:normal; font-weight:100 900; font-display:swap; }
+    :root { color-scheme:dark; --bg:#07151a; --surface:#0d2427; --surface2:#10373a; --line:#1c4c50; --text:#e6fbf8; --muted:#99c8c7; --accent:#38d5c5; --accent-strong:#22b8ad; } html[data-theme="light"] { color-scheme:light; --bg:#f2fbfa; --surface:#ffffff; --surface2:#e4f3f1; --line:#b8dcd8; --text:#0a2d31; --muted:#527678; --accent:#008f87; --accent-strong:#007a73; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 Inter,system-ui,sans-serif; }
+    a { color:inherit; }
+    a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+    .shell { width:min(1120px,calc(100% - 48px)); margin:auto; }
+    .topbar { border-bottom:1px solid var(--line); background:color-mix(in srgb,var(--bg) 86%,transparent); backdrop-filter:blur(16px); position:sticky; top:0; z-index:10; }
+    .topbar-inner { min-height:76px; display:flex; justify-content:space-between; align-items:center; gap:20px; }
+    .brand { display:inline-flex; align-items:center; gap:10px; color:var(--text); font-size:21px; font-weight:760; letter-spacing:-.055em; text-decoration:none; }
+    .brand img { width:38px; height:38px; display:block; background:#fff; border-radius:8px; padding:3px; }
+    .nav { display:flex; align-items:center; gap:16px; }
+    .nav a { color:var(--muted); text-decoration:none; font-size:13px; font-weight:650; }
+    .nav a:hover { color:var(--text); }
+    .nav form { margin:0; }
+    button { cursor:pointer; border:1px solid #657c66; border-radius:9px; background:#253728; color:var(--text); padding:10px 14px; font:700 13px Inter,system-ui,sans-serif; }
+    button:hover { background:#38503b; }
+    .nav button { background:transparent; border-color:var(--line); }
+    .primary { background:var(--accent); color:#1a2718; border-color:var(--accent); }
+    .primary:hover { background:#e0efb5; }
+    main { padding:38px 0 76px; }
+    .eyebrow { color:var(--accent); font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.16em; text-transform:uppercase; margin:0 0 14px; }
+    .welcome h1 { margin:0 0 10px; max-width:720px; font-size:clamp(36px,4.2vw,57px); line-height:1.04; letter-spacing:-.07em; }
+    .welcome p:last-child { color:var(--muted); margin:0; font-size:16px; }
+    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:35px 0 22px; }
+    .stat { border:1px solid var(--line); border-radius:13px; padding:18px 20px; background:var(--surface); box-shadow:0 12px 28px rgba(0,45,48,.08); }
+    .stat span { display:block; color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-size:10px; font-weight:800; }
+    .stat strong { display:block; margin-top:4px; font-size:25px; letter-spacing:-.055em; }
+    .stat strong.word { font-size:18px; margin-top:9px; }
+    .layout { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(290px,1fr); gap:16px; align-items:start; }
+    .panel { border:1px solid var(--line); background:var(--surface); border-radius:15px; padding:26px; margin:0 0 16px; }
+    .panel-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:21px; }
+    h2 { font-size:21px; letter-spacing:-.045em; margin:0; }
+    h3 { font-size:16px; margin:0 0 8px; letter-spacing:-.025em; }
+    .muted { color:var(--muted); }
+    .panel-head .muted { font-size:12px; }
+    .repo-list { display:grid; gap:9px; }
+    .repo { display:flex; align-items:center; gap:13px; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--surface2); text-decoration:none; }
+    .repo:hover { border-color:var(--accent); background:color-mix(in srgb,var(--surface2) 78%,var(--accent)); }
+    .repo-icon { flex:none; width:34px; height:34px; border:1px solid var(--line); border-radius:8px; display:grid; place-items:center; color:var(--accent); font:18px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .repo-name { min-width:0; flex:1; font-weight:700; overflow-wrap:anywhere; }
+    .repo small { display:block; font-size:11px; font-weight:400; color:var(--muted); margin-top:2px; }
+    .badge { border:1px solid var(--line); border-radius:100px; padding:3px 9px; color:var(--muted); font-size:11px; font-weight:700; white-space:nowrap; }
+    .repo-arrow { color:var(--accent); font-size:17px; }
+    .empty { padding:22px; border:1px dashed var(--line); border-radius:10px; color:var(--muted); }
+    form { margin:0; }
+    label { display:block; color:var(--text); font-size:12px; font-weight:750; margin-bottom:7px; }
+    input[type=text],select { display:block; width:100%; min-height:43px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); padding:9px 11px; font:14px Inter,system-ui,sans-serif; }
+    input::placeholder { color:var(--muted); }
+    .field { margin:0 0 15px; }
+    .field-note { color:var(--muted); margin:12px 0 0; font-size:12px; }
+    .check { display:flex; align-items:center; gap:8px; margin:1px 0 18px; font-weight:550; }
+    .check input { accent-color:var(--accent); width:16px; height:16px; }
+    .wide { width:100%; }
+    .section-label { margin:38px 0 16px; font-size:11px; color:var(--accent); font-weight:750; letter-spacing:.16em; text-transform:uppercase; }
+    .team-list { display:grid; gap:0; }
+    .member { display:grid; grid-template-columns:minmax(120px,1fr) minmax(150px,1.4fr) auto; gap:18px; align-items:center; padding:15px 0; border-top:1px solid var(--line); }
+    .member:first-child { border-top:0; }
+    .member-name { font-weight:700; }
+    .member-role { display:block; color:var(--muted); font-size:11px; margin-top:2px; text-transform:capitalize; }
+    .member-access { color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+    .member-actions { display:flex; align-items:center; gap:6px; }
+    .member-actions button { background:transparent; border-color:var(--line); padding:7px 9px; font-size:11px; white-space:nowrap; }
+    .member-actions button:hover { background:#293d2d; }
+    .member-actions .danger:hover { border-color:#c68d85; color:#f1c3bb; }
+    .secret { margin:28px 0 0; border:1px solid var(--accent); background:#22351e; border-radius:12px; padding:18px; }
+    .secret strong { color:#efffd8; }
+    .secret code { display:block; margin:9px 0; color:#e2f5c0; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; user-select:all; }
+    .secret p { margin:0; color:#c4d7bf; font-size:12px; }
+    .access-layout { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .footer { border-top:1px solid var(--line); color:var(--muted); padding:25px 0 35px; font-size:12px; }
+    .footer a { color:var(--accent); }
+    @media(max-width:850px) { .layout,.access-layout { grid-template-columns:1fr; } }
+    html[data-theme="light"] .stat,html[data-theme="light"] .repo{background:#f7fcfb;border-color:#a8d2ce}html[data-theme="light"] label{color:#17484b}html[data-theme="light"] .field-note,html[data-theme="light"] .member-role{color:#527678}html[data-theme="light"] .nav a,html[data-theme="light"] .repo small{color:#527678}html[data-theme="light"] input[type=text],html[data-theme="light"] select{background:#fff;color:var(--text);border-color:#8ec6c1}html[data-theme="light"] button{background:#d9f1ee;color:#0a3d3e;border-color:#7cbcb7}html[data-theme="light"] button:hover{background:#bde5e0}.theme-toggle{position:fixed;right:20px;bottom:20px;z-index:30;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--text);box-shadow:0 8px 24px rgba(0,50,55,.2);padding:9px 14px;font:700 12px Inter,system-ui,sans-serif}.theme-toggle:hover{background:var(--accent-strong);color:#fff}@media(max-width:620px) { .shell { width:calc(100% - 32px); } .topbar-inner { min-height:68px; } .nav { gap:10px; } .nav a[href="/"] { display:none; } main { padding-top:37px; } .stats { grid-template-columns:1fr 1fr; } .stats .stat:last-child { grid-column:1/-1; } .panel { padding:19px; } .member { grid-template-columns:1fr; gap:8px; } .member-actions { flex-wrap:wrap; } }
+  </style>
+</head>
+<body>
+  <header class="topbar"><div class="shell topbar-inner">
+    <a class="brand" href="/" aria-label="Trace home"><img src="/assets/trace-mark.svg?v=4" alt="" width="38" height="38">Trace</a>
+    <div class="nav"><a href="/search">Search</a><a href="/">Home</a><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Sign out</button></form></div>
+  </div></header>
+  <main class="shell">
+    <div class="welcome">
+      <p class="eyebrow">Workspace / {{.Username}}</p>
+      <h1>Ship from your node.</h1>
+      <p>Your repositories, agents, and team access in one focused workspace.</p>
+    </div>
+    {{if .NewToken}}<div class="secret" role="status"><strong>New token for {{.TokenFor}}</strong><code>{{.NewToken}}</code><p>Copy this token now. It will not be shown again.</p></div>{{end}}
+    <div class="stats">
+      <div class="stat"><span>Repositories</span><strong>{{len .Repos}}</strong></div>
+      {{if .Admin}}<div class="stat"><span>Team members</span><strong>{{len .Users}}</strong></div>{{else}}<div class="stat"><span>Your access</span><strong class="word">Member</strong></div>{{end}}
+      <div class="stat"><span>Runtime</span><strong class="word">Local node</strong></div>
+    </div>
+    <div class="layout">
+      <section class="panel" aria-labelledby="repos-title">
+        <div class="panel-head"><h2 id="repos-title">Repositories</h2><span class="muted">Your accessible code</span></div>
+        <div class="repo-list">
+          {{range .Repos}}<a class="repo" href="{{.URL}}"><span class="repo-icon" aria-hidden="true">⌘</span><span class="repo-name">{{.Name}}<small>Git repository</small></span><span class="badge">{{.Role}}</span><span class="repo-arrow" aria-hidden="true">↗</span></a>{{else}}<div class="empty">No accessible repositories yet. Ask your admin for access.</div>{{end}}
+        </div>
+      </section>
+      {{if .Admin}}<section class="panel" aria-labelledby="create-title">
+        <div class="panel-head"><h2 id="create-title">New repository</h2></div>
+        <form action="/app" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><div class="field"><label for="repo-name">Repository name</label><input id="repo-name" name="name" type="text" placeholder="team/project" required></div><button class="primary wide" type="submit">Create repository ↗</button></form>
+        <p class="field-note">Use the format owner/name. You can grant access after creating it.</p>
+      </section>{{end}}
+    </div>
+    {{if .Admin}}
+    <p class="section-label">Administration</p>
+    <section class="panel" aria-labelledby="team-title">
+      <div class="panel-head"><h2 id="team-title">Team</h2><span class="muted">Personal access for every member</span></div>
+      <div class="team-list">{{range .Users}}<div class="member"><div><span class="member-name">{{.Name}}</span><span class="member-role">{{.Role}}</span></div><div class="member-access">{{.Access}}</div><div class="member-actions"><form action="/users/rotate" method="post"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="name" value="{{.Name}}"><button type="submit">Rotate token</button></form><form action="/users/remove" method="post"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="name" value="{{.Name}}"><button class="danger" type="submit">Remove</button></form></div></div>{{end}}</div>
+    </section>
+    <div class="access-layout">
+      <section class="panel" aria-labelledby="add-title"><div class="panel-head"><h2 id="add-title">Add teammate</h2></div><form action="/users" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><div class="field"><label for="new-user">Username</label><input id="new-user" name="name" type="text" placeholder="teammate" required></div><label class="check"><input type="checkbox" name="admin" value="1"> Make this person an admin</label><button class="primary wide" type="submit">Create user ↗</button></form><p class="field-note">A personal token is displayed once after creation.</p></section>
+      <section class="panel" aria-labelledby="access-title"><div class="panel-head"><h2 id="access-title">Repository access</h2></div>{{if .Repos}}<form action="/access" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><div class="field"><label for="access-user">Teammate</label><select id="access-user" name="user">{{range .Users}}<option>{{.Name}}</option>{{end}}</select></div><div class="field"><label for="access-repo">Repository</label><select id="access-repo" name="repo">{{range .Repos}}<option>{{.Name}}</option>{{end}}</select></div><div class="field"><label for="access-role">Permission</label><select id="access-role" name="role"><option value="read">Read</option><option value="write">Write branches</option><option value="maintain">Maintain and merge</option><option value="none">Remove access</option></select></div><button class="primary wide" type="submit">Save access ↗</button></form>{{else}}<p class="muted">Create a repository first, then grant access.</p>{{end}}<p class="field-note">Only admins can update main and tags.</p></section>
+    </div>
+    <section class="panel"><div class="panel-head"><h2>Teams</h2><span class="muted">Group access</span></div><p class="muted">Manage team membership and shared repository roles.</p><a class="primary" href="/settings/teams">Open team settings ↗</a></section><section class="panel"><div class="panel-head"><h2>Federation</h2><span class="muted">Signed peer replication</span></div><p class="muted">Configure and sync Trace peers from the browser.</p><a class="primary" href="/settings/federation">Open federation settings ↗</a></section>
+    {{end}}
+  </main>
+  <footer class="footer"><div class="shell">Trace · Standard Git on your servers. For Git over HTTPS, use your username and personal token.</div></footer>
+<script>(function(){var k="trace-theme",root=document.documentElement,saved=localStorage.getItem(k);if(saved)root.dataset.theme=saved;var b=document.createElement("button");b.className="theme-toggle";b.type="button";b.setAttribute("aria-label","Toggle color theme");function paint(){var light=root.dataset.theme==="light";b.textContent=light?"☾ Dark":"☀ Light";b.setAttribute("aria-pressed",String(light))}b.onclick=function(){root.dataset.theme=root.dataset.theme==="light"?"dark":"light";localStorage.setItem(k,root.dataset.theme);paint()};document.body.appendChild(b);paint()})();</script>
+</body>
+</html>

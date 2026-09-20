@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07151a">
+  <title>{{.Name}} · Trace</title>
+  <link rel="icon" href="/assets/trace-mark.svg?v=4" type="image/svg+xml">
+  <!-- TRACE_REPO_STYLES -->
+</head>
+<body>
+  <div class="repo-nav">
+    <a href="/"><img src="/assets/trace-mark.svg?v=4" alt="" width="38" height="38">Trace</a>
+    <a href="/app">← Repositories</a>
+  </div>
+
+  <header class="repo-header">
+    <div>
+      <p class="repo-kicker">REPOSITORY / {{if .Archived}}ARCHIVED{{else}}GIT WORKSPACE{{end}}</p>
+      <h1>{{.Name}}</h1>
+      {{if .Topics}}<div class="repo-topics">{{range .Topics}}<span>{{.}}</span>{{end}}</div>{{end}}
+    </div>
+    <div class="repo-actions">
+      {{if .Starred}}<form action="/repos/{{.Name}}/star" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="unstar"><button type="submit">★ Starred ({{.StarCount}})</button></form>{{else}}<form action="/repos/{{.Name}}/star" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">☆ Star ({{.StarCount}})</button></form>{{end}}
+      {{if .Watching}}<form action="/repos/{{.Name}}/watch" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="unwatch"><button type="submit">Watching <span>{{.WatchCount}}</span></button></form>{{else}}<form action="/repos/{{.Name}}/watch" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">Watch <span>{{.WatchCount}}</span></button></form>{{end}}
+    </div>
+  </header>
+
+  <div class="repo-clone">
+    <span>HTTPS clone</span>
+    <code id="repo-clone-url" data-path="/git/{{.Name}}.git">/git/{{.Name}}.git</code>
+    <button type="button" id="repo-copy-clone" aria-label="Copy HTTPS clone URL">Copy URL</button>
+  </div>
+
+  <nav class="repo-tabs" aria-label="Repository navigation">
+    <a href="/repos/{{.Name}}" aria-current="page">Overview</a>
+    <a href="/repos/{{.Name}}/search">Search</a>
+    <a href="/repos/{{.Name}}/agents">Agent sessions</a>
+    <a href="/repos/{{.Name}}/issues">Issues</a>
+    <a href="/repos/{{.Name}}/projects">Projects</a>
+    <a href="/repos/{{.Name}}/actions">Actions</a>
+    <a href="/repos/{{.Name}}/releases">Releases</a>
+    <a href="/repos/{{.Name}}/packages">Packages</a>
+  </nav>
+
+  {{if and .IsWritable (not .Branches)}}
+  <section class="repo-empty"><h2>Start with your first commit</h2><p>Create a local Git repository, commit your files, then push <code>main</code> to the clone URL above.</p></section>
+  {{end}}
+
+  <div class="repo-layout">
+    <main class="repo-content">
+      {{if .Branch}}
+      <section class="repo-panel" id="files">
+        <div class="repo-panel-heading"><div><p class="repo-panel-label">CODE</p><h2>Files <span>on {{.Branch}}</span></h2></div><span class="repo-count">{{len .Files}} shown</span></div>
+        <div class="repo-file-list">
+          {{range .Files}}<a class="repo-file-row" href="{{.URL}}"><span class="repo-file-icon" aria-hidden="true">⌁</span><span>{{.Name}}</span><span class="repo-file-arrow" aria-hidden="true">↗</span></a>{{else}}<p class="repo-empty-line">No files yet.</p>{{end}}
+        </div>
+        {{if .FilesTruncated}}<p class="repo-footnote">Showing the first 200 files.</p>{{end}}
+        {{if .File}}<div class="repo-file-preview"><h3>{{.File}}</h3><pre>{{.Content}}</pre></div>{{end}}
+      </section>
+
+      <section class="repo-panel" id="commits">
+        <div class="repo-panel-heading"><div><p class="repo-panel-label">HISTORY</p><h2>Recent commits</h2></div><a class="repo-text-link" href="/repos/{{.Name}}/search">Search repository ↗</a></div>
+        <div class="repo-commit-list">{{range .RecentCommits}}<a class="repo-commit-row" href="/repos/{{$.Name}}/commits/{{.Commit}}?ref={{urlquery $.Branch}}"><span><strong>{{.Subject}}</strong><small>{{.Author}} · <code>{{printf "%.12s" .Commit}}</code></small></span><span aria-hidden="true">↗</span></a>{{else}}<p class="repo-empty-line">No commits yet.</p>{{end}}</div>
+      </section>
+
+      {{if and .HasMain (ne .Branch "main")}}
+      <section class="repo-panel" id="changes">
+        <div class="repo-panel-heading"><div><p class="repo-panel-label">REVIEW</p><h2>Changes proposed for main</h2></div></div>
+        <pre class="repo-diff">{{.Diff}}</pre>
+        {{if .DiffTruncated}}<p class="repo-footnote">Diff is truncated. Clone the repository for the full review.</p>{{end}}
+      </section>
+      {{end}}
+      {{end}}
+    </main>
+
+    <aside class="repo-sidebar" aria-label="Repository activity and controls">
+      <section class="repo-panel repo-branch-panel">
+        <div class="repo-panel-heading"><div><p class="repo-panel-label">WORKING TREE</p><h2>Branches</h2></div><span class="repo-count">{{len .Branches}}</span></div>
+        <div class="repo-branch-list">
+          {{range .Branches}}<div class="repo-branch-row"><div><a href="{{.URL}}">{{.Name}}</a><small>{{.Commit}} · {{.Subject}}</small></div>{{if and $.CanWrite (ne .Name "main")}}<form action="/repos/{{$.Name}}/branches" method="post"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="branch" value="{{.Name}}"><button type="submit" class="repo-subtle-button">Delete</button></form>{{end}}</div>{{else}}<p class="repo-empty-line">No branches yet.</p>{{end}}
+        </div>
+        {{if and .CanWrite .Branches}}<details class="repo-disclosure"><summary>Create a branch</summary><form action="/repos/{{.Name}}/branches" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="create"><label>Branch name<input name="branch" placeholder="feature-name" required></label><label>Start from<select name="from">{{range .Branches}}<option value="{{.Name}}">{{.Name}}</option>{{end}}</select></label><button type="submit">Create branch</button></form></details>{{end}}
+      </section>
+
+      <section class="repo-panel">
+        <div class="repo-panel-heading"><div><p class="repo-panel-label">COLLABORATION</p><h2>Pull requests</h2></div><span class="repo-count">{{len .PullRequests}}</span></div>
+        <div class="repo-pr-list">{{range .PullRequests}}<a class="repo-pr-row" href="/repos/{{$.Name}}/pulls/{{.ID}}"><strong>#{{.ID}} · {{.Title}}</strong><small>{{.Source}} → {{.Target}} · {{.State}}{{if .Draft}} · draft{{end}} · {{.Approvals}} approval(s){{if .Reviewers}} · reviewers: {{.Reviewers}}{{end}}</small></a>{{else}}<p class="repo-empty-line">No pull requests yet. Push a branch to start a review.</p>{{end}}</div>
+        {{if and .CanWrite (gt (len .Branches) 1)}}<details class="repo-disclosure"><summary>Open a pull request</summary><form action="/repos/{{.Name}}/pulls" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Title<input name="title" required maxlength="200"></label><label>Source branch<select name="source" required>{{range .Branches}}<option value="{{.Name}}"{{if eq .Name $.Branch}} selected{{end}}>{{.Name}}</option>{{end}}</select></label><label>Target branch<select name="target" required>{{range .Branches}}<option value="{{.Name}}"{{if eq .Name "main"}} selected{{end}}>{{.Name}}</option>{{end}}</select></label><label>Description<textarea name="description" maxlength="20000" rows="4"></textarea></label><label class="repo-check-label"><input type="checkbox" name="draft" value="true"> Create as draft</label><label>Labels<input name="labels" placeholder="bug,enhancement"></label><label>Assignees<input name="assignees" placeholder="alice,bob"></label><label>Reviewers<input name="reviewers" placeholder="alice,bob"></label><button type="submit">Create pull request</button></form></details>{{end}}
+      </section>
+
+      <section class="repo-panel repo-checks-panel">
+        <div class="repo-panel-heading"><div><p class="repo-panel-label">AUTOMATION</p><h2>Commit checks</h2></div></div>
+        {{if .Statuses}}<ul class="repo-status-list">{{range .Statuses}}<li><strong>{{.Context}}</strong><span>{{.State}}{{if .Description}} · {{.Description}}{{end}}</span></li>{{end}}</ul>{{else}}<p class="repo-empty-line">No checks reported on this branch.</p>{{end}}
+      </section>
+
+      <details class="repo-utility"><summary>Repository tools</summary><div class="repo-utility-content"><section><h2>Fork repository</h2><form action="/repos/{{.Name}}/fork" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>New repository<input name="target" placeholder="your-name/project-fork" required></label><button type="submit">Create fork</button></form></section>{{if .CanMaintain}}<section><h2>Topics</h2><form action="/repos/{{.Name}}/topics" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Topics<input name="topics" value="{{range $i, $topic := .Topics}}{{if $i}},{{end}}{{$topic}}{{end}}" placeholder="go,git,agents"></label><button type="submit">Save topics</button></form></section>{{end}}</div></details>
+
+      {{if .IsAdmin}}<details class="repo-utility repo-settings"><summary>Repository settings</summary><div class="repo-utility-content"><section><h2>Repository lifecycle</h2><form action="/repos/{{.Name}}/{{if .Archived}}restore{{else}}archive{{end}}" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">{{if .Archived}}Restore repository{{else}}Archive repository{{end}}</button></form><form action="/repos/{{.Name}}/transfer" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Transfer to<input name="target" placeholder="owner/name" required></label><button type="submit">Transfer</button></form><form action="/repos/{{.Name}}/delete" method="post" onsubmit="return confirm('Permanently delete this repository?')"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit" class="repo-danger">Delete permanently</button></form></section></div></details>{{end}}
+    </aside>
+  </div>
+
+  <script>
+    (function(){
+      var value=document.getElementById('repo-clone-url');
+      var button=document.getElementById('repo-copy-clone');
+      if(!value||!button)return;
+      var cloneURL=location.origin+value.dataset.path;
+      value.textContent=cloneURL;
+      button.addEventListener('click',async function(){
+        try{await navigator.clipboard.writeText(cloneURL);button.textContent='Copied';setTimeout(function(){button.textContent='Copy URL'},1800)}
+        catch(e){button.textContent='Select URL';var selection=window.getSelection();var range=document.createRange();range.selectNodeContents(value);selection.removeAllRanges();selection.addRange(range)}
+      });
+    })();
+  </script>
+</body>
+</html>

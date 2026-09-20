@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07151a">
+  <title>Agent sessions · {{.Name}} · Trace</title>
+  <link rel="icon" href="/assets/trace-mark.svg?v=4" type="image/svg+xml">
+  <!-- TRACE_AGENT_STYLES -->
+  <style>
+    .agent-heading{margin:0 0 26px}.agent-kicker{font-size:10px;font-weight:800;letter-spacing:.16em;color:var(--accent);margin:0 0 7px}.agent-heading h1{font-size:clamp(36px,4.5vw,55px);line-height:1.05;margin:0 0 12px}.agent-heading>p:last-child{max-width:690px;margin:0;color:var(--muted)}
+    .agent-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}.agent-card,.agent-sessions{margin:0;padding:22px;border:1px solid var(--line);border-radius:15px;background:var(--panel);min-width:0}.agent-card h2,.agent-sessions h2{font-size:19px;margin:0 0 8px}.agent-card p{font-size:12px;margin:8px 0 15px}.agent-card code{overflow-wrap:anywhere}.agent-card form{display:grid;gap:11px;margin:17px 0 0}.agent-card label{display:grid;gap:5px;font-size:11px;font-weight:700;color:var(--muted)}.agent-card input,.agent-card textarea{width:100%;margin:0}.agent-card button{justify-self:start;margin:0}.agent-card .agent-link{display:inline-block;font-size:12px;font-weight:700;text-decoration:none}.agent-card .agent-link:hover{text-decoration:underline}.agent-card .agent-note{font-size:11px}.agent-status{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;font-weight:700}.agent-status:before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent)}.agent-meta{display:grid;gap:10px;margin:15px 0 0}.agent-meta div{min-width:0}.agent-meta dt{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}.agent-meta dd{margin:3px 0 0;font-size:11px;overflow-wrap:anywhere}.agent-message{margin:0 0 20px;padding:15px 18px;border:1px solid var(--accent);border-radius:11px;background:color-mix(in srgb,var(--panel) 88%,var(--accent));color:var(--text)}
+    .agent-sessions{margin-top:20px}.agent-session{padding:19px 0;border-top:1px solid var(--line)}.agent-session:first-of-type{margin-top:17px}.agent-session h3{font-size:15px;margin:0 0 5px}.agent-session p{font-size:11px;margin:5px 0 11px;overflow-wrap:anywhere}.agent-session pre{margin:9px 0 14px;border-color:var(--line);background:var(--bg);color:var(--text)}.agent-checkpoint{margin:15px 0 0;padding-left:15px;border-left:2px solid var(--accent)}.agent-checkpoint strong{font-size:12px}
+    @media(max-width:760px){.agent-grid{grid-template-columns:1fr}.agent-card,.agent-sessions{padding:18px}}
+  </style>
+</head>
+<body>
+  <div class="repo-nav"><a href="/"><img src="/assets/trace-mark.svg?v=4" alt="" width="38" height="38">Trace</a><a href="/repos/{{.Name}}">← {{.Name}}</a></div>
+  <header class="agent-heading"><p class="agent-kicker">AGENT CONTEXT / {{.Name}}</p><h1>Agent sessions</h1><p>Structured checkpoints linked to Git commits. Trace stores redacted summaries and state; it does not store raw prompts or tool transcripts.</p></header>
+  {{if .Message}}<p class="agent-message" role="status">{{.Message}}</p>{{end}}
+  <div class="agent-grid">
+    <section class="agent-card">
+      <h2>Git portable history</h2>
+      <p>Publish a signed snapshot to this private repository. Anyone with read access to its Git refs can fetch the summaries.</p>
+      {{if .Git.Commit}}<span class="agent-status">Published · {{.Git.Sessions}} sessions</span>{{else}}<span class="agent-status">Not published</span>{{end}}
+      <dl class="agent-meta"><div><dt>Node ID</dt><dd><code>{{.Git.NodeID}}</code></dd></div><div><dt>Git ref</dt><dd><code>{{.Git.Ref}}</code></dd></div>{{if .Git.Commit}}<div><dt>Snapshot commit</dt><dd><code>{{.Git.Commit}}</code></dd></div>{{end}}</dl>
+      {{if .CanPublish}}<form action="/repos/{{.Name}}/agents/publish-git" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">{{if .Git.Commit}}Update Git snapshot{{else}}Publish to Git{{end}}</button></form>{{else if .Public}}<p class="agent-note">Git publication is unavailable while this repository is public.</p>{{end}}
+      {{if .Git.Commit}}<p class="agent-note">Fetch this ref into another private Trace repository, then import it with the verified node ID. Removing the ref later cannot erase copies already fetched.</p>{{end}}
+    </section>
+    <section class="agent-card">
+      <h2>Portable signed history</h2>
+      <p>Export native sessions to a signed JSON file. Import requires a trusted source node ID and every referenced commit.</p>
+      <a class="agent-link" href="/api/v1/repos/{{.Name}}/agent-sessions/bundle">Download signed native sessions ↗</a>
+      {{if .CanImport}}<details class="repo-disclosure"><summary>Import signed sessions</summary><form action="/repos/{{.Name}}/agents/import" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Trusted source node ID<input name="node_id" required autocomplete="off" placeholder="Verified Ed25519 node ID"></label><label>Signed bundle<input type="file" name="bundle" accept="application/json,.json" required></label><button type="submit">Import bundle</button></form></details>{{end}}
+    </section>
+    {{if .CanWrite}}<section class="agent-card"><h2>Start a session</h2><p>Record a summary against the selected Git commit.</p><form action="/repos/{{.Name}}/agents" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Agent<input name="agent" required maxlength="100" placeholder="coding-agent"></label><label>Branch or ref<input name="ref" value="main" required></label><label>Summary<textarea name="summary" maxlength="20000" rows="3"></textarea></label><button type="submit">Create session</button></form></section>{{end}}
+  </div>
+  <section class="agent-sessions"><h2>Recorded sessions</h2>{{range .Sessions}}<article class="agent-session" id="session-{{.ID}}"><h3>#{{.ID}} · {{.Agent}} · {{.Status}}</h3><p>{{.Commit}} · created by {{.CreatedBy}} · {{.CreatedAt}}{{if .CaptureSessionKey}} · HEAD observed at completion; authorship unverified{{end}}{{if .OriginNodeID}} · imported from node <code>{{.OriginNodeID}}</code> / session #{{.OriginSessionID}}{{end}}</p>{{if .Summary}}<pre>{{.Summary}}</pre>{{end}}{{range .Checkpoints}}<div class="agent-checkpoint"><strong>Checkpoint #{{.ID}}</strong><p>{{.Commit}}{{if .State}} · {{.State}}{{end}}</p><pre>{{.Summary}}</pre></div>{{end}}</article>{{else}}<p class="muted">No agent sessions yet.</p>{{end}}</section>
+</body>
+</html>

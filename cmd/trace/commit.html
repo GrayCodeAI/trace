@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07151a">
+  <title>{{.Subject}} · {{.Name}} · Trace</title>
+  <link rel="icon" href="/assets/trace-mark.svg?v=4" type="image/svg+xml">
+  <!-- TRACE_COMMIT_STYLES -->
+  <style>
+    .commit-back{display:inline-block;color:var(--muted);text-decoration:none;font-size:12px;font-weight:700;margin:2px 0 22px}.commit-back:hover{color:var(--accent)}
+    .commit-kicker{font-size:10px;font-weight:800;letter-spacing:.16em;color:var(--accent);margin:0 0 9px}.commit-title{font-size:clamp(30px,4vw,48px);line-height:1.1;letter-spacing:-.05em;overflow-wrap:anywhere;max-width:820px;margin:0 0 16px}
+    .commit-meta{display:flex;flex-wrap:wrap;gap:8px 24px;font-size:12px;color:var(--muted);margin:0 0 24px}.commit-meta strong{color:var(--text)}.commit-sha{overflow-wrap:anywhere}
+    .commit-panel{margin:0 0 20px;padding:0;border:1px solid var(--line);border-radius:15px;background:var(--panel);overflow:hidden}.commit-panel h2{font-size:17px;margin:0;padding:17px 20px;border-bottom:1px solid var(--line)}.commit-panel pre,html[data-theme=light] .commit-panel pre{margin:0;padding:20px;border:0;border-radius:0;background:transparent;color:var(--text);font-size:12px;line-height:1.65;white-space:pre-wrap;overflow:auto}.commit-panel .diff{max-height:70vh}.commit-note{padding:0 20px 18px;font-size:12px}
+    @media(max-width:620px){.commit-panel h2,.commit-panel pre{padding:16px}}
+  </style>
+</head>
+<body>
+  <div class="repo-nav"><a href="/"><img src="/assets/trace-mark.svg?v=4" alt="" width="38" height="38">Trace</a><a href="/app">← Repositories</a></div>
+  <a class="commit-back" href="/repos/{{.Name}}?branch={{urlquery .Ref}}">← {{.Name}} / {{.Ref}}</a>
+  <p class="commit-kicker">COMMIT / {{.Ref}}</p>
+  <h1 class="commit-title">{{.Subject}}</h1>
+  <p class="commit-meta"><span><strong>{{.Author}}</strong> &lt;{{.Email}}&gt;</span><span>{{.Date}}</span><span class="commit-sha"><code title="{{.Commit}}">{{printf "%.12s" .Commit}}</code></span></p>
+  <section class="commit-panel"><h2>Commit message</h2><pre>{{.Message}}</pre></section>
+  <section class="commit-panel"><h2>Changes</h2>{{if .Diff}}<pre class="diff">{{.Diff}}</pre>{{else}}<p class="commit-note muted">No text diff is available for this commit.</p>{{end}}{{if .DiffTruncated}}<p class="commit-note muted">Diff preview is truncated. Clone the repository to inspect the full change.</p>{{end}}</section>
+</body>
+</html>
