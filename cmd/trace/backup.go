@@ -51,9 +51,11 @@ func createBackup(data, output string) error {
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
 		return errors.New("backup source must be a directory")
 	}
-	if outputPath, err := filepath.Abs(output); err != nil {
+	if inside, err := pathWithin(output, root); err != nil {
 		return err
-	} else if filepath.Clean(outputPath) == filepath.Clean(root) {
+	} else if inside {
+		// An archive inside the tree being archived would be walked while it
+		// grows, failing or embedding a partial copy of itself.
 		return errors.New("backup output must be outside the data directory")
 	}
 	f, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
@@ -234,4 +236,33 @@ func validateArchiveName(name string) error {
 		return fmt.Errorf("unsafe backup entry: %q", name)
 	}
 	return nil
+}
+
+// pathWithin reports whether path is dir or lies below it, comparing
+// symlink-resolved absolute paths. path itself need not exist yet.
+func pathWithin(path, dir string) (bool, error) {
+	resolvedDir, err := filepath.Abs(dir)
+	if err != nil {
+		return false, err
+	}
+	if real, err := filepath.EvalSymlinks(resolvedDir); err == nil {
+		resolvedDir = real
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false, err
+	}
+	parent, base := filepath.Dir(absPath), filepath.Base(absPath)
+	if real, err := filepath.EvalSymlinks(parent); err == nil {
+		parent = real
+	}
+	candidate := filepath.Join(parent, base)
+	if real, err := filepath.EvalSymlinks(candidate); err == nil {
+		candidate = real
+	}
+	rel, err := filepath.Rel(resolvedDir, candidate)
+	if err != nil {
+		return false, nil
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))), nil
 }

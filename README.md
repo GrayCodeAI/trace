@@ -70,7 +70,7 @@ Trace includes a local backup and restore utility. Backups contain the bare repo
 ./trace backup restore -data ./restored-data -out /secure/backups/trace-20260920.tar.gz
 ```
 
-Restore refuses to write into a non-empty directory unless `-force` is supplied. This is a single-node snapshot mechanism; schedule it and copy the archive to separate storage for disaster recovery.
+Restore refuses to write into a non-empty directory unless `-force` is supplied, and `create` refuses an output path inside the data directory (including through symlinks). Backups of a running node are file-by-file copies taken while it keeps writing, so they are not a point-in-time snapshot; stop Trace or pause writes for a fully consistent backup. This is a single-node mechanism; schedule it and copy the archive to separate storage for disaster recovery.
 
 To add a teammate from the CLI:
 
