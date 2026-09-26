@@ -1,6 +1,6 @@
 # Trace capability audit
 
-This is the honest baseline for the current monorepo. “All features from the top 20 competitors” is not a finite implementation task: GitHub, GitLab, Forgejo, SourceHut, agent platforms, and CI vendors overlap only partially, and several features require separate infrastructure (runners, package registries, email, object storage, search, and an agent sandbox). Trace must ship a coherent product before it attempts parity.
+This is the honest baseline for this repository. “All features from the top 20 competitors” is not a finite implementation task: GitHub, GitLab, Forgejo, SourceHut, agent platforms, and CI vendors overlap only partially, and several features require separate infrastructure (runners, package registries, email, object storage, search, and an agent sandbox). Trace must ship a coherent product before it attempts parity.
 
 ## Current evidence
 
