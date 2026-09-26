@@ -614,7 +614,7 @@ The same read operations are available from the bundled CLI. The token is read f
 ./trace api commits -url http://127.0.0.1:8787 -user admin -token-file ./data/admin-token team/project
 ```
 
-The browser session can read the API. A browser-session write must also send `X-Trace-CSRF` equal to the session user's CSRF value; Basic-auth API clients do not need that browser-only header.
+The browser session can read the API. A browser-session write must also send `X-Trace-CSRF` equal to the session user's CSRF value; only requests whose Basic credentials authenticate the same user are exempt from that browser-only header.
 
 Admins can inspect the append-only audit ledger:
 
