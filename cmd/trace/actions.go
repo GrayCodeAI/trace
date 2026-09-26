@@ -81,6 +81,51 @@ type actionDB struct {
 	LastScheduledAt map[string]time.Time `json:"last_scheduled_at,omitempty"`
 }
 
+// CI runner policies selected by the operator with `trace serve -actions`.
+// Workflow files are repository content that any writer can change, so they
+// may opt into a sandbox but can never opt out of the operator's policy.
+const (
+	actionsModeOff       = "off"
+	actionsModeSandboxed = "sandboxed"
+	actionsModeTrusted   = "trusted"
+)
+
+func parseActionsMode(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case actionsModeOff:
+		return actionsModeOff, nil
+	case actionsModeSandboxed, "":
+		return actionsModeSandboxed, nil
+	case actionsModeTrusted:
+		return actionsModeTrusted, nil
+	default:
+		return "", errors.New("-actions must be off, sandboxed, or trusted")
+	}
+}
+
+// actionsPolicy returns the effective runner policy; an unset store defaults
+// to sandboxed so no code path runs unsandboxed jobs without operator consent.
+func (s *store) actionsPolicy() string {
+	mode, err := parseActionsMode(s.actionsMode)
+	if err != nil {
+		return actionsModeSandboxed
+	}
+	return mode
+}
+
+// checkActionsPolicy refuses a workflow that the operator's policy forbids.
+func (s *store) checkActionsPolicy(config workflowConfig) error {
+	switch s.actionsPolicy() {
+	case actionsModeOff:
+		return errors.New("CI actions are disabled on this node (trace serve -actions off)")
+	case actionsModeSandboxed:
+		if !config.Sandbox {
+			return errors.New("this node runs only sandboxed workflows: set \"sandbox\":true in .trace/workflow.json, or an operator can start trace serve -actions trusted for trusted repositories")
+		}
+	}
+	return nil
+}
+
 var actionRunMu sync.Mutex
 var actionCancelMu sync.Mutex
 var actionCancels = map[int]context.CancelFunc{}
@@ -259,6 +304,9 @@ func (s *store) actionRun(repo, ref, actor string) (actionRun, error) {
 	if _, err := os.Stat(path); err != nil {
 		return actionRun{}, errors.New("repository not found")
 	}
+	if s.actionsPolicy() == actionsModeOff {
+		return actionRun{}, s.checkActionsPolicy(workflowConfig{})
+	}
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		ref = "main"
@@ -273,6 +321,9 @@ func (s *store) actionRun(repo, ref, actor string) (actionRun, error) {
 	}
 	if len(config.Jobs) == 0 {
 		return actionRun{}, errors.New("workflow has no jobs")
+	}
+	if err := s.checkActionsPolicy(config); err != nil {
+		return actionRun{}, err
 	}
 	secrets, err := s.actionSecrets(repo)
 	if err != nil {
@@ -305,6 +356,9 @@ func (s *store) actionRun(repo, ref, actor string) (actionRun, error) {
 // main branch. It records the last evaluation before starting a run so a
 // slow or repeatedly ticking scheduler cannot enqueue duplicates.
 func (s *store) scheduleActionRuns() error {
+	if s.actionsPolicy() == actionsModeOff {
+		return nil
+	}
 	now := time.Now().UTC()
 	type candidate struct {
 		repo string
@@ -344,7 +398,7 @@ func (s *store) scheduleActionRuns() error {
 				continue
 			}
 			config, readErr := readWorkflow(path, commit)
-			if readErr != nil || strings.TrimSpace(config.Schedule) == "" {
+			if readErr != nil || strings.TrimSpace(config.Schedule) == "" || s.checkActionsPolicy(config) != nil {
 				continue
 			}
 			d, parseErr := time.ParseDuration(config.Schedule)

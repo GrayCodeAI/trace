@@ -74,6 +74,9 @@ func TestLocalActionRunAndArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// This test exercises the trusted local runner, which an operator must
+	// opt into explicitly with `trace serve -actions trusted`.
+	a.store.actionsMode = actionsModeTrusted
 	if err := a.store.createRepo("team/ci", false); err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +156,7 @@ func TestScheduledWorkflowQueuesOncePerInterval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	a.store.actionsMode = actionsModeTrusted
 	if err := a.store.createRepo("team/scheduled", false); err != nil {
 		t.Fatal(err)
 	}

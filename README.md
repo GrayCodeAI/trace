@@ -379,7 +379,7 @@ The manifest lets another node verify which Trace identity signed the observed r
 A repository can define a manually triggered local workflow at `.trace/workflow.json`:
 
 ```json
-{"name":"checks","sandbox":true,"sandbox_runtime":"docker","sandbox_image":"alpine:3.20","jobs":[{"name":"test","run":["go test ./..."],"artifacts":["coverage.out"]}]}
+{"name":"checks","sandbox":true,"sandbox_runtime":"docker","sandbox_image":"golang:1.26-alpine","jobs":[{"name":"test","run":["go test ./..."],"artifacts":["coverage.out"]}]}
 ```
 
 Trigger and inspect runs through the API or CLI:
@@ -393,6 +393,16 @@ Trigger and inspect runs through the API or CLI:
 
 Pushing a branch through Trace automatically queues the workflow for that changed branch when `.trace/workflow.json` is present. Manual triggering remains available for reruns and diagnostics.
 
+The operator, not the workflow file, decides what may run. `trace serve -actions MODE` accepts:
+
+- `sandboxed` (the default): only workflows that set `"sandbox":true` run; any other workflow is refused when it is pushed, triggered, or scheduled.
+- `off`: no workflow runs on this node.
+- `trusted`: workflows without `"sandbox":true` also run, as the Trace service account. Use this only when every repository writer on the node is trusted.
+
+```sh
+./trace serve -data ./data -actions off
+```
+
 Queued or running jobs can be cancelled with `POST /api/v1/repos/OWNER/NAME/actions/runs/ID/cancel` or:
 
 ```sh
@@ -401,7 +411,7 @@ Queued or running jobs can be cancelled with `POST /api/v1/repos/OWNER/NAME/acti
 
 Cancellation terminates the runner context and records a `cancelled` run status. The runner is still local process execution, not a hardened container or VM sandbox.
 
-The runner checks out the requested commit, limits each command to 15 minutes and each log to 1 MiB, and stores matching artifacts under `data/artifacts`. A node runs at most four jobs concurrently; additional runs remain queued and can be cancelled. Workflows without `"sandbox":true` execute with the Trace service account and are suitable only for trusted repositories. On macOS, `"sandbox":true` uses `sandbox-exec` with a restricted filesystem and no network access. For portable isolation, set `"sandbox_runtime":"docker"` and an explicit `"sandbox_image"`; Trace runs Docker with no network, a read-only root, dropped capabilities, no-new-privileges, a process limit, and only the checked-out workspace writable. Trace refuses to fall back to unsandboxed execution when sandboxing is requested. Docker still depends on the host daemon and image supply chain.
+The runner checks out the requested commit, limits each command to 15 minutes and each log to 1 MiB, and stores matching artifacts under `data/artifacts`. A node runs at most four jobs concurrently; additional runs remain queued and can be cancelled. Workflows without `"sandbox":true` run only under `-actions trusted` and then execute with the Trace service account. On macOS, `"sandbox":true` uses `sandbox-exec` with a restricted filesystem and no network access. For portable isolation, set `"sandbox_runtime":"docker"` and an explicit `"sandbox_image"`; Trace runs Docker with no network, a read-only root, dropped capabilities, no-new-privileges, a process limit, and only the checked-out workspace writable. Trace refuses to fall back to unsandboxed execution when sandboxing is requested. Docker still depends on the host daemon and image supply chain.
 
 Repository-scoped CI secrets can be managed through the dashboard, API, or CLI. Secret values are stored in `data/secrets.json` with owner-only permissions and are injected only into jobs as `TRACE_SECRET_<NAME>` environment variables; list operations return names, never values:
 
@@ -417,7 +427,7 @@ The local runner is still not an isolation boundary. Do not run untrusted workfl
 Workflows may opt into a recurring schedule with a duration between one minute and 24 hours:
 
 ```json
-{"name":"nightly","schedule":"6h","jobs":[{"name":"test","run":["go test ./..."]}]}
+{"name":"nightly","schedule":"6h","sandbox":true,"sandbox_runtime":"docker","sandbox_image":"golang:1.26-alpine","jobs":[{"name":"test","run":["go test ./..."]}]}
 ```
 
 Start the scheduler explicitly with the server (it is disabled by default):

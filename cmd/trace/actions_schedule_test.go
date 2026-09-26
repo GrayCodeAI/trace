@@ -20,6 +20,7 @@ func TestScheduleOnFreshNodeDoesNotPanic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.actionsMode = actionsModeTrusted
 	if err := s.createRepo("team/nightly", false); err != nil {
 		t.Fatal(err)
 	}
