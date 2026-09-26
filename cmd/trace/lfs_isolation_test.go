@@ -167,3 +167,42 @@ func TestLegacyLFSObjectsMigrateToReferencingRepositories(t *testing.T) {
 		t.Fatalf("unreferenced legacy object was not preserved: %v", err)
 	}
 }
+
+// TestLegacyLFSMigrationToleratesUnreadableRepositories checks that one
+// broken repository neither blocks startup nor causes legacy objects to be
+// set aside before every repository could be scanned.
+func TestLegacyLFSMigrationToleratesUnreadableRepositories(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "node")
+	if err := initData(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := openStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.createRepo("team/broken", false); err != nil {
+		t.Fatal(err)
+	}
+	brokenPath, _ := s.repoPath("team/broken")
+	if err := os.RemoveAll(filepath.Join(brokenPath, "objects")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(brokenPath, "HEAD"), []byte("garbage"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("legacy\n")
+	sum := sha256.Sum256(content)
+	oid := hex.EncodeToString(sum[:])
+	if err := os.MkdirAll(filepath.Join(root, "lfs"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "lfs", oid), content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrateLegacyLFS(); err != nil {
+		t.Fatalf("one unreadable repository blocked the migration: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "lfs", oid)); err != nil {
+		t.Fatalf("legacy object was moved although a repository could not be scanned: %v", err)
+	}
+}

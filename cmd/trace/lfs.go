@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -349,7 +350,9 @@ func (s *store) copyLFSObjects(source, target string) error {
 // data/lfs/<oid> into the repositories whose Git history contains a pointer
 // to them. Objects no repository references are moved to
 // data/lfs/.legacy-unreferenced and are no longer served. It is idempotent
-// and runs when the server starts.
+// and runs when the server starts. A repository that cannot be scanned is
+// logged and skipped, and legacy objects then stay in place so the next
+// start can finish the migration once the repository is repaired.
 func (s *store) migrateLegacyLFS() error {
 	lfsRoot := filepath.Join(s.root, "lfs")
 	entries, err := os.ReadDir(lfsRoot)
@@ -372,13 +375,16 @@ func (s *store) migrateLegacyLFS() error {
 	if err != nil {
 		return err
 	}
+	complete := true
 	for _, owner := range owners {
 		if !owner.IsDir() || !namePattern.MatchString(owner.Name()) {
 			continue
 		}
 		repos, err := os.ReadDir(filepath.Join(s.repos, owner.Name()))
 		if err != nil {
-			return err
+			log.Printf("trace: LFS migration cannot list %s: %v", owner.Name(), err)
+			complete = false
+			continue
 		}
 		for _, entry := range repos {
 			name := strings.TrimSuffix(entry.Name(), ".git")
@@ -388,7 +394,9 @@ func (s *store) migrateLegacyLFS() error {
 			repo := owner.Name() + "/" + name
 			oids, err := lfsPointerOIDs(filepath.Join(s.repos, owner.Name(), entry.Name()))
 			if err != nil {
-				return fmt.Errorf("scan LFS pointers in %s: %w", repo, err)
+				log.Printf("trace: LFS migration cannot scan %s: %v", repo, err)
+				complete = false
+				continue
 			}
 			for oid := range oids {
 				if !legacy[oid] {
@@ -403,6 +411,9 @@ func (s *store) migrateLegacyLFS() error {
 				}
 			}
 		}
+	}
+	if !complete {
+		return nil
 	}
 	unreferenced := filepath.Join(lfsRoot, ".legacy-unreferenced")
 	if err := os.MkdirAll(unreferenced, 0700); err != nil {
