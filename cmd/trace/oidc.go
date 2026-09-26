@@ -44,6 +44,20 @@ type oidcDiscoveryDocument struct {
 	JWKSURI               string `json:"jwks_uri"`
 }
 
+// oidcHTTPTimeout bounds every request Trace makes to the identity provider,
+// so a stalled provider cannot pin sign-in handlers indefinitely.
+var oidcHTTPTimeout = 10 * time.Second
+
+// oidcHTTPClient is used for all provider requests. It does not follow
+// redirects: discovery, JWKS, token, and userinfo endpoints must answer
+// directly at the URLs the provider advertised.
+func oidcHTTPClient() *http.Client {
+	return &http.Client{Timeout: oidcHTTPTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+// oidcMinRSABits is the smallest RSA modulus accepted for ID token signatures.
+const oidcMinRSABits = 2048
+
 type oidcTokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
@@ -84,13 +98,13 @@ func (a *app) oidcDiscovery(cfg oidcConfig) (oidcDiscoveryDocument, error) {
 		return oidcDiscoveryDocument{}, errors.New("OIDC issuer must use HTTPS (or loopback HTTP for local development)")
 	}
 	endpoint := strings.TrimRight(cfg.Issuer, "/") + "/.well-known/openid-configuration"
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), oidcHTTPTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return oidcDiscoveryDocument{}, err
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := oidcHTTPClient().Do(req)
 	if err != nil {
 		return oidcDiscoveryDocument{}, fmt.Errorf("OIDC discovery: %w", err)
 	}
@@ -124,6 +138,7 @@ type oidcJWTClaims struct {
 	Audience json.RawMessage `json:"aud"`
 	Subject  string          `json:"sub"`
 	Expiry   int64           `json:"exp"`
+	Nonce    string          `json:"nonce"`
 }
 
 type oidcJWK struct {
@@ -133,7 +148,7 @@ type oidcJWK struct {
 	E   string `json:"e"`
 }
 
-func (a *app) verifyOIDCIDToken(cfg oidcConfig, doc oidcDiscoveryDocument, raw string) (oidcJWTClaims, error) {
+func (a *app) verifyOIDCIDToken(cfg oidcConfig, doc oidcDiscoveryDocument, raw, nonce string) (oidcJWTClaims, error) {
 	if doc.JWKSURI == "" {
 		return oidcJWTClaims{}, errors.New("OIDC provider did not advertise JWKS")
 	}
@@ -151,8 +166,13 @@ func (a *app) verifyOIDCIDToken(cfg oidcConfig, doc oidcDiscoveryDocument, raw s
 	if err != nil || json.Unmarshal(claimBytes, &claims) != nil || claims.Subject == "" {
 		return oidcJWTClaims{}, errors.New("invalid OIDC ID token claims")
 	}
-	if claims.Issuer != "" && strings.TrimRight(claims.Issuer, "/") != strings.TrimRight(cfg.Issuer, "/") {
+	if claims.Issuer == "" || strings.TrimRight(claims.Issuer, "/") != strings.TrimRight(cfg.Issuer, "/") {
 		return oidcJWTClaims{}, errors.New("OIDC ID token issuer mismatch")
+	}
+	// Trace sends a nonce with every authorization request; the ID token
+	// must echo it so a token minted for another login cannot be replayed.
+	if nonce == "" || !hmac.Equal([]byte(claims.Nonce), []byte(nonce)) {
+		return oidcJWTClaims{}, errors.New("OIDC ID token nonce mismatch")
 	}
 	if claims.Expiry == 0 || time.Now().Unix() >= claims.Expiry {
 		return oidcJWTClaims{}, errors.New("OIDC ID token is expired")
@@ -172,13 +192,13 @@ func (a *app) verifyOIDCIDToken(cfg oidcConfig, doc oidcDiscoveryDocument, raw s
 	if audience != cfg.ClientID {
 		return oidcJWTClaims{}, errors.New("OIDC ID token audience mismatch")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), oidcHTTPTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, doc.JWKSURI, nil)
 	if err != nil {
 		return oidcJWTClaims{}, err
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := oidcHTTPClient().Do(req)
 	if err != nil {
 		return oidcJWTClaims{}, err
 	}
@@ -218,6 +238,9 @@ func (a *app) verifyOIDCIDToken(cfg oidcConfig, doc oidcDiscoveryDocument, raw s
 		return oidcJWTClaims{}, errors.New("invalid OIDC RSA exponent")
 	}
 	key := &rsa.PublicKey{N: new(big.Int).SetBytes(nBytes), E: e}
+	if key.N.BitLen() < oidcMinRSABits {
+		return oidcJWTClaims{}, fmt.Errorf("OIDC signing key is shorter than %d bits", oidcMinRSABits)
+	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
 		return oidcJWTClaims{}, err
@@ -237,38 +260,40 @@ func randomOIDCString(size int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (a *app) oidcStateCookie(r *http.Request, state, verifier string) *http.Cookie {
-	payload := base64.RawURLEncoding.EncodeToString([]byte(state + "\x00" + verifier))
+func (a *app) oidcStateCookie(r *http.Request, state, verifier, nonce string) *http.Cookie {
+	payload := base64.RawURLEncoding.EncodeToString([]byte(state + "\x00" + verifier + "\x00" + nonce))
 	h := hmac.New(sha256.New, a.sessionKey)
 	_, _ = h.Write([]byte("trace-oidc\x00" + payload))
 	value := payload + "." + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 	return &http.Cookie{Name: "trace_oidc_state", Value: value, Path: "/login/oidc", MaxAge: 600, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureCookie(r)}
 }
 
-func (a *app) readOIDCState(r *http.Request) (string, string, error) {
+// readOIDCState returns the state, PKCE verifier, and nonce stored in the
+// signed state cookie.
+func (a *app) readOIDCState(r *http.Request) (string, string, string, error) {
 	cookie, err := r.Cookie("trace_oidc_state")
 	if err != nil {
-		return "", "", errors.New("OIDC state cookie missing")
+		return "", "", "", errors.New("OIDC state cookie missing")
 	}
 	parts := strings.Split(cookie.Value, ".")
 	if len(parts) != 2 {
-		return "", "", errors.New("invalid OIDC state")
+		return "", "", "", errors.New("invalid OIDC state")
 	}
 	h := hmac.New(sha256.New, a.sessionKey)
 	_, _ = h.Write([]byte("trace-oidc\x00" + parts[0]))
 	got, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil || !hmac.Equal(got, h.Sum(nil)) {
-		return "", "", errors.New("invalid OIDC state signature")
+		return "", "", "", errors.New("invalid OIDC state signature")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return "", "", errors.New("invalid OIDC state payload")
+		return "", "", "", errors.New("invalid OIDC state payload")
 	}
 	fields := strings.Split(string(payload), "\x00")
-	if len(fields) != 2 || fields[0] == "" || fields[1] == "" {
-		return "", "", errors.New("invalid OIDC state payload")
+	if len(fields) != 3 || fields[0] == "" || fields[1] == "" || fields[2] == "" {
+		return "", "", "", errors.New("invalid OIDC state payload")
 	}
-	return fields[0], fields[1], nil
+	return fields[0], fields[1], fields[2], nil
 }
 
 func (a *app) oidcLogin(w http.ResponseWriter, r *http.Request) {
@@ -292,10 +317,15 @@ func (a *app) oidcLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot create OIDC verifier", http.StatusInternalServerError)
 		return
 	}
+	nonce, err := randomOIDCString(24)
+	if err != nil {
+		http.Error(w, "cannot create OIDC nonce", http.StatusInternalServerError)
+		return
+	}
 	hash := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(hash[:])
-	query := url.Values{"response_type": {"code"}, "client_id": {cfg.ClientID}, "redirect_uri": {cfg.RedirectURL}, "scope": {strings.Join(cfg.Scopes, " ")}, "state": {state}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}}
-	http.SetCookie(w, a.oidcStateCookie(r, state, verifier))
+	query := url.Values{"response_type": {"code"}, "client_id": {cfg.ClientID}, "redirect_uri": {cfg.RedirectURL}, "scope": {strings.Join(cfg.Scopes, " ")}, "state": {state}, "nonce": {nonce}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}}
+	http.SetCookie(w, a.oidcStateCookie(r, state, verifier, nonce))
 	http.Redirect(w, r, doc.AuthorizationEndpoint+"?"+query.Encode(), http.StatusFound)
 }
 
@@ -304,7 +334,7 @@ func (a *app) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		a.loginPage(w, r, "OIDC sign-in was cancelled: "+providerError, http.StatusUnauthorized)
 		return
 	}
-	state, verifier, err := a.readOIDCState(r)
+	state, verifier, nonce, err := a.readOIDCState(r)
 	if err != nil || !hmac.Equal([]byte(state), []byte(r.URL.Query().Get("state"))) {
 		a.loginPage(w, r, "OIDC state validation failed.", http.StatusForbidden)
 		return
@@ -320,13 +350,15 @@ func (a *app) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {r.URL.Query().Get("code")}, "redirect_uri": {cfg.RedirectURL}, "client_id": {cfg.ClientID}, "client_secret": {cfg.ClientSecret}, "code_verifier": {verifier}}
-	tokenReq, err := http.NewRequest(http.MethodPost, doc.TokenEndpoint, strings.NewReader(form.Encode()))
+	ctx, cancel := context.WithTimeout(r.Context(), oidcHTTPTimeout)
+	defer cancel()
+	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, doc.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		a.loginPage(w, r, "OIDC token exchange failed.", http.StatusBadGateway)
 		return
 	}
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	res, err := http.DefaultClient.Do(tokenReq)
+	res, err := oidcHTTPClient().Do(tokenReq)
 	if err != nil {
 		a.loginPage(w, r, "OIDC token exchange failed.", http.StatusBadGateway)
 		return
@@ -343,20 +375,20 @@ func (a *app) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	var idClaims *oidcJWTClaims
 	if tokens.IDToken != "" {
-		verified, err := a.verifyOIDCIDToken(cfg, doc, tokens.IDToken)
+		verified, err := a.verifyOIDCIDToken(cfg, doc, tokens.IDToken, nonce)
 		if err != nil {
 			a.loginPage(w, r, "OIDC ID token validation failed.", http.StatusUnauthorized)
 			return
 		}
 		idClaims = &verified
 	}
-	infoReq, err := http.NewRequest(http.MethodGet, doc.UserinfoEndpoint, nil)
+	infoReq, err := http.NewRequestWithContext(ctx, http.MethodGet, doc.UserinfoEndpoint, nil)
 	if err != nil {
 		a.loginPage(w, r, "OIDC user information failed.", http.StatusBadGateway)
 		return
 	}
 	infoReq.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
-	infoRes, err := http.DefaultClient.Do(infoReq)
+	infoRes, err := oidcHTTPClient().Do(infoReq)
 	if err != nil {
 		a.loginPage(w, r, "OIDC user information failed.", http.StatusBadGateway)
 		return

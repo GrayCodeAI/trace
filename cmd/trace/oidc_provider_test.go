@@ -160,3 +160,5 @@ func sessionCookieIssued(res *httptest.ResponseRecorder) bool {
 	}
 	return false
 }
+
+func newRecorder() *httptest.ResponseRecorder { return httptest.NewRecorder() }

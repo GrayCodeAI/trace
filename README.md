@@ -140,7 +140,7 @@ HTTP requests are throttled per client address. Normal paths allow 300 requests 
 
 ## OIDC single sign-on
 
-OIDC is optional and disabled unless configured. The setup stores the client secret under `data/oidc.json` with owner-only permissions, uses discovery plus authorization-code PKCE, validates signed state, requires HTTPS except for loopback development, and obtains identity claims from the provider's userinfo endpoint. When the provider returns an ID token, Trace validates its RS256 signature, issuer, audience, expiry, and signing key from the discovered JWKS endpoint:
+OIDC is optional and disabled unless configured. The setup stores the client secret under `data/oidc.json` with owner-only permissions, uses discovery plus authorization-code PKCE, validates signed state, requires HTTPS except for loopback development, and obtains identity claims from the provider's userinfo endpoint. When the provider returns an ID token, Trace validates its RS256 signature (keys of at least 2048 bits from the discovered JWKS endpoint), issuer, audience, expiry, and the nonce sent with the authorization request. Every request to the provider has a 10-second timeout and does not follow redirects:
 
 ```sh
 ./trace sso oidc set -data ./data \
