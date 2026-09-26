@@ -573,14 +573,23 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 		}
 		job := actionJob{ID: i + 1, Name: spec.Name, Status: "running", StartedAt: time.Now().UTC()}
 		var logText strings.Builder
-		for _, commandText := range spec.Run {
+		for commandIndex, commandText := range spec.Run {
 			if logText.Len() < maxActionLog {
 				logText.WriteString("$ ")
 				logText.WriteString(commandText)
 				logText.WriteByte('\n')
 			}
 			commandCtx, cancel := context.WithTimeout(ctx, maxActionDuration)
-			cmd, commandErr := actionCommandWithSandbox(commandCtx, commandText, workspace, scratch, config.Sandbox, config.SandboxRuntime, config.SandboxImage)
+			cmd, commandErr := buildActionCommand(commandCtx, actionCommandSpec{
+				Command:   commandText,
+				Workspace: workspace,
+				Scratch:   scratch,
+				Sandbox:   config.Sandbox,
+				Runtime:   config.SandboxRuntime,
+				Image:     config.SandboxImage,
+				Env:       actionJobEnv(run.Repo, run.Commit, workspace, scratch, secrets),
+				Name:      fmt.Sprintf("trace-run-%d-%d-%d", run.ID, job.ID, commandIndex+1),
+			})
 			if commandErr != nil {
 				job.Status, job.ExitCode = "failure", 1
 				logText.WriteString(commandErr.Error())
@@ -588,16 +597,22 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 				cancel()
 				break
 			}
-			cmd.Dir = workspace
-			cmd.Env = actionCommandEnv(cmd, actionJobEnv(run.Repo, run.Commit, workspace, scratch, secrets))
-			out, err := cmd.CombinedOutput()
+			// One shared writer: os/exec then serializes stdout and stderr
+			// writes, and the cap keeps unbounded output out of memory.
+			output := &cappedBuffer{limit: maxActionLog - logText.Len()}
+			cmd.Stdout, cmd.Stderr = output, output
+			err := runActionCommand(cmd)
+			timedOut := commandCtx.Err() != nil
 			cancel()
-			if logText.Len() < maxActionLog {
-				remaining := maxActionLog - logText.Len()
-				if len(out) > remaining {
-					out = out[:remaining]
-				}
-				logText.Write(out)
+			logText.Write(output.Bytes())
+			if timedOut && ctx.Err() == nil {
+				logText.WriteString("\nTrace: step exceeded the 15-minute limit and was stopped\n")
+			}
+			if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil && !timedOut {
+				// The step exited successfully but left background processes
+				// holding its output open; they were terminated with the group.
+				logText.WriteString("\nTrace: stopped background processes left running by this step\n")
+				err = nil
 			}
 			if err != nil {
 				job.Status, job.ExitCode = "failure", 1
@@ -658,56 +673,126 @@ func actionJobEnv(repo, commit, home, tmpDir string, secrets map[string]string) 
 	return env
 }
 
-// actionCommandEnv returns the environment for the runner process. Local and
-// sandbox-exec jobs get exactly jobEnv. The docker client itself is operator
-// tooling and keeps the service environment (DOCKER_HOST, HOME for its
-// config); the container only receives variables named explicitly on the
-// docker command line.
-func actionCommandEnv(cmd *exec.Cmd, jobEnv []string) []string {
-	if len(cmd.Args) > 0 && cmd.Args[0] == "docker" {
-		return append(os.Environ(), jobEnv...)
+// actionCommandSpec describes one workflow step for buildActionCommand.
+type actionCommandSpec struct {
+	Command   string
+	Workspace string   // checkout, the working directory
+	Scratch   string   // optional extra job-writable directory (TMPDIR; /tmp in Docker)
+	Sandbox   bool     // request sandbox-exec or Docker isolation
+	Runtime   string   // "macos" (default) or "docker"
+	Image     string   // Docker image
+	Env       []string // complete job environment, KEY=VALUE
+	Name      string   // unique Docker container name
+}
+
+// dockerForwardedEnv lists the job variables passed into a container. The
+// container keeps the image's own PATH and HOME; values are read by the
+// docker client from its environment, so secrets never appear in argv.
+func dockerForwardedEnv(env []string) []string {
+	var names []string
+	for _, item := range env {
+		name, _, _ := strings.Cut(item, "=")
+		switch {
+		case name == "TRACE_REPOSITORY", name == "TRACE_COMMIT", name == "CI", strings.HasPrefix(name, "TRACE_SECRET_"):
+			names = append(names, name)
+		}
 	}
-	return jobEnv
+	return names
+}
+
+// buildActionCommand returns the runner command for one workflow step with
+// its environment, working directory, and cancellation wired up. Local and
+// sandbox-exec steps run in their own process group so cancellation, the
+// step timeout, and step completion can stop every process they started.
+// Docker steps run in a named container that cancellation kills explicitly,
+// because killing the docker client alone leaves the container running.
+func buildActionCommand(ctx context.Context, spec actionCommandSpec) (*exec.Cmd, error) {
+	runtimeName := spec.Runtime
+	if runtimeName == "" {
+		runtimeName = "macos"
+	}
+	var cmd *exec.Cmd
+	switch {
+	case !spec.Sandbox:
+		cmd = exec.CommandContext(ctx, "sh", "-c", spec.Command)
+	case runtimeName == "docker":
+		if strings.TrimSpace(spec.Image) == "" || !commandAvailable("docker") {
+			return nil, errors.New("Docker sandboxing requires docker and sandbox_image; refusing unsafe fallback")
+		}
+		if spec.Name == "" {
+			return nil, errors.New("Docker sandboxing requires a container name")
+		}
+		args := []string{"run", "--rm", "--name", spec.Name, "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "-v", spec.Workspace + ":/workspace:rw"}
+		if spec.Scratch != "" {
+			args = append(args, "-v", spec.Scratch+":/tmp:rw")
+		}
+		for _, name := range dockerForwardedEnv(spec.Env) {
+			args = append(args, "-e", name)
+		}
+		args = append(args, "-w", "/workspace", spec.Image, "/bin/sh", "-c", spec.Command)
+		cmd = exec.CommandContext(ctx, "docker", args...)
+		name := spec.Name
+		cmd.Cancel = func() error {
+			killCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			_ = exec.CommandContext(killCtx, "docker", "kill", name).Run()
+			return cmd.Process.Kill()
+		}
+		// The docker client talks to the daemon with the operator's
+		// environment; the container only sees the variables named above.
+		cmd.Env = append(os.Environ(), spec.Env...)
+	case runtimeName == "macos" && runtime.GOOS == "darwin" && commandAvailable("sandbox-exec"):
+		writable := []string{spec.Workspace}
+		if spec.Scratch != "" {
+			writable = append(writable, spec.Scratch)
+		}
+		cmd = exec.CommandContext(ctx, "sandbox-exec", "-p", macOSSandboxProfile(writable...), "/bin/sh", "-c", spec.Command)
+	default:
+		return nil, errors.New("macOS sandboxing requires sandbox-exec; refusing unsafe fallback")
+	}
+	if cmd.Env == nil {
+		cmd.Env = spec.Env
+		if cmd.Env == nil {
+			cmd.Env = []string{}
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error { return killProcessGroup(cmd) }
+	}
+	cmd.Dir = spec.Workspace
+	cmd.WaitDelay = actionWaitDelay
+	return cmd, nil
+}
+
+// actionWaitDelay bounds how long a finished or cancelled step may keep its
+// output pipes open through leftover child processes.
+const actionWaitDelay = 5 * time.Second
+
+func killProcessGroup(cmd *exec.Cmd) error {
+	if cmd.Process == nil || cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
+		return nil
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	return nil
+}
+
+// runActionCommand runs a step and then stops anything it left behind in its
+// process group, so background processes cannot outlive the step or keep
+// running after the 15-minute limit.
+func runActionCommand(cmd *exec.Cmd) error {
+	err := cmd.Run()
+	_ = killProcessGroup(cmd)
+	return err
 }
 
 func actionCommand(ctx context.Context, commandText, workspace string, sandbox bool) (*exec.Cmd, error) {
-	return actionCommandWithSandbox(ctx, commandText, workspace, "", sandbox, "", "")
+	return buildActionCommand(ctx, actionCommandSpec{Command: commandText, Workspace: workspace, Sandbox: sandbox, Name: "trace-run-adhoc"})
 }
 
 func commandAvailable(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
-}
-
-// actionCommandWithSandbox builds the runner command for one workflow step.
-// workspace is the checkout; scratch, when set, is an extra job-writable
-// directory used as TMPDIR (mounted at /tmp for Docker).
-func actionCommandWithSandbox(ctx context.Context, commandText, workspace, scratch string, sandbox bool, sandboxRuntime, sandboxImage string) (*exec.Cmd, error) {
-	if !sandbox {
-		return exec.CommandContext(ctx, "sh", "-c", commandText), nil
-	}
-	if sandboxRuntime == "" {
-		sandboxRuntime = "macos"
-	}
-	if sandboxRuntime == "docker" {
-		if strings.TrimSpace(sandboxImage) == "" || !commandAvailable("docker") {
-			return nil, errors.New("Docker sandboxing requires docker and sandbox_image; refusing unsafe fallback")
-		}
-		args := []string{"run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "-v", workspace + ":/workspace:rw"}
-		if scratch != "" {
-			args = append(args, "-v", scratch+":/tmp:rw")
-		}
-		args = append(args, "-w", "/workspace", sandboxImage, "/bin/sh", "-c", commandText)
-		return exec.CommandContext(ctx, "docker", args...), nil
-	}
-	if sandboxRuntime != "macos" || runtime.GOOS != "darwin" || !commandAvailable("sandbox-exec") {
-		return nil, errors.New("macOS sandboxing requires sandbox-exec; refusing unsafe fallback")
-	}
-	writable := []string{workspace}
-	if scratch != "" {
-		writable = append(writable, scratch)
-	}
-	return exec.CommandContext(ctx, "sandbox-exec", "-p", macOSSandboxProfile(writable...), "/bin/sh", "-c", commandText), nil
 }
 
 // macOSSandboxProfile allows the job to read system tool directories and to

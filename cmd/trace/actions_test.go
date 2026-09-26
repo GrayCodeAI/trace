@@ -53,15 +53,25 @@ func TestDockerSandboxCommandShape(t *testing.T) {
 	if !commandAvailable("docker") {
 		t.Skip("docker client is not installed")
 	}
-	cmd, err := actionCommandWithSandbox(context.Background(), "printf ok", t.TempDir(), "", true, "docker", "alpine:3.20")
+	env := actionJobEnv("team/ci", "abc123", "/work/src", "/work/tmp", map[string]string{"TRACE_SECRET_DEPLOY": "super-secret-value"})
+	cmd, err := buildActionCommand(context.Background(), actionCommandSpec{Command: "printf ok", Workspace: t.TempDir(), Scratch: t.TempDir(), Sandbox: true, Runtime: "docker", Image: "alpine:3.20", Env: env, Name: "trace-run-7-1-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(cmd.Args, " ")
-	for _, expected := range []string{"--network none", "--read-only", "--cap-drop ALL", "--security-opt no-new-privileges", "alpine:3.20"} {
+	for _, expected := range []string{"--network none", "--read-only", "--cap-drop ALL", "--security-opt no-new-privileges", "alpine:3.20", "--name trace-run-7-1-1", "-e TRACE_REPOSITORY", "-e TRACE_COMMIT", "-e CI", "-e TRACE_SECRET_DEPLOY", ":/tmp:rw"} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("docker sandbox missing %q: %s", expected, joined)
 		}
+	}
+	if strings.Contains(joined, "super-secret-value") || strings.Contains(joined, "-e PATH") || strings.Contains(joined, "-e HOME") {
+		t.Fatalf("docker command line leaks values or host paths: %s", joined)
+	}
+	if !containsString(cmd.Env, "TRACE_SECRET_DEPLOY=super-secret-value") || !containsString(cmd.Env, "TRACE_COMMIT=abc123") {
+		t.Fatal("docker client environment does not carry the forwarded job variables")
+	}
+	if cmd.Cancel == nil {
+		t.Fatal("docker steps need a cancel hook that kills the container")
 	}
 }
 
