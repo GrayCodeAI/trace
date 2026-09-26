@@ -113,7 +113,7 @@ curl https://git.example.com/raw/team/project/README.md?ref=main
   -token-file ./data/admin-token -ref main -path README.md team/project
 ```
 
-Public repositories allow anonymous raw reads; private repositories require repository access. Raw paths are branch-scoped, reject traversal, and are capped at 8 MiB.
+Public repositories allow anonymous raw reads; private repositories require repository access. Raw paths are branch-scoped, reject traversal, and are capped at 8 MiB. Raw files are served as inert data: HTML, SVG, XML, and JavaScript are sent as `text/plain`, and every raw response carries a script-free `Content-Security-Policy: sandbox`.
 
 Change visibility from the CLI when needed:
 
@@ -367,7 +367,7 @@ Trace can publish a committed branch as a Pages-style static site. Enable it loc
   -token-file ./data/admin-token -pages-branch main team/site
 ```
 
-The site is served at `/pages/OWNER/NAME/`. An `index.html` is used for directory requests, and an optional root such as `dist` can be configured. Public repositories have anonymous Pages reads; private repositories require repository access. Files are read from Git, capped at 8 MiB, and path traversal is rejected. Disable with `trace pages disable` or `trace api pages-disable`.
+The site is served at `/pages/OWNER/NAME/`. An `index.html` is used for directory requests, and an optional root such as `dist` can be configured. Public repositories have anonymous Pages reads; private repositories require repository access. Files are read from Git, capped at 8 MiB, and path traversal is rejected. Pages are served on Trace's origin inside a CSP sandbox without `allow-same-origin`: site scripts run with an opaque origin and cannot read Trace pages, cookies, or form tokens as the signed-in user. Because of that sandbox, browsers do not send the Trace session cookie with the site's own sub-resource requests, so a private Pages site should inline its CSS, scripts, and images. Disable with `trace pages disable` or `trace api pages-disable`.
 
 For npm-style consumers, Trace exposes package metadata and tarball routes at `/npm/OWNER/REPO/PACKAGE` and `/npm/OWNER/REPO/PACKAGE/-/FILENAME`. A basic npm `PUT` payload with one `_attachments` tarball is accepted and stored immutably. Scoped package names, dist-tag mutation, npm auth token negotiation, and dependency proxying are not implemented.
 

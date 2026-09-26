@@ -1020,7 +1020,7 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "same-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", appContentSecurityPolicy)
 	switch {
 	case r.URL.Path == "/.well-known/trace/ssh-host-key" && r.Method == http.MethodGet:
 		publicKey, fingerprint, err := sshHostKeyInfo(a.store.root)

@@ -164,6 +164,7 @@ func (a *app) pagesHTTP(w http.ResponseWriter, r *http.Request, db userDB) {
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
+	w.Header().Set("Content-Security-Policy", pagesContentSecurityPolicy)
 	setRepositoryContentCache(w, public)
 	_, _ = io.Copy(w, bytes.NewReader(b))
 }

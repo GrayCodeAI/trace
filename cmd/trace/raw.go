@@ -102,11 +102,8 @@ func readBlobLimited(repoPath, rev, path string, limit int64) ([]byte, error) {
 }
 
 func writeRaw(w http.ResponseWriter, body []byte, contentType string, public bool) {
-	if contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	} else {
-		w.Header().Set("Content-Type", "application/octet-stream")
-	}
+	w.Header().Set("Content-Type", rawContentType(contentType))
+	setRawSecurityHeaders(w)
 	w.Header().Set("Content-Length", stringSize(len(body)))
 	setRepositoryContentCache(w, public)
 	_, _ = w.Write(body)
