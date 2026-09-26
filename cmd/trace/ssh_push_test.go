@@ -130,3 +130,16 @@ func TestSSHPushToArchivedRepositoryIsRejected(t *testing.T) {
 		t.Fatalf("SSH push to an archived repository succeeded:\n%s", out)
 	}
 }
+
+func TestSSHPushIgnoresServerTraceAdminEnvironment(t *testing.T) {
+	// An operator shell or unit file that exports TRACE_ADMIN=1 must not turn
+	// every SSH push into an administrator push.
+	t.Setenv("TRACE_ADMIN", "1")
+	f := newSSHPushFixture(t, "team/protected")
+	if out, err := f.push(t, "team/protected", "main"); err == nil {
+		t.Fatalf("non-admin SSH push to protected main succeeded:\n%s", out)
+	}
+	if out, err := f.push(t, "team/protected", "feature"); err != nil {
+		t.Fatalf("non-admin SSH push to a feature branch failed: %v\n%s", err, out)
+	}
+}

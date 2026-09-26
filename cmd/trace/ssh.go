@@ -272,10 +272,7 @@ func handleSSHSession(s *store, permissions *ssh.Permissions, ch ssh.Channel, re
 	cmd.Stdin = ch
 	cmd.Stdout = ch
 	cmd.Stderr = ch.Stderr()
-	cmd.Env = append(os.Environ(), "REMOTE_USER="+username)
-	if u.Admin {
-		cmd.Env = append(cmd.Env, "TRACE_ADMIN=1")
-	}
+	cmd.Env = gitServiceEnv(username, u.Admin)
 	err = cmd.Run()
 	status := uint32(0)
 	if err != nil {
@@ -288,4 +285,26 @@ func handleSSHSession(s *store, permissions *ssh.Permissions, ch ssh.Channel, re
 	payload := make([]byte, 4)
 	binary.BigEndian.PutUint32(payload, status)
 	_, _ = ch.SendRequest("exit-status", false, payload)
+}
+
+// gitServiceEnv is the complete environment for a Git service process that
+// Trace starts for a user. Like the HTTP CGI path, it never inherits the
+// service environment, and TRACE_ADMIN is always set explicitly so a stray
+// TRACE_ADMIN=1 in the operator's environment cannot disable branch
+// protection for non-admin pushes.
+func gitServiceEnv(username string, admin bool) []string {
+	path := os.Getenv("PATH")
+	if path == "" {
+		path = "/usr/local/bin:/usr/bin:/bin"
+	}
+	env := []string{"PATH=" + path, "REMOTE_USER=" + username, "TRACE_ADMIN=0"}
+	if admin {
+		env[2] = "TRACE_ADMIN=1"
+	}
+	for _, name := range []string{"LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"} {
+		if value := os.Getenv(name); value != "" {
+			env = append(env, name+"="+value)
+		}
+	}
+	return env
 }
