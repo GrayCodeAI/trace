@@ -152,6 +152,15 @@ OIDC is optional and disabled unless configured. The setup stores the client sec
 ./trace sso oidc disable -data ./data
 ```
 
+Trace binds each OIDC identity to one local account by the provider's issuer and subject (`sub`); usernames and email addresses from the provider are never used to pick an existing account. With `-auto-provision`, a first sign-in creates a new account named after `preferred_username` (or the email's local part) and bound to that subject; if a local account with that name already exists, sign-in is refused. To let an existing account sign in through the provider, an administrator links it explicitly (the refusal page shows the subject):
+
+```sh
+./trace sso oidc link -data ./data alice PROVIDER_SUBJECT
+./trace sso oidc unlink -data ./data alice
+```
+
+Accounts created by auto-provisioning in earlier Trace versions are not bound and must be linked once. `-allowed-email-domains example.com,example.org` additionally requires a verified email (`email_verified`) in one of those domains. When the provider returns an ID token, its subject must equal the userinfo subject. Accounts with Trace TOTP enabled cannot sign in through OIDC; they use token sign-in with their code.
+
 The login page shows the provider button only while configuration is present. Auto-provisioned accounts receive a local record for session continuity but no personal token is returned. Providers that return only userinfo are still accepted, so deploy behind a provider whose userinfo endpoint is trusted and use HTTPS. SAML and provider-specific group claims remain unimplemented.
 
 ## Two-factor authentication

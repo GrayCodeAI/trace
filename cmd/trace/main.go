@@ -264,7 +264,7 @@ func run(args []string) error {
 		return nil
 	case "sso":
 		if len(args) < 3 || args[1] != "oidc" {
-			return errors.New("usage: trace sso oidc <set|disable> ...")
+			return errors.New("usage: trace sso oidc <set|disable|link|unlink> ...")
 		}
 		return oidcCommand(args[2:])
 	case "team":

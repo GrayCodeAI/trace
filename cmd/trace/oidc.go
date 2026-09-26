@@ -31,6 +31,9 @@ type oidcConfig struct {
 	RedirectURL   string   `json:"redirect_url"`
 	AutoProvision bool     `json:"auto_provision"`
 	Scopes        []string `json:"scopes,omitempty"`
+	// AllowedEmailDomains, when set, admits only identities whose userinfo
+	// reports email_verified and an email in one of these domains.
+	AllowedEmailDomains []string `json:"allowed_email_domains,omitempty"`
 }
 
 type oidcDiscoveryDocument struct {
@@ -338,11 +341,14 @@ func (a *app) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		a.loginPage(w, r, "OIDC token response was invalid.", http.StatusBadGateway)
 		return
 	}
+	var idClaims *oidcJWTClaims
 	if tokens.IDToken != "" {
-		if _, err := a.verifyOIDCIDToken(cfg, doc, tokens.IDToken); err != nil {
+		verified, err := a.verifyOIDCIDToken(cfg, doc, tokens.IDToken)
+		if err != nil {
 			a.loginPage(w, r, "OIDC ID token validation failed.", http.StatusUnauthorized)
 			return
 		}
+		idClaims = &verified
 	}
 	infoReq, err := http.NewRequest(http.MethodGet, doc.UserinfoEndpoint, nil)
 	if err != nil {
@@ -356,54 +362,153 @@ func (a *app) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer infoRes.Body.Close()
-	var claims struct {
-		Subject string `json:"sub"`
-		Name    string `json:"preferred_username"`
-		Email   string `json:"email"`
-	}
+	var claims oidcUserinfo
 	if infoRes.StatusCode < 200 || infoRes.StatusCode >= 300 || json.NewDecoder(io.LimitReader(infoRes.Body, 256<<10)).Decode(&claims) != nil {
 		a.loginPage(w, r, "OIDC user information was invalid.", http.StatusUnauthorized)
 		return
 	}
-	localName := claims.Name
-	if localName == "" {
-		localName = strings.Split(claims.Email, "@")[0]
-	}
-	if !namePattern.MatchString(localName) || localName == "git" || claims.Subject == "" {
-		a.loginPage(w, r, "OIDC account has no valid Trace username.", http.StatusForbidden)
+	// OIDC Core 5.3.2: the userinfo subject must be the ID token's subject.
+	if claims.Subject == "" || (idClaims != nil && idClaims.Subject != claims.Subject) {
+		a.loginPage(w, r, "OIDC user information does not match the ID token.", http.StatusUnauthorized)
 		return
 	}
-	db, err := a.store.loadUsers()
+	if !oidcEmailAllowed(cfg, claims) {
+		a.loginPage(w, r, "Your OIDC account's verified email domain is not allowed on this Trace node.", http.StatusForbidden)
+		return
+	}
+	issuer := strings.TrimRight(cfg.Issuer, "/")
+	name, u, found, err := a.store.oidcAccount(issuer, claims.Subject)
 	if err != nil {
 		a.loginPage(w, r, "cannot load Trace users.", http.StatusInternalServerError)
 		return
 	}
-	u, exists := db.Users[localName]
-	if !exists {
+	if !found {
 		if !cfg.AutoProvision {
-			a.loginPage(w, r, "Your OIDC account is not provisioned in Trace.", http.StatusForbidden)
+			a.loginPage(w, r, "Your OIDC identity is not linked to a Trace account. An administrator can link it with: trace sso oidc link USER "+claims.Subject, http.StatusForbidden)
 			return
 		}
-		seed, seedErr := newToken()
-		if seedErr != nil {
-			a.loginPage(w, r, "cannot provision Trace account.", http.StatusInternalServerError)
+		name, u, err = a.store.provisionOIDCAccount(issuer, claims)
+		if err != nil {
+			a.loginPage(w, r, err.Error(), http.StatusForbidden)
 			return
 		}
-		if err := a.store.updateUsers(func(users *userDB) error {
-			users.Users[localName] = userRecord{Hash: hashToken(seed)}
-			return nil
-		}); err != nil {
-			a.loginPage(w, r, "cannot provision Trace account.", http.StatusInternalServerError)
-			return
-		}
-		u = userRecord{Hash: hashToken(seed)}
-	} else if u.Disabled {
+	}
+	if u.Disabled {
 		a.loginPage(w, r, "Your Trace account is disabled.", http.StatusForbidden)
 		return
 	}
-	a.issueSession(w, r, localName, u)
+	if u.TOTPEnabled {
+		// OIDC sign-in cannot collect Trace's TOTP code, so an account that
+		// requires it must use token sign-in instead of bypassing it.
+		a.loginPage(w, r, "This Trace account requires two-factor sign-in with its token and code.", http.StatusForbidden)
+		return
+	}
+	a.issueSession(w, r, name, u)
 	http.SetCookie(w, &http.Cookie{Name: "trace_oidc_state", Path: "/login/oidc", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureCookie(r)})
 	http.Redirect(w, r, "/app", http.StatusSeeOther)
+}
+
+// oidcUserinfo holds the userinfo claims Trace uses. email_verified is kept
+// raw because some providers send it as a string.
+type oidcUserinfo struct {
+	Subject       string          `json:"sub"`
+	Name          string          `json:"preferred_username"`
+	Email         string          `json:"email"`
+	EmailVerified json.RawMessage `json:"email_verified"`
+}
+
+func (c oidcUserinfo) emailVerified() bool {
+	value := strings.Trim(strings.TrimSpace(string(c.EmailVerified)), `"`)
+	return strings.EqualFold(value, "true")
+}
+
+func oidcEmailAllowed(cfg oidcConfig, claims oidcUserinfo) bool {
+	if len(cfg.AllowedEmailDomains) == 0 {
+		return true
+	}
+	at := strings.LastIndex(claims.Email, "@")
+	if !claims.emailVerified() || at < 1 {
+		return false
+	}
+	domain := strings.ToLower(claims.Email[at+1:])
+	for _, allowed := range cfg.AllowedEmailDomains {
+		if strings.EqualFold(strings.TrimSpace(allowed), domain) {
+			return true
+		}
+	}
+	return false
+}
+
+// oidcAccount returns the local account bound to (issuer, subject).
+func (s *store) oidcAccount(issuer, subject string) (string, userRecord, bool, error) {
+	db, err := s.loadUsers()
+	if err != nil {
+		return "", userRecord{}, false, err
+	}
+	for name, u := range db.Users {
+		if u.OIDCSubject != "" && u.OIDCSubject == subject && strings.TrimRight(u.OIDCIssuer, "/") == issuer {
+			return name, u, true, nil
+		}
+	}
+	return "", userRecord{}, false, nil
+}
+
+// provisionOIDCAccount creates a new account bound to the identity. It never
+// adopts an existing account: a name collision must be resolved by an
+// administrator with `trace sso oidc link`.
+func (s *store) provisionOIDCAccount(issuer string, claims oidcUserinfo) (string, userRecord, error) {
+	name := claims.Name
+	if name == "" {
+		name = strings.Split(claims.Email, "@")[0]
+	}
+	if !namePattern.MatchString(name) || name == "git" {
+		return "", userRecord{}, errors.New("OIDC account has no valid Trace username.")
+	}
+	seed, err := newToken()
+	if err != nil {
+		return "", userRecord{}, errors.New("cannot provision Trace account.")
+	}
+	record := userRecord{Hash: hashToken(seed), OIDCIssuer: issuer, OIDCSubject: claims.Subject}
+	err = s.updateUsers(func(db *userDB) error {
+		if _, exists := db.Users[name]; exists {
+			return fmt.Errorf("A Trace account named %s already exists and is not linked to your OIDC identity. An administrator can link it with: trace sso oidc link %s %s", name, name, claims.Subject)
+		}
+		for _, u := range db.Users {
+			if u.OIDCSubject == claims.Subject && strings.TrimRight(u.OIDCIssuer, "/") == issuer {
+				return errors.New("This OIDC identity is already linked to another Trace account.")
+			}
+		}
+		db.Users[name] = record
+		return nil
+	})
+	if err != nil {
+		return "", userRecord{}, err
+	}
+	return name, record, nil
+}
+
+// linkOIDCAccount binds (or, with an empty subject, unbinds) a local account
+// to an identity of the configured issuer.
+func (s *store) linkOIDCAccount(name, issuer, subject string) error {
+	return s.updateUsers(func(db *userDB) error {
+		u, ok := db.Users[name]
+		if !ok {
+			return errors.New("user not found")
+		}
+		if subject != "" {
+			for other, candidate := range db.Users {
+				if other != name && candidate.OIDCSubject == subject && strings.TrimRight(candidate.OIDCIssuer, "/") == issuer {
+					return fmt.Errorf("OIDC subject is already linked to %s", other)
+				}
+			}
+		}
+		u.OIDCIssuer, u.OIDCSubject = issuer, subject
+		if subject == "" {
+			u.OIDCIssuer = ""
+		}
+		db.Users[name] = u
+		return nil
+	})
 }
 
 func oidcLoginLink(s *store) string {
@@ -415,8 +520,11 @@ func oidcLoginLink(s *store) string {
 }
 
 func oidcCommand(args []string) error {
+	if len(args) > 0 && (args[0] == "link" || args[0] == "unlink") {
+		return oidcLinkCommand(args)
+	}
 	if len(args) == 0 || (args[0] != "set" && args[0] != "disable") {
-		return errors.New("usage: trace sso oidc <set|disable> [-data DIR] ...")
+		return errors.New("usage: trace sso oidc <set|disable|link|unlink> [-data DIR] ...")
 	}
 	fs := flag.NewFlagSet("sso oidc "+args[0], flag.ContinueOnError)
 	data := fs.String("data", "./data", "data directory")
@@ -426,6 +534,7 @@ func oidcCommand(args []string) error {
 	redirectURL := fs.String("redirect-url", "", "registered callback URL")
 	autoProvision := fs.Bool("auto-provision", false, "create local users on first OIDC sign-in")
 	scopes := fs.String("scopes", "openid,profile,email", "comma-separated OIDC scopes")
+	allowedDomains := fs.String("allowed-email-domains", "", "comma-separated email domains; when set, sign-in requires a verified email in one of them")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -453,7 +562,13 @@ func oidcCommand(args []string) error {
 			selected = append(selected, scope)
 		}
 	}
-	cfg := oidcConfig{Issuer: strings.TrimRight(*issuer, "/"), ClientID: *clientID, ClientSecret: *clientSecret, RedirectURL: *redirectURL, AutoProvision: *autoProvision, Scopes: selected}
+	var domains []string
+	for _, domain := range strings.Split(*allowedDomains, ",") {
+		if domain = strings.ToLower(strings.TrimSpace(domain)); domain != "" {
+			domains = append(domains, domain)
+		}
+	}
+	cfg := oidcConfig{Issuer: strings.TrimRight(*issuer, "/"), ClientID: *clientID, ClientSecret: *clientSecret, RedirectURL: *redirectURL, AutoProvision: *autoProvision, Scopes: selected, AllowedEmailDomains: domains}
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -483,5 +598,46 @@ func oidcCommand(args []string) error {
 		return err
 	}
 	fmt.Println("OIDC configured")
+	return nil
+}
+
+// oidcLinkCommand implements `trace sso oidc link USER SUBJECT` and
+// `trace sso oidc unlink USER`, the administrator's way to connect an
+// existing local account to an identity of the configured issuer.
+func oidcLinkCommand(args []string) error {
+	usage := errors.New("usage: trace sso oidc link [-data DIR] USER SUBJECT | trace sso oidc unlink [-data DIR] USER")
+	fs := flag.NewFlagSet("sso oidc "+args[0], flag.ContinueOnError)
+	data := fs.String("data", "./data", "data directory")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	s, err := openStore(*data)
+	if err != nil {
+		return err
+	}
+	if args[0] == "unlink" {
+		if fs.NArg() != 1 {
+			return usage
+		}
+		if err := s.linkOIDCAccount(fs.Arg(0), "", ""); err != nil {
+			return err
+		}
+		fmt.Println("unlinked OIDC identity from", fs.Arg(0))
+		return nil
+	}
+	if fs.NArg() != 2 || strings.TrimSpace(fs.Arg(1)) == "" {
+		return usage
+	}
+	cfg, err := s.loadOIDC()
+	if err != nil {
+		return err
+	}
+	if cfg.Issuer == "" {
+		return errors.New("OIDC is not configured; run trace sso oidc set first")
+	}
+	if err := s.linkOIDCAccount(fs.Arg(0), strings.TrimRight(cfg.Issuer, "/"), fs.Arg(1)); err != nil {
+		return err
+	}
+	fmt.Printf("linked %s to OIDC subject %s at %s\n", fs.Arg(0), fs.Arg(1), strings.TrimRight(cfg.Issuer, "/"))
 	return nil
 }
