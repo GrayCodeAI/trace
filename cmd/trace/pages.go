@@ -107,14 +107,12 @@ func (s *store) pagesFile(repo, requestPath string) ([]byte, string, error) {
 	if err := validatePagesPath(filePath); err != nil {
 		return nil, "", err
 	}
-	ref := config.Branch + ":" + filePath
-	cmd := exec.Command("git", "--git-dir", repoPath, "show", ref)
-	b, err := cmd.Output()
-	if err != nil {
-		return nil, "", os.ErrNotExist
-	}
-	if len(b) > 8<<20 {
+	b, err := readBlobLimited(repoPath, "refs/heads/"+config.Branch, filePath, maxRawFile)
+	if errors.Is(err, errBlobTooLarge) {
 		return nil, "", errors.New("pages file exceeds 8 MiB limit")
+	}
+	if err != nil {
+		return nil, "", err
 	}
 	return b, mime.TypeByExtension(filepath.Ext(filePath)), nil
 }
