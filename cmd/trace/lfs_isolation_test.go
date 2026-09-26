@@ -142,7 +142,9 @@ func TestLegacyLFSObjectsMigrateToReferencingRepositories(t *testing.T) {
 		}
 	}
 	pointer := "version https://git-lfs.github.com/spec/v1\noid sha256:" + oid + "\nsize " + strconv.Itoa(len(content)) + "\n"
-	commitFiles(t, a.store, "team/uses-it", map[string][]byte{"asset.bin": []byte(pointer), ".gitattributes": []byte("*.bin filter=lfs diff=lfs merge=lfs -text\n")})
+	// No .gitattributes: the migration finds pointers by content, and an LFS
+	// filter would make the fixture depend on the host's Git LFS setup.
+	commitFiles(t, a.store, "team/uses-it", map[string][]byte{"asset.bin": []byte(pointer)})
 	commitFiles(t, a.store, "team/unrelated", map[string][]byte{"README.md": []byte("nothing here\n")})
 
 	if err := a.store.migrateLegacyLFS(); err != nil {

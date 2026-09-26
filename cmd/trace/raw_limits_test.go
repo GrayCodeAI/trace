@@ -30,8 +30,10 @@ func commitFiles(t *testing.T, s *store, repo string, files map[string][]byte) s
 	gitTest(t, work, "add", ".")
 	gitTest(t, work, "commit", "-m", "files")
 	repoPath, _ := s.repoPath(repo)
-	push := exec.Command("git", "-C", work, "push", "--force", repoPath, "main")
-	push.Env = append(os.Environ(), "TRACE_ADMIN=1")
+	// Disable client hooks: a host-wide Git LFS install adds a pre-push hook
+	// that would try to upload objects for fixture pointer files.
+	push := exec.Command("git", "-c", "core.hooksPath=/dev/null", "-C", work, "push", "--force", repoPath, "main")
+	push.Env = append(os.Environ(), "TRACE_ADMIN=1", "GIT_LFS_SKIP_PUSH=1")
 	if out, err := push.CombinedOutput(); err != nil {
 		t.Fatalf("push: %v\n%s", err, out)
 	}
