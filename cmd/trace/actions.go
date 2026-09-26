@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -610,38 +611,71 @@ func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), d)
 }
 
+const maxActionArtifactSize = 50 << 20
+
+// collectActionArtifacts copies declared artifacts out of a job workspace.
+// The workspace is writable by the job, and this function runs in the
+// unsandboxed Trace process, so every lookup goes through an os.Root bound to
+// the workspace: symlinks (final or intermediate) cannot reach files outside
+// it, symlinked artifacts are refused outright, and only regular files are
+// copied. Files are opened non-blocking so a FIFO cannot stall the runner.
 func collectActionArtifacts(root string, runID, jobID int, workspace string, patterns []string) []actionArtifact {
+	ws, err := os.OpenRoot(workspace)
+	if err != nil {
+		return nil
+	}
+	defer ws.Close()
 	var out []actionArtifact
 	for _, pattern := range patterns {
 		pattern = filepath.Clean(pattern)
-		if pattern == "." || filepath.IsAbs(pattern) || strings.HasPrefix(pattern, ".."+string(filepath.Separator)) || strings.Contains(pattern, string(filepath.Separator)+".."+string(filepath.Separator)) {
+		if pattern == "." || filepath.IsAbs(pattern) || pattern == ".." || strings.HasPrefix(pattern, ".."+string(filepath.Separator)) || strings.Contains(pattern, string(filepath.Separator)+".."+string(filepath.Separator)) {
 			continue
 		}
 		matches, _ := filepath.Glob(filepath.Join(workspace, pattern))
 		for _, source := range matches {
-			info, err := os.Stat(source)
-			if err != nil || info.IsDir() || info.Size() > 50<<20 {
+			rel, err := filepath.Rel(workspace, source)
+			if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 				continue
 			}
-			name := filepath.ToSlash(strings.TrimPrefix(source, workspace+string(filepath.Separator)))
-			dest := filepath.Join(root, "artifacts", fmt.Sprint(runID), fmt.Sprint(jobID), filepath.FromSlash(name))
-			if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
-				continue
+			artifact, ok := copyActionArtifact(ws, root, runID, jobID, rel)
+			if ok {
+				out = append(out, artifact)
 			}
-			in, err := os.Open(source)
-			if err != nil {
-				continue
-			}
-			outFile, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-			if err == nil {
-				_, _ = io.Copy(outFile, io.LimitReader(in, 50<<20))
-				_ = outFile.Close()
-			}
-			_ = in.Close()
-			out = append(out, actionArtifact{Name: name, Size: info.Size(), Path: dest})
 		}
 	}
 	return out
+}
+
+func copyActionArtifact(ws *os.Root, root string, runID, jobID int, rel string) (actionArtifact, bool) {
+	info, err := ws.Lstat(rel)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxActionArtifactSize {
+		return actionArtifact{}, false
+	}
+	in, err := ws.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return actionArtifact{}, false
+	}
+	defer in.Close()
+	opened, err := in.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) || opened.Size() > maxActionArtifactSize {
+		return actionArtifact{}, false
+	}
+	name := filepath.ToSlash(rel)
+	dest := filepath.Join(root, "artifacts", fmt.Sprint(runID), fmt.Sprint(jobID), filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
+		return actionArtifact{}, false
+	}
+	outFile, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return actionArtifact{}, false
+	}
+	written, copyErr := io.Copy(outFile, io.LimitReader(in, maxActionArtifactSize))
+	closeErr := outFile.Close()
+	if copyErr != nil || closeErr != nil {
+		_ = os.Remove(dest)
+		return actionArtifact{}, false
+	}
+	return actionArtifact{Name: name, Size: written, Path: dest}, true
 }
 
 func (s *store) finishActionRun(id int, status string, jobs []actionJob) {
