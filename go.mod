@@ -1,4 +1,4 @@
-module trace
+module github.com/GrayCodeAI/trace
 
 go 1.26
 
