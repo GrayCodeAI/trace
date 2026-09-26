@@ -696,7 +696,7 @@ Admins can configure merge requirements through the API or CLI. The default requ
   -token-file ./data/admin-token team/project
 ```
 
-Required checks match successful action job names for the pull-request head commit. A run from a different commit does not satisfy the policy. Protected branch patterns are enforced by the Git receive hook for non-admin pushes; `*` is supported as a trailing wildcard, for example `release/*`. Administrators can still perform emergency updates.
+Required checks match successful action job names for the pull-request head commit. A run from a different commit does not satisfy the policy. Protected branch patterns are enforced by the Git receive hook for non-admin pushes; `*` is supported as a trailing wildcard, for example `release/*`. Patterns may contain only letters, digits, `.`, `_`, `-`, and `/`, must start with a letter or digit, and are quoted when Trace writes the hook. Administrators can still perform emergency updates.
 
 When `-require-codeowners` is enabled, Trace reads `CODEOWNERS` from the pull-request head (`CODEOWNERS`, `.github/CODEOWNERS`, `.gitlab/CODEOWNERS`, or `docs/CODEOWNERS`) and requires an approval from a matching user or team member for every changed file covered by the last matching rule. Pattern matching supports repository-relative paths, filename patterns, trailing directory patterns, and recursive `**` path segments. CODEOWNERS syntax outside this subset is ignored.
 

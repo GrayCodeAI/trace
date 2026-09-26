@@ -11,15 +11,27 @@ import (
 
 const receiveHookMarker = "# trace-managed:"
 
+// shellCasePattern renders "prefix+pattern" as a POSIX sh case pattern. The
+// literal part is single-quoted so no character in it is interpreted by the
+// shell; only a trailing "*" (Trace's one wildcard form) stays unquoted.
+func shellCasePattern(prefix, pattern string) string {
+	literal := prefix + strings.TrimSuffix(pattern, "*")
+	quoted := "'" + strings.ReplaceAll(literal, "'", `'\''`) + "'"
+	if strings.HasSuffix(pattern, "*") {
+		quoted += "*"
+	}
+	return quoted
+}
+
 func receiveHook(policy repoPolicy) string {
 	patterns := make([]string, 0, len(policy.ProtectedBranches))
 	for _, branch := range policy.ProtectedBranches {
-		patterns = append(patterns, "refs/heads/"+branch)
+		patterns = append(patterns, shellCasePattern("refs/heads/", branch))
 	}
 	if len(patterns) == 0 {
-		patterns = []string{"refs/heads/main"}
+		patterns = []string{shellCasePattern("refs/heads/", "main")}
 	}
-	patterns = append(patterns, "refs/tags/*", "refs/trace/*")
+	patterns = append(patterns, shellCasePattern("refs/tags/", "*"), shellCasePattern("refs/trace/", "*"))
 	return "#!/bin/sh\n# trace-managed: configurable protected branches and tags\nif [ \"$TRACE_ADMIN\" = \"1\" ]; then\n  exit 0\nfi\nwhile read old new ref; do\n  case \"$ref\" in\n    " + strings.Join(patterns, "|") + ")\n      echo \"Trace: only an administrator may update $ref\" >&2\n      exit 1 ;;\n    refs/heads/*) ;;\n    *)\n      echo \"Trace: unsupported ref $ref\" >&2\n      exit 1 ;;\n  esac\ndone\nexit 0\n"
 }
 
