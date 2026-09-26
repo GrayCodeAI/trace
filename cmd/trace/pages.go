@@ -164,7 +164,7 @@ func (a *app) pagesHTTP(w http.ResponseWriter, r *http.Request, db userDB) {
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
-	w.Header().Set("Cache-Control", "public, max-age=60")
+	setRepositoryContentCache(w, public)
 	_, _ = io.Copy(w, bytes.NewReader(b))
 }
 

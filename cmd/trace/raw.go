@@ -101,15 +101,27 @@ func readBlobLimited(repoPath, rev, path string, limit int64) ([]byte, error) {
 	return b, nil
 }
 
-func writeRaw(w http.ResponseWriter, body []byte, contentType string) {
+func writeRaw(w http.ResponseWriter, body []byte, contentType string, public bool) {
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.Header().Set("Content-Length", stringSize(len(body)))
-	w.Header().Set("Cache-Control", "public, max-age=60")
-	_, _ = io.Copy(w, strings.NewReader(string(body)))
+	setRepositoryContentCache(w, public)
+	_, _ = w.Write(body)
+}
+
+// setRepositoryContentCache lets shared caches keep public repository content
+// briefly, but marks private content private and no-store: responses to
+// authenticated requests must never be served to someone else by a proxy.
+func setRepositoryContentCache(w http.ResponseWriter, public bool) {
+	if public {
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Add("Vary", "Cookie, Authorization")
 }
 
 func stringSize(size int) string {
@@ -170,7 +182,7 @@ func (a *app) rawHTTP(w http.ResponseWriter, r *http.Request, db userDB) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeRaw(w, body, contentType)
+	writeRaw(w, body, contentType, public)
 }
 
 func (a *app) apiRaw(w http.ResponseWriter, r *http.Request, repo, repoPath string) {
@@ -192,6 +204,5 @@ func (a *app) apiRaw(w http.ResponseWriter, r *http.Request, repo, repoPath stri
 		apiError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeRaw(w, body, contentType)
-	_ = repoPath
+	writeRaw(w, body, contentType, isPublic(repoPath))
 }
