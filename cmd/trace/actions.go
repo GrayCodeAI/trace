@@ -648,16 +648,30 @@ func actionCommandWithSandbox(ctx context.Context, commandText, workspace string
 	if sandboxRuntime != "macos" || runtime.GOOS != "darwin" || !commandAvailable("sandbox-exec") {
 		return nil, errors.New("macOS sandboxing requires sandbox-exec; refusing unsafe fallback")
 	}
+	return exec.CommandContext(ctx, "sandbox-exec", "-p", macOSSandboxProfile(workspace), "/bin/sh", "-c", commandText), nil
+}
+
+// macOSSandboxProfile allows the job to read system tool directories and to
+// read and write only writableDir. sandbox-exec matches resolved paths, so
+// symlinks such as /var -> /private/var are resolved first; otherwise every
+// write to the workspace is denied. The root directory entry and /bin/sh's
+// selector link must be readable for the shell to start on current macOS,
+// and /dev/null is needed for ordinary redirections.
+func macOSSandboxProfile(writableDir string) string {
+	if resolved, err := filepath.EvalSymlinks(writableDir); err == nil {
+		writableDir = resolved
+	}
 	quote := func(value string) string { return strconv.Quote(value) }
-	profile := "(version 1)\n" +
+	return "(version 1)\n" +
 		"(deny default)\n" +
 		"(allow process-fork)\n" +
 		"(allow process-exec)\n" +
 		"(allow signal (target self))\n" +
+		"(allow file-read* (literal \"/\") (literal \"/private/var/select/sh\"))\n" +
+		"(allow file-read* file-write-data (literal \"/dev/null\"))\n" +
 		"(allow file-read* (subpath \"/bin\") (subpath \"/usr\") (subpath \"/System\") (subpath \"/Library\") (subpath \"/opt/homebrew\"))\n" +
-		"(allow file-read* (subpath " + quote(workspace) + "))\n" +
-		"(allow file-write* (subpath " + quote(workspace) + "))\n"
-	return exec.CommandContext(ctx, "sandbox-exec", "-p", profile, "/bin/sh", "-c", commandText), nil
+		"(allow file-read* (subpath " + quote(writableDir) + "))\n" +
+		"(allow file-write* (subpath " + quote(writableDir) + "))\n"
 }
 
 // Kept in a helper so the duration is easy to audit and change in one place.
