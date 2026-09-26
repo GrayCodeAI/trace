@@ -187,7 +187,7 @@ func (a *app) apiActions(w http.ResponseWriter, r *http.Request, u userRecord, u
 func (s *store) loadActions() (actionDB, error) {
 	b, err := os.ReadFile(filepath.Join(s.root, "actions.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return actionDB{NextRunID: 1}, nil
+		return actionDB{NextRunID: 1, LastScheduledAt: map[string]time.Time{}}, nil
 	}
 	if err != nil {
 		return actionDB{}, err
