@@ -596,6 +596,9 @@ func (s *store) deleteRepo(name string) error {
 	if err := os.RemoveAll(path); err != nil {
 		return fmt.Errorf("delete repository: %w", err)
 	}
+	if lfsDir, err := s.lfsRepoDir(name); err == nil {
+		_ = os.RemoveAll(lfsDir)
+	}
 	return nil
 }
 
@@ -628,10 +631,30 @@ func (s *store) transferRepo(source, target string) error {
 	if err := os.Rename(sourcePath, targetPath); err != nil {
 		return fmt.Errorf("transfer repository: %w", err)
 	}
+	if err := s.moveRepoDir("lfs", source, target); err != nil {
+		return fmt.Errorf("transfer LFS objects: %w", err)
+	}
 	if err := s.rewriteRepoReferences(source, target); err != nil {
 		return fmt.Errorf("rewrite repository references: %w", err)
 	}
 	return nil
+}
+
+// moveRepoDir renames data/KIND/OWNER/NAME for a repository transfer.
+func (s *store) moveRepoDir(kind, source, target string) error {
+	sourceOwner, sourceName, _ := strings.Cut(source, "/")
+	targetOwner, targetName, _ := strings.Cut(target, "/")
+	from := filepath.Join(s.root, kind, sourceOwner, sourceName)
+	to := filepath.Join(s.root, kind, targetOwner, targetName)
+	if _, err := os.Stat(from); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(to), 0700); err != nil {
+		return err
+	}
+	return os.Rename(from, to)
 }
 
 func (s *store) rewriteRepoReferences(source, target string) error {
@@ -690,6 +713,9 @@ func (s *store) forkRepo(source, target string) error {
 		if out, err := exec.Command("git", "-C", targetPath, "config", strings.SplitN(setting, "=", 2)[0], strings.SplitN(setting, "=", 2)[1]).CombinedOutput(); err != nil {
 			return fmt.Errorf("configure fork: %w: %s", err, strings.TrimSpace(string(out)))
 		}
+	}
+	if err := s.copyLFSObjects(source, target); err != nil {
+		return fmt.Errorf("copy LFS objects: %w", err)
 	}
 	return installHook(targetPath)
 }
@@ -978,6 +1004,9 @@ func serve(opts serveOptions) error {
 	log.Printf("trace CI actions mode: %s", a.store.actionsPolicy())
 	if err := a.store.ensureHooks(); err != nil {
 		return err
+	}
+	if err := a.store.migrateLegacyLFS(); err != nil {
+		return fmt.Errorf("migrate legacy LFS objects: %w", err)
 	}
 	if sshAddr != "" {
 		go func() {

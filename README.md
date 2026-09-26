@@ -351,7 +351,7 @@ Publishing again adds a new Git snapshot commit only when native sessions change
 
 ## Git LFS
 
-Trace exposes the basic authenticated Git LFS batch protocol under `/lfs/OWNER/NAME.git/info/lfs`. Install `git-lfs`, point the Git remote at Trace, and use normal `git lfs track`, `git add`, and `git push` commands. Trace verifies each uploaded object's SHA-256 OID and size, stores objects under `data/lfs`, and caps individual objects at 100 MiB. LFS locking, object garbage collection, and distributed object storage are not implemented.
+Trace exposes the basic authenticated Git LFS batch protocol under `/lfs/OWNER/NAME.git/info/lfs`. Install `git-lfs`, point the Git remote at Trace, and use normal `git lfs track`, `git add`, and `git push` commands. Trace verifies each uploaded object's SHA-256 OID and size, stores objects per repository under `data/lfs/OWNER/NAME`, and caps individual objects at 100 MiB. An object is only served through the repository it was uploaded to; forks get their own copy (hard links where possible), transfers move them, and deleting a repository removes them. When the server starts, objects that older versions stored directly under `data/lfs` are moved into every repository whose Git history contains a pointer to them; objects no repository references are kept in `data/lfs/.legacy-unreferenced` and are no longer served. LFS locking, object garbage collection, and distributed object storage are not implemented.
 
 ## Package artifacts
 

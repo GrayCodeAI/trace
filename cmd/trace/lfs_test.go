@@ -66,7 +66,8 @@ func TestLFSBatchUploadAndDownload(t *testing.T) {
 	if getRes.StatusCode != http.StatusOK || !bytes.Equal(got, content) {
 		t.Fatalf("LFS download: %d %q", getRes.StatusCode, got)
 	}
-	if _, err := os.Stat(filepath.Join(root, "lfs", oid)); err != nil {
+	// Objects are stored per repository.
+	if _, err := os.Stat(filepath.Join(root, "lfs", "team", "lfs", oid)); err != nil {
 		t.Fatal(err)
 	}
 }

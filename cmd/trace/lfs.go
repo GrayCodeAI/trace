@@ -1,16 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -54,11 +58,26 @@ func validLFSObject(oid string, size int64) bool {
 	return lfsOIDPattern.MatchString(oid) && size >= 0 && size <= maxLFSObjectSize
 }
 
-func (s *store) lfsObjectPath(oid string) (string, error) {
+// lfsRepoDir is where a repository's LFS objects live. Objects are stored
+// per repository, so read access to one repository never exposes another
+// repository's objects, even when their OIDs are known.
+func (s *store) lfsRepoDir(repo string) (string, error) {
+	if !validRepoName(repo) {
+		return "", errors.New("invalid repository name")
+	}
+	owner, name, _ := strings.Cut(repo, "/")
+	return filepath.Join(s.root, "lfs", owner, name), nil
+}
+
+func (s *store) lfsObjectPath(repo, oid string) (string, error) {
 	if !lfsOIDPattern.MatchString(oid) {
 		return "", errors.New("invalid LFS object id")
 	}
-	return filepath.Join(s.root, "lfs", strings.ToLower(oid)), nil
+	dir, err := s.lfsRepoDir(repo)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, strings.ToLower(oid)), nil
 }
 
 func lfsBaseURL(r *http.Request) string {
@@ -122,7 +141,7 @@ func (a *app) lfsBatch(w http.ResponseWriter, r *http.Request, username string, 
 			response.Objects = append(response.Objects, item)
 			continue
 		}
-		path, _ := a.store.lfsObjectPath(item.OID)
+		path, _ := a.store.lfsObjectPath(repo, item.OID)
 		_, statErr := os.Stat(path)
 		href := lfsBaseURL(r) + "/lfs/" + repo + ".git/info/lfs/objects/" + item.OID
 		if input.Operation == "upload" {
@@ -143,7 +162,7 @@ func (a *app) lfsBatch(w http.ResponseWriter, r *http.Request, username string, 
 }
 
 func (a *app) lfsObject(w http.ResponseWriter, r *http.Request, u userRecord, repo, oid string) {
-	path, err := a.store.lfsObjectPath(oid)
+	path, err := a.store.lfsObjectPath(repo, oid)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -226,4 +245,173 @@ func writeLFSJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+var lfsPointerOIDPattern = regexp.MustCompile(`(?m)^oid sha256:([0-9a-f]{64})\s*$`)
+
+// lfsPointerOIDs returns the OIDs referenced by Git LFS pointer files stored
+// anywhere in the repository's object database.
+func lfsPointerOIDs(repoPath string) (map[string]bool, error) {
+	list := exec.Command("git", "--git-dir", repoPath, "cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype) %(objectsize)")
+	out, err := list.Output()
+	if err != nil {
+		return nil, err
+	}
+	var candidates strings.Builder
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		// Pointer files are small text blobs (the spec caps them at 1024 bytes).
+		if len(fields) == 3 && fields[1] == "blob" && len(fields[2]) <= 4 {
+			if size, convErr := strconv.Atoi(fields[2]); convErr == nil && size <= 1024 {
+				candidates.WriteString(fields[0] + "\n")
+			}
+		}
+	}
+	oids := map[string]bool{}
+	if candidates.Len() == 0 {
+		return oids, nil
+	}
+	read := exec.Command("git", "--git-dir", repoPath, "cat-file", "--batch")
+	read.Stdin = strings.NewReader(candidates.String())
+	content, err := read.Output()
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Contains(content, []byte("git-lfs")) {
+		return oids, nil
+	}
+	for _, match := range lfsPointerOIDPattern.FindAllSubmatch(content, -1) {
+		oids[string(match[1])] = true
+	}
+	return oids, nil
+}
+
+// linkOrCopy hard-links source to target, copying when linking fails.
+func linkOrCopy(source, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return err
+	}
+	if _, err := os.Stat(target); err == nil {
+		return nil
+	}
+	if err := os.Link(source, target); err == nil {
+		return nil
+	}
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".object-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := io.Copy(tmp, in); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), target)
+}
+
+// copyLFSObjects gives target its own copy (hard links when possible) of the
+// source repository's LFS objects, for forks.
+func (s *store) copyLFSObjects(source, target string) error {
+	sourceDir, err := s.lfsRepoDir(source)
+	if err != nil {
+		return err
+	}
+	targetDir, err := s.lfsRepoDir(target)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(sourceDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Type().IsRegular() && lfsOIDPattern.MatchString(entry.Name()) {
+			if err := linkOrCopy(filepath.Join(sourceDir, entry.Name()), filepath.Join(targetDir, entry.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// migrateLegacyLFS moves objects stored by older versions directly under
+// data/lfs/<oid> into the repositories whose Git history contains a pointer
+// to them. Objects no repository references are moved to
+// data/lfs/.legacy-unreferenced and are no longer served. It is idempotent
+// and runs when the server starts.
+func (s *store) migrateLegacyLFS() error {
+	lfsRoot := filepath.Join(s.root, "lfs")
+	entries, err := os.ReadDir(lfsRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	legacy := map[string]bool{}
+	for _, entry := range entries {
+		if entry.Type().IsRegular() && lfsOIDPattern.MatchString(entry.Name()) {
+			legacy[strings.ToLower(entry.Name())] = true
+		}
+	}
+	if len(legacy) == 0 {
+		return nil
+	}
+	owners, err := os.ReadDir(s.repos)
+	if err != nil {
+		return err
+	}
+	for _, owner := range owners {
+		if !owner.IsDir() || !namePattern.MatchString(owner.Name()) {
+			continue
+		}
+		repos, err := os.ReadDir(filepath.Join(s.repos, owner.Name()))
+		if err != nil {
+			return err
+		}
+		for _, entry := range repos {
+			name := strings.TrimSuffix(entry.Name(), ".git")
+			if !entry.IsDir() || !strings.HasSuffix(entry.Name(), ".git") || !namePattern.MatchString(name) {
+				continue
+			}
+			repo := owner.Name() + "/" + name
+			oids, err := lfsPointerOIDs(filepath.Join(s.repos, owner.Name(), entry.Name()))
+			if err != nil {
+				return fmt.Errorf("scan LFS pointers in %s: %w", repo, err)
+			}
+			for oid := range oids {
+				if !legacy[oid] {
+					continue
+				}
+				target, err := s.lfsObjectPath(repo, oid)
+				if err != nil {
+					return err
+				}
+				if err := linkOrCopy(filepath.Join(lfsRoot, oid), target); err != nil {
+					return fmt.Errorf("migrate LFS object %s to %s: %w", oid, repo, err)
+				}
+			}
+		}
+	}
+	unreferenced := filepath.Join(lfsRoot, ".legacy-unreferenced")
+	if err := os.MkdirAll(unreferenced, 0700); err != nil {
+		return err
+	}
+	for oid := range legacy {
+		if err := os.Rename(filepath.Join(lfsRoot, oid), filepath.Join(unreferenced, oid)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
