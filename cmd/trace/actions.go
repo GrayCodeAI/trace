@@ -158,7 +158,7 @@ func (a *app) apiActions(w http.ResponseWriter, r *http.Request, u userRecord, u
 			apiError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		if !u.Admin && roleFor(u, repo) != "write" {
+		if !u.canWrite(repo) {
 			apiError(w, http.StatusForbidden, "write access required")
 			return
 		}

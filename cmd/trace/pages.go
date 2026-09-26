@@ -180,7 +180,7 @@ func (a *app) apiPages(w http.ResponseWriter, r *http.Request, u userRecord, rep
 		writeJSON(w, http.StatusOK, map[string]any{"enabled": config.Enabled, "branch": config.Branch, "root": config.Root, "url": "/pages/" + repo + "/"})
 		return
 	}
-	if !u.Admin && roleFor(u, repo) != "write" {
+	if !u.canWrite(repo) {
 		apiError(w, http.StatusForbidden, "write access required")
 		return
 	}
