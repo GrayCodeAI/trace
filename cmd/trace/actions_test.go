@@ -53,7 +53,7 @@ func TestDockerSandboxCommandShape(t *testing.T) {
 	if !commandAvailable("docker") {
 		t.Skip("docker client is not installed")
 	}
-	cmd, err := actionCommandWithSandbox(context.Background(), "printf ok", t.TempDir(), true, "docker", "alpine:3.20")
+	cmd, err := actionCommandWithSandbox(context.Background(), "printf ok", t.TempDir(), "", true, "docker", "alpine:3.20")
 	if err != nil {
 		t.Fatal(err)
 	}

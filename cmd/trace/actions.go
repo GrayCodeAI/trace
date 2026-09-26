@@ -517,9 +517,21 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 		delete(actionCancels, run.ID)
 		actionCancelMu.Unlock()
 	}()
-	workspace := filepath.Join(s.root, "action-work", fmt.Sprint(run.ID))
-	_ = os.MkdirAll(filepath.Dir(workspace), 0700)
-	defer os.RemoveAll(workspace)
+	// Each run gets a private directory holding the checkout (src) and a
+	// scratch TMPDIR (tmp); both are writable by the job and removed after.
+	runDir := filepath.Join(s.root, "action-work", fmt.Sprint(run.ID))
+	workspace := filepath.Join(runDir, "src")
+	scratch := filepath.Join(runDir, "tmp")
+	defer os.RemoveAll(runDir)
+	if err := os.MkdirAll(scratch, 0700); err != nil {
+		s.finishActionRun(run.ID, "failure", []actionJob{{ID: 1, Name: "checkout", Status: "failure", ExitCode: 1, Log: "cannot create the run directory"}})
+		return
+	}
+	// Give jobs canonical paths: a sandbox cannot traverse symlinks such as
+	// macOS's /var -> /private/var that it is not allowed to read.
+	if resolved, err := filepath.EvalSymlinks(runDir); err == nil {
+		workspace, scratch = filepath.Join(resolved, "src"), filepath.Join(resolved, "tmp")
+	}
 	if config.Sandbox {
 		runtimeName := config.SandboxRuntime
 		if runtimeName == "" {
@@ -568,7 +580,7 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 				logText.WriteByte('\n')
 			}
 			commandCtx, cancel := context.WithTimeout(ctx, maxActionDuration)
-			cmd, commandErr := actionCommandWithSandbox(commandCtx, commandText, workspace, config.Sandbox, config.SandboxRuntime, config.SandboxImage)
+			cmd, commandErr := actionCommandWithSandbox(commandCtx, commandText, workspace, scratch, config.Sandbox, config.SandboxRuntime, config.SandboxImage)
 			if commandErr != nil {
 				job.Status, job.ExitCode = "failure", 1
 				logText.WriteString(commandErr.Error())
@@ -577,11 +589,7 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 				break
 			}
 			cmd.Dir = workspace
-			env := append(os.Environ(), "TRACE_REPOSITORY="+run.Repo, "TRACE_COMMIT="+run.Commit, "CI=true")
-			for name, value := range secrets {
-				env = append(env, name+"="+value)
-			}
-			cmd.Env = env
+			cmd.Env = actionCommandEnv(cmd, actionJobEnv(run.Repo, run.Commit, workspace, scratch, secrets))
 			out, err := cmd.CombinedOutput()
 			cancel()
 			if logText.Len() < maxActionLog {
@@ -623,8 +631,47 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 	s.finishActionRun(run.ID, status, jobs)
 }
 
+// actionJobEnv is the complete environment a job sees: the documented TRACE_*
+// variables, CI, the repository's TRACE_SECRET_* values, and a minimal
+// PATH/HOME/TMPDIR/locale. The Trace service environment is never inherited,
+// so server credentials in it are not readable by workflows.
+func actionJobEnv(repo, commit, home, tmpDir string, secrets map[string]string) []string {
+	path := os.Getenv("PATH")
+	if path == "" {
+		path = "/usr/local/bin:/usr/bin:/bin"
+	}
+	env := []string{"PATH=" + path, "HOME=" + home, "TMPDIR=" + tmpDir}
+	for _, name := range []string{"LANG", "LC_ALL"} {
+		if value := os.Getenv(name); value != "" {
+			env = append(env, name+"="+value)
+		}
+	}
+	env = append(env, "TRACE_REPOSITORY="+repo, "TRACE_COMMIT="+commit, "CI=true")
+	names := make([]string, 0, len(secrets))
+	for name := range secrets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		env = append(env, name+"="+secrets[name])
+	}
+	return env
+}
+
+// actionCommandEnv returns the environment for the runner process. Local and
+// sandbox-exec jobs get exactly jobEnv. The docker client itself is operator
+// tooling and keeps the service environment (DOCKER_HOST, HOME for its
+// config); the container only receives variables named explicitly on the
+// docker command line.
+func actionCommandEnv(cmd *exec.Cmd, jobEnv []string) []string {
+	if len(cmd.Args) > 0 && cmd.Args[0] == "docker" {
+		return append(os.Environ(), jobEnv...)
+	}
+	return jobEnv
+}
+
 func actionCommand(ctx context.Context, commandText, workspace string, sandbox bool) (*exec.Cmd, error) {
-	return actionCommandWithSandbox(ctx, commandText, workspace, sandbox, "", "")
+	return actionCommandWithSandbox(ctx, commandText, workspace, "", sandbox, "", "")
 }
 
 func commandAvailable(name string) bool {
@@ -632,7 +679,10 @@ func commandAvailable(name string) bool {
 	return err == nil
 }
 
-func actionCommandWithSandbox(ctx context.Context, commandText, workspace string, sandbox bool, sandboxRuntime, sandboxImage string) (*exec.Cmd, error) {
+// actionCommandWithSandbox builds the runner command for one workflow step.
+// workspace is the checkout; scratch, when set, is an extra job-writable
+// directory used as TMPDIR (mounted at /tmp for Docker).
+func actionCommandWithSandbox(ctx context.Context, commandText, workspace, scratch string, sandbox bool, sandboxRuntime, sandboxImage string) (*exec.Cmd, error) {
 	if !sandbox {
 		return exec.CommandContext(ctx, "sh", "-c", commandText), nil
 	}
@@ -643,35 +693,47 @@ func actionCommandWithSandbox(ctx context.Context, commandText, workspace string
 		if strings.TrimSpace(sandboxImage) == "" || !commandAvailable("docker") {
 			return nil, errors.New("Docker sandboxing requires docker and sandbox_image; refusing unsafe fallback")
 		}
-		return exec.CommandContext(ctx, "docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "-v", workspace+":/workspace:rw", "-w", "/workspace", sandboxImage, "/bin/sh", "-c", commandText), nil
+		args := []string{"run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "-v", workspace + ":/workspace:rw"}
+		if scratch != "" {
+			args = append(args, "-v", scratch+":/tmp:rw")
+		}
+		args = append(args, "-w", "/workspace", sandboxImage, "/bin/sh", "-c", commandText)
+		return exec.CommandContext(ctx, "docker", args...), nil
 	}
 	if sandboxRuntime != "macos" || runtime.GOOS != "darwin" || !commandAvailable("sandbox-exec") {
 		return nil, errors.New("macOS sandboxing requires sandbox-exec; refusing unsafe fallback")
 	}
-	return exec.CommandContext(ctx, "sandbox-exec", "-p", macOSSandboxProfile(workspace), "/bin/sh", "-c", commandText), nil
+	writable := []string{workspace}
+	if scratch != "" {
+		writable = append(writable, scratch)
+	}
+	return exec.CommandContext(ctx, "sandbox-exec", "-p", macOSSandboxProfile(writable...), "/bin/sh", "-c", commandText), nil
 }
 
 // macOSSandboxProfile allows the job to read system tool directories and to
-// read and write only writableDir. sandbox-exec matches resolved paths, so
+// read and write only writableDirs. sandbox-exec matches resolved paths, so
 // symlinks such as /var -> /private/var are resolved first; otherwise every
 // write to the workspace is denied. The root directory entry and /bin/sh's
 // selector link must be readable for the shell to start on current macOS,
 // and /dev/null is needed for ordinary redirections.
-func macOSSandboxProfile(writableDir string) string {
-	if resolved, err := filepath.EvalSymlinks(writableDir); err == nil {
-		writableDir = resolved
-	}
+func macOSSandboxProfile(writableDirs ...string) string {
 	quote := func(value string) string { return strconv.Quote(value) }
-	return "(version 1)\n" +
+	profile := "(version 1)\n" +
 		"(deny default)\n" +
 		"(allow process-fork)\n" +
 		"(allow process-exec)\n" +
 		"(allow signal (target self))\n" +
 		"(allow file-read* (literal \"/\") (literal \"/private/var/select/sh\"))\n" +
 		"(allow file-read* file-write-data (literal \"/dev/null\"))\n" +
-		"(allow file-read* (subpath \"/bin\") (subpath \"/usr\") (subpath \"/System\") (subpath \"/Library\") (subpath \"/opt/homebrew\"))\n" +
-		"(allow file-read* (subpath " + quote(writableDir) + "))\n" +
-		"(allow file-write* (subpath " + quote(writableDir) + "))\n"
+		"(allow file-read* (subpath \"/bin\") (subpath \"/usr\") (subpath \"/System\") (subpath \"/Library\") (subpath \"/opt/homebrew\"))\n"
+	for _, dir := range writableDirs {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
+		profile += "(allow file-read* (subpath " + quote(dir) + "))\n" +
+			"(allow file-write* (subpath " + quote(dir) + "))\n"
+	}
+	return profile
 }
 
 // Kept in a helper so the duration is easy to audit and change in one place.
