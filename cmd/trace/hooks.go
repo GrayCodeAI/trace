@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,7 +81,15 @@ func (s *store) ensureHooks() error {
 		for _, repo := range repos {
 			name := strings.TrimSuffix(repo.Name(), ".git")
 			if repo.IsDir() && strings.HasSuffix(repo.Name(), ".git") && namePattern.MatchString(name) {
-				if err := installHook(filepath.Join(s.repos, owner.Name(), repo.Name())); err != nil {
+				fullName := owner.Name() + "/" + name
+				policy, err := s.repoPolicy(fullName)
+				if err != nil {
+					// Fail closed: protect every branch until an administrator
+					// stores a valid policy again.
+					log.Printf("trace: invalid branch policy for %s (%v); protecting all branches until it is fixed", fullName, err)
+					policy = repoPolicy{ProtectedBranches: []string{"*"}}
+				}
+				if err := installHookWithPolicy(filepath.Join(s.repos, owner.Name(), repo.Name()), policy); err != nil {
 					return err
 				}
 			}

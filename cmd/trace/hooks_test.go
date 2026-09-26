@@ -87,3 +87,53 @@ func TestReceiveHookEnforcesQuotedPatterns(t *testing.T) {
 		t.Fatal("wildcard protection allowed a non-admin branch update")
 	}
 }
+
+// TestServerStartKeepsConfiguredBranchProtection covers ensureHooks, which
+// `trace serve` runs at startup: it must reinstall each repository's hook
+// from its stored policy instead of the default (main only), and it must
+// fail closed when a stored policy is no longer valid.
+func TestServerStartKeepsConfiguredBranchProtection(t *testing.T) {
+	root := t.TempDir()
+	if err := initData(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := openStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"team/configured", "team/tampered"} {
+		if err := s.createRepo(name, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.setRepoPolicy("team/configured", repoPolicy{RequiredApprovals: 1, ProtectedBranches: []string{"main", "release/*"}}); err != nil {
+		t.Fatal(err)
+	}
+	// A policy stored by an older version with a pattern that is now invalid.
+	if err := s.updatePolicies(func(db *policyDB) error {
+		db.Repos["team/tampered"] = repoPolicy{ProtectedBranches: []string{"main)exit${IFS}0;;esac;case${IFS}x${IFS}in(x"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ensureHooks(); err != nil {
+		t.Fatal(err)
+	}
+	hookFor := func(name string) string {
+		path, _ := s.repoPath(name)
+		b, err := os.ReadFile(filepath.Join(path, "hooks", "pre-receive"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	if _, err := runReceiveHook(t, t.TempDir(), hookFor("team/configured"), "refs/heads/release/v1", false); err == nil {
+		t.Fatal("configured release/* protection was dropped at server start")
+	}
+	if _, err := runReceiveHook(t, t.TempDir(), hookFor("team/configured"), "refs/heads/feature", false); err != nil {
+		t.Fatalf("feature branch unexpectedly protected: %v", err)
+	}
+	if _, err := runReceiveHook(t, t.TempDir(), hookFor("team/tampered"), "refs/heads/feature", false); err == nil {
+		t.Fatal("an invalid stored policy must fail closed and protect every branch")
+	}
+}
