@@ -1,3 +1,5 @@
 /trace
+/bin/
+/dist/
 /data/
 *.test
