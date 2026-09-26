@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/cgi"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -56,6 +57,7 @@ func run(args []string) error {
 		sshAddr := fs.String("ssh-listen", "", "SSH Git listen address (disabled by default)")
 		federationInterval := fs.Duration("federation-interval", 0, "background federation peer sync interval (disabled by default)")
 		actionsInterval := fs.Duration("actions-interval", 0, "scheduled workflow evaluation interval (disabled by default)")
+		trustedProxy := fs.String("trusted-proxy", "", "comma-separated IPs or CIDR prefixes of reverse proxies whose X-Forwarded-For/X-Real-IP identify clients for rate limiting")
 		actionsMode := fs.String("actions", actionsModeSandboxed, "CI runner policy: off, sandboxed (only workflows with \"sandbox\":true), or trusted (also run unsandboxed workflows as the Trace service account)")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -73,7 +75,11 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		return serve(serveOptions{data: *data, addr: *addr, sshAddr: *sshAddr, federationInterval: *federationInterval, actionsInterval: *actionsInterval, actionsMode: mode})
+		proxies, err := parseTrustedProxies(*trustedProxy)
+		if err != nil {
+			return err
+		}
+		return serve(serveOptions{data: *data, addr: *addr, sshAddr: *sshAddr, federationInterval: *federationInterval, actionsInterval: *actionsInterval, actionsMode: mode, trustedProxies: proxies})
 	case "repo":
 		if len(args) < 2 || (args[1] != "create" && args[1] != "import" && args[1] != "fork" && args[1] != "archive" && args[1] != "restore" && args[1] != "delete" && args[1] != "transfer" && args[1] != "topics") {
 			return errors.New("usage: trace repo <create|import|fork|archive|restore|delete|transfer|topics> ...")
@@ -951,6 +957,7 @@ type serveOptions struct {
 	federationInterval time.Duration
 	actionsInterval    time.Duration
 	actionsMode        string
+	trustedProxies     []netip.Prefix
 }
 
 func serve(opts serveOptions) error {
@@ -961,6 +968,7 @@ func serve(opts serveOptions) error {
 		return err
 	}
 	a.store.actionsMode = opts.actionsMode
+	a.limiter.trustedProxies = opts.trustedProxies
 	log.Printf("trace CI actions mode: %s", a.store.actionsPolicy())
 	if err := a.store.ensureHooks(); err != nil {
 		return err

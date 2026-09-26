@@ -134,9 +134,15 @@ SSH is optional and disabled unless you pass `-ssh-listen`. Add an authorized pu
 git clone ssh://admin@127.0.0.1:2222/team/project.git
 ```
 
-The SSH host key is persisted at `data/ssh/host_ed25519`. Trace accepts Git smart-SSH commands only; shell access is not provided. New SSH connections are throttled to 60 per minute per remote host using the shared local rate-state file. Operators can print the key and fingerprint with `./trace ssh host-key -data ./data`, or retrieve JSON from `/.well-known/trace/ssh-host-key` before provisioning `known_hosts`.
+The SSH host key is persisted at `data/ssh/host_ed25519`. Trace accepts Git smart-SSH commands only; shell access is not provided. New SSH connections are throttled to 60 per minute per remote host. Operators can print the key and fingerprint with `./trace ssh host-key -data ./data`, or retrieve JSON from `/.well-known/trace/ssh-host-key` before provisioning `known_hosts`.
 
-HTTP requests are throttled per client address. Normal paths allow 300 requests per minute and login POSTs allow 20; rejected requests return `429`, `Retry-After`, and `X-RateLimit-*` headers. Counters are persisted in `data/rate-state.json` under a file lock, so multiple Trace processes sharing one data directory observe the same limits. This does not coordinate separate nodes; use a shared reverse-proxy limiter across VPS instances.
+HTTP requests are throttled per client address across all paths: 300 requests per minute, plus a separate limit of 20 sign-in POSTs per minute; rejected requests return `429`, `Retry-After`, and `X-RateLimit-*` headers. IPv6 clients are grouped by their /64 prefix. Counters are kept in memory by each Trace process and reset when it restarts; they are not shared between processes or nodes, so use the reverse proxy's limiter when you run several.
+
+Behind a reverse proxy every request arrives from the proxy's address, so tell Trace which peers are proxies; their `X-Forwarded-For` (rightmost untrusted entry) or `X-Real-IP` header then identifies the client. Headers from any other peer are ignored:
+
+```sh
+./trace serve -data ./data -trusted-proxy 127.0.0.1,::1
+```
 
 ## OIDC single sign-on
 
