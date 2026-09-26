@@ -558,7 +558,7 @@ Administrators can archive and restore repositories:
 
 Archived repositories remain readable and clonable, but Git pushes and write operations are rejected until restoration.
 
-Trace exposes administrator-authenticated SCIM 2.0 endpoints at `/scim/v2/Users` and `/scim/v2/Groups`. User provisioning supports list, create, get, deactivate/reactivate, and delete; group resources map directly to durable Trace teams and their members. A SCIM user without a supplied password is created disabled so provisioning never creates an account with an undisclosed credential. Full OIDC/SAML SSO and SCIM role mapping beyond team repository grants are not implemented.
+Trace exposes administrator-authenticated SCIM 2.0 endpoints at `/scim/v2/Users` and `/scim/v2/Groups`. User provisioning supports list, create, get, deactivate/reactivate (including `path: "active"` patches), and delete; group resources map directly to durable Trace teams, and group patches add, replace, and remove members (including `members[value eq "USER"]` paths). Lists support `filter=userName eq "NAME"` (users) or `filter=displayName eq "NAME"` (groups) and `startIndex`/`count` paging. Trace refuses SCIM `password` values: credentials are personal tokens issued by an administrator, or OIDC sign-in. New SCIM users are therefore created disabled until an administrator issues a token (`trace user rotate`) and the account is reactivated. Full OIDC/SAML SSO and SCIM role mapping beyond team repository grants are not implemented.
 
 Branches can also be managed without raw Git plumbing:
 
