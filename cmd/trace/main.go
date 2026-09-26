@@ -1056,20 +1056,22 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/git/") {
-		name, pass, hasAuth := r.BasicAuth()
+		name, pass, _ := r.BasicAuth()
 		u, valid := db.authenticate(name, pass)
 		if valid {
 			u = a.store.expandUser(name, u)
 		}
 		publicRead := false
-		if !valid {
-			if _, ok := publicGitRepo(a.store, r.URL.Path); ok && r.Method == http.MethodGet && r.URL.Query().Get("service") != "git-receive-pack" {
-				name, u, publicRead = "anonymous", userRecord{}, true
-			} else {
-				valid = false
+		// Public, non-archived repositories serve upload-pack to everyone,
+		// including signed-in users without a grant. Receive-pack never
+		// qualifies, so writes always need an authenticated writer.
+		if repo, ok := publicGitRepo(a.store, r.URL.Path); ok && anonymousGitRead(r) && (!valid || !u.canRead(repo)) {
+			if !valid {
+				name, u = "anonymous", userRecord{}
 			}
+			publicRead = true
 		}
-		if !hasAuth && !publicRead || (!valid && !publicRead) {
+		if !valid && !publicRead {
 			w.Header().Set("WWW-Authenticate", `Basic realm="Trace Git"`)
 			http.Error(w, "authentication required", http.StatusUnauthorized)
 			return
@@ -1238,6 +1240,21 @@ func publicWebRepo(s *store, requestPath string) (string, bool) {
 	name := parts[0] + "/" + parts[1]
 	path, err := s.repoPath(name)
 	return name, err == nil && isPublic(path) && !isArchived(path)
+}
+
+// anonymousGitRead reports whether r is one of the two smart-HTTP requests a
+// read-only clone or fetch needs: the upload-pack ref advertisement (GET
+// info/refs?service=git-upload-pack) and the upload-pack negotiation (POST
+// git-upload-pack). Every receive-pack request stays authenticated.
+func anonymousGitRead(r *http.Request) bool {
+	switch {
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/info/refs"):
+		return r.URL.Query().Get("service") == "git-upload-pack"
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-upload-pack"):
+		return true
+	default:
+		return false
+	}
 }
 
 func publicGitRepo(s *store, requestPath string) (string, bool) {
