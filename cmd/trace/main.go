@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -467,7 +466,14 @@ func openStore(data string) (*store, error) {
 	if !info.IsDir() {
 		return nil, errors.New("data path is not a directory")
 	}
-	return &store{root: root, repos: filepath.Join(root, "repos")}, nil
+	s := &store{root: root, repos: filepath.Join(root, "repos")}
+	transferMu.Lock()
+	err = s.completePendingTransfer()
+	transferMu.Unlock()
+	if err != nil {
+		return nil, fmt.Errorf("complete interrupted repository transfer: %w", err)
+	}
+	return s, nil
 }
 
 func initData(data string) error {
@@ -598,86 +604,6 @@ func (s *store) deleteRepo(name string) error {
 	}
 	if lfsDir, err := s.lfsRepoDir(name); err == nil {
 		_ = os.RemoveAll(lfsDir)
-	}
-	return nil
-}
-
-func (s *store) transferRepo(source, target string) error {
-	if !validRepoName(source) || !validRepoName(target) {
-		return errors.New("repository names must be OWNER/NAME")
-	}
-	if source == target {
-		return errors.New("source and target repository are the same")
-	}
-	sourcePath, err := s.repoPath(source)
-	if err != nil {
-		return err
-	}
-	targetPath, err := s.repoPath(target)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(sourcePath); err != nil {
-		return errors.New("source repository not found")
-	}
-	if _, err := os.Stat(targetPath); err == nil {
-		return errors.New("target repository already exists")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0700); err != nil {
-		return err
-	}
-	if err := os.Rename(sourcePath, targetPath); err != nil {
-		return fmt.Errorf("transfer repository: %w", err)
-	}
-	if err := s.moveRepoDir("lfs", source, target); err != nil {
-		return fmt.Errorf("transfer LFS objects: %w", err)
-	}
-	if err := s.rewriteRepoReferences(source, target); err != nil {
-		return fmt.Errorf("rewrite repository references: %w", err)
-	}
-	return nil
-}
-
-// moveRepoDir renames data/KIND/OWNER/NAME for a repository transfer.
-func (s *store) moveRepoDir(kind, source, target string) error {
-	sourceOwner, sourceName, _ := strings.Cut(source, "/")
-	targetOwner, targetName, _ := strings.Cut(target, "/")
-	from := filepath.Join(s.root, kind, sourceOwner, sourceName)
-	to := filepath.Join(s.root, kind, targetOwner, targetName)
-	if _, err := os.Stat(from); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(to), 0700); err != nil {
-		return err
-	}
-	return os.Rename(from, to)
-}
-
-func (s *store) rewriteRepoReferences(source, target string) error {
-	entries, err := os.ReadDir(s.root)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !(strings.HasSuffix(entry.Name(), ".json") || strings.HasSuffix(entry.Name(), ".jsonl")) {
-			continue
-		}
-		path := filepath.Join(s.root, entry.Name())
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		updated := bytes.ReplaceAll(b, []byte(`"`+source+`"`), []byte(`"`+target+`"`))
-		if bytes.Equal(updated, b) {
-			continue
-		}
-		if err := os.WriteFile(path, updated, 0600); err != nil {
-			return err
-		}
 	}
 	return nil
 }

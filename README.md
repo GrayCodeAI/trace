@@ -547,7 +547,7 @@ Administrators can move or permanently remove a repository:
 ./trace repo delete -data ./data team/platform
 ```
 
-The authenticated API provides `POST /api/v1/repos/OWNER/NAME/transfer` with `{"name":"NEW_OWNER/NAME"}` and `DELETE /api/v1/repos/OWNER/NAME`. The dashboard exposes the same controls. Deletion removes the bare repository and is irreversible; transfer keeps Git configuration and rewrites repository references in Trace metadata.
+The authenticated API provides `POST /api/v1/repos/OWNER/NAME/transfer` with `{"name":"NEW_OWNER/NAME"}` and `DELETE /api/v1/repos/OWNER/NAME`. The dashboard exposes the same controls. Deletion removes the bare repository and is irreversible; transfer keeps Git configuration, moves the repository's LFS objects, packages, and release assets, and renames repository references in Trace metadata (repository-keyed records and `repo` fields, each store under its own lock). Issue and comment text and the audit ledger are left unchanged. A transfer is recorded in `data/.transfer-journal.json` first, so an interrupted transfer is completed the next time Trace opens the data directory.
 
 Administrators can archive and restore repositories:
 
