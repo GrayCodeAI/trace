@@ -247,9 +247,26 @@ func handleSSHSession(s *store, permissions *ssh.Permissions, ch ssh.Channel, re
 		_, _ = io.WriteString(ch.Stderr(), "Trace: repository is unavailable\n")
 		return
 	}
-	if _, err := os.Stat(path); err != nil || (service == "git-receive-pack" && (isMirror(path) || !hasManagedHook(path))) {
+	if _, err := os.Stat(path); err != nil {
 		_, _ = io.WriteString(ch.Stderr(), "Trace: repository is unavailable\n")
 		return
+	}
+	// Mirror the HTTP receive-pack checks: mirrors and archived repositories
+	// are read-only, and pushes need the managed protection hook.
+	if service == "git-receive-pack" {
+		refusal := ""
+		switch {
+		case isMirror(path):
+			refusal = "Trace: mirror is read-only\n"
+		case isArchived(path):
+			refusal = "Trace: repository is archived\n"
+		case !hasManagedHook(path):
+			refusal = "Trace: branch protection is unavailable\n"
+		}
+		if refusal != "" {
+			_, _ = io.WriteString(ch.Stderr(), refusal)
+			return
+		}
 	}
 	cmd := exec.Command(service, path)
 	cmd.Stdin = ch
