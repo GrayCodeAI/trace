@@ -27,6 +27,9 @@ type userRecord struct {
 	SSHKeys     []string          `json:"ssh_keys,omitempty"`
 	TOTPSecret  string            `json:"totp_secret,omitempty"`
 	TOTPEnabled bool              `json:"totp_enabled,omitempty"`
+	// TOTPLastCounter is the last accepted TOTP time step; codes for this
+	// step or earlier are refused.
+	TOTPLastCounter int64 `json:"totp_last_counter,omitempty"`
 	// OIDCIssuer and OIDCSubject bind the account to one identity-provider
 	// identity. OIDC sign-in only ever opens the account whose stored
 	// (issuer, subject) pair matches; usernames and emails are not trusted.

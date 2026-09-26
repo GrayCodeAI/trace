@@ -953,6 +953,7 @@ type app struct {
 	sessionKey []byte
 	gitPath    string
 	limiter    *rateLimiter
+	totp       *totpLimiter
 }
 
 func newApp(data string) (*app, error) {
@@ -975,7 +976,7 @@ func newApp(data string) (*app, error) {
 	if _, err := rand.Read(sessionKey); err != nil {
 		return nil, err
 	}
-	return &app{store: s, csrf: base64.RawURLEncoding.EncodeToString(csrfBytes), sessionKey: sessionKey, gitPath: gitPath, limiter: newRateLimiter(s.root)}, nil
+	return &app{store: s, csrf: base64.RawURLEncoding.EncodeToString(csrfBytes), sessionKey: sessionKey, gitPath: gitPath, limiter: newRateLimiter(s.root), totp: newTOTPLimiter()}, nil
 }
 
 // serveOptions carries the operator's `trace serve` flags.

@@ -179,7 +179,7 @@ Admins can enable TOTP for browser sign-in. Git and API personal tokens remain u
 ./trace user 2fa disable -data ./data alice
 ```
 
-`enable` prints a provisioning URI once. Store the secret in an authenticator and keep the data directory private. Trace accepts a small clock skew and never stores generated one-time codes. SAML and provider-specific OIDC group-to-role mapping are not implemented.
+`enable` prints a provisioning URI once. Store the secret in an authenticator and keep the data directory private. Trace accepts one 30-second step of clock skew and never stores generated one-time codes; it records only the last accepted time step, so a code cannot be used twice. After five consecutive wrong codes for an account, further attempts are refused for 30 seconds, doubling up to 15 minutes (this state is kept in memory and resets when Trace restarts). SAML and provider-specific OIDC group-to-role mapping are not implemented.
 
 ## Code and agent context search
 
