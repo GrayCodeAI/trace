@@ -633,7 +633,7 @@ Events are stored as JSON Lines in `data/audit.jsonl` with owner-only permission
 
 ## Webhooks
 
-Admins can configure signed JSON webhooks for repository events. HTTPS is required for remote endpoints; plain HTTP is accepted only for loopback development endpoints.
+Admins can configure signed JSON webhooks for repository events. HTTPS is required for remote endpoints; plain HTTP is accepted only for loopback development endpoints. Deliveries connect only to public addresses, checked when connecting (after DNS resolution): loopback addresses only for hooks configured with a loopback host, private networks only when the server runs with `-webhook-allow-private-networks`, and link-local or cloud-metadata addresses never. Redirects are not followed (a 3xx response is recorded as a failed delivery), and proxy environment variables are ignored.
 
 ```sh
 ./trace api webhook-create -url http://127.0.0.1:9000 -user admin \

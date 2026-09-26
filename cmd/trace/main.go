@@ -57,6 +57,7 @@ func run(args []string) error {
 		sshAddr := fs.String("ssh-listen", "", "SSH Git listen address (disabled by default)")
 		federationInterval := fs.Duration("federation-interval", 0, "background federation peer sync interval (disabled by default)")
 		actionsInterval := fs.Duration("actions-interval", 0, "scheduled workflow evaluation interval (disabled by default)")
+		webhookPrivate := fs.Bool("webhook-allow-private-networks", false, "allow webhook deliveries to private-network addresses (link-local and metadata addresses stay blocked)")
 		trustedProxy := fs.String("trusted-proxy", "", "comma-separated IPs or CIDR prefixes of reverse proxies whose X-Forwarded-For/X-Real-IP identify clients for rate limiting")
 		actionsMode := fs.String("actions", actionsModeSandboxed, "CI runner policy: off, sandboxed (only workflows with \"sandbox\":true), or trusted (also run unsandboxed workflows as the Trace service account)")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -79,7 +80,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		return serve(serveOptions{data: *data, addr: *addr, sshAddr: *sshAddr, federationInterval: *federationInterval, actionsInterval: *actionsInterval, actionsMode: mode, trustedProxies: proxies})
+		return serve(serveOptions{data: *data, addr: *addr, sshAddr: *sshAddr, federationInterval: *federationInterval, actionsInterval: *actionsInterval, actionsMode: mode, trustedProxies: proxies, webhookAllowPrivate: *webhookPrivate})
 	case "repo":
 		if len(args) < 2 || (args[1] != "create" && args[1] != "import" && args[1] != "fork" && args[1] != "archive" && args[1] != "restore" && args[1] != "delete" && args[1] != "transfer" && args[1] != "topics") {
 			return errors.New("usage: trace repo <create|import|fork|archive|restore|delete|transfer|topics> ...")
@@ -450,6 +451,8 @@ type store struct {
 	// actionsMode is the operator's CI runner policy (see parseActionsMode).
 	// The zero value means actionsModeSandboxed.
 	actionsMode string
+	// webhookAllowPrivate lets webhooks target private-network addresses.
+	webhookAllowPrivate bool
 }
 
 func openStore(data string) (*store, error) {
@@ -958,6 +961,8 @@ type serveOptions struct {
 	actionsInterval    time.Duration
 	actionsMode        string
 	trustedProxies     []netip.Prefix
+	// webhookAllowPrivate permits webhook targets in private networks.
+	webhookAllowPrivate bool
 }
 
 func serve(opts serveOptions) error {
@@ -969,6 +974,7 @@ func serve(opts serveOptions) error {
 	}
 	a.store.actionsMode = opts.actionsMode
 	a.limiter.trustedProxies = opts.trustedProxies
+	a.store.webhookAllowPrivate = opts.webhookAllowPrivate
 	log.Printf("trace CI actions mode: %s", a.store.actionsPolicy())
 	if err := a.store.ensureHooks(); err != nil {
 		return err
