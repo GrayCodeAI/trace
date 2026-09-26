@@ -366,6 +366,9 @@ type repoData struct {
 	Topics         []string
 }
 
+// actionPageRuns is how many recent runs the actions page renders.
+const actionPageRuns = 20
+
 type actionPageData struct {
 	Name     string
 	CSRF     string
@@ -438,7 +441,7 @@ var repoHTML string
 
 var repoTemplate = template.Must(template.New("repo").Parse(strings.Replace(repoHTML, "<!-- TRACE_REPO_STYLES -->", pageStyle+repoPageStyle, 1)))
 
-var actionPageTemplate = template.Must(template.New("actions").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Actions · {{.Name}} · Trace</title><link rel="icon" href="/assets/trace-mark.svg?v=4" type="image/svg+xml">` + pageStyle + `<div class="repo-nav"><a href="/repos/{{.Name}}">← {{.Name}}</a><a href="/app">Repositories</a></div><h1>Actions</h1><p class="muted">Runs execute on this Trace node from <code>.trace/workflow.json</code>. Secrets are exposed to jobs as <code>TRACE_SECRET_NAME</code> and never displayed here.</p>{{if .CanWrite}}<section><h2>CI secrets</h2><p class="muted">{{if .Secrets}}{{range .Secrets}}<code>{{.}}</code> {{end}}{{else}}No secrets configured.{{end}}</p><form action="/repos/{{.Name}}/secrets" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="set"><label>Name <input name="name" pattern="[A-Za-z_][A-Za-z0-9_]{0,63}" required></label><label>Value <input name="value" type="password" required></label><button type="submit">Save secret</button></form></section><section><h2>Run workflow</h2><form action="/repos/{{.Name}}/actions" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Branch <input name="ref" value="main" required></label><button type="submit">Run now</button></form></section>{{end}}<section><h2>Recent runs</h2>{{range .Runs}}<article><h3>#{{.ID}} · {{.Status}}</h3><p class="muted">{{.Ref}} · {{.Commit}} · {{.TriggeredBy}} · {{.CreatedAt}}</p>{{range .Jobs}}<p><strong>{{.Name}}</strong>: {{.Status}} (exit {{.ExitCode}})</p>{{if .Log}}<pre>{{.Log}}</pre>{{end}}{{range .Artifacts}}<a href="/api/v1/repos/{{$.Name}}/actions/runs/{{$.ID}}/artifacts/{{.Name}}">Download {{.Name}}</a>{{end}}{{end}}</article>{{else}}<p class="muted">No runs yet.</p>{{end}}</section></html>`))
+var actionPageTemplate = template.Must(template.New("actions").Parse(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Actions · {{.Name}} · Trace</title><link rel="icon" href="/assets/trace-mark.svg?v=4" type="image/svg+xml">` + pageStyle + `<div class="repo-nav"><a href="/repos/{{.Name}}">← {{.Name}}</a><a href="/app">Repositories</a></div><h1>Actions</h1><p class="muted">Runs execute on this Trace node from <code>.trace/workflow.json</code>. Secrets are exposed to jobs as <code>TRACE_SECRET_NAME</code> and never displayed here.</p>{{if .CanWrite}}<section><h2>CI secrets</h2><p class="muted">{{if .Secrets}}{{range .Secrets}}<code>{{.}}</code> {{end}}{{else}}No secrets configured.{{end}}</p><form action="/repos/{{.Name}}/secrets" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="set"><label>Name <input name="name" pattern="[A-Za-z_][A-Za-z0-9_]{0,63}" required></label><label>Value <input name="value" type="password" required></label><button type="submit">Save secret</button></form></section><section><h2>Run workflow</h2><form action="/repos/{{.Name}}/actions" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Branch <input name="ref" value="main" required></label><button type="submit">Run now</button></form></section>{{end}}<section><h2>Recent runs</h2>{{range $run := .Runs}}<article><h3>#{{$run.ID}} · {{$run.Status}}</h3><p class="muted">{{$run.Ref}} · {{$run.Commit}} · {{$run.TriggeredBy}} · {{$run.CreatedAt}}</p>{{range $run.Jobs}}<p><strong>{{.Name}}</strong>: {{.Status}} (exit {{.ExitCode}})</p>{{if .Log}}<pre>{{.Log}}</pre>{{end}}{{range .Artifacts}}<a href="/api/v1/repos/{{$.Name}}/actions/runs/{{$run.ID}}/artifacts/{{.Name}}">Download {{.Name}}</a>{{end}}{{end}}</article>{{else}}<p class="muted">No runs yet.</p>{{end}}</section></html>`))
 
 type cappedBuffer struct {
 	bytes.Buffer
@@ -694,6 +697,14 @@ func (a *app) actionPage(w http.ResponseWriter, r *http.Request, username string
 	if err != nil {
 		http.Error(w, "cannot list action runs", http.StatusInternalServerError)
 		return
+	}
+	// Show the most recent runs with their logs; older runs remain available
+	// through GET /api/v1/repos/OWNER/NAME/actions/runs/ID.
+	if len(runs) > actionPageRuns {
+		runs = runs[:actionPageRuns]
+	}
+	for i := range runs {
+		a.store.hydrateActionLogs(&runs[i])
 	}
 	var secrets []string
 	if u.canWrite(name) {

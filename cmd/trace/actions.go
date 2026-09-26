@@ -893,6 +893,102 @@ func copyActionArtifact(ws *os.Root, root string, runID, jobID int, rel string) 
 	return actionArtifact{Name: name, Size: written, Path: dest}, true
 }
 
+// Job logs live in data/action-logs/RUN/JOB.log rather than in actions.json,
+// and each repository keeps at most maxActionRunsPerRepo finished runs, so
+// listing runs and checking merge policies stay cheap as history grows.
+const maxActionRunsPerRepo = 200
+
+func (s *store) actionLogPath(runID, jobID int) string {
+	return filepath.Join(s.root, "action-logs", strconv.Itoa(runID), strconv.Itoa(jobID)+".log")
+}
+
+func (s *store) writeActionLog(runID, jobID int, text string) error {
+	path := s.actionLogPath(runID, jobID)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".log-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if _, err := tmp.WriteString(text); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
+}
+
+// externalizeActionLogs moves job logs out of the run database, including
+// logs that older Trace versions stored inline.
+func (s *store) externalizeActionLogs(db *actionDB) {
+	for i := range db.Runs {
+		for j := range db.Runs[i].Jobs {
+			job := &db.Runs[i].Jobs[j]
+			if job.Log == "" {
+				continue
+			}
+			if err := s.writeActionLog(db.Runs[i].ID, job.ID, job.Log); err == nil {
+				job.Log = ""
+			}
+		}
+	}
+}
+
+// hydrateActionLogs loads job logs for a run that is about to be displayed.
+func (s *store) hydrateActionLogs(run *actionRun) {
+	for j := range run.Jobs {
+		if run.Jobs[j].Log != "" {
+			continue
+		}
+		f, err := os.Open(s.actionLogPath(run.ID, run.Jobs[j].ID))
+		if err != nil {
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(f, maxActionLog+4096))
+		_ = f.Close()
+		run.Jobs[j].Log = string(b)
+	}
+}
+
+// pruneActionRuns drops the oldest finished runs of each repository beyond
+// maxActionRunsPerRepo and returns their IDs. Queued and running runs are
+// always kept.
+func pruneActionRuns(db *actionDB) []int {
+	finished := map[string]int{}
+	for _, run := range db.Runs {
+		if run.Status != "queued" && run.Status != "running" {
+			finished[run.Repo]++
+		}
+	}
+	excess := map[string]int{}
+	for repo, count := range finished {
+		if count > maxActionRunsPerRepo {
+			excess[repo] = count - maxActionRunsPerRepo
+		}
+	}
+	if len(excess) == 0 {
+		return nil
+	}
+	sort.SliceStable(db.Runs, func(i, j int) bool { return db.Runs[i].ID < db.Runs[j].ID })
+	kept := db.Runs[:0]
+	var removed []int
+	for _, run := range db.Runs {
+		if excess[run.Repo] > 0 && run.Status != "queued" && run.Status != "running" {
+			excess[run.Repo]--
+			removed = append(removed, run.ID)
+			continue
+		}
+		kept = append(kept, run)
+	}
+	db.Runs = kept
+	return removed
+}
+
 func (s *store) finishActionRun(id int, status string, jobs []actionJob) {
 	actionRunMu.Lock()
 	defer actionRunMu.Unlock()
@@ -900,14 +996,27 @@ func (s *store) finishActionRun(id int, status string, jobs []actionJob) {
 	if err != nil {
 		return
 	}
+	found := false
 	for i := range db.Runs {
 		if db.Runs[i].ID == id {
 			db.Runs[i].Status = status
 			db.Runs[i].Jobs = jobs
 			db.Runs[i].FinishedAt = time.Now().UTC()
-			_ = s.saveActions(db)
-			return
+			found = true
+			break
 		}
+	}
+	if !found {
+		return
+	}
+	s.externalizeActionLogs(&db)
+	removed := pruneActionRuns(&db)
+	if err := s.saveActions(db); err != nil {
+		return
+	}
+	for _, runID := range removed {
+		_ = os.RemoveAll(filepath.Join(s.root, "action-logs", strconv.Itoa(runID)))
+		_ = os.RemoveAll(filepath.Join(s.root, "artifacts", strconv.Itoa(runID)))
 	}
 }
 
@@ -921,6 +1030,7 @@ func actionRunByID(s *store, id int) (actionRun, error) {
 	for _, run := range db.Runs {
 		if run.ID == id {
 			hydrateActionPaths(s, &run)
+			s.hydrateActionLogs(&run)
 			return run, nil
 		}
 	}
