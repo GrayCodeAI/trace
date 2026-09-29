@@ -1,6 +1,8 @@
 # Trace
 
-Trace is a self-hosted Git service for a small team. It keeps code in ordinary bare Git repositories, supports standard Git over HTTP(S), and can copy repositories to a read-only node on another VPS. The current design has one writable node per repository and manual failover.
+Trace is a self-hosted Git forge for small teams with signed agent history, part of the [GrayCode](https://graycodeai.com) tools. It keeps code in ordinary bare Git repositories, supports standard Git over HTTP(S) and SSH, and can copy repositories to a read-only node on another VPS. The current design has one writable node per repository and manual failover.
+
+> **Status: pre-1.0 alpha.** Version 0.0.1 has not been released yet, and behaviour and data formats can still change. Build Trace from source as shown below. Read [SECURITY.md](SECURITY.md) before exposing a node, and report vulnerabilities privately as described there.
 
 ## Team features
 
@@ -8,8 +10,8 @@ Trace is a self-hosted Git service for a small team. It keeps code in ordinary b
 - Admins can create repositories and manage users and access from the web page or CLI.
 - Repository grants are `read`, `write`, `maintain`, or `none`. Maintainers can merge reviewed pull requests and process the merge queue without becoming global administrators. Admins can access every repository.
 - Repositories can be public or private. Public repositories allow anonymous web browsing and Git clone/fetch; pushes and all write operations still require authentication.
-- Writers can push branches. Only admins can update `main` or tags. A server-side Git hook enforces this rule.
-- The web page lists branches, recent commits, files, file contents, and a branch's changes relative to `main`. Admins review there and merge with standard Git commands.
+- Writers can push branches. Only admins can update protected branches (`main` by default; configurable per repository) or tags. A server-side Git hook enforces this rule.
+- The web page lists branches, recent commits, files, file contents, and a branch's changes relative to `main`. Admins and maintainers review pull requests in the browser and merge them there (fast-forward, squash, or merge commit) or with standard Git commands.
 - The public home page introduces Trace; the private dashboard has its own sign-in form and a session cookie. Git clients continue to use HTTP Basic authentication.
 - Mirrors can serve clones but cannot accept pushes. Git history remains portable.
 
@@ -39,14 +41,17 @@ For an entirely local operation, use the same board model without HTTP:
 
 ## Requirements
 
-- Go 1.26 or newer to build.
+- Go 1.26 or newer to build (CI and releases use Go 1.26.6).
+- Linux or macOS. Trace relies on POSIX file locking and does not build for Windows.
 - Git installed on each node.
 - A TLS reverse proxy for use outside the machine. Trace listens on `127.0.0.1:8787` by default. Tokens must not cross the public internet without HTTPS.
 
 ## Start the main node
 
 ```sh
-go build -o trace ./cmd/trace
+git clone https://github.com/GrayCodeAI/trace.git && cd trace
+go build -o trace ./cmd/trace   # or: make build (writes bin/trace with version information)
+./trace version
 ./trace init -data ./data
 ./trace repo create -data ./data team/project
 # or create a public repository
@@ -340,7 +345,7 @@ Trace exposes the basic authenticated Git LFS batch protocol under `/lfs/OWNER/N
 
 ## Package artifacts
 
-Trace also provides a generic immutable artifact registry. It is intentionally protocol-neutral; it does not claim npm, PyPI, or Maven compatibility yet:
+Trace also provides a generic immutable artifact registry, plus the basic npm and PyPI endpoints described below. Neither endpoint is a complete npm or PyPI implementation, and Maven is not supported:
 
 ```sh
 ./trace package publish -data ./data team/project lib 1.0.0 lib-1.0.0.tgz
@@ -555,9 +560,12 @@ The mirror is read-only, synchronization is scheduled externally, and failover i
 ## Develop
 
 ```sh
-go test ./...
-go vet ./...
+make check    # gofmt check, go vet, build, race tests
+make test     # tests without the race detector
+make help     # all targets
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [AGENTS.md](AGENTS.md) for repository conventions. Releases are built from `v*` tags by `.github/workflows/release.yml` for Linux and macOS (amd64 and arm64) with a SHA-256 `checksums.txt`; the binaries are not signed. No release has been published yet.
 
 The integration tests verify authenticated Git push and clone, repository permissions, protected `main`, branch review, token rotation, mirror behavior, pull-request and issue lifecycles, webhook signing, release archives, and SSH key-authenticated Git transport.
 

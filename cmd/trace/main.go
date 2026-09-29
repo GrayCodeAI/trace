@@ -39,6 +39,9 @@ func run(args []string) error {
 		return errors.New("usage: trace <init|serve|repo|mirror|agent|user|package|backup|api> (try -help after a command)")
 	}
 	switch args[0] {
+	case "version", "-version", "--version":
+		fmt.Println(versionString())
+		return nil
 	case "init":
 		fs := flag.NewFlagSet("init", flag.ContinueOnError)
 		data := fs.String("data", "./data", "data directory")

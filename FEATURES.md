@@ -1,6 +1,6 @@
 # Trace capability audit
 
-This is the honest baseline for the current monorepo. “All features from the top 20 competitors” is not a finite implementation task: GitHub, GitLab, Forgejo, SourceHut, agent platforms, and CI vendors overlap only partially, and several features require separate infrastructure (runners, package registries, email, object storage, search, and an agent sandbox). Trace must ship a coherent product before it attempts parity.
+This is the honest baseline for this repository. “All features from the top 20 competitors” is not a finite implementation task: GitHub, GitLab, Forgejo, SourceHut, agent platforms, and CI vendors overlap only partially, and several features require separate infrastructure (runners, package registries, email, object storage, search, and an agent sandbox). Trace must ship a coherent product before it attempts parity.
 
 ## Current evidence
 
@@ -42,7 +42,7 @@ This is the honest baseline for the current monorepo. “All features from the t
 
 ## Competitor-derived scope
 
-The comparison set is GitHub, GitLab, Bitbucket, Gitea, Forgejo, Codeberg, SourceHut, OneDev, Gogs, Gitness, RhodeCode, Phorge, Gerrit, Azure DevOps, AWS CodeCommit, Entire, Graphite, GitLab Duo, GitHub Copilot coding agent, and Sourcegraph Cody. These products do not expose one common feature set. Trace will measure itself against the following product slices:
+The comparison set is GitHub, GitLab, Bitbucket, Gitea, Forgejo, Codeberg, SourceHut, OneDev, Gogs, Harness Open Source (formerly Gitness), RhodeCode, Phorge, Gerrit, Azure DevOps, AWS CodeCommit, Entire, Graphite, the GitLab Duo Agent Platform, GitHub's Copilot coding agent and agent control plane, and Sourcegraph (Cody, now supported on Sourcegraph Enterprise only, and its Amp agent). These products do not expose one common feature set. Trace will measure itself against the following product slices:
 
 1. **Forge basics:** Git over HTTP and SSH, repository visibility, protected branches, pull requests, review comments, approvals, bounded CODEOWNERS rules, issues, labels, milestones, releases, webhooks, and an API.
 2. **Team administration:** roles, teams, token lifecycle, 2FA, audit events, rate limits, backups, and repository transfer/deletion.
@@ -51,28 +51,44 @@ The comparison set is GitHub, GitLab, Bitbucket, Gitea, Forgejo, Codeberg, Sourc
 5. **Local-first and distributed operation:** portable on-disk data, signed manifests, peer sync, conflict-safe writer refs, restore verification, and explicit failover.
 6. **Agent workflows:** opt-in session/checkpoint records linked to commits, agent identity, prompt/tool redaction, searchable context, and review gates.
 
+### Agent features in other forges (sources checked 2026-09-26)
+
+| Product | Change | What Trace lacks |
+| --- | --- | --- |
+| GitHub | Agents tab in repositories ([2026-01-26](https://github.blog/changelog/2026-01-26-introducing-the-agents-tab-in-your-repository/)); enterprise agent control plane with an `actor_is_agent` audit field and a custom-agent definition API ([GA 2026-02-26](https://github.blog/changelog/2026-02-26-enterprise-ai-controls-agent-control-plane-now-generally-available/)) | Trace's audit log does not record whether an actor is an agent |
+| GitLab | Duo Agent Platform GA with custom agents and external agents such as Claude Code and Codex CLI ([2026-01-15](https://about.gitlab.com/press/releases/2026-01-15-gitlab-announces-duo-agent-platform-general-availability/)) | No review gates specific to agent-authored changes |
+| Forgejo | Project decision to prohibit AI-generated contributions ([March 2026 report](https://forgejo.org/2026-03-monthly-report/)); v15.0 LTS added ephemeral runners and repository-scoped tokens ([2026-04-16](https://forgejo.org/2026-04-release-v15-0/)) | No per-repository policy for AI-generated contributions |
+| Gitea | 1.26.0 added Actions concurrency and a Terraform state registry, with no agent features ([2026-04-18](https://blog.gitea.com/release-of-1.26.0/)) | — |
+| Graphite | Cursor Cloud Agents inside pull requests ([2026-03-02](https://graphite.com/blog)) | No pull-request handoff to a cloud agent |
+| Sourcegraph | Cody is supported on Sourcegraph Enterprise only ([docs](https://sourcegraph.com/docs/cody)); the Amp agent is free with bring-your-own-key since 2026-09-13 ([news](https://ampcode.com/news)) | — |
+| Harness | Gitness continues as Harness Open Source ([repository](https://github.com/harness/harness)) | — |
+
+Self-hosted forges (Forgejo, Gitea) had no agent features at those dates, so Trace's structured agent sessions remain a differentiator; the hosted forges' agent attribution and policy controls are the gaps above.
+
 ## Remaining implementation order
 
 1. Richer status reporting, CODEOWNERS pattern semantics, merge queues, and code-review ownership UX.
 2. Distributed rate limiting, stronger account security, SSH host-key rotation/distribution, and isolated CI execution.
 3. Hosted or sandboxed CI runners, language-complete package registries, and distributed artifact storage.
 4. Multi-writer federation, automatic peer discovery, richer conflict reconciliation, and portable collaboration records.
-5. Automatic Git-native agent checkpoints and sync, more agent adapters, richer redaction/search controls, and provider-complete SSO.
+5. Automatic Git-native agent checkpoints and sync, more agent adapters, agent attribution in the audit log and a per-repository AI-contribution policy, richer redaction/search controls, and provider-complete SSO.
 
 Trace is **not feature-complete** against this matrix today. The implemented baseline is intentionally smaller and testable; each missing row needs its own design, tests, and operational story before it can be called done.
 
-## Entire comparison (reviewed 2026-09-20)
+## Entire comparison (reviewed 2026-09-20; adapters, storage, and mirrors updated from sources checked 2026-09-26)
 
 This is a capability comparison with [Entire's product page](https://entire.io/), not a claim of performance parity. Trace's landing page uses an original visual and its own product copy.
 
 | Entire product area | Trace today | Gap |
 | --- | --- | --- |
-| Git hosting and regional mirrors | Standard Git HTTP and SSH on one writable node; signed, read-only peer mirrors | No measured speed claim, managed regional network, or automatic failover |
+| Git hosting and regional mirrors | Standard Git HTTP and SSH on one writable node; signed, read-only peer mirrors | No measured speed claim, managed regional network (Entire previewed US, EU, and AU mirrors on 2026-07-08, [announcement](https://entire.io/news/entire-launches-distributed-git-network-for-the-agent-era)), or automatic failover |
 | CLI and browser UI | Both exist for core workflows | CLI parity across every web action and a consistently polished application UI are unfinished |
 | Agent sessions and checkpoints | Structured records linked to commits, portable opt-in signed JSON bundles, private Git refs with signed snapshots, and opt-in Codex/Claude Code/Gemini CLI/Cursor completion capture | No full conversation capture, verified agent authorship, automatic per-commit checkpoints, or automatic cross-node session sync |
 | Local privacy controls | Selected secret fields are redacted from stored session data | No general transcript scanner or configurable redaction policy |
 | Semantic graph | Not implemented | No graph construction, semantic retrieval, or verified token-saving measurement |
 | Agentic search | One literal query across code, selected-branch commits, and structured session summaries | No semantic ranking, raw-transcript search, or graph-based context retrieval |
 | Agent integrations | Codex, Claude Code, Gemini CLI, and Cursor completion notifications can queue observed HEAD metadata with idempotent replay | No full run capture, verified authorship, or other agent hooks; Cursor's adapter has been tested against its documented schema but not through a live Cursor session |
+| Agent adapter coverage | 4 completion-hook adapters: Codex, Claude Code, Gemini CLI, Cursor | Entire's CLI lists 8 agents: Claude Code, Codex, Cursor, Copilot CLI, Antigravity, Pi (preview), OpenCode, and Factory AI Droid ([entireio/cli](https://github.com/entireio/cli)). Trace has no adapter for Copilot CLI, Antigravity, Pi, OpenCode, or Factory AI Droid |
+| Checkpoint storage | Signed, per-node snapshots published to private refs under `refs/trace/agent-bundles/` | Entire stores checkpoints in Git refs under `refs/entire/checkpoints/<shard>/<id>` ([ref-based storage](https://entire.io/blog/introducing-ref-based-checkpoint-storage)); Trace cannot import Entire checkpoints |
 
 Do not market Trace as an Entire equivalent until these gaps have implementations and independent verification. The near-term product goal is a reliable self-hosted Git workspace for a small team, with explicit agent context and safe read-only replication.

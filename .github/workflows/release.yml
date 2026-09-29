@@ -1,0 +1,51 @@
+name: release
+
+# Builds Linux and macOS binaries for a pushed v* tag and publishes them with
+# a SHA-256 checksums.txt on the GitHub release. Artifacts are not signed.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.26.6"
+  GOWORK: "off"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Tag matches VERSION
+        run: |
+          want="v$(head -n1 VERSION | tr -d '[:space:]')"
+          if [ "${GITHUB_REF_NAME}" != "${want}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match VERSION (${want})" >&2
+            exit 1
+          fi
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test -count=1 -timeout=20m ./...
+      - name: Build and publish with GoReleaser
+        uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8 # v7.2.1
+        with:
+          distribution: goreleaser
+          version: "v2.17.0"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

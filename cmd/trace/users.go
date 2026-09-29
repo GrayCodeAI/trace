@@ -346,7 +346,7 @@ func userCommand(args []string) error {
 		fmt.Printf("created %s\nToken: %s\nShow this token to the user once over a private channel.\n", fs.Arg(0), token)
 	case "grant":
 		if fs.NArg() != 3 {
-			return errors.New("usage: trace user grant [-data DIR] USER OWNER/REPO <read|write|none>")
+			return errors.New("usage: trace user grant [-data DIR] USER OWNER/REPO <read|write|maintain|none>")
 		}
 		if err := s.grantUser(fs.Arg(0), fs.Arg(1), fs.Arg(2)); err != nil {
 			return err

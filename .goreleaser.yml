@@ -1,0 +1,50 @@
+# Release builds for Trace. Run by .github/workflows/release.yml on a v* tag.
+# Trace uses POSIX file locking, so only Linux and macOS are built.
+version: 2
+project_name: trace
+
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  - id: trace
+    main: ./cmd/trace
+    binary: trace
+    env:
+      - CGO_ENABLED=0
+      - GOWORK=off
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.Version={{.Version}} -X main.Commit={{.ShortCommit}} -X main.BuildDate={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+      - SECURITY.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: GrayCodeAI
+    name: trace
+  prerelease: auto
+  footer: |
+    Trace is pre-1.0 alpha software. See CHANGELOG.md for what changed.
+
+    These binaries are not signed. Verify a download against `checksums.txt`
+    (SHA-256), for example `sha256sum --ignore-missing -c checksums.txt`.
