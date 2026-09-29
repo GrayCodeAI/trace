@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"syscall"
@@ -91,6 +92,16 @@ func (s *store) updatePolicies(change func(*policyDB) error) error {
 	return os.Rename(name, filepath.Join(s.root, policyFile))
 }
 
+// protectedBranchPattern is deliberately narrower than Git's ref-name rules:
+// patterns end up in a generated shell hook, so only characters with no
+// shell meaning are allowed, plus a single trailing "*".
+var protectedBranchPattern = regexp.MustCompile(`^(\*|[A-Za-z0-9][A-Za-z0-9._/-]*\*?)$`)
+
+func validProtectedBranchPattern(branch string) bool {
+	return len(branch) <= 100 && protectedBranchPattern.MatchString(branch) &&
+		!strings.Contains(branch, "..") && !strings.Contains(branch, "//") && !strings.HasPrefix(branch, "refs/")
+}
+
 func normalizePolicy(policy repoPolicy) (repoPolicy, error) {
 	if policy.RequiredApprovals < 0 || policy.RequiredApprovals > 100 {
 		return repoPolicy{}, errors.New("required_approvals must be between 0 and 100")
@@ -119,11 +130,11 @@ func normalizePolicy(policy repoPolicy) (repoPolicy, error) {
 	branches := make([]string, 0, len(policy.ProtectedBranches))
 	for _, branch := range policy.ProtectedBranches {
 		branch = strings.TrimSpace(branch)
-		if branch == "" || len(branch) > 100 || strings.HasPrefix(branch, "refs/") || strings.ContainsAny(branch, " ~^:?[]\\") {
-			return repoPolicy{}, errors.New("protected branch patterns must be valid branch names and may use * as a wildcard")
-		}
 		if strings.Contains(branch, "*") && branch != "*" && !strings.HasSuffix(branch, "*") {
 			return repoPolicy{}, errors.New("protected branch wildcards must appear at the end of a pattern")
+		}
+		if !validProtectedBranchPattern(branch) {
+			return repoPolicy{}, errors.New("protected branch patterns may use letters, digits, '.', '_', '-', and '/' (starting with a letter or digit) and an optional trailing * wildcard")
 		}
 		if !seen[branch] {
 			seen[branch] = true

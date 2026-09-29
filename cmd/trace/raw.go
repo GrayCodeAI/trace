@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -42,26 +43,82 @@ func (s *store) rawFile(repo, ref, file string) ([]byte, string, error) {
 	if err := validateRawPath(file); err != nil {
 		return nil, "", err
 	}
-	cmd := exec.Command("git", "--git-dir", repoPath, "cat-file", "blob", ref+":"+file)
-	b, err := cmd.Output()
-	if err != nil {
-		return nil, "", os.ErrNotExist
-	}
-	if len(b) > maxRawFile {
+	b, err := readBlobLimited(repoPath, "refs/heads/"+ref, file, maxRawFile)
+	if errors.Is(err, errBlobTooLarge) {
 		return nil, "", errors.New("raw file exceeds 8 MiB limit")
+	}
+	if err != nil {
+		return nil, "", err
 	}
 	return b, mime.TypeByExtension(filepath.Ext(file)), nil
 }
 
-func writeRaw(w http.ResponseWriter, body []byte, contentType string) {
-	if contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	} else {
-		w.Header().Set("Content-Type", "application/octet-stream")
+var errBlobTooLarge = errors.New("blob exceeds the size limit")
+
+// readBlobLimited returns the blob at rev:path in repoPath. It checks the
+// object type and size with one `git cat-file --batch-check` before reading,
+// streams the content through a limit, and never holds more than limit bytes,
+// so an anonymous request for a huge public blob cannot exhaust memory.
+// Missing paths and non-blob objects (trees) report os.ErrNotExist.
+func readBlobLimited(repoPath, rev, path string, limit int64) ([]byte, error) {
+	if strings.ContainsAny(rev+path, "\n\r\x00") || strings.HasPrefix(rev, "-") {
+		return nil, os.ErrNotExist
 	}
+	check := exec.Command("git", "--git-dir", repoPath, "cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)")
+	check.Stdin = strings.NewReader(rev + ":" + path + "\n")
+	out, err := check.Output()
+	if err != nil {
+		return nil, os.ErrNotExist
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) != 3 || fields[1] != "blob" {
+		return nil, os.ErrNotExist
+	}
+	size, err := strconv.ParseInt(fields[2], 10, 64)
+	if err != nil {
+		return nil, os.ErrNotExist
+	}
+	if size > limit {
+		return nil, errBlobTooLarge
+	}
+	cmd := exec.Command("git", "--git-dir", repoPath, "cat-file", "blob", fields[0])
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	b, readErr := io.ReadAll(io.LimitReader(stdout, limit+1))
+	if int64(len(b)) > limit {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, errBlobTooLarge
+	}
+	if err := cmd.Wait(); err != nil || readErr != nil {
+		return nil, os.ErrNotExist
+	}
+	return b, nil
+}
+
+func writeRaw(w http.ResponseWriter, body []byte, contentType string, public bool) {
+	w.Header().Set("Content-Type", rawContentType(contentType))
+	setRawSecurityHeaders(w)
 	w.Header().Set("Content-Length", stringSize(len(body)))
-	w.Header().Set("Cache-Control", "public, max-age=60")
-	_, _ = io.Copy(w, strings.NewReader(string(body)))
+	setRepositoryContentCache(w, public)
+	_, _ = w.Write(body)
+}
+
+// setRepositoryContentCache lets shared caches keep public repository content
+// briefly, but marks private content private and no-store: responses to
+// authenticated requests must never be served to someone else by a proxy.
+func setRepositoryContentCache(w http.ResponseWriter, public bool) {
+	if public {
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Add("Vary", "Cookie, Authorization")
 }
 
 func stringSize(size int) string {
@@ -122,7 +179,7 @@ func (a *app) rawHTTP(w http.ResponseWriter, r *http.Request, db userDB) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeRaw(w, body, contentType)
+	writeRaw(w, body, contentType, public)
 }
 
 func (a *app) apiRaw(w http.ResponseWriter, r *http.Request, repo, repoPath string) {
@@ -144,6 +201,5 @@ func (a *app) apiRaw(w http.ResponseWriter, r *http.Request, repo, repoPath stri
 		apiError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeRaw(w, body, contentType)
-	_ = repoPath
+	writeRaw(w, body, contentType, isPublic(repoPath))
 }

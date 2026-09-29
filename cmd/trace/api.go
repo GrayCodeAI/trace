@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,11 +54,12 @@ func (a *app) api(w http.ResponseWriter, r *http.Request, db userDB) {
 		return
 	}
 	if r.Method != http.MethodGet {
-		// Cookie-authenticated writes must carry an explicit CSRF header. Basic
-		// auth is intended for non-browser CLI/API clients and is already bound
-		// to the user's token.
-		if _, _, hasBasic := r.BasicAuth(); !hasBasic {
-			if r.Header.Get("X-Trace-CSRF") == "" || r.Header.Get("X-Trace-CSRF") != a.csrfFor(username) {
+		// Cookie-authenticated writes must carry an explicit CSRF header. Only
+		// a request whose Basic credentials themselves authenticate this user
+		// (a non-browser CLI/API client) is exempt; a Basic header that does
+		// not authenticate must not waive the check for a session cookie.
+		if !basicAuthenticates(r, db, username) {
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Trace-CSRF")), []byte(a.csrfFor(username))) != 1 {
 				apiError(w, http.StatusForbidden, "missing or invalid X-Trace-CSRF header")
 				return
 			}
@@ -1532,6 +1534,17 @@ func (a *app) apiPullRequests(w http.ResponseWriter, r *http.Request, u userReco
 		return
 	}
 	apiError(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+// basicAuthenticates reports whether r carries valid Basic credentials for
+// username.
+func basicAuthenticates(r *http.Request, db userDB, username string) bool {
+	name, token, ok := r.BasicAuth()
+	if !ok || name != username {
+		return false
+	}
+	_, valid := db.authenticate(name, token)
+	return valid
 }
 
 func roleFor(u userRecord, name string) string {

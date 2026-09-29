@@ -327,7 +327,7 @@ func (s *store) dispatchWebhook(event auditEvent) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Trace-Event", eventName)
 		req.Header.Set("X-Trace-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
-		status, attempts, deliveryErr := deliverWebhook(req, clientForWebhook())
+		status, attempts, deliveryErr := deliverWebhook(req, s.clientForWebhook(hook.URL))
 		delivery := webhookDelivery{WebhookID: hook.ID, Repo: event.Repo, Event: eventName, Attempts: attempts, ResponseCode: status, CreatedAt: time.Now().UTC(), CompletedAt: time.Now().UTC()}
 		if deliveryErr == nil {
 			delivery.Status = "delivered"
@@ -338,8 +338,6 @@ func (s *store) dispatchWebhook(event auditEvent) {
 		_ = s.recordWebhookDelivery(delivery)
 	}
 }
-
-func clientForWebhook() *http.Client { return &http.Client{Timeout: 5 * time.Second} }
 
 func deliverWebhook(req *http.Request, client *http.Client) (int, int, error) {
 	var status int

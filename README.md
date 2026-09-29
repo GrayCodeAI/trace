@@ -75,7 +75,7 @@ Trace includes a local backup and restore utility. Backups contain the bare repo
 ./trace backup restore -data ./restored-data -out /secure/backups/trace-20260920.tar.gz
 ```
 
-Restore refuses to write into a non-empty directory unless `-force` is supplied. This is a single-node snapshot mechanism; schedule it and copy the archive to separate storage for disaster recovery.
+Restore refuses to write into a non-empty directory unless `-force` is supplied, and `create` refuses an output path inside the data directory (including through symlinks). Backups of a running node are file-by-file copies taken while it keeps writing, so they are not a point-in-time snapshot; stop Trace or pause writes for a fully consistent backup. This is a single-node mechanism; schedule it and copy the archive to separate storage for disaster recovery.
 
 To add a teammate from the CLI:
 
@@ -118,7 +118,7 @@ curl https://git.example.com/raw/team/project/README.md?ref=main
   -token-file ./data/admin-token -ref main -path README.md team/project
 ```
 
-Public repositories allow anonymous raw reads; private repositories require repository access. Raw paths are branch-scoped, reject traversal, and are capped at 8 MiB.
+Public repositories allow anonymous raw reads; private repositories require repository access. Raw paths are branch-scoped, reject traversal, and are capped at 8 MiB. Raw files are served as inert data: HTML, SVG, XML, and JavaScript are sent as `text/plain`, and every raw response carries a script-free `Content-Security-Policy: sandbox`.
 
 Change visibility from the CLI when needed:
 
@@ -139,13 +139,19 @@ SSH is optional and disabled unless you pass `-ssh-listen`. Add an authorized pu
 git clone ssh://admin@127.0.0.1:2222/team/project.git
 ```
 
-The SSH host key is persisted at `data/ssh/host_ed25519`. Trace accepts Git smart-SSH commands only; shell access is not provided. New SSH connections are throttled to 60 per minute per remote host using the shared local rate-state file. Operators can print the key and fingerprint with `./trace ssh host-key -data ./data`, or retrieve JSON from `/.well-known/trace/ssh-host-key` before provisioning `known_hosts`.
+The SSH host key is persisted at `data/ssh/host_ed25519`. Trace accepts Git smart-SSH commands only; shell access is not provided. New SSH connections are throttled to 60 per minute per remote host. Operators can print the key and fingerprint with `./trace ssh host-key -data ./data`, or retrieve JSON from `/.well-known/trace/ssh-host-key` before provisioning `known_hosts`.
 
-HTTP requests are throttled per client address. Normal paths allow 300 requests per minute and login POSTs allow 20; rejected requests return `429`, `Retry-After`, and `X-RateLimit-*` headers. Counters are persisted in `data/rate-state.json` under a file lock, so multiple Trace processes sharing one data directory observe the same limits. This does not coordinate separate nodes; use a shared reverse-proxy limiter across VPS instances.
+HTTP requests are throttled per client address across all paths: 300 requests per minute, plus a separate limit of 20 sign-in POSTs per minute; rejected requests return `429`, `Retry-After`, and `X-RateLimit-*` headers. IPv6 clients are grouped by their /64 prefix. Counters are kept in memory by each Trace process and reset when it restarts; they are not shared between processes or nodes, so use the reverse proxy's limiter when you run several.
+
+Behind a reverse proxy every request arrives from the proxy's address, so tell Trace which peers are proxies; their `X-Forwarded-For` (rightmost untrusted entry) or `X-Real-IP` header then identifies the client. Headers from any other peer are ignored:
+
+```sh
+./trace serve -data ./data -trusted-proxy 127.0.0.1,::1
+```
 
 ## OIDC single sign-on
 
-OIDC is optional and disabled unless configured. The setup stores the client secret under `data/oidc.json` with owner-only permissions, uses discovery plus authorization-code PKCE, validates signed state, requires HTTPS except for loopback development, and obtains identity claims from the provider's userinfo endpoint. When the provider returns an ID token, Trace validates its RS256 signature, issuer, audience, expiry, and signing key from the discovered JWKS endpoint:
+OIDC is optional and disabled unless configured. The setup stores the client secret under `data/oidc.json` with owner-only permissions, uses discovery plus authorization-code PKCE, validates signed state, requires HTTPS except for loopback development, and obtains identity claims from the provider's userinfo endpoint. When the provider returns an ID token, Trace validates its RS256 signature (keys of at least 2048 bits from the discovered JWKS endpoint), issuer, audience, expiry, and the nonce sent with the authorization request. Every request to the provider has a 10-second timeout and does not follow redirects:
 
 ```sh
 ./trace sso oidc set -data ./data \
@@ -156,6 +162,15 @@ OIDC is optional and disabled unless configured. The setup stores the client sec
   -auto-provision
 ./trace sso oidc disable -data ./data
 ```
+
+Trace binds each OIDC identity to one local account by the provider's issuer and subject (`sub`); usernames and email addresses from the provider are never used to pick an existing account. With `-auto-provision`, a first sign-in creates a new account named after `preferred_username` (or the email's local part) and bound to that subject; if a local account with that name already exists, sign-in is refused. To let an existing account sign in through the provider, an administrator links it explicitly (the refusal page shows the subject):
+
+```sh
+./trace sso oidc link -data ./data alice PROVIDER_SUBJECT
+./trace sso oidc unlink -data ./data alice
+```
+
+Accounts created by auto-provisioning in earlier Trace versions are not bound and must be linked once. `-allowed-email-domains example.com,example.org` additionally requires a verified email (`email_verified`) in one of those domains. When the provider returns an ID token, its subject must equal the userinfo subject. Accounts with Trace TOTP enabled cannot sign in through OIDC; they use token sign-in with their code.
 
 The login page shows the provider button only while configuration is present. Auto-provisioned accounts receive a local record for session continuity but no personal token is returned. Providers that return only userinfo are still accepted, so deploy behind a provider whose userinfo endpoint is trusted and use HTTPS. SAML and provider-specific group claims remain unimplemented.
 
@@ -169,7 +184,7 @@ Admins can enable TOTP for browser sign-in. Git and API personal tokens remain u
 ./trace user 2fa disable -data ./data alice
 ```
 
-`enable` prints a provisioning URI once. Store the secret in an authenticator and keep the data directory private. Trace accepts a small clock skew and never stores generated one-time codes. SAML and provider-specific OIDC group-to-role mapping are not implemented.
+`enable` prints a provisioning URI once. Store the secret in an authenticator and keep the data directory private. Trace accepts one 30-second step of clock skew and never stores generated one-time codes; it records only the last accepted time step, so a code cannot be used twice. After five consecutive wrong codes for an account, further attempts are refused for 30 seconds, doubling up to 15 minutes (this state is kept in memory and resets when Trace restarts). SAML and provider-specific OIDC group-to-role mapping are not implemented.
 
 ## Code and agent context search
 
@@ -341,7 +356,7 @@ Publishing again adds a new Git snapshot commit only when native sessions change
 
 ## Git LFS
 
-Trace exposes the basic authenticated Git LFS batch protocol under `/lfs/OWNER/NAME.git/info/lfs`. Install `git-lfs`, point the Git remote at Trace, and use normal `git lfs track`, `git add`, and `git push` commands. Trace verifies each uploaded object's SHA-256 OID and size, stores objects under `data/lfs`, and caps individual objects at 100 MiB. LFS locking, object garbage collection, and distributed object storage are not implemented.
+Trace exposes the basic authenticated Git LFS batch protocol under `/lfs/OWNER/NAME.git/info/lfs`. Install `git-lfs`, point the Git remote at Trace, and use normal `git lfs track`, `git add`, and `git push` commands. Trace verifies each uploaded object's SHA-256 OID and size, stores objects per repository under `data/lfs/OWNER/NAME`, and caps individual objects at 100 MiB. An object is only served through the repository it was uploaded to; forks get their own copy (hard links where possible), transfers move them, and deleting a repository removes them. When the server starts, objects that older versions stored directly under `data/lfs` are moved into every repository whose Git history contains a pointer to them; objects no repository references are kept in `data/lfs/.legacy-unreferenced` and are no longer served. LFS locking, object garbage collection, and distributed object storage are not implemented.
 
 ## Package artifacts
 
@@ -363,7 +378,7 @@ Trace can publish a committed branch as a Pages-style static site. Enable it loc
   -token-file ./data/admin-token -pages-branch main team/site
 ```
 
-The site is served at `/pages/OWNER/NAME/`. An `index.html` is used for directory requests, and an optional root such as `dist` can be configured. Public repositories have anonymous Pages reads; private repositories require repository access. Files are read from Git, capped at 8 MiB, and path traversal is rejected. Disable with `trace pages disable` or `trace api pages-disable`.
+The site is served at `/pages/OWNER/NAME/`. An `index.html` is used for directory requests, and an optional root such as `dist` can be configured. Public repositories have anonymous Pages reads; private repositories require repository access. Files are read from Git, capped at 8 MiB, and path traversal is rejected. Pages are served on Trace's origin inside a CSP sandbox without `allow-same-origin`: site scripts run with an opaque origin and cannot read Trace pages, cookies, or form tokens as the signed-in user. Because of that sandbox, browsers do not send the Trace session cookie with the site's own sub-resource requests, so a private Pages site should inline its CSS, scripts, and images. Disable with `trace pages disable` or `trace api pages-disable`.
 
 For npm-style consumers, Trace exposes package metadata and tarball routes at `/npm/OWNER/REPO/PACKAGE` and `/npm/OWNER/REPO/PACKAGE/-/FILENAME`. A basic npm `PUT` payload with one `_attachments` tarball is accepted and stored immutably. Scoped package names, dist-tag mutation, npm auth token negotiation, and dependency proxying are not implemented.
 
@@ -384,7 +399,7 @@ The manifest lets another node verify which Trace identity signed the observed r
 A repository can define a manually triggered local workflow at `.trace/workflow.json`:
 
 ```json
-{"name":"checks","sandbox":true,"sandbox_runtime":"docker","sandbox_image":"alpine:3.20","jobs":[{"name":"test","run":["go test ./..."],"artifacts":["coverage.out"]}]}
+{"name":"checks","sandbox":true,"sandbox_runtime":"docker","sandbox_image":"golang:1.26-alpine","jobs":[{"name":"test","run":["go test ./..."],"artifacts":["coverage.out"]}]}
 ```
 
 Trigger and inspect runs through the API or CLI:
@@ -398,17 +413,27 @@ Trigger and inspect runs through the API or CLI:
 
 Pushing a branch through Trace automatically queues the workflow for that changed branch when `.trace/workflow.json` is present. Manual triggering remains available for reruns and diagnostics.
 
+The operator, not the workflow file, decides what may run. `trace serve -actions MODE` accepts:
+
+- `sandboxed` (the default): only workflows that set `"sandbox":true` run; any other workflow is refused when it is pushed, triggered, or scheduled.
+- `off`: no workflow runs on this node.
+- `trusted`: workflows without `"sandbox":true` also run, as the Trace service account. Use this only when every repository writer on the node is trusted.
+
+```sh
+./trace serve -data ./data -actions off
+```
+
 Queued or running jobs can be cancelled with `POST /api/v1/repos/OWNER/NAME/actions/runs/ID/cancel` or:
 
 ```sh
 ./trace api action-cancel -url http://127.0.0.1:8787 -user admin -token-file ./data/admin-token OWNER/NAME ID
 ```
 
-Cancellation terminates the runner context and records a `cancelled` run status. The runner is still local process execution, not a hardened container or VM sandbox.
+Cancellation and the 15-minute step limit stop the whole step and record the result. Local and `sandbox-exec` steps run in their own process group, which Trace kills on cancellation, on timeout, and when the step exits, so background processes do not outlive it (a process that deliberately leaves the group with `setsid` is not tracked). Docker steps run in a container named `trace-run-RUN-JOB-STEP`, which Trace stops with `docker kill`. Each step's captured output is capped at the 1 MiB log limit. The runner is still local process execution, not a hardened container or VM sandbox.
 
-The runner checks out the requested commit, limits each command to 15 minutes and each log to 1 MiB, and stores matching artifacts under `data/artifacts`. A node runs at most four jobs concurrently; additional runs remain queued and can be cancelled. Workflows without `"sandbox":true` execute with the Trace service account and are suitable only for trusted repositories. On macOS, `"sandbox":true` uses `sandbox-exec` with a restricted filesystem and no network access. For portable isolation, set `"sandbox_runtime":"docker"` and an explicit `"sandbox_image"`; Trace runs Docker with no network, a read-only root, dropped capabilities, no-new-privileges, a process limit, and only the checked-out workspace writable. Trace refuses to fall back to unsandboxed execution when sandboxing is requested. Docker still depends on the host daemon and image supply chain.
+The runner checks out the requested commit, limits each command to 15 minutes and each log to 1 MiB, stores job logs under `data/action-logs`, and stores matching artifacts under `data/artifacts`. Each repository keeps its 200 most recent finished runs; older runs are pruned together with their logs and artifacts, so required checks must pass on a run that is still retained. The run list API returns summaries; `GET /api/v1/repos/OWNER/NAME/actions/runs/ID` returns one run with its logs, and the actions page shows the 20 most recent runs. A node runs at most four jobs concurrently; additional runs remain queued and can be cancelled. Workflows without `"sandbox":true` run only under `-actions trusted` and then execute with the Trace service account. On macOS, `"sandbox":true` uses `sandbox-exec` with a restricted filesystem and no network access. For portable isolation, set `"sandbox_runtime":"docker"` and an explicit `"sandbox_image"`; Trace runs Docker with no network, a read-only root, dropped capabilities, no-new-privileges, a process limit, and only the checked-out workspace (`/workspace`) and a per-run scratch directory (`/tmp`) writable; `TRACE_REPOSITORY`, `TRACE_COMMIT`, `CI`, and `TRACE_SECRET_*` are passed into the container by name. Trace refuses to fall back to unsandboxed execution when sandboxing is requested. Docker still depends on the host daemon and image supply chain.
 
-Repository-scoped CI secrets can be managed through the dashboard, API, or CLI. Secret values are stored in `data/secrets.json` with owner-only permissions and are injected only into jobs as `TRACE_SECRET_<NAME>` environment variables; list operations return names, never values:
+Repository-scoped CI secrets can be managed through the dashboard, API, or CLI. Secret values are stored in `data/secrets.json` with owner-only permissions and are injected only into jobs as `TRACE_SECRET_<NAME>` environment variables; list operations return names, never values. A job's environment contains only `PATH`, `HOME` (the checkout), `TMPDIR` (a per-run scratch directory), `LANG`/`LC_ALL` when set, `TRACE_REPOSITORY`, `TRACE_COMMIT`, `CI=true`, and the repository's `TRACE_SECRET_*` values; the Trace service environment is never passed to jobs:
 
 ```sh
 ./trace api secret-set -url http://127.0.0.1:8787 -user admin \
@@ -422,7 +447,7 @@ The local runner is still not an isolation boundary. Do not run untrusted workfl
 Workflows may opt into a recurring schedule with a duration between one minute and 24 hours:
 
 ```json
-{"name":"nightly","schedule":"6h","jobs":[{"name":"test","run":["go test ./..."]}]}
+{"name":"nightly","schedule":"6h","sandbox":true,"sandbox_runtime":"docker","sandbox_image":"golang:1.26-alpine","jobs":[{"name":"test","run":["go test ./..."]}]}
 ```
 
 Start the scheduler explicitly with the server (it is disabled by default):
@@ -527,7 +552,7 @@ Administrators can move or permanently remove a repository:
 ./trace repo delete -data ./data team/platform
 ```
 
-The authenticated API provides `POST /api/v1/repos/OWNER/NAME/transfer` with `{"name":"NEW_OWNER/NAME"}` and `DELETE /api/v1/repos/OWNER/NAME`. The dashboard exposes the same controls. Deletion removes the bare repository and is irreversible; transfer keeps Git configuration and rewrites repository references in Trace metadata.
+The authenticated API provides `POST /api/v1/repos/OWNER/NAME/transfer` with `{"name":"NEW_OWNER/NAME"}` and `DELETE /api/v1/repos/OWNER/NAME`. The dashboard exposes the same controls. Deletion removes the bare repository and is irreversible; transfer keeps Git configuration, moves the repository's LFS objects, packages, and release assets, and renames repository references in Trace metadata (repository-keyed records and `repo` fields, each store under its own lock). Issue and comment text and the audit ledger are left unchanged. A transfer is recorded in `data/.transfer-journal.json` first, so an interrupted transfer is completed the next time Trace opens the data directory.
 
 Administrators can archive and restore repositories:
 
@@ -538,7 +563,7 @@ Administrators can archive and restore repositories:
 
 Archived repositories remain readable and clonable, but Git pushes and write operations are rejected until restoration.
 
-Trace exposes administrator-authenticated SCIM 2.0 endpoints at `/scim/v2/Users` and `/scim/v2/Groups`. User provisioning supports list, create, get, deactivate/reactivate, and delete; group resources map directly to durable Trace teams and their members. A SCIM user without a supplied password is created disabled so provisioning never creates an account with an undisclosed credential. Full OIDC/SAML SSO and SCIM role mapping beyond team repository grants are not implemented.
+Trace exposes administrator-authenticated SCIM 2.0 endpoints at `/scim/v2/Users` and `/scim/v2/Groups`. User provisioning supports list, create, get, deactivate/reactivate (including `path: "active"` patches), and delete; group resources map directly to durable Trace teams, and group patches add, replace, and remove members (including `members[value eq "USER"]` paths). Lists support `filter=userName eq "NAME"` (users) or `filter=displayName eq "NAME"` (groups) and `startIndex`/`count` paging. Trace refuses SCIM `password` values: credentials are personal tokens issued by an administrator, or OIDC sign-in. New SCIM users are therefore created disabled until an administrator issues a token (`trace user rotate`) and the account is reactivated. Full OIDC/SAML SSO and SCIM role mapping beyond team repository grants are not implemented.
 
 Branches can also be managed without raw Git plumbing:
 
@@ -603,7 +628,7 @@ The same read operations are available from the bundled CLI. The token is read f
 ./trace api commits -url http://127.0.0.1:8787 -user admin -token-file ./data/admin-token team/project
 ```
 
-The browser session can read the API. A browser-session write must also send `X-Trace-CSRF` equal to the session user's CSRF value; Basic-auth API clients do not need that browser-only header.
+The browser session can read the API. A browser-session write must also send `X-Trace-CSRF` equal to the session user's CSRF value; only requests whose Basic credentials authenticate the same user are exempt from that browser-only header.
 
 Admins can inspect the append-only audit ledger:
 
@@ -616,7 +641,7 @@ Events are stored as JSON Lines in `data/audit.jsonl` with owner-only permission
 
 ## Webhooks
 
-Admins can configure signed JSON webhooks for repository events. HTTPS is required for remote endpoints; plain HTTP is accepted only for loopback development endpoints.
+Admins can configure signed JSON webhooks for repository events. HTTPS is required for remote endpoints; plain HTTP is accepted only for loopback development endpoints. Deliveries connect only to public addresses, checked when connecting (after DNS resolution): loopback addresses only for hooks configured with a loopback host, private networks only when the server runs with `-webhook-allow-private-networks`, and link-local or cloud-metadata addresses never. Redirects are not followed (a 3xx response is recorded as a failed delivery), and proxy environment variables are ignored.
 
 ```sh
 ./trace api webhook-create -url http://127.0.0.1:9000 -user admin \
@@ -694,7 +719,7 @@ Admins can configure merge requirements through the API or CLI. The default requ
   -token-file ./data/admin-token team/project
 ```
 
-Required checks match successful action job names for the pull-request head commit. A run from a different commit does not satisfy the policy. Protected branch patterns are enforced by the Git receive hook for non-admin pushes; `*` is supported as a trailing wildcard, for example `release/*`. Administrators can still perform emergency updates.
+Required checks match successful action job names for the pull-request head commit. A run from a different commit does not satisfy the policy. Protected branch patterns are enforced by the Git receive hook for non-admin pushes; `*` is supported as a trailing wildcard, for example `release/*`. Patterns may contain only letters, digits, `.`, `_`, `-`, and `/`, must start with a letter or digit, and are quoted when Trace writes the hook. Administrators can still perform emergency updates.
 
 When `-require-codeowners` is enabled, Trace reads `CODEOWNERS` from the pull-request head (`CODEOWNERS`, `.github/CODEOWNERS`, `.gitlab/CODEOWNERS`, or `docs/CODEOWNERS`) and requires an approval from a matching user or team member for every changed file covered by the last matching rule. Pattern matching supports repository-relative paths, filename patterns, trailing directory patterns, and recursive `**` path segments. CODEOWNERS syntax outside this subset is ignored.
 

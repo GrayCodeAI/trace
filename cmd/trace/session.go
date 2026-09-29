@@ -62,9 +62,24 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 		a.loginPage(w, r, "Username or token is incorrect.", http.StatusUnauthorized)
 		return
 	}
-	if u.TOTPEnabled && !verifyTOTP(u.TOTPSecret, r.PostForm.Get("totp"), time.Now()) {
-		a.loginPage(w, r, "The two-factor code is incorrect.", http.StatusUnauthorized)
-		return
+	if u.TOTPEnabled {
+		now := time.Now()
+		if wait := a.totp.locked(name, now); wait > 0 {
+			a.loginPage(w, r, "Too many incorrect two-factor codes. Try again in "+strconv.Itoa(int(wait.Seconds())+1)+" seconds.", http.StatusTooManyRequests)
+			return
+		}
+		step, ok := matchTOTP(u.TOTPSecret, r.PostForm.Get("totp"), now)
+		if !ok {
+			a.totp.fail(name, now)
+			a.loginPage(w, r, "The two-factor code is incorrect.", http.StatusUnauthorized)
+			return
+		}
+		if err := a.store.acceptTOTPCounter(name, step); err != nil {
+			a.totp.fail(name, now)
+			a.loginPage(w, r, "This two-factor code was already used. Wait for the next code.", http.StatusUnauthorized)
+			return
+		}
+		a.totp.reset(name)
 	}
 	a.issueSession(w, r, name, u)
 	http.SetCookie(w, &http.Cookie{Name: "trace_login", Path: "/login", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: secureCookie(r)})

@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -80,6 +81,51 @@ type actionDB struct {
 	LastScheduledAt map[string]time.Time `json:"last_scheduled_at,omitempty"`
 }
 
+// CI runner policies selected by the operator with `trace serve -actions`.
+// Workflow files are repository content that any writer can change, so they
+// may opt into a sandbox but can never opt out of the operator's policy.
+const (
+	actionsModeOff       = "off"
+	actionsModeSandboxed = "sandboxed"
+	actionsModeTrusted   = "trusted"
+)
+
+func parseActionsMode(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case actionsModeOff:
+		return actionsModeOff, nil
+	case actionsModeSandboxed, "":
+		return actionsModeSandboxed, nil
+	case actionsModeTrusted:
+		return actionsModeTrusted, nil
+	default:
+		return "", errors.New("-actions must be off, sandboxed, or trusted")
+	}
+}
+
+// actionsPolicy returns the effective runner policy; an unset store defaults
+// to sandboxed so no code path runs unsandboxed jobs without operator consent.
+func (s *store) actionsPolicy() string {
+	mode, err := parseActionsMode(s.actionsMode)
+	if err != nil {
+		return actionsModeSandboxed
+	}
+	return mode
+}
+
+// checkActionsPolicy refuses a workflow that the operator's policy forbids.
+func (s *store) checkActionsPolicy(config workflowConfig) error {
+	switch s.actionsPolicy() {
+	case actionsModeOff:
+		return errors.New("CI actions are disabled on this node (trace serve -actions off)")
+	case actionsModeSandboxed:
+		if !config.Sandbox {
+			return errors.New("this node runs only sandboxed workflows: set \"sandbox\":true in .trace/workflow.json, or an operator can start trace serve -actions trusted for trusted repositories")
+		}
+	}
+	return nil
+}
+
 var actionRunMu sync.Mutex
 var actionCancelMu sync.Mutex
 var actionCancels = map[int]context.CancelFunc{}
@@ -112,7 +158,7 @@ func (a *app) apiActions(w http.ResponseWriter, r *http.Request, u userRecord, u
 			apiError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		if !u.Admin && roleFor(u, repo) != "write" {
+		if !u.canWrite(repo) {
 			apiError(w, http.StatusForbidden, "write access required")
 			return
 		}
@@ -186,7 +232,7 @@ func (a *app) apiActions(w http.ResponseWriter, r *http.Request, u userRecord, u
 func (s *store) loadActions() (actionDB, error) {
 	b, err := os.ReadFile(filepath.Join(s.root, "actions.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return actionDB{NextRunID: 1}, nil
+		return actionDB{NextRunID: 1, LastScheduledAt: map[string]time.Time{}}, nil
 	}
 	if err != nil {
 		return actionDB{}, err
@@ -258,6 +304,9 @@ func (s *store) actionRun(repo, ref, actor string) (actionRun, error) {
 	if _, err := os.Stat(path); err != nil {
 		return actionRun{}, errors.New("repository not found")
 	}
+	if s.actionsPolicy() == actionsModeOff {
+		return actionRun{}, s.checkActionsPolicy(workflowConfig{})
+	}
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		ref = "main"
@@ -272,6 +321,9 @@ func (s *store) actionRun(repo, ref, actor string) (actionRun, error) {
 	}
 	if len(config.Jobs) == 0 {
 		return actionRun{}, errors.New("workflow has no jobs")
+	}
+	if err := s.checkActionsPolicy(config); err != nil {
+		return actionRun{}, err
 	}
 	secrets, err := s.actionSecrets(repo)
 	if err != nil {
@@ -304,6 +356,9 @@ func (s *store) actionRun(repo, ref, actor string) (actionRun, error) {
 // main branch. It records the last evaluation before starting a run so a
 // slow or repeatedly ticking scheduler cannot enqueue duplicates.
 func (s *store) scheduleActionRuns() error {
+	if s.actionsPolicy() == actionsModeOff {
+		return nil
+	}
 	now := time.Now().UTC()
 	type candidate struct {
 		repo string
@@ -343,7 +398,7 @@ func (s *store) scheduleActionRuns() error {
 				continue
 			}
 			config, readErr := readWorkflow(path, commit)
-			if readErr != nil || strings.TrimSpace(config.Schedule) == "" {
+			if readErr != nil || strings.TrimSpace(config.Schedule) == "" || s.checkActionsPolicy(config) != nil {
 				continue
 			}
 			d, parseErr := time.ParseDuration(config.Schedule)
@@ -462,9 +517,21 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 		delete(actionCancels, run.ID)
 		actionCancelMu.Unlock()
 	}()
-	workspace := filepath.Join(s.root, "action-work", fmt.Sprint(run.ID))
-	_ = os.MkdirAll(filepath.Dir(workspace), 0700)
-	defer os.RemoveAll(workspace)
+	// Each run gets a private directory holding the checkout (src) and a
+	// scratch TMPDIR (tmp); both are writable by the job and removed after.
+	runDir := filepath.Join(s.root, "action-work", fmt.Sprint(run.ID))
+	workspace := filepath.Join(runDir, "src")
+	scratch := filepath.Join(runDir, "tmp")
+	defer os.RemoveAll(runDir)
+	if err := os.MkdirAll(scratch, 0700); err != nil {
+		s.finishActionRun(run.ID, "failure", []actionJob{{ID: 1, Name: "checkout", Status: "failure", ExitCode: 1, Log: "cannot create the run directory"}})
+		return
+	}
+	// Give jobs canonical paths: a sandbox cannot traverse symlinks such as
+	// macOS's /var -> /private/var that it is not allowed to read.
+	if resolved, err := filepath.EvalSymlinks(runDir); err == nil {
+		workspace, scratch = filepath.Join(resolved, "src"), filepath.Join(resolved, "tmp")
+	}
 	if config.Sandbox {
 		runtimeName := config.SandboxRuntime
 		if runtimeName == "" {
@@ -506,14 +573,23 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 		}
 		job := actionJob{ID: i + 1, Name: spec.Name, Status: "running", StartedAt: time.Now().UTC()}
 		var logText strings.Builder
-		for _, commandText := range spec.Run {
+		for commandIndex, commandText := range spec.Run {
 			if logText.Len() < maxActionLog {
 				logText.WriteString("$ ")
 				logText.WriteString(commandText)
 				logText.WriteByte('\n')
 			}
 			commandCtx, cancel := context.WithTimeout(ctx, maxActionDuration)
-			cmd, commandErr := actionCommandWithSandbox(commandCtx, commandText, workspace, config.Sandbox, config.SandboxRuntime, config.SandboxImage)
+			cmd, commandErr := buildActionCommand(commandCtx, actionCommandSpec{
+				Command:   commandText,
+				Workspace: workspace,
+				Scratch:   scratch,
+				Sandbox:   config.Sandbox,
+				Runtime:   config.SandboxRuntime,
+				Image:     config.SandboxImage,
+				Env:       actionJobEnv(run.Repo, run.Commit, workspace, scratch, secrets),
+				Name:      fmt.Sprintf("trace-run-%d-%d-%d", run.ID, job.ID, commandIndex+1),
+			})
 			if commandErr != nil {
 				job.Status, job.ExitCode = "failure", 1
 				logText.WriteString(commandErr.Error())
@@ -521,20 +597,22 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 				cancel()
 				break
 			}
-			cmd.Dir = workspace
-			env := append(os.Environ(), "TRACE_REPOSITORY="+run.Repo, "TRACE_COMMIT="+run.Commit, "CI=true")
-			for name, value := range secrets {
-				env = append(env, name+"="+value)
-			}
-			cmd.Env = env
-			out, err := cmd.CombinedOutput()
+			// One shared writer: os/exec then serializes stdout and stderr
+			// writes, and the cap keeps unbounded output out of memory.
+			output := &cappedBuffer{limit: maxActionLog - logText.Len()}
+			cmd.Stdout, cmd.Stderr = output, output
+			err := runActionCommand(cmd)
+			timedOut := commandCtx.Err() != nil
 			cancel()
-			if logText.Len() < maxActionLog {
-				remaining := maxActionLog - logText.Len()
-				if len(out) > remaining {
-					out = out[:remaining]
-				}
-				logText.Write(out)
+			logText.Write(output.Bytes())
+			if timedOut && ctx.Err() == nil {
+				logText.WriteString("\nTrace: step exceeded the 15-minute limit and was stopped\n")
+			}
+			if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil && !timedOut {
+				// The step exited successfully but left background processes
+				// holding its output open; they were terminated with the group.
+				logText.WriteString("\nTrace: stopped background processes left running by this step\n")
+				err = nil
 			}
 			if err != nil {
 				job.Status, job.ExitCode = "failure", 1
@@ -568,8 +646,148 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 	s.finishActionRun(run.ID, status, jobs)
 }
 
+// actionJobEnv is the complete environment a job sees: the documented TRACE_*
+// variables, CI, the repository's TRACE_SECRET_* values, and a minimal
+// PATH/HOME/TMPDIR/locale. The Trace service environment is never inherited,
+// so server credentials in it are not readable by workflows.
+func actionJobEnv(repo, commit, home, tmpDir string, secrets map[string]string) []string {
+	path := os.Getenv("PATH")
+	if path == "" {
+		path = "/usr/local/bin:/usr/bin:/bin"
+	}
+	env := []string{"PATH=" + path, "HOME=" + home, "TMPDIR=" + tmpDir}
+	for _, name := range []string{"LANG", "LC_ALL"} {
+		if value := os.Getenv(name); value != "" {
+			env = append(env, name+"="+value)
+		}
+	}
+	env = append(env, "TRACE_REPOSITORY="+repo, "TRACE_COMMIT="+commit, "CI=true")
+	names := make([]string, 0, len(secrets))
+	for name := range secrets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		env = append(env, name+"="+secrets[name])
+	}
+	return env
+}
+
+// actionCommandSpec describes one workflow step for buildActionCommand.
+type actionCommandSpec struct {
+	Command   string
+	Workspace string   // checkout, the working directory
+	Scratch   string   // optional extra job-writable directory (TMPDIR; /tmp in Docker)
+	Sandbox   bool     // request sandbox-exec or Docker isolation
+	Runtime   string   // "macos" (default) or "docker"
+	Image     string   // Docker image
+	Env       []string // complete job environment, KEY=VALUE
+	Name      string   // unique Docker container name
+}
+
+// dockerForwardedEnv lists the job variables passed into a container. The
+// container keeps the image's own PATH and HOME; values are read by the
+// docker client from its environment, so secrets never appear in argv.
+func dockerForwardedEnv(env []string) []string {
+	var names []string
+	for _, item := range env {
+		name, _, _ := strings.Cut(item, "=")
+		switch {
+		case name == "TRACE_REPOSITORY", name == "TRACE_COMMIT", name == "CI", strings.HasPrefix(name, "TRACE_SECRET_"):
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// buildActionCommand returns the runner command for one workflow step with
+// its environment, working directory, and cancellation wired up. Local and
+// sandbox-exec steps run in their own process group so cancellation, the
+// step timeout, and step completion can stop every process they started.
+// Docker steps run in a named container that cancellation kills explicitly,
+// because killing the docker client alone leaves the container running.
+func buildActionCommand(ctx context.Context, spec actionCommandSpec) (*exec.Cmd, error) {
+	runtimeName := spec.Runtime
+	if runtimeName == "" {
+		runtimeName = "macos"
+	}
+	var cmd *exec.Cmd
+	switch {
+	case !spec.Sandbox:
+		cmd = exec.CommandContext(ctx, "sh", "-c", spec.Command)
+	case runtimeName == "docker":
+		if strings.TrimSpace(spec.Image) == "" || !commandAvailable("docker") {
+			return nil, errors.New("Docker sandboxing requires docker and sandbox_image; refusing unsafe fallback")
+		}
+		if spec.Name == "" {
+			return nil, errors.New("Docker sandboxing requires a container name")
+		}
+		args := []string{"run", "--rm", "--name", spec.Name, "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "-v", spec.Workspace + ":/workspace:rw"}
+		if spec.Scratch != "" {
+			args = append(args, "-v", spec.Scratch+":/tmp:rw")
+		}
+		for _, name := range dockerForwardedEnv(spec.Env) {
+			args = append(args, "-e", name)
+		}
+		args = append(args, "-w", "/workspace", spec.Image, "/bin/sh", "-c", spec.Command)
+		cmd = exec.CommandContext(ctx, "docker", args...)
+		name := spec.Name
+		cmd.Cancel = func() error {
+			killCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			_ = exec.CommandContext(killCtx, "docker", "kill", name).Run()
+			return cmd.Process.Kill()
+		}
+		// The docker client talks to the daemon with the operator's
+		// environment; the container only sees the variables named above.
+		cmd.Env = append(os.Environ(), spec.Env...)
+	case runtimeName == "macos" && runtime.GOOS == "darwin" && commandAvailable("sandbox-exec"):
+		writable := []string{spec.Workspace}
+		if spec.Scratch != "" {
+			writable = append(writable, spec.Scratch)
+		}
+		cmd = exec.CommandContext(ctx, "sandbox-exec", "-p", macOSSandboxProfile(writable...), "/bin/sh", "-c", spec.Command)
+	default:
+		return nil, errors.New("macOS sandboxing requires sandbox-exec; refusing unsafe fallback")
+	}
+	if cmd.Env == nil {
+		cmd.Env = spec.Env
+		if cmd.Env == nil {
+			cmd.Env = []string{}
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error { return killProcessGroup(cmd) }
+	}
+	cmd.Dir = spec.Workspace
+	cmd.WaitDelay = actionWaitDelay
+	return cmd, nil
+}
+
+// actionWaitDelay bounds how long a finished or cancelled step may keep its
+// output pipes open through leftover child processes.
+const actionWaitDelay = 5 * time.Second
+
+func killProcessGroup(cmd *exec.Cmd) error {
+	if cmd.Process == nil || cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
+		return nil
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	return nil
+}
+
+// runActionCommand runs a step and then stops anything it left behind in its
+// process group, so background processes cannot outlive the step or keep
+// running after the 15-minute limit.
+func runActionCommand(cmd *exec.Cmd) error {
+	err := cmd.Run()
+	_ = killProcessGroup(cmd)
+	return err
+}
+
 func actionCommand(ctx context.Context, commandText, workspace string, sandbox bool) (*exec.Cmd, error) {
-	return actionCommandWithSandbox(ctx, commandText, workspace, sandbox, "", "")
+	return buildActionCommand(ctx, actionCommandSpec{Command: commandText, Workspace: workspace, Sandbox: sandbox, Name: "trace-run-adhoc"})
 }
 
 func commandAvailable(name string) bool {
@@ -577,32 +795,30 @@ func commandAvailable(name string) bool {
 	return err == nil
 }
 
-func actionCommandWithSandbox(ctx context.Context, commandText, workspace string, sandbox bool, sandboxRuntime, sandboxImage string) (*exec.Cmd, error) {
-	if !sandbox {
-		return exec.CommandContext(ctx, "sh", "-c", commandText), nil
-	}
-	if sandboxRuntime == "" {
-		sandboxRuntime = "macos"
-	}
-	if sandboxRuntime == "docker" {
-		if strings.TrimSpace(sandboxImage) == "" || !commandAvailable("docker") {
-			return nil, errors.New("Docker sandboxing requires docker and sandbox_image; refusing unsafe fallback")
-		}
-		return exec.CommandContext(ctx, "docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "-v", workspace+":/workspace:rw", "-w", "/workspace", sandboxImage, "/bin/sh", "-c", commandText), nil
-	}
-	if sandboxRuntime != "macos" || runtime.GOOS != "darwin" || !commandAvailable("sandbox-exec") {
-		return nil, errors.New("macOS sandboxing requires sandbox-exec; refusing unsafe fallback")
-	}
+// macOSSandboxProfile allows the job to read system tool directories and to
+// read and write only writableDirs. sandbox-exec matches resolved paths, so
+// symlinks such as /var -> /private/var are resolved first; otherwise every
+// write to the workspace is denied. The root directory entry and /bin/sh's
+// selector link must be readable for the shell to start on current macOS,
+// and /dev/null is needed for ordinary redirections.
+func macOSSandboxProfile(writableDirs ...string) string {
 	quote := func(value string) string { return strconv.Quote(value) }
 	profile := "(version 1)\n" +
 		"(deny default)\n" +
 		"(allow process-fork)\n" +
 		"(allow process-exec)\n" +
 		"(allow signal (target self))\n" +
-		"(allow file-read* (subpath \"/bin\") (subpath \"/usr\") (subpath \"/System\") (subpath \"/Library\") (subpath \"/opt/homebrew\"))\n" +
-		"(allow file-read* (subpath " + quote(workspace) + "))\n" +
-		"(allow file-write* (subpath " + quote(workspace) + "))\n"
-	return exec.CommandContext(ctx, "sandbox-exec", "-p", profile, "/bin/sh", "-c", commandText), nil
+		"(allow file-read* (literal \"/\") (literal \"/private/var/select/sh\"))\n" +
+		"(allow file-read* file-write-data (literal \"/dev/null\"))\n" +
+		"(allow file-read* (subpath \"/bin\") (subpath \"/usr\") (subpath \"/System\") (subpath \"/Library\") (subpath \"/opt/homebrew\"))\n"
+	for _, dir := range writableDirs {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
+		profile += "(allow file-read* (subpath " + quote(dir) + "))\n" +
+			"(allow file-write* (subpath " + quote(dir) + "))\n"
+	}
+	return profile
 }
 
 // Kept in a helper so the duration is easy to audit and change in one place.
@@ -610,38 +826,167 @@ func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), d)
 }
 
+const maxActionArtifactSize = 50 << 20
+
+// collectActionArtifacts copies declared artifacts out of a job workspace.
+// The workspace is writable by the job, and this function runs in the
+// unsandboxed Trace process, so every lookup goes through an os.Root bound to
+// the workspace: symlinks (final or intermediate) cannot reach files outside
+// it, symlinked artifacts are refused outright, and only regular files are
+// copied. Files are opened non-blocking so a FIFO cannot stall the runner.
 func collectActionArtifacts(root string, runID, jobID int, workspace string, patterns []string) []actionArtifact {
+	ws, err := os.OpenRoot(workspace)
+	if err != nil {
+		return nil
+	}
+	defer ws.Close()
 	var out []actionArtifact
 	for _, pattern := range patterns {
 		pattern = filepath.Clean(pattern)
-		if pattern == "." || filepath.IsAbs(pattern) || strings.HasPrefix(pattern, ".."+string(filepath.Separator)) || strings.Contains(pattern, string(filepath.Separator)+".."+string(filepath.Separator)) {
+		if pattern == "." || filepath.IsAbs(pattern) || pattern == ".." || strings.HasPrefix(pattern, ".."+string(filepath.Separator)) || strings.Contains(pattern, string(filepath.Separator)+".."+string(filepath.Separator)) {
 			continue
 		}
 		matches, _ := filepath.Glob(filepath.Join(workspace, pattern))
 		for _, source := range matches {
-			info, err := os.Stat(source)
-			if err != nil || info.IsDir() || info.Size() > 50<<20 {
+			rel, err := filepath.Rel(workspace, source)
+			if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 				continue
 			}
-			name := filepath.ToSlash(strings.TrimPrefix(source, workspace+string(filepath.Separator)))
-			dest := filepath.Join(root, "artifacts", fmt.Sprint(runID), fmt.Sprint(jobID), filepath.FromSlash(name))
-			if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
-				continue
+			artifact, ok := copyActionArtifact(ws, root, runID, jobID, rel)
+			if ok {
+				out = append(out, artifact)
 			}
-			in, err := os.Open(source)
-			if err != nil {
-				continue
-			}
-			outFile, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-			if err == nil {
-				_, _ = io.Copy(outFile, io.LimitReader(in, 50<<20))
-				_ = outFile.Close()
-			}
-			_ = in.Close()
-			out = append(out, actionArtifact{Name: name, Size: info.Size(), Path: dest})
 		}
 	}
 	return out
+}
+
+func copyActionArtifact(ws *os.Root, root string, runID, jobID int, rel string) (actionArtifact, bool) {
+	info, err := ws.Lstat(rel)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxActionArtifactSize {
+		return actionArtifact{}, false
+	}
+	in, err := ws.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return actionArtifact{}, false
+	}
+	defer in.Close()
+	opened, err := in.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) || opened.Size() > maxActionArtifactSize {
+		return actionArtifact{}, false
+	}
+	name := filepath.ToSlash(rel)
+	dest := filepath.Join(root, "artifacts", fmt.Sprint(runID), fmt.Sprint(jobID), filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
+		return actionArtifact{}, false
+	}
+	outFile, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return actionArtifact{}, false
+	}
+	written, copyErr := io.Copy(outFile, io.LimitReader(in, maxActionArtifactSize))
+	closeErr := outFile.Close()
+	if copyErr != nil || closeErr != nil {
+		_ = os.Remove(dest)
+		return actionArtifact{}, false
+	}
+	return actionArtifact{Name: name, Size: written, Path: dest}, true
+}
+
+// Job logs live in data/action-logs/RUN/JOB.log rather than in actions.json,
+// and each repository keeps at most maxActionRunsPerRepo finished runs, so
+// listing runs and checking merge policies stay cheap as history grows.
+const maxActionRunsPerRepo = 200
+
+func (s *store) actionLogPath(runID, jobID int) string {
+	return filepath.Join(s.root, "action-logs", strconv.Itoa(runID), strconv.Itoa(jobID)+".log")
+}
+
+func (s *store) writeActionLog(runID, jobID int, text string) error {
+	path := s.actionLogPath(runID, jobID)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".log-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if _, err := tmp.WriteString(text); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
+}
+
+// externalizeActionLogs moves job logs out of the run database, including
+// logs that older Trace versions stored inline.
+func (s *store) externalizeActionLogs(db *actionDB) {
+	for i := range db.Runs {
+		for j := range db.Runs[i].Jobs {
+			job := &db.Runs[i].Jobs[j]
+			if job.Log == "" {
+				continue
+			}
+			if err := s.writeActionLog(db.Runs[i].ID, job.ID, job.Log); err == nil {
+				job.Log = ""
+			}
+		}
+	}
+}
+
+// hydrateActionLogs loads job logs for a run that is about to be displayed.
+func (s *store) hydrateActionLogs(run *actionRun) {
+	for j := range run.Jobs {
+		if run.Jobs[j].Log != "" {
+			continue
+		}
+		f, err := os.Open(s.actionLogPath(run.ID, run.Jobs[j].ID))
+		if err != nil {
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(f, maxActionLog+4096))
+		_ = f.Close()
+		run.Jobs[j].Log = string(b)
+	}
+}
+
+// pruneActionRuns drops the oldest finished runs of each repository beyond
+// maxActionRunsPerRepo and returns their IDs. Queued and running runs are
+// always kept.
+func pruneActionRuns(db *actionDB) []int {
+	finished := map[string]int{}
+	for _, run := range db.Runs {
+		if run.Status != "queued" && run.Status != "running" {
+			finished[run.Repo]++
+		}
+	}
+	excess := map[string]int{}
+	for repo, count := range finished {
+		if count > maxActionRunsPerRepo {
+			excess[repo] = count - maxActionRunsPerRepo
+		}
+	}
+	if len(excess) == 0 {
+		return nil
+	}
+	sort.SliceStable(db.Runs, func(i, j int) bool { return db.Runs[i].ID < db.Runs[j].ID })
+	kept := db.Runs[:0]
+	var removed []int
+	for _, run := range db.Runs {
+		if excess[run.Repo] > 0 && run.Status != "queued" && run.Status != "running" {
+			excess[run.Repo]--
+			removed = append(removed, run.ID)
+			continue
+		}
+		kept = append(kept, run)
+	}
+	db.Runs = kept
+	return removed
 }
 
 func (s *store) finishActionRun(id int, status string, jobs []actionJob) {
@@ -651,14 +996,27 @@ func (s *store) finishActionRun(id int, status string, jobs []actionJob) {
 	if err != nil {
 		return
 	}
+	found := false
 	for i := range db.Runs {
 		if db.Runs[i].ID == id {
 			db.Runs[i].Status = status
 			db.Runs[i].Jobs = jobs
 			db.Runs[i].FinishedAt = time.Now().UTC()
-			_ = s.saveActions(db)
-			return
+			found = true
+			break
 		}
+	}
+	if !found {
+		return
+	}
+	s.externalizeActionLogs(&db)
+	removed := pruneActionRuns(&db)
+	if err := s.saveActions(db); err != nil {
+		return
+	}
+	for _, runID := range removed {
+		_ = os.RemoveAll(filepath.Join(s.root, "action-logs", strconv.Itoa(runID)))
+		_ = os.RemoveAll(filepath.Join(s.root, "artifacts", strconv.Itoa(runID)))
 	}
 }
 
@@ -672,6 +1030,7 @@ func actionRunByID(s *store, id int) (actionRun, error) {
 	for _, run := range db.Runs {
 		if run.ID == id {
 			hydrateActionPaths(s, &run)
+			s.hydrateActionLogs(&run)
 			return run, nil
 		}
 	}

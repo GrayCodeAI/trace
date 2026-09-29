@@ -61,8 +61,8 @@ func TestOIDCLoginWithPKCEAndAutoProvision(t *testing.T) {
 		t.Fatalf("OIDC callback: %d %s", callbackRes.Code, callbackRes.Body.String())
 	}
 	db, err := a.store.loadUsers()
-	if err != nil || db.Users["oidc-user"].Hash == "" {
-		t.Fatalf("OIDC user was not provisioned: %#v err=%v", db.Users, err)
+	if err != nil || db.Users["oidc-user"].Hash == "" || db.Users["oidc-user"].OIDCSubject != "subject-1" {
+		t.Fatalf("OIDC user was not provisioned with its subject: %#v err=%v", db.Users, err)
 	}
 	if strings.Contains(callbackRes.Body.String(), "provider-token") {
 		t.Fatal("provider token leaked in callback response")

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -13,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/cgi"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -59,6 +59,9 @@ func run(args []string) error {
 		sshAddr := fs.String("ssh-listen", "", "SSH Git listen address (disabled by default)")
 		federationInterval := fs.Duration("federation-interval", 0, "background federation peer sync interval (disabled by default)")
 		actionsInterval := fs.Duration("actions-interval", 0, "scheduled workflow evaluation interval (disabled by default)")
+		webhookPrivate := fs.Bool("webhook-allow-private-networks", false, "allow webhook deliveries to private-network addresses (link-local and metadata addresses stay blocked)")
+		trustedProxy := fs.String("trusted-proxy", "", "comma-separated IPs or CIDR prefixes of reverse proxies whose X-Forwarded-For/X-Real-IP identify clients for rate limiting")
+		actionsMode := fs.String("actions", actionsModeSandboxed, "CI runner policy: off, sandboxed (only workflows with \"sandbox\":true), or trusted (also run unsandboxed workflows as the Trace service account)")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -71,7 +74,15 @@ func run(args []string) error {
 		if *actionsInterval < 0 {
 			return errors.New("-actions-interval cannot be negative")
 		}
-		return serve(*data, *addr, *sshAddr, *federationInterval, *actionsInterval)
+		mode, err := parseActionsMode(*actionsMode)
+		if err != nil {
+			return err
+		}
+		proxies, err := parseTrustedProxies(*trustedProxy)
+		if err != nil {
+			return err
+		}
+		return serve(serveOptions{data: *data, addr: *addr, sshAddr: *sshAddr, federationInterval: *federationInterval, actionsInterval: *actionsInterval, actionsMode: mode, trustedProxies: proxies, webhookAllowPrivate: *webhookPrivate})
 	case "repo":
 		if len(args) < 2 || (args[1] != "create" && args[1] != "import" && args[1] != "fork" && args[1] != "archive" && args[1] != "restore" && args[1] != "delete" && args[1] != "transfer" && args[1] != "topics") {
 			return errors.New("usage: trace repo <create|import|fork|archive|restore|delete|transfer|topics> ...")
@@ -262,7 +273,7 @@ func run(args []string) error {
 		return nil
 	case "sso":
 		if len(args) < 3 || args[1] != "oidc" {
-			return errors.New("usage: trace sso oidc <set|disable> ...")
+			return errors.New("usage: trace sso oidc <set|disable|link|unlink> ...")
 		}
 		return oidcCommand(args[2:])
 	case "team":
@@ -439,6 +450,11 @@ func run(args []string) error {
 type store struct {
 	root  string
 	repos string
+	// actionsMode is the operator's CI runner policy (see parseActionsMode).
+	// The zero value means actionsModeSandboxed.
+	actionsMode string
+	// webhookAllowPrivate lets webhooks target private-network addresses.
+	webhookAllowPrivate bool
 }
 
 func openStore(data string) (*store, error) {
@@ -453,7 +469,14 @@ func openStore(data string) (*store, error) {
 	if !info.IsDir() {
 		return nil, errors.New("data path is not a directory")
 	}
-	return &store{root: root, repos: filepath.Join(root, "repos")}, nil
+	s := &store{root: root, repos: filepath.Join(root, "repos")}
+	transferMu.Lock()
+	err = s.completePendingTransfer()
+	transferMu.Unlock()
+	if err != nil {
+		return nil, fmt.Errorf("complete interrupted repository transfer: %w", err)
+	}
+	return s, nil
 }
 
 func initData(data string) error {
@@ -582,65 +605,8 @@ func (s *store) deleteRepo(name string) error {
 	if err := os.RemoveAll(path); err != nil {
 		return fmt.Errorf("delete repository: %w", err)
 	}
-	return nil
-}
-
-func (s *store) transferRepo(source, target string) error {
-	if !validRepoName(source) || !validRepoName(target) {
-		return errors.New("repository names must be OWNER/NAME")
-	}
-	if source == target {
-		return errors.New("source and target repository are the same")
-	}
-	sourcePath, err := s.repoPath(source)
-	if err != nil {
-		return err
-	}
-	targetPath, err := s.repoPath(target)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(sourcePath); err != nil {
-		return errors.New("source repository not found")
-	}
-	if _, err := os.Stat(targetPath); err == nil {
-		return errors.New("target repository already exists")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0700); err != nil {
-		return err
-	}
-	if err := os.Rename(sourcePath, targetPath); err != nil {
-		return fmt.Errorf("transfer repository: %w", err)
-	}
-	if err := s.rewriteRepoReferences(source, target); err != nil {
-		return fmt.Errorf("rewrite repository references: %w", err)
-	}
-	return nil
-}
-
-func (s *store) rewriteRepoReferences(source, target string) error {
-	entries, err := os.ReadDir(s.root)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !(strings.HasSuffix(entry.Name(), ".json") || strings.HasSuffix(entry.Name(), ".jsonl")) {
-			continue
-		}
-		path := filepath.Join(s.root, entry.Name())
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		updated := bytes.ReplaceAll(b, []byte(`"`+source+`"`), []byte(`"`+target+`"`))
-		if bytes.Equal(updated, b) {
-			continue
-		}
-		if err := os.WriteFile(path, updated, 0600); err != nil {
-			return err
-		}
+	if lfsDir, err := s.lfsRepoDir(name); err == nil {
+		_ = os.RemoveAll(lfsDir)
 	}
 	return nil
 }
@@ -676,6 +642,9 @@ func (s *store) forkRepo(source, target string) error {
 		if out, err := exec.Command("git", "-C", targetPath, "config", strings.SplitN(setting, "=", 2)[0], strings.SplitN(setting, "=", 2)[1]).CombinedOutput(); err != nil {
 			return fmt.Errorf("configure fork: %w: %s", err, strings.TrimSpace(string(out)))
 		}
+	}
+	if err := s.copyLFSObjects(source, target); err != nil {
+		return fmt.Errorf("copy LFS objects: %w", err)
 	}
 	return installHook(targetPath)
 }
@@ -913,6 +882,7 @@ type app struct {
 	sessionKey []byte
 	gitPath    string
 	limiter    *rateLimiter
+	totp       *totpLimiter
 }
 
 func newApp(data string) (*app, error) {
@@ -935,16 +905,38 @@ func newApp(data string) (*app, error) {
 	if _, err := rand.Read(sessionKey); err != nil {
 		return nil, err
 	}
-	return &app{store: s, csrf: base64.RawURLEncoding.EncodeToString(csrfBytes), sessionKey: sessionKey, gitPath: gitPath, limiter: newRateLimiter(s.root)}, nil
+	return &app{store: s, csrf: base64.RawURLEncoding.EncodeToString(csrfBytes), sessionKey: sessionKey, gitPath: gitPath, limiter: newRateLimiter(s.root), totp: newTOTPLimiter()}, nil
 }
 
-func serve(data, addr, sshAddr string, federationInterval, actionsInterval time.Duration) error {
+// serveOptions carries the operator's `trace serve` flags.
+type serveOptions struct {
+	data               string
+	addr               string
+	sshAddr            string
+	federationInterval time.Duration
+	actionsInterval    time.Duration
+	actionsMode        string
+	trustedProxies     []netip.Prefix
+	// webhookAllowPrivate permits webhook targets in private networks.
+	webhookAllowPrivate bool
+}
+
+func serve(opts serveOptions) error {
+	data, addr, sshAddr := opts.data, opts.addr, opts.sshAddr
+	federationInterval, actionsInterval := opts.federationInterval, opts.actionsInterval
 	a, err := newApp(data)
 	if err != nil {
 		return err
 	}
+	a.store.actionsMode = opts.actionsMode
+	a.limiter.trustedProxies = opts.trustedProxies
+	a.store.webhookAllowPrivate = opts.webhookAllowPrivate
+	log.Printf("trace CI actions mode: %s", a.store.actionsPolicy())
 	if err := a.store.ensureHooks(); err != nil {
 		return err
+	}
+	if err := a.store.migrateLegacyLFS(); err != nil {
+		return fmt.Errorf("migrate legacy LFS objects: %w", err)
 	}
 	if sshAddr != "" {
 		go func() {
@@ -1001,7 +993,7 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "same-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", appContentSecurityPolicy)
 	switch {
 	case r.URL.Path == "/.well-known/trace/ssh-host-key" && r.Method == http.MethodGet:
 		publicKey, fingerprint, err := sshHostKeyInfo(a.store.root)
@@ -1059,20 +1051,22 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/git/") {
-		name, pass, hasAuth := r.BasicAuth()
+		name, pass, _ := r.BasicAuth()
 		u, valid := db.authenticate(name, pass)
 		if valid {
 			u = a.store.expandUser(name, u)
 		}
 		publicRead := false
-		if !valid {
-			if _, ok := publicGitRepo(a.store, r.URL.Path); ok && r.Method == http.MethodGet && r.URL.Query().Get("service") != "git-receive-pack" {
-				name, u, publicRead = "anonymous", userRecord{}, true
-			} else {
-				valid = false
+		// Public, non-archived repositories serve upload-pack to everyone,
+		// including signed-in users without a grant. Receive-pack never
+		// qualifies, so writes always need an authenticated writer.
+		if repo, ok := publicGitRepo(a.store, r.URL.Path); ok && anonymousGitRead(r) && (!valid || !u.canRead(repo)) {
+			if !valid {
+				name, u = "anonymous", userRecord{}
 			}
+			publicRead = true
 		}
-		if !hasAuth && !publicRead || (!valid && !publicRead) {
+		if !valid && !publicRead {
 			w.Header().Set("WWW-Authenticate", `Basic realm="Trace Git"`)
 			http.Error(w, "authentication required", http.StatusUnauthorized)
 			return
@@ -1241,6 +1235,21 @@ func publicWebRepo(s *store, requestPath string) (string, bool) {
 	name := parts[0] + "/" + parts[1]
 	path, err := s.repoPath(name)
 	return name, err == nil && isPublic(path) && !isArchived(path)
+}
+
+// anonymousGitRead reports whether r is one of the two smart-HTTP requests a
+// read-only clone or fetch needs: the upload-pack ref advertisement (GET
+// info/refs?service=git-upload-pack) and the upload-pack negotiation (POST
+// git-upload-pack). Every receive-pack request stays authenticated.
+func anonymousGitRead(r *http.Request) bool {
+	switch {
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/info/refs"):
+		return r.URL.Query().Get("service") == "git-upload-pack"
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-upload-pack"):
+		return true
+	default:
+		return false
+	}
 }
 
 func publicGitRepo(s *store, requestPath string) (string, bool) {

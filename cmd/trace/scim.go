@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"sort"
@@ -48,12 +49,24 @@ func (a *app) scimGroups(w http.ResponseWriter, r *http.Request) {
 	if path == "" || path == "/" {
 		switch r.Method {
 		case http.MethodGet:
+			want, filtered, err := parseSCIMEqualityFilter(r.URL.Query().Get("filter"), "displayName", "id")
+			if err != nil {
+				scimError(w, http.StatusBadRequest, "invalidFilter", err.Error())
+				return
+			}
 			resources := make([]scimGroup, 0, len(db.Teams))
 			for name, team := range db.Teams {
-				resources = append(resources, scimGroupResource(name, team))
+				if !filtered || name == want {
+					resources = append(resources, scimGroupResource(name, team))
+				}
 			}
 			sort.Slice(resources, func(i, j int) bool { return resources[i].ID < resources[j].ID })
-			writeJSON(w, http.StatusOK, map[string]any{"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:ListResponse"}, "totalResults": len(resources), "Resources": resources})
+			start, end, startIndex, err := scimPage(r, len(resources))
+			if err != nil {
+				scimError(w, http.StatusBadRequest, "invalidValue", err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, scimListResponse(len(resources), startIndex, resources[start:end], end-start))
 		case http.MethodPost:
 			var input struct {
 				DisplayName string            `json:"displayName"`
@@ -97,32 +110,16 @@ func (a *app) scimGroups(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, scimGroupResource(name, record))
 	case http.MethodPatch:
 		var input struct {
-			Operations []struct {
-				Op    string            `json:"op"`
-				Value []scimGroupMember `json:"value"`
-			} `json:"Operations"`
+			Operations []scimPatchOperation `json:"Operations"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&input); err != nil {
-			apiError(w, http.StatusBadRequest, "invalid SCIM group patch")
+			scimError(w, http.StatusBadRequest, "invalidSyntax", "invalid SCIM group patch")
 			return
 		}
 		for _, operation := range input.Operations {
-			if !strings.EqualFold(operation.Op, "add") && !strings.EqualFold(operation.Op, "replace") {
-				continue
-			}
-			if strings.EqualFold(operation.Op, "replace") {
-				for member := range record.Members {
-					if err := a.store.updateTeamMember(name, member, false); err != nil {
-						apiError(w, http.StatusBadRequest, err.Error())
-						return
-					}
-				}
-			}
-			for _, member := range operation.Value {
-				if err := a.store.updateTeamMember(name, member.Value, true); err != nil {
-					apiError(w, http.StatusBadRequest, err.Error())
-					return
-				}
+			if err := a.applySCIMGroupOperation(name, operation); err != nil {
+				scimError(w, http.StatusBadRequest, "invalidValue", err.Error())
+				return
 			}
 		}
 		updated, _ := a.store.loadTeams()
@@ -153,19 +150,39 @@ func (a *app) scim(w http.ResponseWriter, r *http.Request, db userDB) {
 	if path == "" || path == "/" {
 		switch r.Method {
 		case http.MethodGet:
+			want, filtered, err := parseSCIMEqualityFilter(r.URL.Query().Get("filter"), "userName", "id")
+			if err != nil {
+				scimError(w, http.StatusBadRequest, "invalidFilter", err.Error())
+				return
+			}
 			resources := make([]scimUser, 0, len(db.Users))
 			for name, record := range db.Users {
-				resources = append(resources, scimUser{Schemas: []string{"urn:ietf:params:scim:schemas:core:2.0:User"}, ID: name, UserName: name, Active: !record.Disabled})
+				if !filtered || name == want {
+					resources = append(resources, scimUser{Schemas: []string{"urn:ietf:params:scim:schemas:core:2.0:User"}, ID: name, UserName: name, Active: !record.Disabled})
+				}
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:ListResponse"}, "totalResults": len(resources), "Resources": resources})
+			sort.Slice(resources, func(i, j int) bool { return resources[i].ID < resources[j].ID })
+			start, end, startIndex, err := scimPage(r, len(resources))
+			if err != nil {
+				scimError(w, http.StatusBadRequest, "invalidValue", err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, scimListResponse(len(resources), startIndex, resources[start:end], end-start))
 		case http.MethodPost:
 			var input struct {
-				UserName string `json:"userName"`
-				Active   *bool  `json:"active"`
-				Password string `json:"password"`
+				UserName string          `json:"userName"`
+				Active   *bool           `json:"active"`
+				Password json.RawMessage `json:"password"`
 			}
 			if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&input); err != nil || !namePattern.MatchString(input.UserName) {
-				apiError(w, http.StatusBadRequest, "userName is required and must be valid")
+				scimError(w, http.StatusBadRequest, "invalidValue", "userName is required and must be valid")
+				return
+			}
+			// Trace credentials are generated personal tokens (or OIDC); a
+			// user-chosen SCIM password would be stored as an unsalted token
+			// hash and could be cracked offline, so it is refused.
+			if len(input.Password) > 0 && string(input.Password) != "null" && string(input.Password) != `""` {
+				scimError(w, http.StatusBadRequest, "invalidValue", "Trace does not accept SCIM passwords; administrators issue personal tokens (trace user rotate) or users sign in with OIDC")
 				return
 			}
 			token, err := a.store.addUser(input.UserName, false)
@@ -173,21 +190,11 @@ func (a *app) scim(w http.ResponseWriter, r *http.Request, db userDB) {
 				apiError(w, http.StatusConflict, err.Error())
 				return
 			}
-			active := input.Active == nil || *input.Active
-			if input.Password != "" {
-				_ = a.store.updateUsers(func(users *userDB) error {
-					record := users.Users[input.UserName]
-					record.Hash = hashToken(input.Password)
-					record.Disabled = !active
-					users.Users[input.UserName] = record
-					return nil
-				})
-			} else {
-				// Do not create an active account with no credential that can be
-				// delivered by SCIM. An administrator can rotate/enroll a token.
-				_ = a.store.setUserActive(input.UserName, false)
-				active = false
-			}
+			// Do not create an active account with no credential that can be
+			// delivered by SCIM. An administrator can rotate/enroll a token and
+			// reactivate the account.
+			_ = a.store.setUserActive(input.UserName, false)
+			active := false
 			// SCIM must not return a Trace personal token. Provisioning systems
 			// should deliver a token through their own secure enrollment flow.
 			_ = token
@@ -215,21 +222,24 @@ func (a *app) scim(w http.ResponseWriter, r *http.Request, db userDB) {
 		writeJSON(w, http.StatusOK, scimUser{Schemas: []string{"urn:ietf:params:scim:schemas:core:2.0:User"}, ID: name, UserName: name, Active: !record.Disabled})
 	case http.MethodPatch:
 		var input struct {
-			Operations []struct {
-				Op    string `json:"op"`
-				Value struct {
-					Active *bool `json:"active"`
-				} `json:"value"`
-			} `json:"Operations"`
+			Operations []scimPatchOperation `json:"Operations"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&input); err != nil {
-			apiError(w, http.StatusBadRequest, "invalid SCIM patch")
+			scimError(w, http.StatusBadRequest, "invalidSyntax", "invalid SCIM patch")
 			return
 		}
 		for _, operation := range input.Operations {
-			if operation.Value.Active != nil {
-				if err := a.store.setUserActive(name, *operation.Value.Active); err != nil {
-					apiError(w, http.StatusBadRequest, err.Error())
+			if !strings.EqualFold(operation.Op, "replace") && !strings.EqualFold(operation.Op, "add") {
+				continue
+			}
+			active, ok, err := scimActiveValue(operation)
+			if err != nil {
+				scimError(w, http.StatusBadRequest, "invalidValue", err.Error())
+				return
+			}
+			if ok {
+				if err := a.store.setUserActive(name, active); err != nil {
+					scimError(w, http.StatusBadRequest, "invalidValue", err.Error())
 					return
 				}
 			}
@@ -246,4 +256,64 @@ func (a *app) scim(w http.ResponseWriter, r *http.Request, db userDB) {
 		apiError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 	_ = username
+}
+
+// applySCIMGroupOperation applies one group PATCH operation to the team:
+// add, replace, and remove of members, including the
+// members[value eq "USER"] path form that identity providers send.
+func (a *app) applySCIMGroupOperation(team string, operation scimPatchOperation) error {
+	op := strings.ToLower(strings.TrimSpace(operation.Op))
+	path := strings.TrimSpace(operation.Path)
+	if path != "" && !strings.EqualFold(path, "members") {
+		if match := scimMemberPathPattern.FindStringSubmatch(path); match != nil && op == "remove" {
+			var member string
+			if err := json.Unmarshal([]byte(`"`+match[1]+`"`), &member); err != nil {
+				return errors.New("invalid member filter")
+			}
+			return a.store.updateTeamMember(team, member, false)
+		}
+		// Teams cannot be renamed and carry no other SCIM attributes.
+		return nil
+	}
+	members, err := scimMembersValue(operation.Value)
+	if err != nil {
+		return err
+	}
+	current, err := a.store.loadTeams()
+	if err != nil {
+		return err
+	}
+	switch op {
+	case "add":
+	case "replace":
+		for member := range current.Teams[team].Members {
+			if err := a.store.updateTeamMember(team, member, false); err != nil {
+				return err
+			}
+		}
+	case "remove":
+		if len(members) == 0 {
+			// Removing the members attribute clears the group.
+			for member := range current.Teams[team].Members {
+				if err := a.store.updateTeamMember(team, member, false); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		for _, member := range members {
+			if err := a.store.updateTeamMember(team, member.Value, false); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return errors.New("unsupported SCIM patch operation " + operation.Op)
+	}
+	for _, member := range members {
+		if err := a.store.updateTeamMember(team, member.Value, true); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -157,7 +157,7 @@ func (s *store) actionSecrets(repo string) (map[string]string, error) {
 }
 
 func (a *app) apiSecrets(w http.ResponseWriter, r *http.Request, u userRecord, repo string, tail []string) {
-	if !u.Admin && roleFor(u, repo) != "write" {
+	if !u.canWrite(repo) {
 		apiError(w, http.StatusForbidden, "write access required")
 		return
 	}
