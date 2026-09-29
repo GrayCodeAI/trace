@@ -546,7 +546,11 @@ func (s *store) executeActionRun(ctx context.Context, run actionRun, config work
 			return
 		}
 	}
-	cmd := exec.CommandContext(ctx, "git", "clone", "--no-checkout", "--local", repoPath, workspace)
+	// --no-hardlinks: a plain --local clone hardlinks the source objects, so
+	// removing the run directory races the still-running git process and can
+	// fail with ".git: directory not empty". pull_requests.go already clones
+	// this way.
+	cmd := exec.CommandContext(ctx, "git", "clone", "--no-checkout", "--local", "--no-hardlinks", repoPath, workspace)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		if ctx.Err() != nil {
 			s.finishActionRun(run.ID, "cancelled", []actionJob{{ID: 1, Name: "checkout", Status: "cancelled", ExitCode: 1, Log: "cancelled"}})
